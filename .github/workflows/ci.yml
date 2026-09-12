@@ -115,11 +115,28 @@ jobs:
           --health-timeout=5s
           --health-retries=20
 
+      redis:
+        # The run queue picks BullMQ when REDIS_URL is set and an in-process queue when it
+        # is not (src/runs/runs.module.ts). REDIS_URL is in .env.example, so every developer
+        # machine runs the BullMQ path — CI has to run it too or it is testing other code.
+        image: redis:7
+        ports:
+          - 6381:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
     env:
       TEST_DATABASE_URL: postgresql://uboss_app:uboss_app_local_dev@localhost:5442/uboss_test
       TEST_MIGRATION_DATABASE_URL: postgresql://uboss:uboss_local_dev@localhost:5442/uboss_test
       DATABASE_URL: postgresql://uboss_app:uboss_app_local_dev@localhost:5442/uboss_test
       DATABASE_MIGRATION_URL: postgresql://uboss:uboss_local_dev@localhost:5442/uboss_test
+      # Prisma 7 reads the shadow database from prisma.config.ts, not from a CLI flag. It must
+      # be a different database from the one under test: Prisma resets it on every diff.
+      SHADOW_DATABASE_URL: postgresql://uboss:uboss_local_dev@localhost:5442/uboss_shadow?schema=public
+      REDIS_URL: redis://localhost:6381
 
     steps:
       - uses: actions/checkout@v4
@@ -145,6 +162,14 @@ jobs:
             ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO uboss_app;
           SQL
 
+      - name: Create the shadow database
+        # `migrate diff --from-migrations` replays the entire migration history into a scratch
+        # database to compute the diff from a clean baseline. It has to be empty, and it has to
+        # be somewhere other than the database the next step tests against.
+        run: |
+          PGPASSWORD=uboss_local_dev psql -h localhost -p 5442 -U uboss -d postgres \
+            -v ON_ERROR_STOP=1 -c "CREATE DATABASE uboss_shadow OWNER uboss;"
+
       - name: Build shared packages
         run: npm run build:packages
 
@@ -163,8 +188,7 @@ jobs:
           npx prisma generate
           DIFF=$(npx prisma migrate diff \
             --from-migrations ./prisma/migrations \
-            --to-schema-datamodel ./prisma/schema.prisma \
-            --shadow-database-url "$DATABASE_MIGRATION_URL" \
+            --to-schema ./prisma/schema.prisma \
             --script)
           if [ -n "$(echo "$DIFF" | grep -v '^--' | tr -d '[:space:]')" ]; then
             echo "::error::schema.prisma and the migrations disagree. Generate a migration."

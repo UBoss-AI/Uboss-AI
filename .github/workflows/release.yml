@@ -80,6 +80,10 @@ jobs:
       TEST_MIGRATION_DATABASE_URL: postgresql://uboss:uboss_local_dev@localhost:5442/uboss_test
       DATABASE_URL: postgresql://uboss_app:uboss_app_local_dev@localhost:5442/uboss_test
       DATABASE_MIGRATION_URL: postgresql://uboss:uboss_local_dev@localhost:5442/uboss_test
+      # The redis service above exists for this. Without it the shared rate-limit store
+      # test skips itself and the run queue falls back to the in-process implementation,
+      # so the job would be qualifying code that no deployed environment runs.
+      REDIS_URL: redis://localhost:6381
 
     steps:
       - uses: actions/checkout@v4

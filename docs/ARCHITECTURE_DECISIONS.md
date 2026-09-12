@@ -5915,3 +5915,48 @@ invisible in a dashboard and obvious only during an incident.
 The registry ships **empty**, which is the correct state — nothing is currently gated. Its behaviour
 is tested against example registries so that "empty" does not mean "untested" when the first real
 flag is added by somebody in a hurry during a deploy.
+
+## ADR-279 — The lockfile has to hold every platform's native binaries, and npm will not do it by accident
+
+The first real CI run failed on Linux with _"Cannot find native binding"_ from `rolldown`, which
+Vite 8 and Vitest 5 use. The lockfile contained exactly one binding — `@rolldown/binding-win32-x64-msvc` —
+because it had been generated on the Windows development machine, and `npm ci` installs precisely
+what the lockfile says.
+
+The part worth recording is why regenerating it did **not** fix it. Deleting `package-lock.json` and
+running `npm install --package-lock-only` produced the same one-platform lockfile, and so did
+adding `--os=linux --cpu=x64`. When there is no `package-lock.json`, npm builds the ideal tree
+from `node_modules/.package-lock.json` — the hidden lockfile — which records what is installed on
+_this_ machine. The Windows-only answer was being inherited from the Windows-only install.
+
+The fix is to regenerate somewhere npm has nothing to inherit: a directory holding only the root and
+workspace `package.json` files. npm then resolves from the registry and writes all 15 `rolldown`
+bindings and all 11 `lightningcss` ones, each tagged with its `os` and `cpu` so `npm ci`
+installs only the matching one.
+
+**This cost 23 incidental version changes**, all inside the ranges the `package.json` files already
+declared, because a fresh resolution takes the newest match rather than the recorded one. The
+notable ones are `zod` 4.5.4 to 4.6.2, `playwright` 1.56.1 to 1.63.0 and `bullmq` 5.81.4 to
+5.81.5; the rest are transitive build tooling and dedupe reshuffles. They were accepted rather than
+pinned back, and the full suite was re-run to prove the resolution is sound — which is the only
+evidence that means anything about a dependency change.
+
+A lockfile generated on one platform is only ever correct by luck, and the luck runs out on the
+first machine that is not the author's.
+
+## ADR-280 — CI's migration validation had been written against the Prisma 6 CLI
+
+The step called `prisma migrate diff --to-schema-datamodel … --shadow-database-url …`. Prisma 7.10
+renamed the first flag to `--to-schema` and removed the second entirely: the shadow database now
+comes from `prisma.config.ts`, which this repository already configures from
+`SHADOW_DATABASE_URL`. The CLI answered with its usage text and exit code 1, so the job failed for
+the right reason by accident.
+
+The second half was the more dangerous half. `--shadow-database-url` had been pointed at
+`$DATABASE_MIGRATION_URL` — the database `migrate deploy` populates on the line above, and the
+database the API suite runs against on the line below. A shadow database is replayed into and reset.
+Had the flag still existed, the check would have wiped the schema it was validating.
+
+So the shadow gets its own empty database, created next to the application role. It was never
+possible to notice this locally, where `uboss_shadow` has existed since Prompt 7 and the
+environment variable was simply never set in CI.

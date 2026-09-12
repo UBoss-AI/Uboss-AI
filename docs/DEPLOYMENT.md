@@ -80,7 +80,7 @@ the command the log shows.
 `migrate deploy` proves every migration applies **in order to an empty database** — what a new
 environment does.
 
-`migrate diff --from-migrations --to-schema-datamodel` proves the migrations and `schema.prisma`
+`migrate diff --from-migrations --to-schema` proves the migrations and `schema.prisma`
 **agree**. An empty diff means nothing was edited in the schema without a migration to carry it.
 This repository contains hand-written SQL that Prisma cannot see, which is precisely why the check
 is run rather than assumed.

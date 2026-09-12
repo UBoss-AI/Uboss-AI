@@ -3378,3 +3378,30 @@ control that protects production — break-glass, the audit chain, restricted ac
 be duplicated there to make it defensible. Synthetic data is less convenient and is the only
 position that can be held. Recorded here because "just restore prod into staging to reproduce it" is
 the most natural suggestion anybody will make during an incident.
+
+**S-345 — Transitive advisories are fixed by overriding the vulnerable package, not by downgrading the framework.**
+The first real CI run failed `npm audit --audit-level=high` on eight high advisories: three in
+`multer`, two in `mysql2`, one in `deepmerge-ts`, and the rest were npm propagating those
+upward through `@nestjs/platform-express`, `@nestjs/core` and `@nestjs/testing`.
+
+Every direct dependency was already at its latest published version, so there was nothing to
+upgrade to. `npm audit fix --force` offered to install `@nestjs/core` 7.5.5 and `prisma`
+6.19.3 — five majors and one major backwards — to resolve advisories in code paths this product
+does not execute. A "fix" that replaces a current framework with a five-year-old one is not a fix.
+
+An `overrides` block installs the patched version of the vulnerable package itself, which is the
+actual remedy: `multer` 2.3.0, `mysql2` 3.24.4, `deepmerge-ts` 8.0.2. The direct
+dependencies stay where they are. `@nestjs/platform-express` pins `multer` to an exact
+`2.2.0` and `@prisma/config` pins `deepmerge-ts` to an exact `7.1.5`, so an override is
+the only mechanism that reaches them at all.
+
+**What was deliberately left.** `uuid` below 11.1.1 is reported _moderate_, under the gate's `high`
+threshold, reached only through `exceljs`. The advisory is a missing buffer bounds check in `v3`,
+`v5` and `v6` when a `buf` argument is supplied; `exceljs` imports `v4` and nothing
+else, and calls it with no arguments at both of its call sites. Forcing `exceljs` across three
+majors of `uuid` to close a path it cannot reach would risk the XLSX export to buy nothing. It is
+recorded here rather than silenced, so the next person meets a decision instead of a mystery.
+
+The gate stays at `high`. Lowering it to `critical` to make a run green would have been the
+other way to close this, and it is the reason the threshold is written down with its justification
+rather than just chosen.
