@@ -1,0 +1,16 @@
+{
+  "extends": "../config/tsconfig.base.json",
+  "compilerOptions": {
+    /* Source-only package: apps/web transpiles it (see ADR-011), so nothing is emitted here. */
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node", "vitest/globals", "@testing-library/jest-dom"],
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vitest.config.mts", "vitest.setup.ts"]
+}

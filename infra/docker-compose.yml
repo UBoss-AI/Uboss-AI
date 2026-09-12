@@ -1,0 +1,77 @@
+# UBoss local development infrastructure.
+#
+# Deliberately isolated from anything else on this machine:
+#  - compose project name `uboss-ent` (set via `name:` below)
+#  - PostgreSQL published on 5442, not the default 5432
+#  - its own named volume
+#
+# Other UBoss-named stacks already run on this machine on 5432 and 5433 from different project
+# directories. Never point this repository at those databases; they hold other projects' data.
+#
+# Start:  docker compose -f infra/docker-compose.yml up -d
+# Stop:   docker compose -f infra/docker-compose.yml down
+# Reset:  docker compose -f infra/docker-compose.yml down -v   (destroys local data)
+
+name: uboss-ent
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: uboss-ent-postgres
+    restart: unless-stopped
+    ports:
+      - '5442:5432'
+    environment:
+      # Local development only. These are not secrets and must never be reused anywhere real;
+      # production credentials resolve through a secret manager (see docs/SECURITY_DECISIONS.md).
+      POSTGRES_USER: uboss
+      POSTGRES_PASSWORD: uboss_local_dev
+      POSTGRES_DB: uboss_dev
+      # Deterministic collation, so ordering and unique constraints behave the same for everyone.
+      POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C'
+    # The stock ceiling of 100 is too low for the API suite, and the way it fails is the problem:
+    # the server starts refusing connections, and that surfaces as "Unable to start a transaction
+    # in the given time" or a bare P1001 inside whichever spec happened to be running — never as
+    # anything naming a connection limit. The suite legitimately needs concurrency (one test
+    # makes twelve concurrent appends; every authorized request opens five transactions at once),
+    # and each spec file builds its own clients. 200 leaves real headroom; idle connections cost
+    # about 2 MB each, so this is cheap on a development machine.
+    command:
+      - postgres
+      - '-c'
+      - 'max_connections=200'
+    volumes:
+      - uboss-ent-pgdata:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U uboss -d uboss_dev']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: uboss-ent-redis
+    restart: unless-stopped
+    ports:
+      # 6379 and 6380 are already taken on this machine by unrelated projects, so this one
+      # publishes on 6381. BullMQ reads the port from REDIS_URL, so nothing is hard-coded to it.
+      - '6381:6379'
+    # `appendonly` because the queue holds work that has a durable Run row behind it: losing the
+    # queue on a restart means those runs sit Queued forever with nothing to pick them up. The
+    # rows survive either way, which is the point of writing them first — but recovering by hand
+    # is worse than persisting the queue.
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - uboss-ent-redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  uboss-ent-pgdata:
+    name: uboss-ent-pgdata
+  uboss-ent-redisdata:
+    name: uboss-ent-redisdata

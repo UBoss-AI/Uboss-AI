@@ -1,0 +1,12 @@
+{
+  "kind": "LogicalDump",
+  "takenAt": "2026-09-12T04:22:45Z",
+  "file": "uboss-20260912T042244Z.dump",
+  "sizeBytes": 721304,
+  "sha256": "8c215f89dc3d2c9dbc4f38042f85df8c17f655c9e71a155f5e3afa2e0c4f5865",
+  "serverVersion": "17.11",
+  "lastMigration": "20260916100000_cr03_access_job_method_photo_and_chat",
+  "tenantCount": 7,
+  "state": "Taken",
+  "note": "Taken, never restored. A backup becomes Verified only when pg-restore-verify.sh succeeds against it."
+}

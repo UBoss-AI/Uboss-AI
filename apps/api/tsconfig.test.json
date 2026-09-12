@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    /* Tests compile to their own output directory so the production `dist/` stays free of
+       spec files, while both trees keep the same relative src/test layout. */
+    "rootDir": ".",
+    "outDir": "dist-test",
+    "declaration": false,
+    "declarationMap": false
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

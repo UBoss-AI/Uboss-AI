@@ -1,0 +1,10 @@
+{
+  "verifiedAt": "2026-09-12T04:24:12Z",
+  "dump": "uboss-20260912T042244Z.dump",
+  "environment": "scratch",
+  "restoreSeconds": 3,
+  "checksPassed": 6,
+  "checksFailed": 0,
+  "state": "Verified",
+  "results": [{"check":"RestoreCompletes","passed":true,"detail":"pg_restore finished without error"},{"check":"SchemaMatches","passed":true,"detail":"at 20260916100000_cr03_access_job_method_photo_and_chat with no unfinished migrations"},{"check":"RowCountsPlausible","passed":true,"detail":"7 tenants across 121 tables"},{"check":"TenantIsolationIntact","passed":true,"detail":"104 policies and 104 forced tables covering 103 tenant tables"},{"check":"AuditChainIntact","passed":true,"detail":"26 events, every one hashed"},{"check":"ApplicationStarts","passed":true,"detail":"the restored database accepts connections and answers"}]
+}

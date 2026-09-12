@@ -1,0 +1,81 @@
+/* UBoss base layer: reset, typography and the global focus affordance. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--uboss-font-family);
+  font-size: var(--uboss-font-size-body);
+  line-height: var(--uboss-line-height);
+  color: var(--uboss-text);
+  background: var(--uboss-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+}
+
+::selection {
+  background: var(--uboss-blue-100);
+}
+
+/*
+ * Keyboard accessibility is a locked UI rule: focus is always visible.
+ * `:focus-visible` keeps the ring off mouse clicks while guaranteeing it for keyboard users.
+ */
+:focus-visible {
+  outline: var(--uboss-focus-outline);
+  outline-offset: var(--uboss-focus-offset);
+}
+
+/* Respect a reduced-motion preference across every animated component. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Utility: available to screen readers, hidden visually. */
+.uboss-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.uboss-mono {
+  font-variant-numeric: tabular-nums;
+}

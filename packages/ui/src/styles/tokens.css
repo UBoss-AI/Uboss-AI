@@ -1,0 +1,100 @@
+/*
+ * UBoss design tokens.
+ *
+ * Transcribed from the client's approved UI reference (index.html `:root`). These values are the
+ * agreed visual language — treat a change here as a design change needing client sign-off, not a
+ * refactor. Components must consume the tokens, never hard-coded hex values.
+ */
+
+:root {
+  /* ---- Navy: navigation and authority surfaces ---- */
+  --uboss-navy: #102a43;
+  --uboss-navy-700: #1c4a73;
+  --uboss-navy-900: #0a1e33;
+
+  /* ---- Blue: primary action ---- */
+  --uboss-blue: #2563eb;
+  --uboss-blue-600: #1d4fd8;
+  --uboss-blue-050: #eef3ff;
+  --uboss-blue-100: #dbe7ff;
+
+  /* ---- Teal / cyan: the UBoss accent ---- */
+  --uboss-cyan: #0ba6e4;
+  --uboss-cyan-050: #e6f6fd;
+  --uboss-cyan-ink: #0876a8; /* accessible text on cyan-050 */
+
+  /* ---- Semantic statuses. Always paired with text or an icon, never colour alone. ---- */
+  --uboss-success: #15803d;
+  --uboss-success-050: #e7f6ec;
+  --uboss-warning: #b4610a;
+  --uboss-warning-050: #fbf1e3;
+  --uboss-warning-border: #e4b063;
+  --uboss-danger: #be1b1b;
+  --uboss-danger-050: #fcebeb;
+  --uboss-purple: #6d28d9;
+  --uboss-purple-050: #f1ebfc;
+
+  /* ---- Neutral surfaces ---- */
+  --uboss-surface: #ffffff;
+  --uboss-bg: #f5f8fc;
+  --uboss-bg-2: #edf2f8;
+  --uboss-border: #e4eaf2;
+  --uboss-border-2: #eef2f8;
+
+  /* ---- Text ---- */
+  --uboss-text: #0f1d2e;
+  --uboss-text-2: #54637a;
+  --uboss-text-3: #8994a6;
+
+  /* ---- Badge ladder (Bronze -> Silver -> Gold -> Platinum -> Diamond) ---- */
+  --uboss-bronze-bg: #f6ece2;
+  --uboss-bronze-fg: #8a5a2b;
+  --uboss-silver-bg: #eceff3;
+  --uboss-silver-fg: #5b6672;
+  --uboss-gold-bg: #fbf1d6;
+  --uboss-gold-fg: #96751b;
+  --uboss-platinum-bg: #e6f0f1;
+  --uboss-platinum-fg: #2c6e72;
+  --uboss-diamond-bg: #e8eeff;
+  --uboss-diamond-fg: #3552c7;
+
+  /* ---- Radii ---- */
+  --uboss-radius-input: 8px;
+  --uboss-radius-card: 12px;
+  --uboss-radius-panel: 16px;
+  --uboss-radius-pill: 20px;
+
+  /* ---- Spacing scale (8px base) ---- */
+  --uboss-space-1: 4px;
+  --uboss-space-2: 8px;
+  --uboss-space-3: 12px;
+  --uboss-space-4: 16px;
+  --uboss-space-5: 20px;
+  --uboss-space-6: 24px;
+  --uboss-space-8: 32px;
+  --uboss-space-10: 40px;
+
+  /* ---- Elevation ---- */
+  --uboss-shadow-1: 0 1px 2px rgba(15, 29, 46, 0.05), 0 1px 2px rgba(15, 29, 46, 0.04);
+  --uboss-shadow-2: 0 6px 18px rgba(15, 29, 46, 0.07);
+  --uboss-shadow-3: 0 18px 44px rgba(15, 29, 46, 0.16);
+
+  /* ---- Typography ---- */
+  --uboss-font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --uboss-font-size-body: 14px;
+  --uboss-font-size-sm: 13px;
+  --uboss-font-size-xs: 11.5px;
+  --uboss-font-size-h1: 22px;
+  --uboss-line-height: 1.45;
+
+  /* ---- Layout ---- */
+  --uboss-sidebar-width: 248px;
+  --uboss-sidebar-width-collapsed: 74px;
+  --uboss-topbar-height: 64px;
+  --uboss-content-max-width: 1440px;
+
+  /* ---- Focus: visible on every interactive element, never removed ---- */
+  --uboss-focus-ring: 0 0 0 3px var(--uboss-blue-100);
+  --uboss-focus-outline: 2px solid var(--uboss-blue);
+  --uboss-focus-offset: 2px;
+}

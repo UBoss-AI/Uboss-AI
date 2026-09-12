@@ -1,0 +1,7 @@
+/*
+ * UBoss design system stylesheet.
+ * Import once, at the application root:  import '@uboss/ui/styles.css';
+ */
+@import './tokens.css';
+@import './base.css';
+@import './components.css';

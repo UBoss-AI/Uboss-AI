@@ -1,0 +1,3866 @@
+/*
+ * UBoss component styles.
+ *
+ * Transcribed from the client's approved UI reference. Every rule below belongs to a reusable
+ * component in `src/primitives` or `src/shells` — locked UI rule: no one-off page styling.
+ */
+
+/* ============================================================
+   App shell
+   ============================================================ */
+.uboss-shell {
+  display: grid;
+  grid-template-columns: var(--uboss-sidebar-width) 1fr;
+  min-height: 100vh;
+}
+
+.uboss-shell--collapsed {
+  grid-template-columns: var(--uboss-sidebar-width-collapsed) 1fr;
+}
+
+.uboss-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background:
+    radial-gradient(120% 60% at 100% 0, rgba(37, 99, 235, 0.05), transparent 60%),
+    linear-gradient(180deg, #f7fafe, #f3f6fb);
+}
+
+.uboss-shell--master .uboss-main {
+  background:
+    radial-gradient(1000px 460px at 14% -12%, rgba(37, 99, 235, 0.14), transparent 60%), #0a1b2b;
+}
+
+.uboss-content {
+  padding: 22px 24px 60px;
+  max-width: var(--uboss-content-max-width);
+  width: 100%;
+  margin: 0 auto;
+}
+
+.uboss-shell--master .uboss-content {
+  color: #dce7f2;
+}
+
+/* ============================================================
+   Sidebar
+   ============================================================ */
+.uboss-sidebar {
+  background: linear-gradient(185deg, #173b5e 0%, #102a43 52%, #0b2036 100%);
+  color: #dce6f2;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.uboss-shell--master .uboss-sidebar {
+  background: linear-gradient(185deg, #112234 0%, #0a1626 100%);
+}
+
+.uboss-side-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 18px 14px;
+}
+
+.uboss-side-logo {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--uboss-radius-input);
+  background: linear-gradient(135deg, #22d3ee, #3b82f6);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 800;
+  font-size: 15px;
+  flex: none;
+  box-shadow: 0 6px 16px -4px rgba(11, 166, 228, 0.55);
+}
+
+.uboss-side-brand-text {
+  min-width: 0;
+}
+
+.uboss-side-brand-text b {
+  color: #fff;
+  font-size: 15px;
+  letter-spacing: 0.2px;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.uboss-side-brand-text span {
+  display: block;
+  font-size: 11px;
+  color: #8fa6c0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.uboss-sidebar-toggle {
+  margin-left: auto;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--uboss-radius-input);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #b8cbdf;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex: none;
+  transition: 0.15s;
+}
+
+.uboss-sidebar-toggle:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.uboss-side-scroll {
+  overflow-y: auto;
+  flex: 1;
+  padding: 6px 10px 16px;
+}
+
+.uboss-nav-group {
+  margin: 12px 8px 4px;
+  font-size: 10.5px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #6e88a6;
+  font-weight: 600;
+}
+
+.uboss-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  color: #c4d4e6;
+  font-weight: 500;
+  cursor: pointer;
+  margin: 1px 0;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font-size: var(--uboss-font-size-body);
+  text-align: left;
+  transition:
+    background 0.16s,
+    color 0.16s,
+    box-shadow 0.16s;
+}
+
+.uboss-nav-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #eaf1fa;
+}
+
+.uboss-nav-item--active {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.26), rgba(59, 130, 246, 0.06));
+  color: #fff;
+  box-shadow: inset 2px 0 0 var(--uboss-cyan);
+}
+
+.uboss-nav-item--active .uboss-nav-icon {
+  color: var(--uboss-cyan);
+}
+
+.uboss-nav-icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  opacity: 0.9;
+  display: grid;
+  place-items: center;
+}
+
+.uboss-nav-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.uboss-nav-badge {
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: var(--uboss-radius-pill);
+  font-size: 11px;
+  padding: 1px 7px;
+  font-weight: 600;
+}
+
+.uboss-nav-item--active .uboss-nav-badge {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.uboss-side-foot {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.uboss-side-foot-name {
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.uboss-side-foot-role {
+  font-size: 11px;
+  color: #8fa6c0;
+}
+
+/* Same treatment as the role line it replaces, since the reference styles its footer sign-out
+   identically and only adds a pointer cursor. */
+.uboss-side-foot-signout {
+  font: inherit;
+  font-size: 11px;
+  color: #8fa6c0;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.uboss-side-foot-signout:hover {
+  color: #fff;
+}
+
+.uboss-side-foot-signout:focus-visible {
+  outline: var(--uboss-focus-outline);
+  outline-offset: var(--uboss-focus-offset);
+  border-radius: 4px;
+}
+
+/* Collapsed rail */
+.uboss-shell--collapsed .uboss-side-brand {
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 0 12px;
+}
+
+.uboss-shell--collapsed .uboss-side-brand-text,
+.uboss-shell--collapsed .uboss-nav-label,
+.uboss-shell--collapsed .uboss-side-foot-stack {
+  display: none;
+}
+
+.uboss-shell--collapsed .uboss-sidebar-toggle {
+  margin-left: 0;
+}
+
+.uboss-shell--collapsed .uboss-side-scroll {
+  padding: 6px 8px 16px;
+}
+
+.uboss-shell--collapsed .uboss-nav-group {
+  height: 1px;
+  margin: 12px 14px;
+  background: rgba(255, 255, 255, 0.09);
+  color: transparent;
+  font-size: 0;
+  overflow: hidden;
+}
+
+.uboss-shell--collapsed .uboss-nav-item {
+  justify-content: center;
+  padding: 10px 0;
+  gap: 0;
+  position: relative;
+}
+
+.uboss-shell--collapsed .uboss-nav-badge {
+  position: absolute;
+  top: 3px;
+  right: 8px;
+  margin: 0;
+  padding: 0 5px;
+  font-size: 10px;
+}
+
+.uboss-shell--collapsed .uboss-side-foot {
+  justify-content: center;
+  padding: 12px 0;
+}
+
+/* ============================================================
+   Top bar
+   ============================================================ */
+.uboss-topbar {
+  height: var(--uboss-topbar-height);
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: saturate(1.15) blur(8px);
+  border-bottom: 1px solid var(--uboss-border);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 24px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.uboss-shell--master .uboss-topbar {
+  background: var(--uboss-navy-900);
+  border-bottom-color: #20374d;
+  backdrop-filter: none;
+}
+
+/* The locked workspace mark: UBOSS AI AMS | {Active Workspace Name} */
+.uboss-ws-mark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 14.5px;
+  color: var(--uboss-navy);
+  min-width: 0;
+}
+
+.uboss-shell--master .uboss-ws-mark {
+  color: #fff;
+}
+
+.uboss-ws-mark-pipe {
+  color: var(--uboss-border);
+  font-weight: 400;
+}
+
+.uboss-ws-mark-name {
+  color: var(--uboss-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.uboss-shell--master .uboss-ws-mark-name {
+  color: #8fb4d8;
+}
+
+.uboss-scope-pill {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--uboss-text-3);
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-pill);
+  padding: 2px 9px;
+  background: var(--uboss-bg);
+  white-space: nowrap;
+}
+
+.uboss-shell--master .uboss-scope-pill {
+  color: #8fb4d8;
+  border-color: #20374d;
+  background: #12263a;
+}
+
+.uboss-top-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.uboss-icon-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  border: 1px solid var(--uboss-border);
+  background: var(--uboss-surface);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: var(--uboss-text-2);
+  position: relative;
+  flex: none;
+}
+
+.uboss-icon-btn:hover {
+  background: var(--uboss-bg);
+}
+
+.uboss-shell--master .uboss-icon-btn {
+  background: #12263a;
+  border-color: #20374d;
+  color: #b8cbdf;
+}
+
+.uboss-icon-btn-dot {
+  position: absolute;
+  top: 8px;
+  right: 9px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--uboss-danger);
+  border: 1.5px solid #fff;
+}
+
+.uboss-menu-btn {
+  display: none;
+}
+
+.uboss-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #2e5a8a, #1c4a73);
+  color: #eaf2fb;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 12px;
+  flex: none;
+}
+
+.uboss-avatar--sm {
+  width: 28px;
+  height: 28px;
+  font-size: 11px;
+}
+
+/* ============================================================
+   Search field
+   ============================================================ */
+.uboss-search {
+  position: relative;
+  flex: 1;
+  max-width: 420px;
+  min-width: 0;
+}
+
+.uboss-search input {
+  width: 100%;
+  height: 38px;
+  border: 1px solid var(--uboss-border);
+  border-radius: 9px;
+  padding: 0 12px 0 34px;
+  background: var(--uboss-bg);
+  font-size: var(--uboss-font-size-sm);
+  color: var(--uboss-text);
+}
+
+.uboss-search input:focus {
+  outline: none;
+  border-color: var(--uboss-blue);
+  box-shadow: var(--uboss-focus-ring);
+}
+
+.uboss-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--uboss-text-3);
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.uboss-shell--master .uboss-search input {
+  background: #12263a;
+  border-color: #20374d;
+  color: #fff;
+}
+
+.uboss-search--mini {
+  flex: none;
+  max-width: none;
+}
+
+.uboss-search--mini input {
+  height: 34px;
+  width: 220px;
+  background: var(--uboss-surface);
+  border-radius: var(--uboss-radius-input);
+  padding-left: 30px;
+}
+
+/* ============================================================
+   Breadcrumbs + page header
+   ============================================================ */
+.uboss-crumb {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--uboss-text-3);
+  font-size: 12.5px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.uboss-crumb a,
+.uboss-crumb button {
+  color: var(--uboss-text-2);
+  font-weight: 500;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font-size: inherit;
+}
+
+.uboss-crumb a:hover,
+.uboss-crumb button:hover {
+  color: var(--uboss-blue);
+  text-decoration: underline;
+}
+
+.uboss-crumb-sep {
+  opacity: 0.6;
+}
+
+.uboss-crumb [aria-current='page'] {
+  color: var(--uboss-text-2);
+  font-weight: 600;
+}
+
+.uboss-shell--master .uboss-crumb,
+.uboss-shell--master .uboss-crumb a,
+.uboss-shell--master .uboss-crumb button {
+  color: #7e9cbc;
+}
+
+.uboss-page-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.uboss-page-head h1 {
+  font-size: var(--uboss-font-size-h1);
+  font-weight: 750;
+  letter-spacing: -0.5px;
+  text-wrap: balance;
+}
+
+.uboss-page-head p {
+  color: var(--uboss-text-2);
+  font-size: var(--uboss-font-size-sm);
+  margin-top: 3px;
+}
+
+.uboss-shell--master .uboss-page-head h1 {
+  color: #fff;
+}
+
+.uboss-shell--master .uboss-page-head p {
+  color: #8fb4d8;
+}
+
+.uboss-page-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ============================================================
+   Buttons
+   ============================================================ */
+.uboss-btn {
+  height: 38px;
+  padding: 0 15px;
+  border-radius: 9px;
+  border: 1px solid var(--uboss-border);
+  background: var(--uboss-surface);
+  color: var(--uboss-text);
+  font-weight: 600;
+  font-size: var(--uboss-font-size-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.16s ease,
+    background 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s;
+}
+
+.uboss-btn:hover:not([disabled]) {
+  background: var(--uboss-bg);
+}
+
+.uboss-btn:active:not([disabled]) {
+  transform: translateY(1px);
+}
+
+.uboss-btn--primary {
+  background: linear-gradient(180deg, #3d7bf7, #2563eb);
+  border-color: #2158d8;
+  color: #fff;
+  box-shadow:
+    0 1px 2px rgba(31, 79, 216, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.uboss-btn--primary:hover:not([disabled]) {
+  background: linear-gradient(180deg, #3670f0, #1e56dc);
+  border-color: #1b4fce;
+  box-shadow:
+    0 5px 16px -3px rgba(31, 79, 216, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  transform: translateY(-1px);
+}
+
+.uboss-btn--navy {
+  background: linear-gradient(180deg, #1c4a73, #102a43);
+  border-color: #0b2036;
+  color: #fff;
+}
+
+.uboss-btn--danger {
+  background: var(--uboss-danger);
+  border-color: var(--uboss-danger);
+  color: #fff;
+}
+
+.uboss-btn--danger:hover:not([disabled]) {
+  filter: brightness(1.05);
+  background: var(--uboss-danger);
+}
+
+.uboss-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--uboss-text-2);
+}
+
+.uboss-btn--sm {
+  height: 32px;
+  padding: 0 11px;
+  font-size: 12.5px;
+  border-radius: var(--uboss-radius-input);
+}
+
+.uboss-btn--block {
+  width: 100%;
+  height: 44px;
+  font-size: var(--uboss-font-size-body);
+}
+
+.uboss-btn[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ============================================================
+   Cards
+   ============================================================ */
+.uboss-card {
+  background: var(--uboss-surface);
+  border: 1px solid #e6edf5;
+  border-radius: var(--uboss-radius-card);
+  box-shadow: var(--uboss-shadow-1);
+  transition:
+    box-shadow 0.18s,
+    border-color 0.18s;
+}
+
+.uboss-shell--master .uboss-card {
+  background: #10233a;
+  border-color: #20374d;
+}
+
+.uboss-card-body {
+  padding: 18px;
+}
+
+.uboss-card-head {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--uboss-border-2);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.uboss-shell--master .uboss-card-head {
+  border-color: #20374d;
+}
+
+.uboss-card-head h3 {
+  font-size: 14.5px;
+  font-weight: 700;
+}
+
+.uboss-section-label {
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #5c6b82;
+  font-weight: 650;
+  margin: 18px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--uboss-border-2);
+}
+
+.uboss-grid {
+  display: grid;
+  gap: 16px;
+}
+
+/*
+ * One column on a phone.
+ *
+ * Faults found by opening the screens: Agent Builder is `1fr 320px`, which at 400px forces the
+ * page 534px wide and makes it scroll sideways, with the left column squeezed until every label
+ * wrapped one word per line.
+ *
+ * `!important` is load-bearing here and nowhere else. Sixteen pages set `gridTemplateColumns` as
+ * an inline style, and an inline style beats any stylesheet rule without it. The alternative was
+ * editing sixteen pages to carry a breakpoint each, which is the per-page styling the locked UI
+ * rule forbids.
+ */
+@media (max-width: 720px) {
+  .uboss-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ============================================================
+   MetricCard
+   ============================================================ */
+.uboss-metric {
+  background: linear-gradient(180deg, #fff, #fafcfe);
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-card);
+  padding: 16px 18px;
+  position: relative;
+  overflow: hidden;
+  transition:
+    box-shadow 0.18s,
+    transform 0.18s;
+  text-align: left;
+  width: 100%;
+  display: block;
+  font: inherit;
+  color: inherit;
+}
+
+.uboss-metric::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 3px;
+  width: 100%;
+  background: linear-gradient(90deg, var(--uboss-cyan), var(--uboss-blue));
+}
+
+.uboss-metric--clickable {
+  cursor: pointer;
+}
+
+.uboss-metric--clickable:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--uboss-shadow-2);
+}
+
+.uboss-shell--master .uboss-metric {
+  background: linear-gradient(180deg, #12263a, #0f2030);
+  border-color: #20374d;
+}
+
+.uboss-metric-label {
+  font-size: 12px;
+  color: var(--uboss-text-3);
+}
+
+.uboss-shell--master .uboss-metric-label {
+  color: #7e9cbc;
+}
+
+.uboss-metric-value {
+  font-size: 26px;
+  font-weight: 800;
+  margin: 6px 0 2px;
+  letter-spacing: -0.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.uboss-shell--master .uboss-metric-value {
+  color: #fff;
+}
+
+.uboss-metric-delta {
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.uboss-metric-delta--up {
+  color: var(--uboss-success);
+}
+
+.uboss-metric-delta--down {
+  color: var(--uboss-danger);
+}
+
+.uboss-metric-delta--flat {
+  color: var(--uboss-text-3);
+}
+
+/* ============================================================
+   StatusBadge
+   ============================================================ */
+.uboss-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: var(--uboss-radius-pill);
+  font-size: var(--uboss-font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.1px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.uboss-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+.uboss-badge--success {
+  background: var(--uboss-success-050);
+  color: var(--uboss-success);
+}
+
+.uboss-badge--blue {
+  background: var(--uboss-blue-050);
+  color: var(--uboss-blue);
+}
+
+.uboss-badge--cyan {
+  background: var(--uboss-cyan-050);
+  color: var(--uboss-cyan-ink);
+}
+
+.uboss-badge--warn {
+  background: var(--uboss-warning-050);
+  color: var(--uboss-warning);
+}
+
+.uboss-badge--danger {
+  background: var(--uboss-danger-050);
+  color: var(--uboss-danger);
+}
+
+.uboss-badge--purple {
+  background: var(--uboss-purple-050);
+  color: var(--uboss-purple);
+}
+
+.uboss-badge--grey {
+  background: var(--uboss-bg-2);
+  color: var(--uboss-text-2);
+}
+
+/* Badge ladder */
+.uboss-medal {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--uboss-radius-pill);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.uboss-medal--bronze {
+  background: var(--uboss-bronze-bg);
+  color: var(--uboss-bronze-fg);
+}
+
+.uboss-medal--silver {
+  background: var(--uboss-silver-bg);
+  color: var(--uboss-silver-fg);
+}
+
+.uboss-medal--gold {
+  background: var(--uboss-gold-bg);
+  color: var(--uboss-gold-fg);
+}
+
+.uboss-medal--platinum {
+  background: var(--uboss-platinum-bg);
+  color: var(--uboss-platinum-fg);
+}
+
+.uboss-medal--diamond {
+  background: var(--uboss-diamond-bg);
+  color: var(--uboss-diamond-fg);
+}
+
+/* ============================================================
+   DataTable + FilterBar
+   ============================================================ */
+.uboss-table-wrap {
+  overflow-x: auto;
+  border-radius: var(--uboss-radius-card);
+}
+
+.uboss-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--uboss-font-size-sm);
+}
+
+.uboss-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--uboss-text-2);
+  font-size: var(--uboss-font-size-xs);
+  letter-spacing: 0.3px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--uboss-border);
+  background: linear-gradient(180deg, #fbfcfe, #f4f7fb);
+}
+
+.uboss-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--uboss-border-2);
+  vertical-align: middle;
+}
+
+.uboss-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.uboss-table tbody tr[data-clickable='true'] {
+  cursor: pointer;
+  transition:
+    box-shadow 0.16s,
+    background 0.16s;
+}
+
+.uboss-table tbody tr[data-clickable='true']:hover,
+.uboss-table tbody tr[data-clickable='true']:focus-visible {
+  background: var(--uboss-blue-050);
+  box-shadow: inset 3px 0 0 var(--uboss-blue);
+}
+
+.uboss-table-numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.uboss-shell--master .uboss-table th {
+  background: #0d1f33;
+  color: #7e9cbc;
+  border-color: #20374d;
+}
+
+.uboss-shell--master .uboss-table td {
+  border-color: #1a3049;
+  color: #cbd9e8;
+}
+
+.uboss-shell--master .uboss-table tbody tr[data-clickable='true']:hover {
+  background: #15304b;
+}
+
+.uboss-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--uboss-border-2);
+  flex-wrap: wrap;
+}
+
+.uboss-filter {
+  height: 34px;
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-input);
+  padding: 0 10px;
+  background: var(--uboss-surface);
+  font-size: var(--uboss-font-size-sm);
+  color: var(--uboss-text-2);
+}
+
+.uboss-filter:focus {
+  outline: none;
+  border-color: var(--uboss-blue);
+  box-shadow: var(--uboss-focus-ring);
+}
+
+.uboss-toolbar-right {
+  margin-left: auto;
+}
+
+/* ============================================================
+   Tabs
+   ============================================================ */
+.uboss-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--uboss-border);
+  margin-bottom: 18px;
+  overflow-x: auto;
+}
+
+.uboss-tab {
+  border: 0;
+  background: transparent;
+  padding: 10px 14px;
+  font-weight: 600;
+  font-size: var(--uboss-font-size-sm);
+  color: var(--uboss-text-2);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  white-space: nowrap;
+}
+
+.uboss-tab[aria-selected='true'] {
+  color: var(--uboss-blue);
+  border-bottom-color: var(--uboss-blue);
+}
+
+.uboss-tab[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ============================================================
+   FormField
+   ============================================================ */
+.uboss-field {
+  margin-bottom: 14px;
+}
+
+.uboss-field label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--uboss-text-2);
+  margin-bottom: 6px;
+}
+
+.uboss-field-required {
+  color: var(--uboss-danger);
+  margin-left: 2px;
+}
+
+.uboss-field input,
+.uboss-field select,
+.uboss-field textarea {
+  width: 100%;
+  height: 40px;
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-input);
+  padding: 0 12px;
+  font-size: 13.5px;
+  background: var(--uboss-surface);
+  color: var(--uboss-text);
+  font-family: inherit;
+  transition: 0.12s;
+}
+
+.uboss-field textarea {
+  height: auto;
+  padding: 10px 12px;
+  min-height: 80px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.uboss-field input:focus,
+.uboss-field select:focus,
+.uboss-field textarea:focus {
+  outline: none;
+  border-color: var(--uboss-blue);
+  box-shadow: var(--uboss-focus-ring);
+}
+
+.uboss-field-hint {
+  font-size: var(--uboss-font-size-xs);
+  color: var(--uboss-text-3);
+  margin-top: 5px;
+}
+
+.uboss-field--invalid input,
+.uboss-field--invalid select,
+.uboss-field--invalid textarea {
+  border-color: var(--uboss-danger);
+  box-shadow: 0 0 0 3px var(--uboss-danger-050);
+}
+
+.uboss-field-error {
+  color: var(--uboss-danger);
+  font-size: var(--uboss-font-size-xs);
+  margin-top: 5px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.uboss-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+/* ============================================================
+   Donut (Company Workspace Dashboard — exactly two slices)
+   ============================================================ */
+.uboss-donut-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 46px 20px 36px;
+}
+
+.uboss-donut-figure {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.uboss-donut-center {
+  position: absolute;
+  text-align: center;
+  pointer-events: none;
+}
+
+.uboss-donut-center-label {
+  font-size: 11px;
+  color: var(--uboss-text-3);
+  font-weight: 700;
+  letter-spacing: 1.2px;
+}
+
+.uboss-donut-center-value {
+  font-size: 40px;
+  font-weight: 800;
+  letter-spacing: -1.5px;
+  line-height: 1;
+  margin: 2px 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.uboss-donut-center-sub {
+  font-size: var(--uboss-font-size-xs);
+  color: var(--uboss-text-3);
+}
+
+.uboss-donut-legend {
+  display: flex;
+  gap: 30px;
+  margin-top: 26px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.uboss-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: none;
+  border: 0;
+  padding: 4px 6px;
+  border-radius: var(--uboss-radius-input);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.uboss-legend-item--clickable {
+  cursor: pointer;
+}
+
+.uboss-legend-item--clickable:hover {
+  background: var(--uboss-bg-2);
+}
+
+.uboss-legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  flex: none;
+}
+
+.uboss-legend-value {
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.uboss-legend-label {
+  color: var(--uboss-text-3);
+  font-size: 12.5px;
+  display: block;
+}
+
+.uboss-donut-slice {
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.uboss-donut-slice:hover {
+  opacity: 0.85;
+}
+
+/* ============================================================
+   ProgressStep
+   ============================================================ */
+.uboss-stepper {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.uboss-step {
+  display: flex;
+  gap: 13px;
+  padding: 4px 0;
+  position: relative;
+}
+
+.uboss-step-marker {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  flex: none;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  border: 2px solid var(--uboss-border);
+  color: var(--uboss-text-3);
+  background: #fff;
+  position: relative;
+  z-index: 1;
+}
+
+.uboss-step-line {
+  position: absolute;
+  left: 12px;
+  top: 30px;
+  bottom: -6px;
+  width: 2px;
+  background: var(--uboss-border-2);
+}
+
+.uboss-step--done .uboss-step-marker {
+  background: var(--uboss-success);
+  border-color: var(--uboss-success);
+  color: #fff;
+}
+
+.uboss-step--running .uboss-step-marker {
+  border-color: var(--uboss-blue);
+  color: var(--uboss-blue);
+}
+
+.uboss-step-pulse {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px solid var(--uboss-blue);
+  opacity: 0.4;
+  animation: uboss-pulse 1.4s infinite;
+}
+
+@keyframes uboss-pulse {
+  0% {
+    transform: scale(0.7);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(1.25);
+    opacity: 0;
+  }
+}
+
+.uboss-step--blocked .uboss-step-marker {
+  background: var(--uboss-danger-050);
+  border-color: var(--uboss-danger);
+  color: var(--uboss-danger);
+}
+
+.uboss-step-label {
+  font-weight: 600;
+  font-size: var(--uboss-font-size-sm);
+  padding-top: 3px;
+}
+
+.uboss-step--todo .uboss-step-label {
+  color: var(--uboss-text-3);
+}
+
+.uboss-step-sub {
+  font-size: var(--uboss-font-size-xs);
+  color: var(--uboss-text-3);
+  font-weight: 400;
+}
+
+/* ============================================================
+   ApprovalCard
+   ============================================================ */
+.uboss-approval {
+  background: var(--uboss-surface);
+  border: 1px solid var(--uboss-border);
+  border-left: 3px solid var(--uboss-warning-border);
+  border-radius: var(--uboss-radius-card);
+  padding: 16px 18px;
+  box-shadow: var(--uboss-shadow-1);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.uboss-approval--human-required {
+  border-left-color: var(--uboss-warning);
+  background: linear-gradient(90deg, var(--uboss-warning-050), var(--uboss-surface) 40%);
+}
+
+.uboss-approval-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.uboss-approval-title {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.uboss-approval-meta {
+  color: var(--uboss-text-3);
+  font-size: 12.5px;
+}
+
+.uboss-approval-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.uboss-approval-note {
+  font-size: var(--uboss-font-size-xs);
+  color: var(--uboss-text-3);
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* ============================================================
+   CreditMeter — Estimate / Reserve / Execute / Settle
+   ============================================================ */
+.uboss-credit {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.uboss-credit-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.uboss-credit-value {
+  font-size: 20px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.uboss-credit-of {
+  color: var(--uboss-text-3);
+  font-size: 12.5px;
+}
+
+.uboss-credit-track {
+  height: 10px;
+  border-radius: var(--uboss-radius-pill);
+  background: var(--uboss-bg-2);
+  display: flex;
+  overflow: hidden;
+}
+
+.uboss-credit-seg {
+  height: 100%;
+}
+
+.uboss-credit-seg--settled {
+  background: var(--uboss-success);
+}
+
+.uboss-credit-seg--executing {
+  background: var(--uboss-blue);
+}
+
+.uboss-credit-seg--reserved {
+  background: var(--uboss-cyan);
+}
+
+.uboss-credit-seg--estimated {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--uboss-border),
+    var(--uboss-border) 4px,
+    var(--uboss-bg-2) 4px,
+    var(--uboss-bg-2) 8px
+  );
+}
+
+.uboss-credit-legend {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: var(--uboss-font-size-xs);
+  color: var(--uboss-text-2);
+}
+
+.uboss-credit-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.uboss-credit-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: none;
+}
+
+.uboss-credit--over .uboss-credit-value {
+  color: var(--uboss-danger);
+}
+
+/* ============================================================
+   SecurityMetric
+   ============================================================ */
+.uboss-secmetric {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-card);
+  background: var(--uboss-surface);
+}
+
+.uboss-secmetric-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.uboss-secmetric--ok .uboss-secmetric-icon {
+  background: var(--uboss-success-050);
+  color: var(--uboss-success);
+}
+
+.uboss-secmetric--attention .uboss-secmetric-icon {
+  background: var(--uboss-warning-050);
+  color: var(--uboss-warning);
+}
+
+.uboss-secmetric--critical .uboss-secmetric-icon {
+  background: var(--uboss-danger-050);
+  color: var(--uboss-danger);
+}
+
+.uboss-secmetric-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.uboss-secmetric-label {
+  font-size: 12px;
+  color: var(--uboss-text-3);
+}
+
+.uboss-secmetric-value {
+  font-size: 18px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.uboss-secmetric-detail {
+  font-size: var(--uboss-font-size-xs);
+  color: var(--uboss-text-2);
+}
+
+/* ============================================================
+   Overlays: Modal, Drawer, ConfirmDialog
+   ============================================================ */
+.uboss-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(12, 35, 55, 0.46);
+  backdrop-filter: blur(2px);
+  display: flex;
+  z-index: 50;
+  animation: uboss-fade 0.15s;
+}
+
+@keyframes uboss-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.uboss-modal {
+  margin: auto;
+  background: #fff;
+  border-radius: var(--uboss-radius-panel);
+  box-shadow: var(--uboss-shadow-3);
+  width: min(560px, 92vw);
+  max-height: 88vh;
+  overflow: auto;
+  animation: uboss-pop 0.16s;
+}
+
+.uboss-modal--wide {
+  width: min(720px, 94vw);
+}
+
+@keyframes uboss-pop {
+  from {
+    transform: translateY(8px) scale(0.99);
+    opacity: 0.6;
+  }
+}
+
+.uboss-drawer {
+  margin-left: auto;
+  background: #fff;
+  height: 100vh;
+  width: min(680px, 94vw);
+  box-shadow: var(--uboss-shadow-3);
+  overflow: auto;
+  animation: uboss-slide 0.2s;
+  display: flex;
+  flex-direction: column;
+}
+
+@keyframes uboss-slide {
+  from {
+    transform: translateX(24px);
+    opacity: 0.7;
+  }
+}
+
+.uboss-overlay-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--uboss-border-2);
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 2;
+}
+
+.uboss-overlay-head h3 {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.uboss-overlay-close {
+  margin-left: auto;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--uboss-radius-input);
+  border: 1px solid var(--uboss-border);
+  background: #fff;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  color: var(--uboss-text-2);
+  flex: none;
+}
+
+.uboss-overlay-body {
+  padding: 22px;
+  flex: 1;
+}
+
+.uboss-overlay-foot {
+  padding: 16px 22px;
+  border-top: 1px solid var(--uboss-border-2);
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  position: sticky;
+  bottom: 0;
+  background: #fff;
+  flex-wrap: wrap;
+}
+
+/* ============================================================
+   States: EmptyState, ErrorState, Skeleton, banners
+   ============================================================ */
+.uboss-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 56px 24px;
+  gap: 8px;
+}
+
+.uboss-state-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 6px;
+  background: var(--uboss-bg-2);
+  color: var(--uboss-text-2);
+}
+
+.uboss-state-icon--danger {
+  background: var(--uboss-danger-050);
+  color: var(--uboss-danger);
+}
+
+.uboss-state-icon--warn {
+  background: var(--uboss-warning-050);
+  color: var(--uboss-warning);
+}
+
+.uboss-state-icon--blue {
+  background: var(--uboss-blue-050);
+  color: var(--uboss-blue);
+}
+
+.uboss-state h3 {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.uboss-state p {
+  color: var(--uboss-text-2);
+  max-width: 420px;
+}
+
+.uboss-state-actions {
+  margin-top: 14px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.uboss-skeleton {
+  background: linear-gradient(90deg, var(--uboss-bg-2) 25%, #e9eef4 37%, var(--uboss-bg-2) 63%);
+  background-size: 400% 100%;
+  animation: uboss-shimmer 1.3s infinite;
+  border-radius: 7px;
+}
+
+@keyframes uboss-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+.uboss-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 16px;
+  border-radius: 11px;
+  font-size: var(--uboss-font-size-sm);
+  font-weight: 500;
+}
+
+.uboss-banner--warn {
+  background: var(--uboss-warning-050);
+  color: #7a3d08;
+  border: 1px solid #ead3ae;
+}
+
+.uboss-banner--danger {
+  background: var(--uboss-danger-050);
+  color: #7f1616;
+  border: 1px solid #ebc3c3;
+}
+
+.uboss-banner--info {
+  background: var(--uboss-blue-050);
+  color: #1b3e8f;
+  border: 1px solid #c6d8fa;
+}
+
+.uboss-banner--ok {
+  background: var(--uboss-success-050);
+  color: #155e2e;
+  border: 1px solid #bfe3cb;
+}
+
+.uboss-notice {
+  font-size: var(--uboss-font-size-xs);
+  color: var(--uboss-text-3);
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin-top: 6px;
+}
+
+/* ============================================================
+   Settings shell — left navigation + right detail panel
+   ============================================================ */
+.uboss-settings {
+  display: grid;
+  grid-template-columns: 250px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.uboss-settings-nav {
+  background: var(--uboss-surface);
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-card);
+  padding: 8px;
+  max-height: 640px;
+  overflow: auto;
+}
+
+.uboss-settings-nav-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--uboss-text-2);
+  padding: 9px 12px;
+  border-radius: 9px;
+  margin: 1px 0;
+  font-size: var(--uboss-font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.uboss-settings-nav-item:hover {
+  background: var(--uboss-bg);
+}
+
+.uboss-settings-nav-item[aria-current='page'] {
+  background: var(--uboss-blue);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* ============================================================
+   Login presentation
+   ============================================================ */
+.uboss-login {
+  display: grid;
+  grid-template-columns: 45% 55%;
+  min-height: 100vh;
+}
+
+.uboss-login-left {
+  background: linear-gradient(160deg, var(--uboss-navy-900), var(--uboss-navy) 55%, #14446b);
+  color: #fff;
+  padding: 46px 52px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Transcribed from the reference stylesheet, which keeps .glow1/.glow2 even though its
+   effective login no longer renders them. Retained so the stylesheet stays a faithful copy;
+   LoginPresentation deliberately emits no glow elements. */
+.uboss-login-glow-1,
+.uboss-login-glow-2 {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.uboss-login-glow-1 {
+  width: 340px;
+  height: 340px;
+  background: radial-gradient(circle, rgba(14, 165, 233, 0.28), transparent 68%);
+  top: -60px;
+  right: -80px;
+}
+
+.uboss-login-glow-2 {
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.25), transparent 68%);
+  bottom: -70px;
+  left: -60px;
+}
+
+.uboss-login-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 1;
+}
+
+.uboss-login-brand .uboss-side-logo {
+  width: 38px;
+  height: 38px;
+  font-size: 18px;
+}
+
+.uboss-login-brand b {
+  font-size: 19px;
+}
+
+.uboss-login-brand span {
+  font-size: 12px;
+  color: #9db6d0;
+  display: block;
+}
+
+.uboss-login-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #cfe0f5;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.6px;
+  padding: 8px 16px;
+  border-radius: 24px;
+  margin-top: 20px;
+  text-transform: uppercase;
+  align-self: flex-start;
+  z-index: 1;
+}
+
+.uboss-login-pill i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--uboss-cyan);
+  box-shadow: 0 0 10px var(--uboss-cyan);
+}
+
+.uboss-login-caps {
+  margin-top: auto;
+  margin-bottom: auto;
+  z-index: 1;
+  width: 100%;
+}
+
+.uboss-login-caps h2 {
+  font-size: 15px;
+  color: #a9c1da;
+  font-weight: 600;
+  margin-bottom: 20px;
+  letter-spacing: 0.3px;
+}
+
+.uboss-login-caps ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.uboss-cap {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 13px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.uboss-cap:last-child {
+  border-bottom: 0;
+}
+
+.uboss-cap-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.08);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.uboss-cap b {
+  font-size: 16px;
+  font-weight: 700;
+  display: block;
+}
+
+.uboss-cap small {
+  color: #9db6d0;
+  font-size: 12px;
+}
+
+.uboss-login-right {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+
+.uboss-login-card {
+  width: min(380px, 100%);
+}
+
+.uboss-login-card h1 {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.uboss-login-card-sub {
+  color: var(--uboss-text-2);
+  margin-bottom: 26px;
+}
+
+.uboss-or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--uboss-text-3);
+  font-size: 12px;
+  margin: 16px 0;
+}
+
+.uboss-or::before,
+.uboss-or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--uboss-border);
+}
+
+.uboss-link {
+  color: var(--uboss-blue);
+  font-weight: 600;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: inherit;
+  font-family: inherit;
+}
+
+.uboss-link:hover {
+  text-decoration: underline;
+}
+
+.uboss-auth-links {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 18px;
+  font-size: var(--uboss-font-size-sm);
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.uboss-auth-note {
+  margin-top: 22px;
+  padding: 12px 14px;
+  background: var(--uboss-bg);
+  border: 1px solid var(--uboss-border);
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--uboss-text-3);
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+}
+
+/* ============================================================
+   Shared small helpers used by shell composition
+   ============================================================ */
+.uboss-spread {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.uboss-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.uboss-muted {
+  color: var(--uboss-text-2);
+}
+
+.uboss-muted-3 {
+  color: var(--uboss-text-3);
+}
+
+.uboss-kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px dashed var(--uboss-border-2);
+  font-size: var(--uboss-font-size-sm);
+}
+
+.uboss-kv:last-child {
+  border-bottom: 0;
+}
+
+.uboss-kv-key {
+  color: var(--uboss-text-3);
+}
+
+.uboss-kv-value {
+  font-weight: 600;
+  text-align: right;
+}
+
+/* ============================================================
+   Responsive — desktop-first, collapses below 1080px
+   ============================================================ */
+@media (max-width: 1080px) {
+  .uboss-shell,
+  .uboss-shell--collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .uboss-sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: 60;
+    width: var(--uboss-sidebar-width);
+    transform: translateX(-100%);
+    transition: transform 0.2s;
+    box-shadow: var(--uboss-shadow-3);
+  }
+
+  .uboss-sidebar--open {
+    transform: none;
+  }
+
+  .uboss-menu-btn {
+    display: grid;
+  }
+
+  .uboss-row-2,
+  .uboss-settings,
+  .uboss-login {
+    grid-template-columns: 1fr;
+  }
+
+  .uboss-login-left {
+    display: none;
+  }
+
+  .uboss-content {
+    padding: 18px 16px 48px;
+  }
+}
+
+@media (max-width: 720px) {
+  .uboss-search {
+    display: none;
+  }
+
+  .uboss-donut-legend {
+    gap: 18px;
+  }
+}
+
+/* ============================================================
+   Login mind-map (the effective login presentation in the UI reference)
+   ============================================================ */
+/*
+ * Transcribed from the client's approved index.html. The reference defines its login TWICE and
+ * the LATER definition wins — that later one is this radial mind-map, not the simple list the
+ * earlier definition renders. Matching the reference exactly means matching the override.
+ */
+.uboss-login-left {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.uboss-mindmap {
+  position: relative;
+  flex: 1;
+  min-height: 430px;
+  margin-top: 20px;
+}
+
+.uboss-mm-rings {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.uboss-mm-rings span {
+  position: absolute;
+  left: 46%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(150, 185, 230, 0.09);
+  border-radius: 50%;
+}
+
+.uboss-mm-links {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+}
+
+.uboss-mm-grid {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  grid-template-rows: repeat(3, 1fr);
+  align-items: center;
+  gap: 16px 24px;
+}
+
+.uboss-mm-center {
+  grid-column: 2;
+  grid-row: 2;
+  width: 112px;
+  height: 98px;
+  border-radius: 20px;
+  background: linear-gradient(160deg, #0a1220, #0f1c2f);
+  border: 1px solid rgba(120, 160, 210, 0.28);
+  display: grid;
+  place-items: center;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+}
+
+.uboss-mm-center b {
+  font-size: 30px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -1px;
+}
+
+.uboss-mmc {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(11, 20, 34, 0.74);
+  border: 1px solid rgba(120, 160, 210, 0.18);
+  border-radius: 14px;
+  padding: 12px 15px;
+  backdrop-filter: blur(4px);
+}
+
+.uboss-mmc-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #8fd3f5;
+  flex: 0 0 34px;
+}
+
+.uboss-mmc b {
+  color: #fff;
+  font-size: 15px;
+  display: block;
+  line-height: 1.15;
+}
+
+.uboss-mmc small {
+  color: #9db4cf;
+  font-size: 11.5px;
+  display: block;
+  margin-top: 3px;
+}
+
+.uboss-mmc--left {
+  grid-column: 1;
+  text-align: right;
+  flex-direction: row-reverse;
+}
+
+.uboss-mmc--right {
+  grid-column: 3;
+  text-align: left;
+}
+
+.uboss-mm-foot {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.uboss-mm-foot-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #9db4cf;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.uboss-mm-foot-item svg {
+  color: var(--uboss-cyan);
+}
+
+/* Below the responsive breakpoint the whole left panel is hidden, so the mind-map goes with it. */
+
+/* ---------------------------------------------------------------------------
+   Prompt 6 — enterprise identity
+   Same tokens and density as the rest of the login card; nothing here invents
+   a new visual language.
+   --------------------------------------------------------------------------- */
+
+/* A one-time secret or recovery code: monospace, selectable, obviously a value
+   to be copied rather than read. */
+.uboss-totp-secret {
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px;
+  letter-spacing: 2px;
+  word-break: break-all;
+  padding: 12px 14px;
+  margin: 10px 0 4px;
+  background: var(--uboss-bg-2);
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-input);
+  user-select: all;
+}
+
+.uboss-recovery-codes {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 16px;
+  background: var(--uboss-bg-2);
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-input);
+}
+
+.uboss-recovery-codes li {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  user-select: all;
+}
+
+@media (max-width: 520px) {
+  .uboss-recovery-codes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* A link that performs an action rather than navigating. Styled as a link because
+   that is what it is to the reader, but it must be a button for the keyboard and
+   for assistive technology. */
+.uboss-link-button {
+  font: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* The Login & Security factor list. */
+.uboss-factor-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--uboss-border);
+}
+
+.uboss-factor-row:last-child {
+  border-bottom: 0;
+}
+
+.uboss-factor-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.uboss-factor-row-main b {
+  font-size: 13.5px;
+}
+
+.uboss-factor-row-main small {
+  font-size: 11.5px;
+  color: var(--uboss-text-3);
+}
+
+.uboss-factor-row-actions {
+  margin-left: auto;
+}
+
+/* ---------------------------------------------------------------------------
+   Prompt 7 — authorization
+   Two small pieces the internal permission test page needed. Both are generic
+   enough to belong in the design system rather than in that one page.
+   --------------------------------------------------------------------------- */
+
+/* A checkbox with a wrapping label, so the whole line is the hit target and the
+   explanation sits beside the control rather than under it. */
+.uboss-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 14px 0 4px;
+  font-size: 13px;
+  color: var(--uboss-text-2);
+  cursor: pointer;
+}
+
+.uboss-checkbox input[type='checkbox'] {
+  margin: 2px 0 0;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  accent-color: var(--uboss-blue);
+  cursor: pointer;
+}
+
+.uboss-checkbox input[type='checkbox']:focus-visible {
+  outline: var(--uboss-focus-outline);
+  outline-offset: var(--uboss-focus-offset);
+}
+
+/* Vertical rhythm between stacked cards on a diagnostic or detail page. Named
+   for what it does rather than for a screen, so it does not become a page-
+   specific class living in the shared stylesheet. */
+.uboss-mt-16 {
+  margin-top: 16px;
+}
+
+/* ==========================================================================
+   Prompt 12 — Organization Hierarchy
+   ==========================================================================
+   Three pieces the hierarchy screen needs, taken from the client's approved
+   `index.html` and renamed to the `uboss-` prefix this package uses. Every
+   value below is the reference's own — the gradients, the 120px glow, the
+   1fr/1fr strip, the segmented toggle's 3px padding and 9px radius. */
+
+/* --- Vision / Mission strip ------------------------------------------------
+   Reference: `.vm-strip`, `.vm`, `.vm.mission`, `.vm .lab`, `.vm .glow`.
+   Two panels above the tree, because the client's requirement is that the
+   hierarchy *displays* the active company Vision and Mission — the structure
+   and the purpose it serves are read together. */
+
+.uboss-vm-strip {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.uboss-vm {
+  background: linear-gradient(120deg, var(--uboss-navy), #14446b);
+  color: #fff;
+  border-radius: 14px;
+  padding: 18px 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+.uboss-vm--mission {
+  background: linear-gradient(120deg, #0e3550, #0a2a41);
+}
+
+.uboss-vm-label {
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #93b0cc;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.uboss-vm p {
+  font-size: 14px;
+  line-height: 1.5;
+  font-weight: 500;
+  margin: 0;
+}
+
+/* The unset state. The reference always has copy here; a company that has not
+   written one yet must not render an empty panel that reads as a broken one. */
+.uboss-vm--empty p {
+  color: #93b0cc;
+  font-style: italic;
+  font-weight: 500;
+}
+
+.uboss-vm-glow {
+  position: absolute;
+  right: -30px;
+  top: -30px;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(14, 165, 233, 0.4), transparent 70%);
+  pointer-events: none;
+}
+
+@media (max-width: 900px) {
+  .uboss-vm-strip {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --- Segmented control ----------------------------------------------------
+   Reference: `.seg`. Used for Tree view / List view. Distinct from
+   `.uboss-tabs`, which is the reference's `.pill-tabs` on a profile — two
+   different looks in the approved UI, so two components here. */
+
+.uboss-seg {
+  display: inline-flex;
+  background: var(--uboss-bg);
+  border: 1px solid var(--uboss-border);
+  border-radius: 9px;
+  padding: 3px;
+}
+
+.uboss-seg button {
+  border: 0;
+  background: transparent;
+  padding: 6px 12px;
+  border-radius: 7px;
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--uboss-text-2);
+  cursor: pointer;
+}
+
+.uboss-seg button.is-on {
+  background: var(--uboss-surface);
+  color: var(--uboss-navy);
+  box-shadow: var(--uboss-shadow-1);
+}
+
+.uboss-seg button:focus-visible {
+  outline: var(--uboss-focus-outline);
+  outline-offset: var(--uboss-focus-offset);
+}
+
+/* --- Org chart ------------------------------------------------------------
+   Reference: `.orgwrap.svgorg`, `.onode`, `.oact`, `.cardrect`. The chart is
+   an SVG rather than nested divs because the reference draws elbow connectors
+   between nodes, and CSS cannot draw a line from one box to another. */
+
+.uboss-org {
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--uboss-border);
+  border-radius: 14px;
+  background:
+    radial-gradient(720px 300px at 28% -12%, rgba(37, 99, 235, 0.05), transparent 60%),
+    radial-gradient(520px 260px at 100% -8%, rgba(11, 166, 228, 0.05), transparent 55%), #fff;
+}
+
+.uboss-org svg {
+  display: block;
+}
+
+.uboss-org-node .uboss-org-card,
+.uboss-org-node text {
+  transition: 0.15s;
+}
+
+.uboss-org-node:hover .uboss-org-card {
+  stroke: var(--uboss-blue);
+  stroke-width: 1.6;
+}
+
+.uboss-org-node:focus-visible .uboss-org-card {
+  stroke: var(--uboss-blue);
+  stroke-width: 2;
+}
+
+.uboss-org-action circle {
+  transition: 0.14s;
+}
+
+.uboss-org-action:hover circle {
+  filter: brightness(0.97);
+}
+
+.uboss-org-action--add:hover circle {
+  fill: #dbe7ff;
+}
+
+.uboss-org-action--edit:hover circle {
+  fill: #e7edf5;
+}
+
+/* The empty tree. A company with departments and nobody recorded is a real
+   state on day one, and it must not look like a failed load. */
+.uboss-org-empty {
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--uboss-text-3);
+  font-size: 13px;
+}
+
+/* ============================================================
+   Badge progression + performance panels (Prompt 12B)
+   ============================================================ */
+
+/* The reference's horizontal ladder: five medals, each over a bar filled up to the level held. */
+.uboss-ladder {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.uboss-ladder-rung {
+  flex: 1;
+  text-align: center;
+  /* Unattained rungs are dimmed rather than hidden: seeing what is ahead is the point of a
+     ladder, and hiding it would make the strip change shape as somebody progresses. */
+  opacity: 0.45;
+}
+
+.uboss-ladder-rung--attained {
+  opacity: 1;
+}
+
+.uboss-ladder-bar {
+  display: block;
+  height: 4px;
+  border-radius: 3px;
+  margin-top: 8px;
+  background: var(--uboss-border);
+}
+
+.uboss-ladder-rung--attained .uboss-ladder-bar {
+  background: var(--uboss-success);
+}
+
+.uboss-ladder-threshold {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--uboss-text-3);
+}
+
+/* The score panel: one large figure, its medal, then the read-out rows. */
+.uboss-score {
+  text-align: center;
+  padding: 8px 0 16px;
+}
+
+.uboss-score-figure {
+  font-size: 44px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  line-height: 1.1;
+}
+
+/* A signed points figure in the event timeline. Its sign carries the meaning, so the word is
+   kept alongside the colour for anyone who cannot see it. */
+.uboss-points--positive {
+  color: var(--uboss-success);
+  font-weight: 700;
+}
+
+.uboss-points--negative {
+  color: var(--uboss-danger);
+  font-weight: 700;
+}
+
+.uboss-points--neutral {
+  color: var(--uboss-text-3);
+  font-weight: 700;
+}
+
+/* An outcome an approved blocker cancelled. Struck through, not removed — it happened. */
+.uboss-event--neutralised .uboss-points--negative {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+/* ============================================================
+   Notification bell count + center (Prompt 15)
+   ============================================================ */
+
+/* The unread count, as a badge on the bell — never concatenated into the label. */
+.uboss-icon-btn-count {
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--uboss-blue);
+  color: #fff;
+  border: 1.5px solid #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+}
+
+/* Something needs acknowledging, not just reading. A different colour because it is a
+   different obligation. */
+.uboss-icon-btn-count--urgent {
+  background: var(--uboss-danger);
+}
+
+/* One row in the Notification Center. A whole-row button, because the deep link is the point of
+   the notification: "something needs you" with no route to it is worse than silence. */
+.uboss-notice-row {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  padding: 13px 14px;
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius);
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+
+.uboss-notice-row:hover {
+  border-color: var(--uboss-blue);
+}
+
+.uboss-notice-row:focus-visible {
+  outline: 2px solid var(--uboss-blue);
+  outline-offset: 2px;
+}
+
+/* Unread carries a left rule rather than a background wash: a coloured row for every unread item
+   makes a busy list unreadable, and the marker still survives greyscale. */
+.uboss-notice-row--unread {
+  border-left: 3px solid var(--uboss-blue);
+}
+
+.uboss-notice-row--urgent {
+  border-left: 3px solid var(--uboss-danger);
+}
+
+.uboss-notice-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.uboss-notice-row-title {
+  font-weight: 600;
+  font-size: 13.5px;
+  margin-bottom: 3px;
+}
+
+.uboss-notice-row-body {
+  color: var(--uboss-text-2);
+  font-size: 12.5px;
+  /* Wrapping rather than truncating: a notification body is already one or two sentences, and a
+     clipped one reads as broken. */
+  white-space: pre-line;
+}
+
+.uboss-notice-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--uboss-text-3);
+}
+
+/* ---------------------------------------------------------------------------
+   Form 2 workflow grid (Prompt 19)
+   ---------------------------------------------------------------------------
+   Ported from the approved reference's `.wfg` block, token for token. The three
+   sticky behaviours are the whole point of the component and are easy to lose:
+   a grouped header row that stays put, a second header row that sticks *below*
+   it, and a Step column that stays put horizontally. A fifteen-column grid
+   without them is unreadable, which is why they are here rather than left to a
+   page to reinvent. */
+
+.uboss-wfgrid-wrap {
+  overflow: auto;
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-card);
+  max-height: 560px;
+  background: var(--uboss-surface);
+}
+
+/* `min-width` is what forces the horizontal scroll rather than crushing fifteen
+   columns into the viewport. Removing it would "fix" the scrollbar and make the
+   grid illegible. */
+table.uboss-wfg {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+  min-width: 1680px;
+}
+
+.uboss-wfg th,
+.uboss-wfg td {
+  border-right: 1px solid var(--uboss-border-2);
+  border-bottom: 1px solid var(--uboss-border-2);
+  padding: 7px 9px;
+  vertical-align: top;
+}
+
+.uboss-wfg thead th {
+  position: sticky;
+  top: 0;
+  background: var(--uboss-bg);
+  z-index: 3;
+  font-weight: 700;
+  color: var(--uboss-text-2);
+  font-size: 11px;
+  text-align: left;
+}
+
+/* The WHO / WHEN / WHAT / INPUT / WHERE / OUTPUT banner. */
+.uboss-wfg thead tr.uboss-wfg-group th {
+  top: 0;
+  background: var(--uboss-navy);
+  color: #fff;
+  text-align: center;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  font-size: 10.5px;
+}
+
+/* 30px is the group row's height: the sub-header sticks directly beneath it. */
+.uboss-wfg thead tr.uboss-wfg-sub th {
+  top: 30px;
+}
+
+.uboss-wfg td.uboss-wfg-stick,
+.uboss-wfg th.uboss-wfg-stick {
+  position: sticky;
+  left: 0;
+  background: var(--uboss-surface);
+  z-index: 2;
+  box-shadow: 2px 0 0 var(--uboss-border-2);
+}
+
+.uboss-wfg thead th.uboss-wfg-stick {
+  z-index: 4;
+  background: var(--uboss-navy);
+}
+
+.uboss-wfg td.uboss-wfg-stepn {
+  width: 42px;
+  text-align: center;
+  font-weight: 700;
+  color: var(--uboss-text-3);
+}
+
+.uboss-wfg .uboss-wfg-cell {
+  min-width: 120px;
+}
+
+.uboss-wfg .uboss-wfg-cell--wide {
+  min-width: 180px;
+}
+
+.uboss-wfg .uboss-wfg-editable {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 5px 6px;
+  min-height: 26px;
+  background: var(--uboss-bg);
+  cursor: text;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  resize: none;
+  overflow: hidden;
+}
+
+.uboss-wfg .uboss-wfg-editable:focus {
+  outline: none;
+  border-color: var(--uboss-blue);
+  background: var(--uboss-surface);
+  box-shadow: 0 0 0 2px var(--uboss-blue-100);
+}
+
+.uboss-wfg select.uboss-wfg-editable {
+  cursor: pointer;
+  height: 30px;
+  min-height: 30px;
+}
+
+.uboss-wfg .uboss-wfg-rowops {
+  display: flex;
+  gap: 2px;
+}
+
+.uboss-wfg .uboss-wfg-rowops button {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--uboss-border);
+  background: var(--uboss-surface);
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--uboss-text-3);
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.uboss-wfg .uboss-wfg-rowops button:hover {
+  background: var(--uboss-bg);
+  color: var(--uboss-navy);
+}
+
+.uboss-wfg .uboss-wfg-rowops button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* The grid toolbar: caption on the left, row controls on the right. */
+.uboss-wfg-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--uboss-space-2);
+  margin: 6px 0 10px;
+}
+
+/* The reference's smaller footnote, used for the "no source field is dropped"
+   and "row count is not fixed" statements under the grid. */
+.uboss-notice-min {
+  font-size: 11.5px;
+  color: var(--uboss-text-3);
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin-top: 6px;
+}
+
+/* The Form 2 routing card — the reference tints it so a platform control is never mistaken for a
+   source field. The tint *is* the separation, so it is a class rather than an inline style. */
+.uboss-card--routing {
+  background: var(--uboss-blue-050);
+  border-color: #c6d8fa;
+}
+
+/* The reference's `hr.sep` — a light rule inside a card, used between a card's sections. */
+.uboss-sep {
+  border: 0;
+  border-top: 1px solid var(--uboss-border-2);
+  margin: 16px 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Workflow nodes (Prompt 21)
+   ---------------------------------------------------------------------------
+   Ported from the reference's `.wf-*` block. **The shapes are a locked client
+   rule, not styling**: a Human node is a rectangle, an AI node is a diamond,
+   and the Goal is visually distinct. `NODE_SHAPE_BY_KIND` in `@uboss/types` is
+   the authority and an invariant test asserts it — these classes are how that
+   answer is drawn, and a restyle must not change which shape a kind gets. */
+
+/* The Goal: a pill in the navy gradient, unlike anything else on the canvas. */
+.uboss-wf-goal {
+  background: linear-gradient(135deg, var(--uboss-navy), var(--uboss-navy-700));
+  color: #fff;
+  border-radius: 30px;
+  padding: 12px 22px;
+  font-weight: 700;
+  box-shadow: var(--uboss-shadow-2);
+  text-align: center;
+}
+
+/* Human work: a rectangle. */
+.uboss-wf-node {
+  background: var(--uboss-surface);
+  border: 1.5px solid var(--uboss-border);
+  border-radius: 10px;
+  box-shadow: var(--uboss-shadow-1);
+  width: 186px;
+}
+
+.uboss-wf-node-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--uboss-border-2);
+  font-weight: 700;
+  font-size: 12.5px;
+}
+
+.uboss-wf-node-body {
+  padding: 9px 11px;
+  font-size: 11.5px;
+  color: var(--uboss-text-2);
+}
+
+.uboss-wf-node--human {
+  border-color: #c9d6e5;
+}
+
+.uboss-wf-node--human .uboss-wf-node-head {
+  color: var(--uboss-navy);
+}
+
+.uboss-wf-node-tag {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--uboss-text-3);
+  border: 1px solid var(--uboss-border);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+
+/* AI work: a diamond. A rotated square, so the label stays upright inside it. */
+.uboss-wf-ai {
+  position: relative;
+  width: 150px;
+  height: 150px;
+}
+
+.uboss-wf-ai-diamond {
+  position: absolute;
+  inset: 14px;
+  background: var(--uboss-cyan-050);
+  border: 1.5px solid var(--uboss-cyan);
+  transform: rotate(45deg);
+  border-radius: 14px;
+}
+
+.uboss-wf-ai-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 14px;
+}
+
+.uboss-wf-ai-label b {
+  font-size: 12.5px;
+  color: var(--uboss-cyan-ink);
+}
+
+.uboss-wf-ai-label small {
+  font-size: 10.5px;
+  color: var(--uboss-text-3);
+  margin-top: 3px;
+}
+
+/* An approval gate: a person deciding. */
+.uboss-wf-approve {
+  background: var(--uboss-warning-050);
+  border: 1.5px solid var(--uboss-warning-border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  width: 170px;
+  text-align: center;
+  font-weight: 700;
+  color: var(--uboss-warning);
+  font-size: 12.5px;
+}
+
+/* A condition: a dashed diamond, so a branch never reads as an approval. */
+.uboss-wf-condition {
+  width: 120px;
+  height: 120px;
+  position: relative;
+}
+
+.uboss-wf-condition-diamond {
+  position: absolute;
+  inset: 10px;
+  background: var(--uboss-purple-050);
+  border: 1.5px dashed var(--uboss-purple);
+  transform: rotate(45deg);
+  border-radius: 12px;
+}
+
+.uboss-wf-condition-label {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--uboss-purple);
+  font-weight: 700;
+  font-size: 11.5px;
+}
+
+/* The legend. Required, not decorative: a diagram of shapes needs a key. */
+.uboss-legend-nodes {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--uboss-text-2);
+}
+
+.uboss-legend-nodes .uboss-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.uboss-swatch-rect {
+  width: 16px;
+  height: 12px;
+  border: 1.5px solid #c9d6e5;
+  background: var(--uboss-surface);
+  border-radius: 3px;
+}
+
+.uboss-swatch-diamond {
+  width: 14px;
+  height: 14px;
+  background: var(--uboss-cyan-050);
+  border: 1.5px solid var(--uboss-cyan);
+  transform: rotate(45deg);
+  border-radius: 3px;
+}
+
+.uboss-swatch-goal {
+  width: 16px;
+  height: 12px;
+  background: var(--uboss-navy);
+  border-radius: 8px;
+}
+
+.uboss-swatch-gate {
+  width: 14px;
+  height: 14px;
+  background: var(--uboss-warning-050);
+  border: 1.5px solid var(--uboss-warning-border);
+  border-radius: 3px;
+}
+
+/* The connector between stacked nodes. */
+.uboss-wf-connector {
+  width: 2px;
+  height: 26px;
+  background: var(--uboss-border);
+  margin: 0 auto;
+}
+
+/*
+ * The workflow canvas. The dotted grid is the reference's, and it earns its place: it makes the
+ * flow read as a diagram surface rather than as another list inside another card.
+ */
+.uboss-canvas {
+  position: relative;
+  background: radial-gradient(circle at 1px 1px, var(--uboss-border) 1px, transparent 0);
+  background-size: 22px 22px;
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-card);
+  min-height: 520px;
+  overflow: auto;
+  padding: 8px;
+}
+
+/*
+ * A filter chip. The reference's `.chip`, plus the pressed state a real filter bar needs — the
+ * prototype's chips were static, so it never had to show which one was active.
+ */
+.uboss-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: var(--uboss-bg);
+  border: 1px solid var(--uboss-border);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--uboss-text-2);
+  cursor: pointer;
+  transition: 0.16s;
+}
+
+.uboss-chip:hover {
+  border-color: var(--uboss-navy-700);
+  color: var(--uboss-navy);
+}
+
+/* Driven by `aria-pressed`, so the accessible state and the visible state cannot disagree. */
+.uboss-chip[aria-pressed='true'] {
+  background: var(--uboss-navy);
+  border-color: var(--uboss-navy);
+  color: #fff;
+}
+
+/* =========================================================================
+ * Prompt 40A (CR-03)
+ *
+ * Five surfaces added by the amendment: the Access & Permissions step, the employee photo, the Job
+ * Method import/export panel, the operator's Engine Agents, and Workspace Chat.
+ *
+ * Tokens only — no new colours, no per-page overrides. Every rule here is a layout rule; anything
+ * that decides *meaning* (a status, a severity) goes through StatusBadge and Banner, which already
+ * own that vocabulary.
+ * ========================================================================= */
+
+/* ---- Two gaps this amendment inherited rather than introduced -----------
+ *
+ * `.uboss-input` and `.uboss-actions` were used by eight screens with no rule behind them, so every
+ * text field fell back to the browser default and every row of actions ran together. Found while
+ * visually verifying Users & Access, which is one of the screens CR-03 asks for.
+ */
+.uboss-input {
+  width: 100%;
+  padding: 8px 11px;
+  font: inherit;
+  color: var(--uboss-text);
+  background: var(--uboss-surface);
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-input);
+}
+
+.uboss-input:focus-visible {
+  outline: var(--uboss-focus-outline);
+  outline-offset: var(--uboss-focus-offset);
+  border-color: var(--uboss-blue);
+}
+
+.uboss-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--uboss-space-2);
+  align-items: center;
+}
+
+/* ---- Access & Permissions step (§1) ---- */
+
+.access-step-title {
+  margin: 0 0 var(--uboss-space-1);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.access-step-subject {
+  margin: 0 0 var(--uboss-space-3);
+  font-size: var(--uboss-font-size-sm);
+  color: var(--uboss-text-2);
+}
+
+.access-step-default,
+.access-step-stance {
+  margin: var(--uboss-space-3) 0 0;
+  font-size: var(--uboss-font-size-xs);
+  color: var(--uboss-text-3);
+  line-height: 1.5;
+}
+
+.access-tier {
+  margin-top: var(--uboss-space-4);
+}
+
+.access-tier-title {
+  margin: 0;
+  font-size: var(--uboss-font-size-sm);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--uboss-text-2);
+}
+
+.access-tier-description {
+  margin: 2px 0 var(--uboss-space-2);
+  font-size: var(--uboss-font-size-xs);
+  color: var(--uboss-text-3);
+}
+
+.access-capabilities {
+  display: grid;
+  gap: var(--uboss-space-2);
+  /* A list of capabilities, not a bulleted list of them. */
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.access-capability {
+  padding: var(--uboss-space-3);
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-input);
+  background: var(--uboss-bg-2);
+}
+
+/* A capability that cannot be granted is shown and explained, never hidden — so it needs to read
+   as unavailable rather than as missing. */
+.access-capability:has(input:disabled) {
+  opacity: 0.72;
+}
+
+.access-capability-label {
+  display: flex;
+  gap: var(--uboss-space-2);
+  align-items: flex-start;
+  cursor: pointer;
+}
+
+.access-capability-label:has(input:disabled) {
+  cursor: not-allowed;
+}
+
+.access-capability-name {
+  font-weight: 600;
+}
+
+.access-capability-help {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--uboss-font-size-xs);
+  color: var(--uboss-text-2);
+}
+
+.access-capability-why {
+  margin: var(--uboss-space-2) 0 0;
+  font-size: var(--uboss-font-size-xs);
+  color: var(--uboss-warning);
+}
+
+/* "What this allows" is a quiet control, not a form button — it had the browser's grey box
+   around it, which read as a disabled input sitting under every capability. */
+.access-capability-disclose {
+  margin-top: var(--uboss-space-2);
+  padding: 0;
+  font: inherit;
+  font-size: var(--uboss-font-size-xs);
+  color: var(--uboss-blue-600);
+  background: none;
+  border: 0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.access-capability-disclose:focus-visible {
+  outline: var(--uboss-focus-outline);
+  outline-offset: var(--uboss-focus-offset);
+}
+
+.access-capability-grants {
+  margin: var(--uboss-space-1) 0 0;
+  padding-left: var(--uboss-space-4);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ---- Employee photo (§3) ---- */
+
+.employee-photo {
+  display: inline-flex;
+  flex-direction: column;
+  gap: var(--uboss-space-2);
+  align-items: center;
+}
+
+.employee-photo-image,
+.employee-photo-initials {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--uboss-navy-700);
+  color: #fff;
+  font-weight: 700;
+  /* No letter-spacing: two initials in a circle centre better without it. */
+  object-fit: cover;
+  flex: none;
+}
+
+.employee-photo-sm .employee-photo-image,
+.employee-photo-sm .employee-photo-initials {
+  width: 30px;
+  height: 30px;
+  font-size: 11.5px;
+}
+
+.employee-photo-md .employee-photo-image,
+.employee-photo-md .employee-photo-initials {
+  width: 52px;
+  height: 52px;
+  font-size: 17px;
+}
+
+.employee-photo-lg .employee-photo-image,
+.employee-photo-lg .employee-photo-initials {
+  width: 84px;
+  height: 84px;
+  font-size: 27px;
+}
+
+.employee-photo-actions {
+  display: flex;
+  gap: var(--uboss-space-1);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* The real file input. Hidden from sight but never from assistive technology or from the click
+   the visible button forwards to it. */
+.employee-photo-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.employee-photo-note {
+  margin: 0;
+  font-size: var(--uboss-font-size-xs);
+  color: var(--uboss-text-3);
+  text-align: center;
+}
+
+/* A photo beside a name, in the Hierarchy and on the profile. */
+.employee-photo-row {
+  display: flex;
+  gap: var(--uboss-space-3);
+  align-items: center;
+}
+
+/* ---- Job Method import / export (§4, §5) ---- */
+
+.jm-title,
+.jm-review-title {
+  margin: 0 0 var(--uboss-space-2);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.jm-actions,
+.jm-review-actions {
+  display: flex;
+  gap: var(--uboss-space-2);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.jm-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.jm-note,
+.jm-stance {
+  margin: var(--uboss-space-2) 0 0;
+  font-size: var(--uboss-font-size-xs);
+  color: var(--uboss-text-3);
+  line-height: 1.5;
+}
+
+.jm-review {
+  margin-top: var(--uboss-space-4);
+  padding: var(--uboss-space-4);
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-panel);
+  background: var(--uboss-bg-2);
+}
+
+.jm-matched {
+  display: grid;
+  gap: var(--uboss-space-1);
+  margin: 0 0 var(--uboss-space-3);
+}
+
+.jm-matched > div {
+  display: flex;
+  gap: var(--uboss-space-2);
+}
+
+.jm-matched dt {
+  min-width: 150px;
+  color: var(--uboss-text-3);
+  font-size: var(--uboss-font-size-sm);
+}
+
+.jm-matched dd {
+  margin: 0;
+  font-size: var(--uboss-font-size-sm);
+  font-weight: 600;
+}
+
+/* One group per problem kind: a heading, then its rows. The inner list kept the browser's
+   1em margins and 40px indent, which put a screenful between Missing and Invalid. */
+.jm-problems {
+  margin: 0 0 var(--uboss-space-3);
+}
+
+.jm-problems h5 {
+  display: flex;
+  gap: var(--uboss-space-2);
+  align-items: center;
+  margin: 0 0 var(--uboss-space-1);
+  font-size: var(--uboss-font-size-sm);
+}
+
+.jm-problems ul {
+  display: grid;
+  gap: var(--uboss-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.jm-problems li {
+  display: flex;
+  gap: var(--uboss-space-2);
+  align-items: baseline;
+  font-size: var(--uboss-font-size-sm);
+}
+
+.jm-suggestion {
+  margin: 0 0 var(--uboss-space-3);
+  padding: var(--uboss-space-3);
+  border-left: 3px solid var(--uboss-blue);
+  background: var(--uboss-blue-050);
+  font-size: var(--uboss-font-size-sm);
+}
+
+/* ---- The operator's Engine Agents (§6) ---- */
+
+.operator-section {
+  /* It sits under a Banner on the Engine Agents screen and was touching it. */
+  margin: var(--uboss-space-5) 0;
+}
+
+/* Stacked cards inside the section need to read as separate agents. */
+.operator-section > [data-testid='my-engine-agents'] > * + * {
+  margin-top: var(--uboss-space-3);
+}
+
+.operator-section-title {
+  margin: 0 0 var(--uboss-space-2);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.operator-agent-head {
+  display: flex;
+  gap: var(--uboss-space-3);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.operator-agent-name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.operator-agent-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--uboss-space-3);
+  margin: var(--uboss-space-3) 0;
+}
+
+.operator-agent-facts dt {
+  font-size: var(--uboss-font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--uboss-text-3);
+}
+
+.operator-agent-facts dd {
+  margin: 2px 0 0;
+  font-size: var(--uboss-font-size-sm);
+}
+
+.operator-agent-actions {
+  display: flex;
+  gap: var(--uboss-space-2);
+  flex-wrap: wrap;
+}
+
+/* The server's sentence saying why Run is unavailable. Warning-coloured, not danger: an agent
+   waiting on a connection is not a failure, and colouring it red would send somebody to support. */
+.operator-agent-blocked {
+  margin: var(--uboss-space-3) 0 0;
+  font-size: var(--uboss-font-size-sm);
+  color: var(--uboss-warning);
+}
+
+.operator-panel {
+  margin-top: var(--uboss-space-3);
+  padding: var(--uboss-space-3);
+  border-top: 1px solid var(--uboss-border);
+}
+
+.operator-panel h4 {
+  margin: 0 0 var(--uboss-space-2);
+  font-size: var(--uboss-font-size-sm);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--uboss-text-2);
+}
+
+.operator-panel-empty,
+.operator-panel-hint {
+  margin: 0;
+  font-size: var(--uboss-font-size-sm);
+  color: var(--uboss-text-3);
+}
+
+.operator-panel-failure {
+  margin: 0;
+  font-size: var(--uboss-font-size-sm);
+  color: var(--uboss-danger);
+}
+
+/* Produced work. Pre-wrap because an agent's output has its own line breaks and flattening them
+   would change what it says. */
+.operator-panel-result {
+  margin: 0;
+  font-size: var(--uboss-font-size-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.operator-run-list {
+  display: grid;
+  gap: var(--uboss-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.operator-run-list li {
+  display: flex;
+  gap: var(--uboss-space-2);
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: var(--uboss-font-size-sm);
+}
+
+.operator-run-when {
+  font-weight: 600;
+}
+
+.operator-run-trigger,
+.operator-run-why {
+  color: var(--uboss-text-3);
+}
+
+.operator-field {
+  display: block;
+  margin-bottom: var(--uboss-space-3);
+}
+
+.operator-field > span {
+  display: block;
+  margin-bottom: 4px;
+  font-size: var(--uboss-font-size-sm);
+  font-weight: 600;
+}
+
+.operator-field select,
+.operator-field textarea {
+  width: 100%;
+  padding: 8px 11px;
+  font: inherit;
+  color: var(--uboss-text);
+  background: var(--uboss-surface);
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-input);
+}
+
+.operator-field small {
+  display: block;
+  margin-top: 4px;
+  font-size: var(--uboss-font-size-xs);
+  color: var(--uboss-text-3);
+}
+
+.operator-stance {
+  margin: var(--uboss-space-3) 0 0;
+  font-size: var(--uboss-font-size-xs);
+  color: var(--uboss-text-3);
+  line-height: 1.5;
+}
+
+/* ---- Workspace Chat (§7) ---- */
+
+.chat-layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: var(--uboss-space-4);
+  align-items: start;
+}
+
+/* One column below the sidebar's breakpoint: two panes at 900px leave neither readable. */
+@media (max-width: 900px) {
+  .chat-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.chat-search {
+  margin-bottom: var(--uboss-space-3);
+}
+
+.chat-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-item {
+  display: block;
+  width: 100%;
+  padding: var(--uboss-space-2) var(--uboss-space-3);
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  border-radius: var(--uboss-radius-input);
+  cursor: pointer;
+}
+
+.chat-item:hover {
+  background: var(--uboss-bg-2);
+}
+
+.chat-item:focus-visible {
+  outline: var(--uboss-focus-outline);
+  outline-offset: var(--uboss-focus-offset);
+}
+
+.chat-item-open {
+  background: var(--uboss-blue-050);
+}
+
+.chat-item-name {
+  display: flex;
+  gap: var(--uboss-space-2);
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+}
+
+.chat-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.chat-subhead {
+  margin: 0 0 var(--uboss-space-3);
+  font-size: var(--uboss-font-size-xs);
+  color: var(--uboss-text-3);
+}
+
+.chat-messages {
+  display: grid;
+  gap: var(--uboss-space-3);
+  max-height: 52vh;
+  overflow-y: auto;
+  /* A list of messages, not a bulleted list of them. Found by opening the screen. */
+  margin: 0;
+  padding: 0 var(--uboss-space-2) 0 0;
+  list-style: none;
+}
+
+.chat-message {
+  padding: var(--uboss-space-3);
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-input);
+  background: var(--uboss-surface);
+}
+
+.chat-message-meta {
+  display: flex;
+  gap: var(--uboss-space-2);
+  align-items: baseline;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+  font-size: var(--uboss-font-size-xs);
+  color: var(--uboss-text-3);
+}
+
+.chat-body {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* A deleted message keeps its place in the conversation, so the shape of the exchange survives. */
+.chat-deleted {
+  margin: 0;
+  font-style: italic;
+  color: var(--uboss-text-3);
+}
+
+.chat-attachment {
+  display: inline-flex;
+  gap: var(--uboss-space-1);
+  align-items: center;
+  margin-top: var(--uboss-space-2);
+  font-size: var(--uboss-font-size-sm);
+}
+
+.chat-context {
+  display: grid;
+  gap: var(--uboss-space-1);
+  margin-top: var(--uboss-space-2);
+  padding-top: var(--uboss-space-2);
+  border-top: 1px dashed var(--uboss-border-2);
+}
+
+.chat-context-link,
+.chat-context-restricted {
+  /* Icon, then text, then any badge — each on its own axis rather than stacked on the words.
+     The icon was overlapping the title until these screens were actually opened. */
+  display: flex;
+  gap: var(--uboss-space-2);
+  align-items: center;
+  margin: 0;
+  font-size: var(--uboss-font-size-sm);
+}
+
+.chat-context-link {
+  font-weight: 600;
+}
+
+.chat-context-link svg,
+.chat-context-restricted svg {
+  flex: none;
+}
+
+/* The other half of a context preview: same size, no link, and it says why. Two people in one
+   conversation genuinely see different previews of the same reference. */
+.chat-context-restricted {
+  color: var(--uboss-text-3);
+}
+
+.chat-compose {
+  display: flex;
+  gap: var(--uboss-space-2);
+  align-items: flex-start;
+  margin-top: var(--uboss-space-3);
+}
+
+.chat-compose textarea {
+  flex: 1;
+  padding: 8px 11px;
+  font: inherit;
+  color: var(--uboss-text);
+  background: var(--uboss-surface);
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-input);
+  resize: vertical;
+}
+
+.chat-muted {
+  margin: 0;
+  font-size: var(--uboss-font-size-xs);
+  color: var(--uboss-text-3);
+}
+
+/* ---- Discuss: the people picker (§6) ---- */
+
+.discuss-people {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--uboss-space-1);
+  max-height: 240px;
+  overflow-y: auto;
+  margin: var(--uboss-space-3) 0;
+  padding: var(--uboss-space-2);
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-input);
+}
+
+.discuss-person {
+  display: flex;
+  gap: var(--uboss-space-2);
+  align-items: center;
+  padding: 4px var(--uboss-space-2);
+  border-radius: var(--uboss-radius-input);
+  font-size: var(--uboss-font-size-sm);
+  cursor: pointer;
+}
+
+.discuss-person:hover {
+  background: var(--uboss-bg-2);
+}

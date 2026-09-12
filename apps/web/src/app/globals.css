@@ -1,0 +1,11 @@
+/*
+ * App-level styles.
+ *
+ * The reset, typography, focus affordance and every component style now live in the design
+ * system (@uboss/ui/styles.css), which is imported first in the root layout. Keep this file
+ * for app-shell concerns only — never duplicate or override design tokens here, and never add
+ * per-page styling (locked UI rule: reusable components instead of one-off page styles).
+ */
+
+/* Load the design system's font. The token stack falls back to system fonts if this fails. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');

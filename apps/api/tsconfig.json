@@ -1,0 +1,20 @@
+{
+  "extends": "../../packages/config/tsconfig.base.json",
+  "compilerOptions": {
+    /* NestJS 12 is ESM-only, so this app is ESM: package.json declares `"type": "module"`
+       and `module: Node16` therefore emits ES modules. Relative imports must carry an
+       explicit `.js` extension. See docs/ARCHITECTURE_DECISIONS.md (ADR-005). */
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    /* NestJS 12 decorators are still legacy-style (`ClassDecorator`), and its dependency
+       injection reads the metadata tsc emits. */
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "verbatimModuleSyntax": false,
+    "outDir": "dist",
+    "rootDir": "."
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

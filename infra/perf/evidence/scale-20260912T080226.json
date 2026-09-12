@@ -1,0 +1,136 @@
+{
+  "measuredAt": "2026-09-12T08:02:26.816Z",
+  "seeded": {
+    "companies": 20,
+    "measuredCompany": {
+      "employees": 5000,
+      "auditEvents": 50000,
+      "notifications": 20000
+    },
+    "acrossAllCompanies": {
+      "auditEvents": 1000000,
+      "notifications": 400000,
+      "employmentRecords": 43000
+    }
+  },
+  "samplesPerScenario": 20,
+  "results": [
+    {
+      "scenario": "HierarchyList",
+      "label": "Large tenant hierarchy list",
+      "runs": 20,
+      "errors": 0,
+      "errorRate": 0,
+      "p50": 59.68430000000808,
+      "p95": 78.96409999999742,
+      "p99": 99.62909999999101,
+      "budgetMs": 400,
+      "withinBudget": true,
+      "verdict": "Pass"
+    },
+    {
+      "scenario": "HierarchySubtree",
+      "label": "Reporting subtree query",
+      "runs": 20,
+      "errors": 0,
+      "errorRate": 0,
+      "p50": 12.221300000004703,
+      "p95": 23.07259999999951,
+      "p99": 27.346100000009756,
+      "budgetMs": 50,
+      "withinBudget": true,
+      "verdict": "Pass"
+    },
+    {
+      "scenario": "AuditList",
+      "label": "CONTROL — audit page relying on RLS alone (not how the app queries)",
+      "runs": 20,
+      "errors": 0,
+      "errorRate": 0,
+      "p50": 349.41990000000806,
+      "p95": 437.61149999999907,
+      "p99": 457.30860000000393,
+      "budgetMs": 400,
+      "withinBudget": false,
+      "verdict": "OverBudget"
+    },
+    {
+      "scenario": "AuditList",
+      "label": "Audit page as the application queries it (tenant named)",
+      "runs": 20,
+      "errors": 0,
+      "errorRate": 0,
+      "p50": 2.8297999999922467,
+      "p95": 3.5371000000013737,
+      "p99": 3.8475000000034925,
+      "budgetMs": 400,
+      "withinBudget": true,
+      "verdict": "Pass"
+    },
+    {
+      "scenario": "ConcurrentSessions",
+      "label": "Concurrent logins and sessions",
+      "runs": 20,
+      "errors": 0,
+      "errorRate": 0,
+      "p50": 5.78530000000319,
+      "p95": 7.915200000003097,
+      "p99": 8.7103000000061,
+      "budgetMs": 200,
+      "withinBudget": true,
+      "verdict": "Pass"
+    }
+  ],
+  "plans": [
+    {
+      "scenario": "HierarchyList",
+      "seqScansOnUnboundedTables": [],
+      "plan": "Sort  (cost=1489.31..1489.50 rows=74 width=439) (actual time=37.019..37.232 rows=5000 loops=1)\n  Sort Key: u.display_name\n  Sort Method: quicksort  Memory: 778kB\n  Buffers: shared hit=45153\n  ->  Nested Loop Left Join  (cost=499.70..1487.02 rows=74 width=439) (actual time=0.276..32.435 rows=5000 loops=1)\n        Buffers: shared hit=45153\n        ->  Nested Loop Left Join  (cost=499.42..1456.64 rows=74 width=423) (actual time=0.260..20.532 rows=5000 loops=1)\n              Buffers: shared hit=30153\n              ->  Nested Loop  (cost=499.14..1428.74 rows=74 width=423) (actual time=0.249..13.276 rows=5000 loops=1)\n                    Buffers: shared hit=15156\n                    ->  Nested Loop  (cost=498.85..1400.85 rows=74 width=407) (actual time=0.210..5.038 rows=5000 loops=1)\n                          Buffers: shared hit=156\n                          ->  Seq Scan on departments d  (cost=0.00..11.93 rows=1 width=354) (actual time=0.018..0.036 rows=1 loops=1)\n                                Filter: ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (COALESCE(current_setting('app.platform_operation'::text, true), ''::text) = 'on'::text))\n                                Rows Removed by Filter: 19\n                                Buffers: shared hit=1\n                          ->  Bitmap Heap Scan on employment_records e  (cost=498.85..1386.35 rows=257 width=85) (actual time=0.190..4.132 rows=5000 loops=1)\n                                Recheck Cond: (department_id = d.id)\n                                Filter: ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (COALESCE(current_setting('app.platform_operation'::text, true), ''::text) = 'on'::text))\n                                Heap Blocks: exact=112\n                                Buffers: shared hit=155\n                                ->  Bitmap Index Scan on employment_records_tenant_id_department_id_idx  (cost=0.00..498.79 rows=2150 width=0) (actual time=0.170..0.170 rows=5000 loops=1)\n                                      Index Cond: (department_id = d.id)\n                                      Buffers: shared hit=43\n                    ->  Index Scan using users_pkey on users u  (cost=0.28..0.38 rows=1 width=32) (actual time=0.001..0.001 rows=1 loops=5000)\n                          Index Cond: (id = e.user_id)\n                          Buffers: shared hit=15000\n              ->  Index Scan using users_pkey on users m  (cost=0.28..0.38 rows=1 width=32) (actual time=0.001..0.001 rows=1 loops=5000)\n                    Index Cond: (id = e.reporting_manager_user_id)\n                    Buffers: shared hit=14997\n        ->  Index Scan using tenant_memberships_user_id_idx on tenant_memberships tm  (cost=0.28..0.40 rows=1 width=36) (actual time=0.002..0.002 rows=1 loops=5000)\n              Index Cond: (user_id = e.user_id)\n              Filter: ((tenant_id = e.tenant_id) AND ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (NULLIF(current_setting('app.platform_operation'::text, true), ''::text) = 'on'::text)))\n              Buffers: shared hit=15000\nPlanning:\n  Buffers: shared hit=15\nPlanning Time: 1.047 ms\nExecution Time: 37.665 ms"
+    },
+    {
+      "scenario": "HierarchySubtree",
+      "seqScansOnUnboundedTables": [],
+      "plan": "Result  (cost=844.56..844.57 rows=1 width=1) (actual time=19.112..19.116 rows=1 loops=1)\n  Buffers: shared hit=2244\n  CTE subtree\n    ->  Recursive Union  (cost=0.41..844.31 rows=11 width=16) (actual time=0.046..16.393 rows=5000 loops=1)\n          Buffers: shared hit=2244\n          ->  Index Only Scan using employment_records_tenant_id_user_id_key on employment_records e  (cost=0.41..8.45 rows=1 width=16) (actual time=0.044..0.046 rows=1 loops=1)\n                Index Cond: ((tenant_id = '212a0b63-0084-4f28-bf30-3453047fa324'::uuid) AND (user_id = '00000000-0000-4000-8000-000000000001'::uuid))\n                Filter: ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (COALESCE(current_setting('app.platform_operation'::text, true), ''::text) = 'on'::text))\n                Heap Fetches: 0\n                Buffers: shared hit=4\n          ->  Nested Loop  (cost=0.29..83.57 rows=1 width=16) (actual time=0.011..2.482 rows=1000 loops=5)\n                Buffers: shared hit=2240\n                ->  WorkTable Scan on subtree  (cost=0.00..0.20 rows=10 width=16) (actual time=0.000..0.020 rows=143 loops=5)\n                ->  Index Scan using employment_records_tenant_id_reporting_manager_user_id_idx on employment_records child  (cost=0.29..8.33 rows=1 width=32) (actual time=0.005..0.015 rows=7 loops=715)\n                      Index Cond: ((tenant_id = '212a0b63-0084-4f28-bf30-3453047fa324'::uuid) AND (reporting_manager_user_id = subtree.user_id))\n                      Filter: ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (COALESCE(current_setting('app.platform_operation'::text, true), ''::text) = 'on'::text))\n                      Buffers: shared hit=2240\n  InitPlan 2\n    ->  CTE Scan on subtree subtree_1  (cost=0.00..0.25 rows=1 width=0) (actual time=19.110..19.110 rows=1 loops=1)\n          Filter: (user_id = '00000000-0000-4000-8000-000000005000'::uuid)\n          Rows Removed by Filter: 4999\n          Buffers: shared hit=2244\nPlanning Time: 0.456 ms\nExecution Time: 19.602 ms"
+    },
+    {
+      "scenario": "AuditList",
+      "seqScansOnUnboundedTables": [
+        "audit_events"
+      ],
+      "plan": "Limit  (cost=28938.10..28943.93 rows=50 width=63) (actual time=313.504..317.401 rows=50 loops=1)\n  Buffers: shared hit=2807 read=11952\n  ->  Gather Merge  (cost=28938.10..34242.14 rows=45460 width=63) (actual time=313.500..317.390 rows=50 loops=1)\n        Workers Planned: 2\n        Workers Launched: 2\n        Buffers: shared hit=2807 read=11952\n        ->  Sort  (cost=27938.07..27994.90 rows=22730 width=63) (actual time=309.387..309.392 rows=50 loops=3)\n              Sort Key: occurred_at DESC\n              Sort Method: top-N heapsort  Memory: 31kB\n              Buffers: shared hit=2807 read=11952\n              Worker 0:  Sort Method: top-N heapsort  Memory: 31kB\n              Worker 1:  Sort Method: top-N heapsort  Memory: 31kB\n              ->  Parallel Seq Scan on audit_events  (cost=0.00..27183.00 rows=22730 width=63) (actual time=0.033..304.679 rows=16667 loops=3)\n                    Filter: ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (NULLIF(current_setting('app.platform_operation'::text, true), ''::text) = 'on'::text))\n                    Rows Removed by Filter: 316667\n                    Buffers: shared hit=2731 read=11952\nPlanning Time: 0.135 ms\nExecution Time: 317.505 ms"
+    },
+    {
+      "scenario": "NotificationList",
+      "seqScansOnUnboundedTables": [],
+      "plan": "Limit  (cost=4664.72..4664.73 rows=1 width=48) (actual time=2.850..2.853 rows=4 loops=1)\n  Buffers: shared hit=20 read=382 written=175\n  ->  Sort  (cost=4664.72..4664.73 rows=1 width=48) (actual time=2.849..2.851 rows=4 loops=1)\n        Sort Key: occurred_at DESC\n        Sort Method: quicksort  Memory: 25kB\n        Buffers: shared hit=20 read=382 written=175\n        ->  Index Scan using notifications_tenant_id_recipient_user_id_read_at_idx on notifications  (cost=0.42..4664.71 rows=1 width=48) (actual time=0.366..2.834 rows=4 loops=1)\n              Index Cond: (recipient_user_id = '00000000-0000-4000-8000-000000000002'::uuid)\n              Filter: ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (COALESCE(current_setting('app.platform_operation'::text, true), ''::text) = 'on'::text))\n              Buffers: shared hit=20 read=382 written=175\nPlanning:\n  Buffers: shared hit=120 read=9\nPlanning Time: 1.422 ms\nExecution Time: 2.934 ms"
+    },
+    {
+      "scenario": "AuditListExplicitTenant",
+      "seqScansOnUnboundedTables": [],
+      "plan": "Limit  (cost=0.42..1144.12 rows=50 width=63) (actual time=0.028..0.077 rows=50 loops=1)\n  Buffers: shared hit=5\n  ->  Index Scan using audit_events_tenant_id_occurred_at_idx on audit_events  (cost=0.42..62148.75 rows=2717 width=63) (actual time=0.027..0.072 rows=50 loops=1)\n        Index Cond: (tenant_id = '212a0b63-0084-4f28-bf30-3453047fa324'::uuid)\n        Filter: ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (NULLIF(current_setting('app.platform_operation'::text, true), ''::text) = 'on'::text))\n        Buffers: shared hit=5\nPlanning Time: 0.089 ms\nExecution Time: 0.104 ms"
+    }
+  ],
+  "stance": "These figures were measured on a single developer machine against one PostgreSQL container. They are evidence that a query plan is sound and that no scenario regressed; they are not a capacity plan, and UBoss must not be described as validated to any particular user count on the strength of them. What transfers between this machine and a cluster is the query plan. What does not transfer is the millisecond.",
+  "notMeasured": [
+    {
+      "item": "Throughput (requests per second)",
+      "why": "Entirely a property of the hardware and the connection pool. A number from here would mislead."
+    },
+    {
+      "item": "Multi-node behaviour",
+      "why": "One API process, one database. Nothing here exercises a load balancer or a replica."
+    },
+    {
+      "item": "WebSocket fan-out at scale",
+      "why": "The gateway is in-process and the transport is not bound in this environment, so a fan-out measurement would be measuring an event emitter."
+    },
+    {
+      "item": "Redis saturation",
+      "why": "The queue selects its inline fallback without REDIS_URL, which is what the suite runs. Broker saturation needs the broker."
+    },
+    {
+      "item": "Sustained load over hours",
+      "why": "Connection leaks, cache drift and table bloat appear over time, and these runs are seconds."
+    }
+  ]
+}

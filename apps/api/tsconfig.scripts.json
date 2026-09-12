@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    /* Operational scripts (the Prisma seed) compile alongside src so they use the real
+       repositories and services rather than a parallel implementation that could drift. */
+    "rootDir": ".",
+    "outDir": "dist-scripts",
+    "declaration": false,
+    "declarationMap": false
+  },
+  "include": ["src/**/*.ts", "prisma/**/*.ts", "scripts/**/*.ts"],
+  "exclude": ["src/**/*.spec.ts", "prisma.config.ts", "node_modules", "dist", "dist-test"]
+}

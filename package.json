@@ -1,0 +1,40 @@
+{
+  "name": "uboss",
+  "version": "0.1.0",
+  "private": true,
+  "description": "UBoss — enterprise AI workforce and operations SaaS (monorepo root)",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=11.0.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build:packages": "npm run build --workspace @uboss/types",
+    "build": "npm run build:packages && npm run build --workspace @uboss/api && npm run build --workspace @uboss/web",
+    "dev": "npm run build:packages && concurrently -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm run dev --workspace @uboss/api",
+    "dev:web": "npm run dev --workspace @uboss/web",
+    "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present",
+    "test": "npm run build:packages && npm run test --workspaces --if-present",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "verify": "npm run lint && npm run typecheck && npm run test && npm run build",
+    "clean": "node -e \"const{rmSync}=require('fs');['apps/api/dist','apps/web/.next','packages/types/dist','packages/ui/dist'].forEach(p=>rmSync(p,{recursive:true,force:true}))\""
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.13.3",
+    "concurrently": "10.0.5",
+    "eslint": "10.10.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "prettier": "3.9.6",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.70.0"
+  }
+}
