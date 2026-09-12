@@ -4354,7 +4354,11 @@ export const knowledgeApi = {
       classification?: string;
       connectionId?: string;
     },
-  ) => call<KnowledgeSourceView>(sourcesBase(tenantId), { method: 'POST', body: JSON.stringify(body) }),
+  ) =>
+    call<KnowledgeSourceView>(sourcesBase(tenantId), {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 
   approve: (tenantId: string, sourceId: string, note?: string) =>
     call<KnowledgeSourceView>(`${sourcesBase(tenantId)}/${encodeURIComponent(sourceId)}/approve`, {
@@ -4561,7 +4565,11 @@ export const reportsApi = {
   catalogue: (tenantId: string) =>
     call<ReportCatalogue>(`/tenants/${encodeURIComponent(tenantId)}/reports`),
 
-  run: (tenantId: string, key: string, filter: { range?: string; from?: string; to?: string } = {}) =>
+  run: (
+    tenantId: string,
+    key: string,
+    filter: { range?: string; from?: string; to?: string } = {},
+  ) =>
     call<ReportRunView>(
       `/tenants/${encodeURIComponent(tenantId)}/reports/${encodeURIComponent(key)}${queryString(
         filter,
@@ -4770,9 +4778,7 @@ export const jobMethodApi = {
       }[];
       agentSuggestion: { groups: { key: string; steps: number[]; because: string }[] } | null;
       automationStance: string;
-    }>(
-      `/tenants/${encodeURIComponent(tenantId)}/job-methods/${encodeURIComponent(assignmentId)}`,
-    ),
+    }>(`/tenants/${encodeURIComponent(tenantId)}/job-methods/${encodeURIComponent(assignmentId)}`),
 
   /**
    * The real spreadsheet.
@@ -4865,15 +4871,11 @@ export const agentOperatorApi = {
     }>(`/tenants/${encodeURIComponent(tenantId)}/agents/operator-meta`),
 
   mine: (tenantId: string) =>
-    call<{ agents: OperatorAgentView[] }>(
-      `/tenants/${encodeURIComponent(tenantId)}/agents/mine`,
-    ),
+    call<{ agents: OperatorAgentView[] }>(`/tenants/${encodeURIComponent(tenantId)}/agents/mine`),
   /** View Result and History are the same list, read once. */
   myRuns: (tenantId: string, agentId: string) =>
     call<{ runs: OperatorRunView[] }>(
-      `/tenants/${encodeURIComponent(tenantId)}/agents/${encodeURIComponent(
-        agentId,
-      )}/my-runs`,
+      `/tenants/${encodeURIComponent(tenantId)}/agents/${encodeURIComponent(agentId)}/my-runs`,
     ),
 
   /**
@@ -4927,7 +4929,14 @@ export interface ChatConversationSummary {
 }
 
 export type ChatContextPreviewView =
-  | { accessible: true; type: string; id: string; title: string; status: string | null; deepLink: string }
+  | {
+      accessible: true;
+      type: string;
+      id: string;
+      title: string;
+      status: string | null;
+      deepLink: string;
+    }
   | { accessible: false; type: string; id: string; reason: string };
 
 export interface ChatMessageView {

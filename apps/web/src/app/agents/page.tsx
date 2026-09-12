@@ -151,12 +151,12 @@ export default function EngineAgentsPage() {
                 resourceId={selected.id}
               />
             )}
-          <Link href="/agent-builder">
-            <Button variant="primary" size="sm">
-              <Icon name="plus" size={16} />
-              Build agent
-            </Button>
-          </Link>
+            <Link href="/agent-builder">
+              <Button variant="primary" size="sm">
+                <Icon name="plus" size={16} />
+                Build agent
+              </Button>
+            </Link>
           </>
         }
       />
@@ -183,10 +183,7 @@ export default function EngineAgentsPage() {
       {tenantId === null ? null : (
         <section className="operator-section" data-testid="assigned-to-me">
           <h2 className="operator-section-title">Assigned to you</h2>
-          <MyEngineAgents
-            tenantId={tenantId}
-            showEmptyState={agents.length === 0}
-          />
+          <MyEngineAgents tenantId={tenantId} showEmptyState={agents.length === 0} />
         </section>
       )}
 

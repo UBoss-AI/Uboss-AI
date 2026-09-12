@@ -718,8 +718,7 @@ describe('executor agent and exception center (e2e)', () => {
           idempotencyKey: `starved-${suffix}`,
           correlationId: `corr-${suffix}`,
           createdAt: queuedAt,
-          progressMessage:
-            'Your company already has the maximum number of agent runs in progress.',
+          progressMessage: 'Your company already has the maximum number of agent runs in progress.',
         },
       });
       return { agentId, runId: run.id };

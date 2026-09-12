@@ -240,9 +240,10 @@ describe('the five people around an agent', () => {
 
 describe('the seven conditions on running an assigned agent', () => {
   const all = (): Record<RunPreconditionKey, boolean> =>
-    Object.fromEntries(
-      RUN_PRECONDITIONS.map((precondition) => [precondition.key, true]),
-    ) as Record<RunPreconditionKey, boolean>;
+    Object.fromEntries(RUN_PRECONDITIONS.map((precondition) => [precondition.key, true])) as Record<
+      RunPreconditionKey,
+      boolean
+    >;
 
   it('permits a run when every condition is met', () => {
     assert.equal(firstUnmetPrecondition(all()), null);

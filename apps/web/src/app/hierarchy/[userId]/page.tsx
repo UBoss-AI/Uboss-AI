@@ -267,11 +267,11 @@ export default function EmployeeProfilePage() {
               */}
               <div className="employee-photo-row">
                 <EmployeePhoto
-                  tenantId={tenantId ?? ""}
+                  tenantId={tenantId ?? ''}
                   userId={userId}
                   displayName={profile.displayName}
                   size="lg"
-                  editable={isSelf || can(access, "users", "EditDraft")}
+                  editable={isSelf || can(access, 'users', 'EditDraft')}
                   onChanged={() => void load()}
                 />
                 <div>

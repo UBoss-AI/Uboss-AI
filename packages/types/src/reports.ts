@@ -126,7 +126,8 @@ export const REPORTS: readonly ReportDefinition[] = [
   {
     key: 'ObjectiveProgress',
     label: 'Objective Progress / Outcome / SLA',
-    question: 'Which objectives are on track, how did the finished ones turn out, and were they on time?',
+    question:
+      'Which objectives are on track, how did the finished ones turn out, and were they on time?',
     sourcePermission: { module: 'objective', action: 'View' },
     scoped: true,
   },
@@ -395,7 +396,10 @@ export function csvCell(value: unknown): string {
   return `"${neutralised.replaceAll('"', '""')}"`;
 }
 
-export function toCsv(rows: readonly Record<string, unknown>[], columns: readonly string[]): string {
+export function toCsv(
+  rows: readonly Record<string, unknown>[],
+  columns: readonly string[],
+): string {
   const header = columns.map((column) => csvCell(column)).join(',');
   const body = rows.map((row) => columns.map((column) => csvCell(row[column])).join(','));
   return [header, ...body].join('\r\n');

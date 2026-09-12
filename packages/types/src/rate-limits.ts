@@ -115,7 +115,10 @@ export function limitProblems(limit: RateLimit): string[] {
         'is the thing the limit exists to prevent.',
     );
   }
-  if (limit.scope !== 'Runs' && (!Number.isInteger(limit.windowSeconds) || limit.windowSeconds < 1)) {
+  if (
+    limit.scope !== 'Runs' &&
+    (!Number.isInteger(limit.windowSeconds) || limit.windowSeconds < 1)
+  ) {
     problems.push('A rate window must be at least one second.');
   }
   return problems;
@@ -148,11 +151,10 @@ export type LimitDecision =
  * `retryAfterSeconds` is rounded **up** and floored at one. A `Retry-After: 0` tells a client to
  * try again immediately, which is how a rate limit becomes a busy loop.
  */
-export function consumeToken(input: {
+export function consumeToken(input: { state: BucketState; limit: RateLimit; now: number }): {
   state: BucketState;
-  limit: RateLimit;
-  now: number;
-}): { state: BucketState; decision: LimitDecision } {
+  decision: LimitDecision;
+} {
   const perSecond = input.limit.limit / input.limit.windowSeconds;
   const elapsedSeconds = Math.max(0, (input.now - input.state.refilledAt) / 1000);
 
@@ -271,10 +273,7 @@ export function fairOrder(pending: readonly PendingJob[]): PendingJob[] {
  * the cap decides **how many at once**. A queue that was fairly ordered but uncapped would still
  * let one tenant hold all four workers for an hour.
  */
-export function concurrencySlotsFor(input: {
-  inFlight: number;
-  limit: number;
-}): number {
+export function concurrencySlotsFor(input: { inFlight: number; limit: number }): number {
   return Math.max(0, input.limit - input.inFlight);
 }
 

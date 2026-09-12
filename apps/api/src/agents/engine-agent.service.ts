@@ -602,9 +602,7 @@ export class EngineAgentService {
           );
         }
         if (approval.status !== 'Approved') {
-          throw new ConflictException(
-            `That approval request is ${approval.status}, not Approved.`,
-          );
+          throw new ConflictException(`That approval request is ${approval.status}, not Approved.`);
         }
         if (approval.decidedByUserId === input.actorUserId) {
           // Four-eyes on the reach-widening case, now anchored to a real decision record rather

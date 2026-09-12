@@ -208,7 +208,8 @@ export default function ProfileSearchPage(): React.JSX.Element {
                 </div>
 
                 <p>
-                  {when(employment.joinedOn)} — {employment.isCurrent ? 'present' : when(employment.endedAt)}
+                  {when(employment.joinedOn)} —{' '}
+                  {employment.isCurrent ? 'present' : when(employment.endedAt)}
                 </p>
 
                 {employment.performance === null ? (

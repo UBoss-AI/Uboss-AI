@@ -352,7 +352,6 @@ export class AccessController {
     return { operations };
   }
 
-
   // =========================================================================
   // The Access & Permissions step — Prompt 40A (CR-03) §1
   // =========================================================================
@@ -365,9 +364,7 @@ export class AccessController {
   /** What an administrator may offer this person, and what they already hold. */
   @Get('capabilities/:userId')
   @RequirePermission({ module: 'users', action: 'ManageAccess' })
-  async capabilityStep(
-    @Param('userId') userId: string,
-  ): Promise<unknown> {
+  async capabilityStep(@Param('userId') userId: string): Promise<unknown> {
     return this.capabilities.stepFor({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),

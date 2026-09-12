@@ -6,13 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { CHAT_CONTEXT_LABELS, type ChatContextType } from '@uboss/types';
 import { Banner, Button, Icon, Modal } from '@uboss/ui';
 
-import {
-  ApiError,
-  chatApi,
-  organizationApi,
-  photosApi,
-  type PhotoView,
-} from '../lib/api-client';
+import { ApiError, chatApi, organizationApi, photosApi, type PhotoView } from '../lib/api-client';
 
 import { EmployeePhoto } from './EmployeePhoto';
 
@@ -121,9 +115,7 @@ export function DiscussButton({ tenantId, contextType, resourceId, label }: Disc
 
   const toggle = (userId: string) => {
     setChosen((current) =>
-      current.includes(userId)
-        ? current.filter((entry) => entry !== userId)
-        : [...current, userId],
+      current.includes(userId) ? current.filter((entry) => entry !== userId) : [...current, userId],
     );
   };
 
@@ -131,12 +123,7 @@ export function DiscussButton({ tenantId, contextType, resourceId, label }: Disc
 
   return (
     <>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => setOpen(true)}
-        data-testid="discuss-button"
-      >
+      <Button variant="ghost" size="sm" onClick={() => setOpen(true)} data-testid="discuss-button">
         <Icon name="chat" size={16} />
         {label ?? 'Discuss'}
       </Button>

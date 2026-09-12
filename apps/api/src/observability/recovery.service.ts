@@ -53,7 +53,12 @@ export class RecoveryService {
   ) {}
 
   /** The targets in force: the tier's defaults, overridden by platform settings where set. */
-  async targets(): Promise<{ tier: string; rpoMinutes: number; rtoMinutes: number; source: string }> {
+  async targets(): Promise<{
+    tier: string;
+    rpoMinutes: number;
+    rtoMinutes: number;
+    source: string;
+  }> {
     const tier = (await this.setting(RECOVERY_TARGET_SETTING_KEYS.tier)) ?? 'growth';
     const fallback: RecoveryTarget =
       targetForTier(String(tier)) ?? (DEFAULT_RECOVERY_TARGETS[1] as RecoveryTarget);

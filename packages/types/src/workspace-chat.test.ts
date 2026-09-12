@@ -200,14 +200,10 @@ describe('unread state', () => {
 
 describe('a context reference is a type and an id', () => {
   it('covers exactly the six the prompt names', () => {
-    assert.deepEqual([...CHAT_CONTEXT_TYPES], [
-      'Objective',
-      'HumanTask',
-      'EngineAgent',
-      'AgentRun',
-      'ApprovalRequest',
-      'ExecutorException',
-    ]);
+    assert.deepEqual(
+      [...CHAT_CONTEXT_TYPES],
+      ['Objective', 'HumanTask', 'EngineAgent', 'AgentRun', 'ApprovalRequest', 'ExecutorException'],
+    );
     for (const type of CHAT_CONTEXT_TYPES) {
       assert.ok(CHAT_CONTEXT_LABELS[type].length > 0, type);
     }

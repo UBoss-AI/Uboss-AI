@@ -17,16 +17,7 @@ import {
   type RewardType,
   type TimeUnit,
 } from '@uboss/types';
-import {
-  AppShell,
-  Banner,
-  Button,
-  Card,
-  CardBody,
-  Drawer,
-  Icon,
-  PageHeader,
-} from '@uboss/ui';
+import { AppShell, Banner, Button, Card, CardBody, Drawer, Icon, PageHeader } from '@uboss/ui';
 
 import { blankWorkflowStep, WorkflowGrid } from '../../../components/WorkflowGrid';
 import {

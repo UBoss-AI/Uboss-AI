@@ -72,10 +72,7 @@ export class ReportScopeService {
   }
 
   /** The dashboard's counts use the same resolution, without a report definition. */
-  async forDashboard(input: {
-    scope: TenantScope;
-    actorUserId: string;
-  }): Promise<ReportScope> {
+  async forDashboard(input: { scope: TenantScope; actorUserId: string }): Promise<ReportScope> {
     const context = await this.authorization.contextFor(input.scope, input.actorUserId);
     // No permission assertion here: the dashboard is the landing screen for every signed-in
     // member, and the counts are already confined to what this scope permits. What a person may
@@ -223,10 +220,7 @@ export class ReportScopeService {
    * One helper rather than the same ternary in ten queries — which is how nine of them end up
    * right and one does not.
    */
-  static userFilter(
-    scope: ReportScope,
-    column: string,
-  ): Record<string, unknown> {
+  static userFilter(scope: ReportScope, column: string): Record<string, unknown> {
     if (scope.userIds === null) return {};
     return { [column]: { in: [...scope.userIds] } };
   }

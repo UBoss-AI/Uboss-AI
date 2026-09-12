@@ -210,9 +210,7 @@ export class IncidentWorkflowService {
       const incident = await this.requireIncident(input.alertId);
 
       if (!mayMoveIncident(incident.state as IncidentState, 'Resolved')) {
-        throw new ConflictException(
-          `An incident that is "${incident.state}" cannot be resolved.`,
-        );
+        throw new ConflictException(`An incident that is "${incident.state}" cannot be resolved.`);
       }
 
       const required = postmortemIsRequired(incident.incidentSeverity);
@@ -258,10 +256,7 @@ export class IncidentWorkflowService {
         data: {
           serviceAlertId: incident.id,
           kind: 'Resolved',
-          note:
-            postmortem === ''
-              ? 'Resolved.'
-              : 'Resolved, with a postmortem.',
+          note: postmortem === '' ? 'Resolved.' : 'Resolved, with a postmortem.',
           occurredAt: now,
           authorUserId: input.actorUserId,
         },

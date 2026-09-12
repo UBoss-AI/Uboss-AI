@@ -249,10 +249,7 @@ export class FileService {
    * The caller must have authorized the read. `EmployeePhotoService.content` is the only caller,
    * and it checks membership and the scan state first.
    */
-  async readAuthorizedElsewhere(input: {
-    scope: TenantScope;
-    fileId: string;
-  }): Promise<Buffer> {
+  async readAuthorizedElsewhere(input: { scope: TenantScope; fileId: string }): Promise<Buffer> {
     const file = await this.prisma.runInTenantTransaction(input.scope, () =>
       this.prisma.client.storedFile.findFirst({
         where: { tenantId: input.scope.tenantId, id: input.fileId, deletedAt: null },
@@ -432,9 +429,7 @@ export class FileService {
       input.bytes ?? (file.storageRef === null ? null : await this.storage.get(file.storageRef));
 
     if (bytes === null) {
-      throw new ConflictException(
-        'That file has no stored content, so there is nothing to scan.',
-      );
+      throw new ConflictException('That file has no stored content, so there is nothing to scan.');
     }
 
     const verdict = await this.scanner.scan({ filename: file.filename, bytes });

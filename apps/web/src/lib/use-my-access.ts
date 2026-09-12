@@ -70,10 +70,6 @@ export function useMyAccess(): MyAccess | null {
  * False while the answer is unknown, so a control that depends on it appears when the grant is
  * confirmed rather than disappearing once it is denied.
  */
-export function can(
-  access: MyAccess | null,
-  module: string,
-  action: string,
-): boolean {
+export function can(access: MyAccess | null, module: string, action: string): boolean {
   return access?.granted[module]?.includes(action) ?? false;
 }

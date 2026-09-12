@@ -40,8 +40,7 @@ const { AccessPermissionsStep } = await import('./AccessPermissionsStep');
 
 const STEP: CapabilityStep = {
   defaultForNewEmployee: ['OperateAssignedAgents', 'UseWorkspaceChat'],
-  delegationStance:
-    'You can grant only what you hold yourself, and never to yourself.',
+  delegationStance: 'You can grant only what you hold yourself, and never to yourself.',
   tiers: [
     { key: 'Build', label: 'Build', description: 'Designing the work.' },
     { key: 'Operate', label: 'Operate', description: 'Doing the work.' },
@@ -134,9 +133,7 @@ describe('AccessPermissionsStep', () => {
 
     await userEvent.click(await screen.findByTestId('capability-BuildAgents'));
 
-    await waitFor(() =>
-      expect(grant).toHaveBeenCalledWith('tenant-1', 'user-1', ['BuildAgents']),
-    );
+    await waitFor(() => expect(grant).toHaveBeenCalledWith('tenant-1', 'user-1', ['BuildAgents']));
   });
 
   it('revokes one that is already held', async () => {
@@ -173,7 +170,9 @@ describe('AccessPermissionsStep', () => {
     );
     await screen.findByTestId('capability-BuildAgents');
 
-    await userEvent.click(screen.getAllByRole('button', { name: 'What this allows' })[0] as HTMLElement);
+    await userEvent.click(
+      screen.getAllByRole('button', { name: 'What this allows' })[0] as HTMLElement,
+    );
 
     const grants = await screen.findByTestId('grants-BuildAgents');
     expect(grants).toHaveTextContent('agent-builder');

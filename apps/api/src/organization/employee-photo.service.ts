@@ -7,11 +7,7 @@ import { PrismaService } from '../persistence/prisma.service.js';
 import type { TenantScope } from '../persistence/tenant-context.js';
 
 /** What the image formats a photo may be. A closed list, checked on upload. */
-export const PHOTO_CONTENT_TYPES: readonly string[] = [
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-];
+export const PHOTO_CONTENT_TYPES: readonly string[] = ['image/jpeg', 'image/png', 'image/webp'];
 
 /** Two megabytes. A profile photo larger than this is a camera file nobody resized. */
 export const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
@@ -90,9 +86,7 @@ export class EmployeePhotoService {
     await this.assertMayEdit(input.scope, input.actorUserId, input.subjectUserId);
 
     if (!PHOTO_CONTENT_TYPES.includes(input.contentType)) {
-      throw new BadRequestException(
-        `A photo must be one of: ${PHOTO_CONTENT_TYPES.join(', ')}.`,
-      );
+      throw new BadRequestException(`A photo must be one of: ${PHOTO_CONTENT_TYPES.join(', ')}.`);
     }
 
     // Checked on the decoded length, not on the base64 string, which is a third larger. Checking
@@ -389,7 +383,10 @@ export class EmployeePhotoService {
  * finishes.
  */
 export function initialsOf(displayName: string): string {
-  const words = displayName.trim().split(/\s+/).filter((word) => word.length > 0);
+  const words = displayName
+    .trim()
+    .split(/\s+/)
+    .filter((word) => word.length > 0);
   if (words.length === 0) return '?';
   if (words.length === 1) return (words[0] as string).charAt(0).toUpperCase();
   const first = (words[0] as string).charAt(0);

@@ -366,9 +366,7 @@ export const TIMELINE_KIND_LABELS: Record<TimelineKind, string> = {
  * guess, so it is refused — and one with no timeline is a document written from memory, which is
  * how the same incident happens twice.
  */
-export type PostmortemReadiness =
-  | { ready: true }
-  | { ready: false; reasons: string[] };
+export type PostmortemReadiness = { ready: true } | { ready: false; reasons: string[] };
 
 export function postmortemReadiness(input: {
   state: string;
@@ -473,9 +471,7 @@ export function logFieldIsForbidden(field: string): boolean {
  * Replaced with a marker rather than deleted, so a reader can see that something was withheld —
  * a silently absent field looks like a bug in the producer.
  */
-export function redactLogFields(
-  payload: Record<string, unknown>,
-): Record<string, unknown> {
+export function redactLogFields(payload: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [field, value] of Object.entries(payload)) {
     out[field] = logFieldIsForbidden(field) ? '[redacted]' : value;
@@ -484,13 +480,7 @@ export function redactLogFields(
 }
 
 /** The stages a correlation id must reach, which a test asserts end to end. */
-export const CORRELATION_CHAIN = [
-  'request',
-  'queue',
-  'run',
-  'provider',
-  'settlement',
-] as const;
+export const CORRELATION_CHAIN = ['request', 'queue', 'run', 'provider', 'settlement'] as const;
 export type CorrelationStage = (typeof CORRELATION_CHAIN)[number];
 
 export const CORRELATION_STANCE =

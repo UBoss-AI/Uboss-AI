@@ -58,7 +58,11 @@ class ImportWorkbookDto {
 class ImportFormDto {
   @IsString() @MinLength(1) @MaxLength(400) filename!: string;
   /** The context block from the downloaded form, returned unchanged. */
-  @IsObject() envelope!: { formVersion: unknown; objectiveVersionId: unknown; aiWorkAssignmentId: unknown };
+  @IsObject() envelope!: {
+    formVersion: unknown;
+    objectiveVersionId: unknown;
+    aiWorkAssignmentId: unknown;
+  };
   @IsArray() @ArrayMaxSize(JOB_METHOD_MAX_ROWS + 1) rows!: Record<string, unknown>[];
   @IsOptional() @IsString() note?: string;
 }
@@ -121,10 +125,7 @@ export class JobMethodController {
    * render the form itself.
    */
   @Get(':aiWorkAssignmentId/form.xlsx')
-  @Header(
-    'Content-Type',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  )
+  @Header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
   async downloadWorkbook(
     @Param('aiWorkAssignmentId') aiWorkAssignmentId: string,
     @Res({ passthrough: true }) response: Response,
@@ -142,9 +143,7 @@ export class JobMethodController {
 
   /** The same form as JSON, for a client that renders it rather than downloading it. */
   @Get(':aiWorkAssignmentId/form')
-  async download(
-    @Param('aiWorkAssignmentId') aiWorkAssignmentId: string,
-  ): Promise<unknown> {
+  async download(@Param('aiWorkAssignmentId') aiWorkAssignmentId: string): Promise<unknown> {
     return this.jobMethods.downloadForm({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),

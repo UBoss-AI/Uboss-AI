@@ -45,14 +45,19 @@ import { ChatService } from './chat.service.js';
 
 class StartConversationDto {
   @IsIn(CONVERSATION_KINDS as readonly string[]) kind!: ConversationKind;
-  @IsArray() @ArrayMaxSize(MAX_GROUP_PARTICIPANTS) @IsUUID(7, { each: true })
+  @IsArray()
+  @ArrayMaxSize(MAX_GROUP_PARTICIPANTS)
+  @IsUUID(7, { each: true })
   participantUserIds!: string[];
   @IsOptional() @IsString() @MaxLength(120) title?: string;
 }
 
 class SendMessageDto {
   @IsString() @MaxLength(MAX_MESSAGE_BODY) body!: string;
-  @IsOptional() @IsArray() @ArrayMaxSize(MAX_ATTACHMENTS_PER_MESSAGE) @IsUUID(7, { each: true })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_ATTACHMENTS_PER_MESSAGE)
+  @IsUUID(7, { each: true })
   attachmentIds?: string[];
   /** Handle → user id. Resolved by the client from the company directory it already shows. */
   @IsOptional() @IsObject() mentionResolutions?: Record<string, string>;
@@ -208,10 +213,7 @@ export class ChatController {
   }
 
   @Get('search')
-  async search(
-    @Param('tenantId') tenantId: string,
-    @Query('q') term = '',
-  ): Promise<unknown> {
+  async search(@Param('tenantId') tenantId: string, @Query('q') term = ''): Promise<unknown> {
     return this.chat.search({
       scope: tenantScopeForPlatformOperation(tenantId),
       actorUserId: this.me(),

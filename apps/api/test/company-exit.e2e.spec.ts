@@ -6,11 +6,7 @@ import { APP_GUARD, APP_INTERCEPTOR, Reflector } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
 
-import {
-  TABLE_DISPOSITION,
-  tablesWithDisposition,
-  type Disposition,
-} from '@uboss/types';
+import { TABLE_DISPOSITION, tablesWithDisposition, type Disposition } from '@uboss/types';
 
 import { AuditEventService } from '../src/audit/audit-event.service.js';
 import { SecurityEventService } from '../src/audit/security-event.service.js';
@@ -348,8 +344,7 @@ describe('company exit and data portability (e2e)', () => {
 
   it('refuses an exit with no explanation', async () => {
     await assert.rejects(
-      () =>
-        exits().request({ tenantId, requestedByUserId: operatorAId, reason: 'done' }),
+      () => exits().request({ tenantId, requestedByUserId: operatorAId, reason: 'done' }),
       (error: Error) => error.message.includes('Say why'),
     );
   });
@@ -500,7 +495,9 @@ describe('company exit and data portability (e2e)', () => {
     assert.equal(people?.rows, 1);
 
     // The exclusions are stated up front rather than discovered on opening the archive.
-    const excluded = exported.manifest.exclusions.map((entry) => entry.what.toLowerCase()).join(' ');
+    const excluded = exported.manifest.exclusions
+      .map((entry) => entry.what.toLowerCase())
+      .join(' ');
     assert.equal(excluded.includes('credential'), true);
     assert.equal(excluded.includes('aadhaar'), true);
 
@@ -559,8 +556,7 @@ describe('company exit and data portability (e2e)', () => {
 
     for (const wrong of ['DELETE', 'delete', tenantSlug.toUpperCase(), 'staying-co']) {
       await assert.rejects(
-        () =>
-          exits().deleteContent({ exitId, actorUserId: operatorBId, typedConfirmation: wrong }),
+        () => exits().deleteContent({ exitId, actorUserId: operatorBId, typedConfirmation: wrong }),
         (error: Error) => error.message.includes('type the company'),
         `"${wrong}" must not confirm a deletion`,
       );
@@ -621,7 +617,7 @@ describe('company exit and data portability (e2e)', () => {
     );
 
     // Nothing was half-deleted: a refusal, not a skip.
-    assert.equal(await countIn(tenantId, 'engine_agents') > 0, true);
+    assert.equal((await countIn(tenantId, 'engine_agents')) > 0, true);
     assert.equal(await countIn(tenantId, 'files'), 1);
 
     // Lift the hold and the exit proceeds.
@@ -678,12 +674,12 @@ describe('company exit and data portability (e2e)', () => {
     // **Departments survive**, because a preserved employment record names one. The foreign key
     // forced the decision and it is the right one: "Analyst in Delivery" pointing at nothing would
     // be worse than keeping a department name.
-    assert.equal(await countIn(tenantId, 'departments') > 0, true);
+    assert.equal((await countIn(tenantId, 'departments')) > 0, true);
     assert.equal(await countIn(tenantId, 'tenant_memberships'), 0, 'access is revoked');
 
     // ---- Accountability survives. This is the sentence the prompt leads with. ----
     assert.equal(
-      await countIn(tenantId, 'audit_events') >= before.audit,
+      (await countIn(tenantId, 'audit_events')) >= before.audit,
       true,
       'the audit trail must survive a company exit — and it grows, because the exit is audited',
     );
@@ -693,7 +689,7 @@ describe('company exit and data portability (e2e)', () => {
       'the financial record survives',
     );
     assert.equal(
-      await countIn(tenantId, 'company_exits') > 0,
+      (await countIn(tenantId, 'company_exits')) > 0,
       true,
       'the deletion certificate survives the deletion it describes',
     );

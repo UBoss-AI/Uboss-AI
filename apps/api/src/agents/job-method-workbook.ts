@@ -65,13 +65,11 @@ export class JobMethodWorkbook {
     context.addRow(['For employee', form.context.assignedToEmployeeRef ?? '—']);
     context.addRow(['Downloaded', form.context.downloadedAt]);
     context.addRow([]);
-    context
-      .addRow([
-        'Please do not change',
-        'The four rows below identify this form. Editing them means UBoss cannot match your ' +
-          'answers back to the right work, and the upload will be refused.',
-      ])
-      .font = { italic: true };
+    context.addRow([
+      'Please do not change',
+      'The four rows below identify this form. Editing them means UBoss cannot match your ' +
+        'answers back to the right work, and the upload will be refused.',
+    ]).font = { italic: true };
     context.addRow(['Form version', form.context.formVersion]);
     context.addRow(['Objective ID', form.context.objectiveId]);
     context.addRow(['Objective version ID', form.context.objectiveVersionId]);
@@ -94,9 +92,7 @@ export class JobMethodWorkbook {
 
     for (const row of form.rows) {
       sheet.addRow(
-        Object.fromEntries(
-          JOB_METHOD_COLUMNS.map((column) => [column.key, row[column.key] ?? '']),
-        ),
+        Object.fromEntries(JOB_METHOD_COLUMNS.map((column) => [column.key, row[column.key] ?? ''])),
       );
     }
 
@@ -242,7 +238,8 @@ export class JobMethodWorkbook {
   /** Two recognised headings is enough to call it the method sheet, and few enough to be robust. */
   private static looksLikeMethod(sheet: ExcelJS.Worksheet): boolean {
     const known = JobMethodWorkbook.headingRow(sheet).filter(
-      (heading) => heading !== null && JOB_METHOD_KEY_BY_HEADING[normaliseHeading(heading)] !== undefined,
+      (heading) =>
+        heading !== null && JOB_METHOD_KEY_BY_HEADING[normaliseHeading(heading)] !== undefined,
     );
     return known.length >= 2;
   }
@@ -286,7 +283,8 @@ export class JobMethodWorkbook {
           .trim();
       }
       if ('text' in record) return JobMethodWorkbook.plain(record['text']);
-      if ('hyperlink' in record) return JobMethodWorkbook.plain(record['text'] ?? record['hyperlink']);
+      if ('hyperlink' in record)
+        return JobMethodWorkbook.plain(record['text'] ?? record['hyperlink']);
     }
 
     return '';

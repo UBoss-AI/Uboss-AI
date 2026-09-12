@@ -229,8 +229,7 @@ export class ObservabilityController {
     return {
       exportsSpans: this.tracer.exportsSpans,
       stance: TRACING_STANCE,
-      spans:
-        correlationId === undefined ? this.tracer.recent() : this.tracer.trace(correlationId),
+      spans: correlationId === undefined ? this.tracer.recent() : this.tracer.trace(correlationId),
     };
   }
 

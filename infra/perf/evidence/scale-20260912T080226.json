@@ -94,9 +94,7 @@
     },
     {
       "scenario": "AuditList",
-      "seqScansOnUnboundedTables": [
-        "audit_events"
-      ],
+      "seqScansOnUnboundedTables": ["audit_events"],
       "plan": "Limit  (cost=28938.10..28943.93 rows=50 width=63) (actual time=313.504..317.401 rows=50 loops=1)\n  Buffers: shared hit=2807 read=11952\n  ->  Gather Merge  (cost=28938.10..34242.14 rows=45460 width=63) (actual time=313.500..317.390 rows=50 loops=1)\n        Workers Planned: 2\n        Workers Launched: 2\n        Buffers: shared hit=2807 read=11952\n        ->  Sort  (cost=27938.07..27994.90 rows=22730 width=63) (actual time=309.387..309.392 rows=50 loops=3)\n              Sort Key: occurred_at DESC\n              Sort Method: top-N heapsort  Memory: 31kB\n              Buffers: shared hit=2807 read=11952\n              Worker 0:  Sort Method: top-N heapsort  Memory: 31kB\n              Worker 1:  Sort Method: top-N heapsort  Memory: 31kB\n              ->  Parallel Seq Scan on audit_events  (cost=0.00..27183.00 rows=22730 width=63) (actual time=0.033..304.679 rows=16667 loops=3)\n                    Filter: ((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid) OR (NULLIF(current_setting('app.platform_operation'::text, true), ''::text) = 'on'::text))\n                    Rows Removed by Filter: 316667\n                    Buffers: shared hit=2731 read=11952\nPlanning Time: 0.135 ms\nExecution Time: 317.505 ms"
     },
     {

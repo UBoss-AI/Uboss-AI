@@ -1610,7 +1610,11 @@ describe('run engine, queue and scheduler (e2e)', () => {
         actorUserId: workerUserId,
         assignmentId,
       });
-      assert.equal(ready.missing.length, 0, 'the builder still wants something after answering all');
+      assert.equal(
+        ready.missing.length,
+        0,
+        'the builder still wants something after answering all',
+      );
       assert.equal(ready.readiness.readyToActivate, true);
 
       // ---- 3. activation produces a reusable Engine Agent ----
@@ -1708,7 +1712,10 @@ describe('run engine, queue and scheduler (e2e)', () => {
         actions.some((action) => action.startsWith('agent.')),
         'the agent stage left no audit event',
       );
-      assert.ok(audited.every((row) => row.resourceType !== ''), 'an audit row named no resource');
+      assert.ok(
+        audited.every((row) => row.resourceType !== ''),
+        'an audit row named no resource',
+      );
     });
 
     it('keeps the whole journey inside one company', async () => {
@@ -1732,7 +1739,9 @@ describe('run engine, queue and scheduler (e2e)', () => {
       const otherScope = tenantScopeForPlatformOperation(otherTenantId);
       const counts = await ctx.prisma.runInTenantTransaction(otherScope, async () => ({
         objectives: await ctx.prisma.client.objective.count({ where: { id: objectiveId } }),
-        assignments: await ctx.prisma.client.aiWorkAssignment.count({ where: { id: assignmentId } }),
+        assignments: await ctx.prisma.client.aiWorkAssignment.count({
+          where: { id: assignmentId },
+        }),
         agents: await ctx.prisma.client.engineAgent.count({ where: { id: agentId } }),
         runs: await ctx.prisma.client.agentRun.count({ where: { engineAgentId: agentId } }),
       }));

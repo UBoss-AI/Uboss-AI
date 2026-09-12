@@ -743,7 +743,11 @@ export class PlatformAdministrationService {
       actorUserId: input.actorUserId,
       summary: `Declared a ${input.severity} incident on ${alert.service}.`,
       reason: null,
-      metadata: { service: alert.service, severity: input.severity, ownerUserId: input.ownerUserId },
+      metadata: {
+        service: alert.service,
+        severity: input.severity,
+        ownerUserId: input.ownerUserId,
+      },
     });
 
     return alert;

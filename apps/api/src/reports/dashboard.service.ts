@@ -40,10 +40,7 @@ export class DashboardService {
    * transaction so the donut's two slices come from the same instant; two round trips could show a
    * task that moved between them.
    */
-  async counts(input: {
-    scope: TenantScope;
-    reportScope: ReportScope;
-  }): Promise<DashboardCounts> {
+  async counts(input: { scope: TenantScope; reportScope: ReportScope }): Promise<DashboardCounts> {
     // An empty scope means nobody, not everybody — the same rule the reports apply, restated here
     // because this is the one screen every signed-in person lands on.
     if (input.reportScope.userIds !== null && input.reportScope.userIds.length === 0) {

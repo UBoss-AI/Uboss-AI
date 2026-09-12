@@ -196,7 +196,12 @@ describe('knowledge, files and safe uploads (e2e)', () => {
         return user;
       };
       return {
-        admin: await make('UB-KNAD-0001', 'admin@knowledge.example', 'Admin', provisioned.tenant.id),
+        admin: await make(
+          'UB-KNAD-0001',
+          'admin@knowledge.example',
+          'Admin',
+          provisioned.tenant.id,
+        ),
         approver: await make(
           'UB-KNAP-0001',
           'approver@knowledge.example',
@@ -288,9 +293,7 @@ describe('knowledge, files and safe uploads (e2e)', () => {
       filename: options.filename ?? 'handbook.txt',
       contentType: options.contentType ?? 'text/plain',
       bytes: Buffer.from(options.body ?? 'The company handbook.', 'utf8'),
-      ...(options.classification === undefined
-        ? {}
-        : { classification: options.classification }),
+      ...(options.classification === undefined ? {} : { classification: options.classification }),
     });
 
   // -------------------------------------------------------------------------
@@ -727,7 +730,11 @@ describe('knowledge, files and safe uploads (e2e)', () => {
       sourceId: source.id,
       engineAgentId: agentId,
     });
-    assert.deepEqual(outcome.fileIds, [], 'a quarantined file is not readable, source or no source');
+    assert.deepEqual(
+      outcome.fileIds,
+      [],
+      'a quarantined file is not readable, source or no source',
+    );
     assert.equal(outcome.unusableFileCount, 1);
   });
 
@@ -780,7 +787,11 @@ describe('knowledge, files and safe uploads (e2e)', () => {
         ctx.prisma.runInTenantTransaction(scope(), () =>
           ctx.prisma.client.storedFile.update({
             where: { id: file.id },
-            data: { deletedAt: new Date(), deletedReason: 'Bypassing the service.', storageRef: null },
+            data: {
+              deletedAt: new Date(),
+              deletedReason: 'Bypassing the service.',
+              storageRef: null,
+            },
           }),
         ),
       (error: Error) => /held_file_is_not_deleted/.test(error.message),
@@ -949,9 +960,11 @@ describe('knowledge, files and safe uploads (e2e)', () => {
   });
 
   it('refuses to reach another company by putting its id in the path', async () => {
-    await asPerson(agent().get(`/tenants/${otherTenantId}/files`), adminUboss, otherTenantId).expect(
-      403,
-    );
+    await asPerson(
+      agent().get(`/tenants/${otherTenantId}/files`),
+      adminUboss,
+      otherTenantId,
+    ).expect(403);
   });
 
   // -------------------------------------------------------------------------

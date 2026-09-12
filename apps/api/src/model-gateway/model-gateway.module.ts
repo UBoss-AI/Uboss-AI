@@ -67,7 +67,13 @@ export { PROVIDER_ADAPTERS } from './provider-adapter.js';
     },
     {
       provide: ModelGateway,
-      inject: [PrismaService, SecretsVault, PROVIDER_ADAPTERS, CostEngineService, ProviderThrottleService],
+      inject: [
+        PrismaService,
+        SecretsVault,
+        PROVIDER_ADAPTERS,
+        CostEngineService,
+        ProviderThrottleService,
+      ],
       useFactory: (
         prisma: PrismaService,
         vault: SecretsVault,

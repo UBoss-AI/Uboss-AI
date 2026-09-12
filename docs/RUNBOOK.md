@@ -1,6 +1,6 @@
 # Operational Runbook
 
-Prompt 39 asks for *"operational runbook docs"*. This is written for somebody woken at 3am who did
+Prompt 39 asks for _"operational runbook docs"_. This is written for somebody woken at 3am who did
 not build UBoss. It says what to look at, in what order, and what each answer means.
 
 **It describes only what exists.** Where a capability is missing, the gap is stated here rather
@@ -11,16 +11,16 @@ runbook.
 
 ## 0. The thirty-second orientation
 
-| Question | Where |
-| --- | --- |
-| Is anything broken? | `GET /platform/observability/alert-rules` — every rule with its current value |
-| What is on fire right now? | `GET /platform/support/health` — components, and active declared incidents |
-| What are the numbers? | `GET /platform/observability/metrics` (Prometheus text) or `/metrics/snapshot` (JSON) |
-| What did this one request do? | `GET /platform/observability/traces?correlationId=…` |
-| What are customers being told? | `GET /tenants/:tenantId/service-status` — published incidents only |
-| Is anybody being throttled? | `GET /platform/limits` — the limits in force and which store enforces them |
-| Why is a run not starting? | `GET /platform/limits/fairness` — the queue, in the order it will be served |
-| Can we actually restore? | `GET /platform/recovery` — when a restore last **succeeded**, not when a backup was last taken |
+| Question                       | Where                                                                                          |
+| ------------------------------ | ---------------------------------------------------------------------------------------------- |
+| Is anything broken?            | `GET /platform/observability/alert-rules` — every rule with its current value                  |
+| What is on fire right now?     | `GET /platform/support/health` — components, and active declared incidents                     |
+| What are the numbers?          | `GET /platform/observability/metrics` (Prometheus text) or `/metrics/snapshot` (JSON)          |
+| What did this one request do?  | `GET /platform/observability/traces?correlationId=…`                                           |
+| What are customers being told? | `GET /tenants/:tenantId/service-status` — published incidents only                             |
+| Is anybody being throttled?    | `GET /platform/limits` — the limits in force and which store enforces them                     |
+| Why is a run not starting?     | `GET /platform/limits/fairness` — the queue, in the order it will be served                    |
+| Can we actually restore?       | `GET /platform/recovery` — when a restore last **succeeded**, not when a backup was last taken |
 
 Every route above is `@PlatformOnly`. `/metrics` is the one endpoint outside the permission model,
 because a scraper holds no session — see §6.
@@ -76,7 +76,7 @@ threshold. Read it before tuning one.
 1. `GET /platform/observability/metrics/snapshot` → `queue_depth` and `queue_oldest_age_ms`.
 2. Depth low, age high → **one wedged job**, not a backlog. Find it:
    `SELECT id, state, attempt, reserved_at FROM agent_runs WHERE state IN ('Reserved','Running') ORDER BY reserved_at LIMIT 20;`
-3. Depth high *and* age high → the worker is not consuming. Check Redis reachability; the queue's
+3. Depth high _and_ age high → the worker is not consuming. Check Redis reachability; the queue's
    own `health()` reports `measured: false` when the broker cannot be reached.
 4. A run stuck in `Reserved` past any retry backoff is safe to fail: the row is the source of
    truth and the engine is idempotent on its key.
@@ -126,13 +126,13 @@ POST /platform/support/incidents/:alertId/publish   { customerVisible: true, cus
 POST /platform/observability/incidents/:alertId/resolve   { postmortem? }
 ```
 
-* **`occurredAt` is optional and backdatable.** Write the timeline as you go; if you cannot, backfill
+- **`occurredAt` is optional and backdatable.** Write the timeline as you go; if you cannot, backfill
   it afterwards with real times. A timeline that only knows when each line was typed misreports the
   sequence of the thing it exists to explain.
-* **Publishing needs customer wording.** A check constraint refuses a published incident without
+- **Publishing needs customer wording.** A check constraint refuses a published incident without
   `customer_impact`, because a status page would otherwise have to assemble one out of internal
   notes that may name a host or another customer.
-* **A P0 or P1 cannot be resolved without a postmortem** (at least 50 characters) **and at least one
+- **A P0 or P1 cannot be resolved without a postmortem** (at least 50 characters) **and at least one
   timeline entry.** `resolve` accepts the postmortem and does both in one transaction — that is the
   only order in which both rules hold. A P2 resolves on its mitigation note alone.
 
@@ -145,7 +145,7 @@ GET  /platform/observability/actions/open
 ```
 
 An owner and a due date are mandatory. Dropping one needs a reason; completing one does not —
-deciding *not* to fix something a postmortem identified is the decision somebody will be asked
+deciding _not_ to fix something a postmortem identified is the decision somebody will be asked
 about. Read `/actions/open` at the weekly review: overdue actions are what an incident process
 quietly stops doing.
 
@@ -168,12 +168,12 @@ the only lever, and it is the right one.
 `GET /platform/support/health` returns five components. **`measured: false` means nothing probed
 it**, and three of them report that today:
 
-| Component | Measured? | Why |
-| --- | --- | --- |
-| API, Database | yes | the health endpoint probes them |
-| Queue | only with a broker | the inline transport has no backlog to measure, and reports `null` rather than `0` |
-| Providers | **no** | `canReachProvider` is the adapter's statement about its own configuration, not a live call — a health check that called a provider would spend a customer's credits to colour a dashboard |
-| Connections | yes | counted from the connections table |
+| Component     | Measured?          | Why                                                                                                                                                                                       |
+| ------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API, Database | yes                | the health endpoint probes them                                                                                                                                                           |
+| Queue         | only with a broker | the inline transport has no backlog to measure, and reports `null` rather than `0`                                                                                                        |
+| Providers     | **no**             | `canReachProvider` is the adapter's statement about its own configuration, not a live call — a health check that called a provider would spend a customer's credits to colour a dashboard |
+| Connections   | yes                | counted from the connections table                                                                                                                                                        |
 
 The worst component decides the whole. A health page that averaged its components would show
 "mostly fine" during an outage.
@@ -198,9 +198,9 @@ which is the right trade, but somebody should fix the caller.
 
 ### Known limits of the registry
 
-* **In process.** Counters reset on restart, and a multi-process deployment reports per-process
+- **In process.** Counters reset on restart, and a multi-process deployment reports per-process
   figures. UBoss runs single-process today; a shared store is one adapter away.
-* **No histogram quantiles server-side.** The buckets are exported; compute quantiles in the
+- **No histogram quantiles server-side.** The buckets are exported; compute quantiles in the
   scraper.
 
 ---
@@ -249,11 +249,11 @@ into a message — `logger.log(\`token=\${token}\`)` defeats it, and only review
 
 Then `metrics/snapshot` → `rate_limit_refusals{scope}`:
 
-| `scope` | What it means |
-| --- | --- |
-| `User` | one person, almost always a script in a loop rather than somebody working |
-| `Tenant` | a whole company, almost always one integration retrying |
-| `Provider` | we are throttling *ourselves* to respect a provider's quota — not a customer problem |
+| `scope`    | What it means                                                                        |
+| ---------- | ------------------------------------------------------------------------------------ |
+| `User`     | one person, almost always a script in a loop rather than somebody working            |
+| `Tenant`   | a whole company, almost always one integration retrying                              |
+| `Provider` | we are throttling _ourselves_ to respect a provider's quota — not a customer problem |
 
 ```sql
 -- Who, and when. One row per identity per five minutes, not one per refusal (S-305).
@@ -275,11 +275,11 @@ that as a design.
 
 This is the fairness cap, not a stuck worker. `GET /platform/limits/fairness`:
 
-* **`deferred > 0` with `dispatchable > 0`** — working as designed. Some company is at its ceiling
+- **`deferred > 0` with `dispatchable > 0`** — working as designed. Some company is at its ceiling
   and others are being served ahead of it.
-* **`companiesWaiting` = 1 and `deferred` high** — one company has more work than its ceiling
+- **`companiesWaiting` = 1 and `deferred` high** — one company has more work than its ceiling
   allows. Either raise `limits.concurrent_runs_per_company` or add workers; nothing is broken.
-* **`dispatchable` high and nothing starting** — *this* is a stuck worker. Go to §2 `queue-stuck`.
+- **`dispatchable` high and nothing starting** — _this_ is a stuck worker. Go to §2 `queue-stuck`.
 
 `nextUp` is the order runs will actually be taken in: round-robin across companies, oldest first
 within each. A deferred run carries its reason on `agent_runs.progress_message`, so the person
@@ -294,10 +294,10 @@ SELECT tenant_id, count(*) FROM agent_runs
 
 Two different knobs, and they are easy to confuse:
 
-| Knob | Question it answers |
-| --- | --- |
-| `RUNS_WORKER_CONCURRENCY` (env, default 4) | how much work **this process** carries |
-| `limits.concurrent_runs_per_company` (setting, default 8) | **whose** work gets to use it |
+| Knob                                                      | Question it answers                    |
+| --------------------------------------------------------- | -------------------------------------- |
+| `RUNS_WORKER_CONCURRENCY` (env, default 4)                | how much work **this process** carries |
+| `limits.concurrent_runs_per_company` (setting, default 8) | **whose** work gets to use it          |
 
 Raising the worker figure without raising the database pool is the trap: every concurrent run holds
 a connection for its state transitions, so a worker concurrency above the pool size presents as a
@@ -308,9 +308,9 @@ slow database rather than as a misconfiguration.
 `GET /platform/limits/providers` shows what the gateway has learned: consecutive failures, cooldown
 remaining, and the last reason — by **provider model id**, never a vendor name.
 
-* `RateLimited` / `Timeout` / `Unavailable` / `ServerError` → backed off, and it will recover on
+- `RateLimited` / `Timeout` / `Unavailable` / `ServerError` → backed off, and it will recover on
   its own. A success clears the cooldown completely.
-* Anything else → **no cooldown, by design**. A rejected prompt or a refused credential will be
+- Anything else → **no cooldown, by design**. A rejected prompt or a refused credential will be
   refused identically next time, so backing off would spend a customer's wait to reach the same
   answer.
 
@@ -327,10 +327,10 @@ SELECT key, method, path, status_code, created_at, expires_at
  WHERE user_id = $1 ORDER BY created_at DESC LIMIT 20;
 ```
 
-* `status_code` **null** and recent → in flight. The client's retry is correctly told to wait.
-* `status_code` **null** and old → the first attempt died without completing or releasing. The
+- `status_code` **null** and recent → in flight. The client's retry is correctly told to wait.
+- `status_code` **null** and old → the first attempt died without completing or releasing. The
   sweep will clear it; `POST /platform/limits/idempotency/sweep` clears it now.
-* A **409 on every retry** → the client is reusing one key with different content. Check
+- A **409 on every retry** → the client is reusing one key with different content. Check
   `security_events` for `security.idempotency_key_reused`. This is a client bug, and the refusal is
   protecting them: answering would silently discard one of their two requests.
 
@@ -359,10 +359,10 @@ infra/backup/pg-backup.sh "$DATABASE_MIGRATION_URL" ./backups
 A logical dump plus a manifest recording the migration the schema was at, the size and a SHA-256.
 Two things it refuses to do, both learned the hard way:
 
-* **It will not dump as `uboss_app`.** That role is `NOBYPASSRLS`, so a dump taken as it would
+- **It will not dump as `uboss_app`.** That role is `NOBYPASSRLS`, so a dump taken as it would
   silently omit every tenant row it cannot see — producing a backup that restores to an empty
   database and exits zero. Use the owner role.
-* **It will not accept a dump under 1 KB**, which is what "it dumped nothing" looks like.
+- **It will not accept a dump under 1 KB**, which is what "it dumped nothing" looks like.
 
 The manifest says `state=Taken`. That is deliberate: nothing has yet proved the file is readable.
 
@@ -376,14 +376,14 @@ Restores into a scratch database, runs six checks, and drops the scratch databas
 It refuses to restore anywhere whose name is not `uboss_restore_check_*` — a "verification" that
 restored over live data would be the disaster it exists to prevent.
 
-| Check | What it catches that nothing else does |
-| --- | --- |
-| `RestoreCompletes` | The floor: a backup that cannot be read. |
-| `SchemaMatches` | A dump taken **mid-migration** — restores to a schema no application version can run against, and looks healthy until the first query. |
-| `RowCountsPlausible` | A backup of the wrong database, or of an empty one. A restore into nothing exits zero. |
+| Check                   | What it catches that nothing else does                                                                                                                                           |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RestoreCompletes`      | The floor: a backup that cannot be read.                                                                                                                                         |
+| `SchemaMatches`         | A dump taken **mid-migration** — restores to a schema no application version can run against, and looks healthy until the first query.                                           |
+| `RowCountsPlausible`    | A backup of the wrong database, or of an empty one. A restore into nothing exits zero.                                                                                           |
 | `TenantIsolationIntact` | **RLS lost in the restore.** Policies and `FORCE ROW LEVEL SECURITY` are schema objects; a restored database serving every tenant to every reader passes every other check here. |
-| `AuditChainIntact` | Rows lost or reordered — detectable because the trail is hash-chained. |
-| `ApplicationStarts` | Everything above can pass against a database nothing can use. |
+| `AuditChainIntact`      | Rows lost or reordered — detectable because the trail is hash-chained.                                                                                                           |
+| `ApplicationStarts`     | Everything above can pass against a database nothing can use.                                                                                                                    |
 
 **Every one must pass.** There is no partial credit: a restore that lost row-level security is not
 83% of a good restore.
@@ -408,19 +408,19 @@ to skip.
 
 Named here so a green recovery status is not read as more than it is:
 
-* **Continuous WAL archiving** — `archive_mode` and `archive_command` are PostgreSQL and host
+- **Continuous WAL archiving** — `archive_mode` and `archive_command` are PostgreSQL and host
   configuration. This build takes logical dumps only, so **point-in-time recovery is not available
   until archiving is configured**, and the decision tree's "recover to just before the migration"
   branch depends on it. The settings to apply, the base-backup pairing and the recovery procedure
   are written out in `infra/backup/pitr-configuration.md` — including the one step people skip,
-  which is to look at the paused replica *before* promoting it, because promotion cannot be undone.
-* **Cross-region replication, object-store versioning and lifecycle** — bucket and provider policy.
-* **KMS custody and rotation** — and this one bites: a restored database is **unreadable without
+  which is to look at the paused replica _before_ promoting it, because promotion cannot be undone.
+- **Cross-region replication, object-store versioning and lifecycle** — bucket and provider policy.
+- **KMS custody and rotation** — and this one bites: a restored database is **unreadable without
   the keys that encrypted its secrets**. A recovery that restores PostgreSQL and not the key
   material gives a company its objectives back and none of its integrations. The drill has a step
   for it.
-* **DNS and traffic failover.**
-* **Scheduling the drill** — the ninth job waiting on the business-cron scheduler.
+- **DNS and traffic failover.**
+- **Scheduling the drill** — the ninth job waiting on the business-cron scheduler.
 
 ### Redis
 
@@ -452,7 +452,7 @@ The first question when a screen is slow for one customer and fine for everyone 
 
 Almost always it is a query that cannot reach an index, and almost always the reason is the same:
 **the tenant is not named in the `where`.** Row-Level Security still returns the right rows, so
-nothing is *wrong* — it is scanning every company to find them. Measured at roughly 100x on a
+nothing is _wrong_ — it is scanning every company to find them. Measured at roughly 100x on a
 million-row
 audit table (ADR-271).
 
@@ -474,22 +474,22 @@ current figures are in `docs/PERFORMANCE.md`.
 
 Stated plainly, because a runbook's credibility rests on it:
 
-* **Nothing schedules alert evaluation, the retention sweep, the executor sweep, due lifecycle
+- **Nothing schedules alert evaluation, the retention sweep, the executor sweep, due lifecycle
   transitions, the scan queue, exit steps or the idempotency sweep.** **Eight** jobs wait on the
   business-cron scheduler. Until it runs, each has a route and somebody must call it.
-* **A deferred run is re-dispatched only by the broker, or by the next admission pass.** With BullMQ
+- **A deferred run is re-dispatched only by the broker, or by the next admission pass.** With BullMQ
   the run is re-enqueued with a one-second delay and comes back on its own. On the inline transport
   it stays `Queued` with its reason on the row — re-enqueuing there would recurse until the stack
   gave out, turning a fairness cap into a crash. Which one you have is `RunQueue.isDurableTransport`.
-* **Rate limits are per process unless `REDIS_URL` is set.** Behind a load balancer that multiplies
+- **Rate limits are per process unless `REDIS_URL` is set.** Behind a load balancer that multiplies
   the effective limit by the instance count. `GET /platform/limits` says which you have; nothing
   else will tell you.
-* **No alerting transport.** A raised alert is a database row on a screen. No email, no pager, no
+- **No alerting transport.** A raised alert is a database row on a screen. No email, no pager, no
   webhook. `notifications` exists and this does not use it.
-* **No log aggregation, no metric storage, no trace backend.** Everything here is in-process or in
+- **No log aggregation, no metric storage, no trace backend.** Everything here is in-process or in
   PostgreSQL.
-* **No point-in-time recovery.** Logical dumps only until WAL archiving is configured where UBoss
+- **No point-in-time recovery.** Logical dumps only until WAL archiving is configured where UBoss
   runs. The decision tree's migration branch assumes it and cannot be followed without it.
-* **Nothing schedules the backup or the drill.** Both are scripts somebody or something must call.
-* **No runtime error budget or SLO.** Latency is measured; no target is declared, so nothing can
+- **Nothing schedules the backup or the drill.** Both are scripts somebody or something must call.
+- **No runtime error budget or SLO.** Latency is measured; no target is declared, so nothing can
   say whether it is acceptable.

@@ -32,10 +32,7 @@ import { EmployeePhotoService } from '../src/organization/employee-photo.service
 import { ReportingHierarchyResolver } from '../src/organization/reporting-hierarchy.resolver.js';
 import { FileService } from '../src/knowledge/file.service.js';
 import { MALWARE_SCANNER, MockMalwareScanner } from '../src/knowledge/malware-scanner.js';
-import {
-  InMemoryStorageAdapter,
-  STORAGE_ADAPTER,
-} from '../src/knowledge/storage-adapter.js';
+import { InMemoryStorageAdapter, STORAGE_ADAPTER } from '../src/knowledge/storage-adapter.js';
 import { CompanySettingsService } from '../src/settings/company-settings.service.js';
 import {
   createRequestContext,
@@ -309,7 +306,10 @@ describe('CR-03 access, Job Method and photo (e2e)', () => {
           objectiveVersionId: version.id,
           // At least one node: `workflow_draft_has_at_least_one_node` refuses an empty graph,
           // because a draft with no work in it is not a plan.
-          graph: { nodes: [{ id: 'node-1', kind: 'AiWork', title: 'Reconcile the ledger' }], edges: [] },
+          graph: {
+            nodes: [{ id: 'node-1', kind: 'AiWork', title: 'Reconcile the ledger' }],
+            edges: [],
+          },
           schemaVersion: 1,
         },
       });
@@ -433,9 +433,7 @@ describe('CR-03 access, Job Method and photo (e2e)', () => {
     });
 
     it('grants builder access, and the engine then really allows it', async () => {
-      const before = await app
-        .get(AuthorizationService)
-        .contextFor(scope(), employeeId);
+      const before = await app.get(AuthorizationService).contextFor(scope(), employeeId);
       assert.equal(before.granted['agent-builder'], undefined);
       assert.equal(before.visibleModules.includes('agent-builder'), false);
 
@@ -736,7 +734,10 @@ describe('CR-03 access, Job Method and photo (e2e)', () => {
         operatorUserId: employeeId,
       });
 
-      assert.equal((await operators().myAgents({ scope: scope(), actorUserId: employeeId })).length, 1);
+      assert.equal(
+        (await operators().myAgents({ scope: scope(), actorUserId: employeeId })).length,
+        1,
+      );
       assert.equal(
         (await operators().myAgents({ scope: scope(), actorUserId: otherEmployeeId })).length,
         0,
@@ -1147,9 +1148,8 @@ describe('CR-03 access, Job Method and photo (e2e)', () => {
 
     it('does not change the six mandatory Add Employee fields', async () => {
       // CR-03 is explicit about this. Asserted against the live constant rather than trusted.
-      const { MANDATORY_EMPLOYEE_FIELDS } = await import(
-        '../src/organization/employment.service.js'
-      );
+      const { MANDATORY_EMPLOYEE_FIELDS } =
+        await import('../src/organization/employment.service.js');
       assert.deepEqual(
         MANDATORY_EMPLOYEE_FIELDS.map((field) => field.key),
         [
@@ -1340,7 +1340,13 @@ describe('CR-03 access, Job Method and photo (e2e)', () => {
       // The projection is total: not "these fields are absent from the type", but absent from
       // the bytes. A serialised search is what a leak would actually look like.
       const serialised = JSON.stringify(result);
-      for (const forbidden of ['prompt', 'apiKey', 'sk-do-not-leak', 'some-model-name', 'capability']) {
+      for (const forbidden of [
+        'prompt',
+        'apiKey',
+        'sk-do-not-leak',
+        'some-model-name',
+        'capability',
+      ]) {
         assert.equal(
           serialised.includes(forbidden),
           false,
@@ -1532,7 +1538,10 @@ describe('CR-03 access, Job Method and photo (e2e)', () => {
       const other = await ctx.provisioning.provision({
         slug: `other-cr03-${Date.now()}`,
         name: 'Other CR-03 Co',
-        firstMember: { email: `first-${Date.now()}@other-cr03.example`, displayName: 'Other First' },
+        firstMember: {
+          email: `first-${Date.now()}@other-cr03.example`,
+          displayName: 'Other First',
+        },
       });
       await activateTenant(ctx, other.tenant.id);
       await activateMembership(ctx, other.user.id, other.tenant.id);

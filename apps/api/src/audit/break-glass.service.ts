@@ -478,9 +478,7 @@ export class BreakGlassService {
         input.authorized
           ? SECURITY_ACTIONS.breakGlassCustomerAuthorized
           : SECURITY_ACTIONS.breakGlassCustomerDeclined,
-        input.authorized
-          ? 'break_glass.customer_authorized'
-          : 'break_glass.customer_declined',
+        input.authorized ? 'break_glass.customer_authorized' : 'break_glass.customer_declined',
         {
           summary: input.authorized
             ? 'The company authorized this support session.'

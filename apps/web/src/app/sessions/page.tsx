@@ -38,9 +38,7 @@ export default function SessionsPage() {
   const [me, setMe] = useState<MeResponse | null>(null);
   // Above the signed-out early return: a hook after one runs in a different order on the render
   // that takes it, which React forbids.
-  const bell = useNotificationBell(
-    me?.activeWorkspaceId ?? me?.workspaces[0]?.tenantId ?? null,
-  );
+  const bell = useNotificationBell(me?.activeWorkspaceId ?? me?.workspaces[0]?.tenantId ?? null);
   const [sessions, setSessions] = useState<SessionRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);

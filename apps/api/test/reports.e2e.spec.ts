@@ -331,14 +331,20 @@ describe('reports and the company dashboard (e2e)', () => {
       }),
     );
 
-  const dashboardFor = async (uboss: string): Promise<{ agents: number; pendingJobs: number; scope: string }> => {
+  const dashboardFor = async (
+    uboss: string,
+  ): Promise<{ agents: number; pendingJobs: number; scope: string }> => {
     const response = await asPerson(agent().get(`/tenants/${tenantId}/dashboard`), uboss).expect(
       200,
     );
     return response.body;
   };
 
-  const reportFor = async (uboss: string, key: string, expected = 200): Promise<{ rows: Record<string, string>[]; summary: Record<string, unknown> }> =>
+  const reportFor = async (
+    uboss: string,
+    key: string,
+    expected = 200,
+  ): Promise<{ rows: Record<string, string>[]; summary: Record<string, unknown> }> =>
     (await asPerson(agent().get(`/tenants/${tenantId}/reports/${key}`), uboss).expect(expected))
       .body;
 
@@ -457,10 +463,9 @@ describe('reports and the company dashboard (e2e)', () => {
       employeeUboss,
     ).expect(403);
 
-    await asPerson(
-      agent().get(`/tenants/${tenantId}/reports/AuditActivity`),
-      employeeUboss,
-    ).expect(403);
+    await asPerson(agent().get(`/tenants/${tenantId}/reports/AuditActivity`), employeeUboss).expect(
+      403,
+    );
   });
 
   /**
@@ -479,10 +484,9 @@ describe('reports and the company dashboard (e2e)', () => {
     assert.equal(catalogue.reports.length, 10, 'an admin sees all ten');
 
     for (const report of catalogue.reports) {
-      await asPerson(
-        agent().get(`/tenants/${tenantId}/reports/${report.key}`),
-        adminUboss,
-      ).expect(200);
+      await asPerson(agent().get(`/tenants/${tenantId}/reports/${report.key}`), adminUboss).expect(
+        200,
+      );
     }
   });
 
@@ -587,10 +591,9 @@ describe('reports and the company dashboard (e2e)', () => {
     await seedApproval(employeeId);
 
     // The employee can read it on screen.
-    await asPerson(
-      agent().get(`/tenants/${tenantId}/reports/ApprovalAging`),
-      employeeUboss,
-    ).expect(200);
+    await asPerson(agent().get(`/tenants/${tenantId}/reports/ApprovalAging`), employeeUboss).expect(
+      200,
+    );
 
     // And cannot take it away.
     await asPerson(
@@ -609,10 +612,9 @@ describe('reports and the company dashboard (e2e)', () => {
   it('records an export in the audit trail, and a read not at all', async () => {
     await seedApproval(managerId);
 
-    await asPerson(
-      agent().get(`/tenants/${tenantId}/reports/ApprovalAging`),
-      managerUboss,
-    ).expect(200);
+    await asPerson(agent().get(`/tenants/${tenantId}/reports/ApprovalAging`), managerUboss).expect(
+      200,
+    );
 
     const afterRead = await ctx.prisma.runInTenantTransaction(scope(), () =>
       ctx.prisma.client.auditEvent.findMany({ where: { tenantId, action: 'report.exported' } }),
@@ -662,9 +664,11 @@ describe('reports and the company dashboard (e2e)', () => {
 
   it('refuses a range longer than the ceiling', async () => {
     await asPerson(
-      agent()
-        .get(`/tenants/${tenantId}/reports/ApprovalAging`)
-        .query({ range: 'Custom', from: '2020-01-01T00:00:00.000Z', to: '2026-01-01T00:00:00.000Z' }),
+      agent().get(`/tenants/${tenantId}/reports/ApprovalAging`).query({
+        range: 'Custom',
+        from: '2020-01-01T00:00:00.000Z',
+        to: '2026-01-01T00:00:00.000Z',
+      }),
       adminUboss,
     ).expect(400);
   });

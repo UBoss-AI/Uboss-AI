@@ -117,7 +117,9 @@ export class KnowledgeService {
         select: { id: true },
       });
       if (existing !== null) {
-        throw new ConflictException(`This company already has a knowledge source called "${input.name}".`);
+        throw new ConflictException(
+          `This company already has a knowledge source called "${input.name}".`,
+        );
       }
 
       const row = await this.prisma.client.knowledgeSource.create({
@@ -234,9 +236,7 @@ export class KnowledgeService {
           // Back to draft, and the approval columns are cleared together: leaving
           // `approved_by_user_id` on a draft would show a name against a decision that no longer
           // stands. The constraint requires both or neither.
-          ...(wasApproved
-            ? { state: 'Draft', approvedAt: null, approvedByUserId: null }
-            : {}),
+          ...(wasApproved ? { state: 'Draft', approvedAt: null, approvedByUserId: null } : {}),
           version: { increment: 1 },
         },
       });
@@ -512,8 +512,7 @@ export class KnowledgeService {
           row.files.length,
           row.files.filter(
             (link) =>
-              link.file.deletedAt !== null ||
-              !fileIsUsable(link.file.scanState as FileScanState),
+              link.file.deletedAt !== null || !fileIsUsable(link.file.scanState as FileScanState),
           ).length,
         ),
       );

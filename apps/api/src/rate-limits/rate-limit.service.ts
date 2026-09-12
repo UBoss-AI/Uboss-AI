@@ -235,10 +235,7 @@ export class RateLimitService {
    * Master Console's own validation is the first line; this is the one that holds when a row is
    * edited by any other means.
    */
-  private async resolve(
-    scope: ApiLimitScope | 'Runs',
-    fallback: RateLimit,
-  ): Promise<RateLimit> {
+  private async resolve(scope: ApiLimitScope | 'Runs', fallback: RateLimit): Promise<RateLimit> {
     let raw: unknown;
     try {
       const row = await this.platform.findSetting(LIMIT_SETTING_KEYS[scope]);

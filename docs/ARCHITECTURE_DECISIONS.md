@@ -3118,7 +3118,7 @@ would by definition be a blocker.
 > taken by the budget-evaluation decision above — and five documents cited "ADR-118" meaning
 > one or the other. The audit found the collision; the earlier decision keeps the number.
 
-**Prompt 24.** Agent Builder's *Activate Agent* asks for `agent-builder:Run`.
+**Prompt 24.** Agent Builder's _Activate Agent_ asks for `agent-builder:Run`.
 
 The approved source document puts activation on the employee: "Employee completes Human work and
 only missing Agent setup → Test → Activate", and lists "assigned Agent Builder work" and "My
@@ -3127,8 +3127,8 @@ Engine Agents" in the employee's own scope. The Prompt 7 Employee template grant
 under-grant, corrected here.
 
 The first attempt at the correction was wrong, and a pre-existing test caught it. Granting the
-Employee `Publish` broke a blanket guardrail — *"gives Employee no approve, publish, assign or
-administer anywhere"* — and that guardrail is right: `Publish` means deciding what the company
+Employee `Publish` broke a blanket guardrail — _"gives Employee no approve, publish, assign or
+administer anywhere"_ — and that guardrail is right: `Publish` means deciding what the company
 releases. Activating the agent for your own assigned step is **doing the work**, which is exactly
 what `Run` already means, and the same reasoning the `agents: ['View','Comment','Run']` grant had
 been carrying since Prompt 7.
@@ -3146,7 +3146,7 @@ has to argue with the document rather than with a preference.
 **Prompt 24.** Agent Builder validates a chosen connection with a new, narrower question than
 `mayAgentUse`.
 
-An Agent Tool Permission is granted **to an agent**. Agent Builder chooses a connection *before*
+An Agent Tool Permission is granted **to an agent**. Agent Builder chooses a connection _before_
 activation creates the agent identity, so `mayAgentUse` there is unanswerable — no grant can exist
 for an identity that does not exist yet, and the first implementation therefore made every piece
 of work needing a connection permanently unable to activate. The e2e fixture is what surfaced it;
@@ -3185,7 +3185,7 @@ blocker. The canvas likewise draws an owner line only for Human nodes.
 
 **Prompt 24.** Readiness gates activation; a passing test does not.
 
-The source document makes *Activate* conditional on readiness — setup complete, an approved
+The source document makes _Activate_ conditional on readiness — setup complete, an approved
 published Skill behind the work, a usable connection where one is needed — and says nothing about
 having tested first. Adding that gate would have blocked work the client never said to block.
 
@@ -3265,7 +3265,7 @@ dead-letter path — has to be testable deterministically inside a suite that ru
 things. A test that needs a broker up, a worker polling and a sleep to observe a state change is a
 test that will be flaky for ever.
 
-`InlineRunQueue` is deliberately *not* a fake that records calls: it genuinely performs the run, so
+`InlineRunQueue` is deliberately _not_ a fake that records calls: it genuinely performs the run, so
 the engine's contract (enqueuing leads to execution) is exercised rather than asserted. What is
 left uncovered is the wire, which belongs in an integration check.
 
@@ -3442,9 +3442,9 @@ cannot return.
 **Prompt 28.** The Approval Engine contains no self-approval check and no four-eyes check. It
 loads the row and hands `authorize` a `ResourceDescriptor`:
 
-* `createdByUserId` — the requester, which is what makes the **mandatory platform-wide
+- `createdByUserId` — the requester, which is what makes the **mandatory platform-wide
   `NoSelfApproval` control seeded at Prompt 7** bite;
-* `priorActorUserIds` — the distinct people who have already *decided* (commenters excluded),
+- `priorActorUserIds` — the distinct people who have already _decided_ (commenters excluded),
   which is what makes a `FourEyes` control bite.
 
 Writing either rule again in the approvals code would have produced two answers to "may this
@@ -3458,7 +3458,7 @@ not dispose of it by rejecting it either.
 
 **Prompt 28.** `STEP_APPROVAL_KINDS` is `['NotRequired', 'Manager', 'Head', 'FourEyes']`, and
 Prompt 23 writes that value straight into `approver_role_kind`. So the column holds a `RoleKind`
-*or* the word `FourEyes`, which is not a role anybody holds.
+_or_ the word `FourEyes`, which is not a role anybody holds.
 
 Read as a role it would address the request to a role with no members and **deadlock every
 four-eyes gate in the product**. `routingFor` therefore classifies it as its own routing kind —
@@ -3495,7 +3495,7 @@ a request cannot decide it by having it delegated to them.
 
 The window is bounded to 92 days by a check constraint, matching `MAX_DELEGATION_DAYS`. An
 open-ended delegation is indistinguishable from a permanent grant, and the client asked for
-*out-of-office* cover — beyond a quarter it is a reassignment of authority and should be made as
+_out-of-office_ cover — beyond a quarter it is a reassignment of authority and should be made as
 one so that it is visible as one. Revocation is immediate rather than at the end date, because
 somebody who returns early means now.
 
@@ -3517,7 +3517,7 @@ with an escalation policy ends up worse than one without. A request with **no du
 reports itself overdue**: it can be old, but calling it late against a deadline nobody set would be
 an invention and would make the queue's most urgent colour meaningless.
 
-Where it escalates *to* closes the gap Prompt 27 left open — the Executor's escalation routed back
+Where it escalates _to_ closes the gap Prompt 27 left open — the Executor's escalation routed back
 to the existing owner, which is a loop. This walks one step up the reporting hierarchy from
 whoever was expected to decide, and where there is no step up it escalates to **nobody** and says
 so, rather than inventing a recipient.
@@ -3545,7 +3545,7 @@ a reach-widening version by naming a colleague who had never seen it — the fou
 was satisfied by typing a uuid.
 
 It now takes `approvalRequestId` and verifies four things: the request exists, its type is
-`AgentActivation`, its `subjectId` is *this* version, its status is `Approved`, and its
+`AgentActivation`, its `subjectId` is _this_ version, its status is `Approved`, and its
 `decidedByUserId` is not the person activating. `requestActivationApproval` creates it. Per
 version rather than per agent, because what is being judged is a specific impact analysis against a
 specific configuration in force; an approval carried over from a previous version would be an
@@ -3614,7 +3614,7 @@ them free, which is a different and wrong claim.
 ## ADR-148 — A company's own routes override the platform defaults rather than merging with them
 
 **Prompt 29.** `RoutingModelGateway.resolve` looks for the company's routes and, finding any, uses
-*only* those. Merging would mean a company that configured BYOK for its planner silently kept the
+_only_ those. Merging would mean a company that configured BYOK for its planner silently kept the
 platform model as a fallback — which is the opposite of what choosing BYOK means, and it would
 send that company's planning data to the UBoss account it deliberately opted out of.
 
@@ -3636,7 +3636,7 @@ output will be mocked before offering an AI action.
 carries its own endpoint so reachability is a property of the row. The reasoning was right and the
 answer was wrong: `usesRealModel` is the union across adapters, so a `true` there made an
 installation with no provider at all claim it could reach one. It reports `false`, and whether a
-*particular* endpoint answers is what Test Connection establishes per profile.
+_particular_ endpoint answers is what Test Connection establishes per profile.
 
 ## ADR-150 — Usage is measured or absent, never estimated
 
@@ -3716,7 +3716,7 @@ event. Collapsing them would make "what has ever happened to this budget" unansw
 a reservation was released.
 
 `Reserve` and `ReleaseReserve` entries are written even though they net to zero across a run.
-Omitting them would make the balance unexplainable at any moment *during* a run, and "why does
+Omitting them would make the balance unexplainable at any moment _during_ a run, and "why does
 this say we have less than the sum of our spends" is the first question anybody asks.
 
 The four reservation states are three terminal ones for a reason: **`Expired` is not `Released`.**
@@ -3740,15 +3740,15 @@ the engine has a bug.
 **Prompt 30.** A real off-by-one, found by the concurrency tests rather than by reading the code.
 
 The first version hard-stopped at `percentAfter >= hardStopPercent`, which refused the spend that
-lands *exactly* on the allowance — making the last slice of every budget unspendable. A company
+lands _exactly_ on the allowance — making the last slice of every budget unspendable. A company
 that buys ₹10,000 of AI should be able to spend ₹10,000. "Block when the limit is reached" means
-that once it *is* reached the next call is refused, which is the same test one unit later.
+that once it _is_ reached the next call is refused, which is the same test one unit later.
 
 It is also compared in **minor units, not percent**. Percent is floored for display, so a spend
 landing on 100.4% reads as 100: a `>=` test would refuse a spend that fits and a `>` test would
 allow one that does not. The ceiling in minor units is exact.
 
-The approval threshold stays `>=`: crossing *into* the band is what should ask a person.
+The approval threshold stays `>=`: crossing _into_ the band is what should ask a person.
 
 ## ADR-158 — Three controls stay three
 
@@ -3800,7 +3800,7 @@ wallets and notifications. When absent the gateway behaves exactly as it did at 
 same threshold and each raced to insert the same deduplicated notification. All but one hit the
 unique index, the error escaped, and reservations that had already been written correctly failed.
 
-`notifyThreshold` now swallows and logs. The duplicate *is* the deduplication working, and more
+`notifyThreshold` now swallows and logs. The duplicate _is_ the deduplication working, and more
 generally telling somebody their budget is low is strictly less important than the budget being
 right. It was already outside the wallet transaction for the same reason; this finishes the job.
 
@@ -3839,14 +3839,14 @@ change to any of them is audited with a reason.
 
 The defaults are the conservative reading in each case:
 
-* **`MonthlyReset`** — the provisioned field is already `monthlyAllowanceMinor`, so not resetting
+- **`MonthlyReset`** — the provisioned field is already `monthlyAllowanceMinor`, so not resetting
   would contradict its own name.
-* **`Forfeit`** — the strict reading of a monthly allowance. Carrying forward by default would
+- **`Forfeit`** — the strict reading of a monthly allowance. Carrying forward by default would
   quietly hand a customer more than their contract says, which is harder to undo than the reverse.
-* **A purchased top-up does not expire.** The one default that could not be defended otherwise:
+- **A purchased top-up does not expire.** The one default that could not be defended otherwise:
   expiring money somebody paid for, unasked, is not a safe default.
-* **`BlockImmediately`** — the safe direction the moment a balance goes negative.
-* **`NextCycle`** — a plan change that does not disturb a cycle already in progress.
+- **`BlockImmediately`** — the safe direction the moment a balance goes negative.
+- **`NextCycle`** — a plan change that does not disturb a cycle already in progress.
 
 ## ADR-166 — Credit arrives in lots, not as a single number
 
@@ -3861,7 +3861,7 @@ A grant does **not** replace the wallet's running total — it explains it. The 
 moves only through `CostEngineService.adjustAllowance`, which writes the ledger entry, so
 `reconcile` (ADR-156) stays meaningful.
 
-A grant's amount, currency, source and effective date are fixed by trigger. Its *life* can change
+A grant's amount, currency, source and effective date are fixed by trigger. Its _life_ can change
 — revoked, written off — but an editable amount would move a company's allowance with nothing
 explaining the movement.
 
@@ -3911,7 +3911,7 @@ reserved or already spent would let the same money be spent twice: once by the r
 once wherever it was moved to.
 
 The movements are ordered out-then-in deliberately. If the second fails, the company is left with
-*less* available than it had — visible and correctable — rather than more, which would be
+_less_ available than it had — visible and correctable — rather than more, which would be
 allowance from nowhere.
 
 ## ADR-171 — A revocation may take the balance below what was spent
@@ -3928,11 +3928,11 @@ It is recorded as a **signed `Adjustment`**, and this was wrong in the first cut
 that failed was "a refund is money going back where it came from, and a finance report should be
 able to separate that from a correction" — which reads well and contradicts the ledger's own
 vocabulary. `LEDGER_EFFECT` (Prompt 30, §20) says a `Refund` reduces `used_minor`: money coming
-back *after a charge*, such as a provider credit. Withdrawing an unpaid top-up takes back
+back _after a charge_, such as a provider credit. Withdrawing an unpaid top-up takes back
 allowance that was **never spent**, so a `Refund` would have left the allowance intact and written
 off real spend instead, and an `Expiry` would have claimed the credit lapsed rather than that the
 payment failed. Only `Adjustment` and `Reallocation` carry a signed amount, and a withdrawal is a
-correction. The test asserts the negative `Adjustment` *and* that no `Refund` was written.
+correction. The test asserts the negative `Adjustment` _and_ that no `Refund` was written.
 
 Promotional credit is an `Adjustment` and not a `TopUp` for a related reason — counting it as a
 top-up would overstate revenue.
@@ -3944,7 +3944,7 @@ the wallet by `LEDGER_EFFECT[kind].allowance * amountMinor` instead of by the ra
 negative amount for any kind outside the signed pair, and refuses a kind that does not move an
 allowance at all. Before that it wrote an `Expiry` as a negative number and moved the balance the
 same way — so the database's `ledger_amount_sign_matches_its_kind` refused the row, and had it not,
-`replayLedger` would have read the entry back as an *increase* and `reconcile` would have reported
+`replayLedger` would have read the entry back as an _increase_ and `reconcile` would have reported
 drift of twice the amount with nothing to explain it. The maintained balance and the replayed
 ledger have to be the same arithmetic, which is the whole reason `reconcile` means anything.
 
@@ -4008,15 +4008,15 @@ as the application role and watching the database refuse.
 asks for seven named views, and they are not seven saved filters over that list — three of them do
 not read events at all:
 
-| View | Source | Why |
-| --- | --- | --- |
-| Authentication events | `security_events` where category ∈ {Login, Session, Risk} | |
-| Active sessions | `sessions`, live, for this company's members | **State, not history** |
-| Admin & permission changes | `security_events` where action ∈ 18 named actions | `Access` holds fifty |
-| Guest access & expiry | `tenant_memberships` where type = ExternalGuest | **State** |
-| Data exports | `security_events` where action ∈ the three export actions | |
-| Agent high-risk actions | `connection_tool_grants` in the five high-risk categories | **State** |
-| Support & break-glass | `security_events` where category = Support | |
+| View                       | Source                                                    | Why                    |
+| -------------------------- | --------------------------------------------------------- | ---------------------- |
+| Authentication events      | `security_events` where category ∈ {Login, Session, Risk} |                        |
+| Active sessions            | `sessions`, live, for this company's members              | **State, not history** |
+| Admin & permission changes | `security_events` where action ∈ 18 named actions         | `Access` holds fifty   |
+| Guest access & expiry      | `tenant_memberships` where type = ExternalGuest           | **State**              |
+| Data exports               | `security_events` where action ∈ the three export actions |                        |
+| Agent high-risk actions    | `connection_tool_grants` in the five high-risk categories | **State**              |
+| Support & break-glass      | `security_events` where category = Support                |                        |
 
 Two decisions inside that table are worth stating.
 
@@ -4069,14 +4069,14 @@ Counted figures are always captioned with their window, because "47 failed login
 ## ADR-177 — Company-admin session revoke, and the person-level consequence
 
 **Prompt 32.** Admin session revoke has been `@PlatformOnly` since Prompt 5, with the reason
-recorded in the code: *"company-admin session revoke needs the role model, which arrives at Prompt
-7"*. The role model has been in place for twenty-five prompts and §27.1 asks for admin session
+recorded in the code: _"company-admin session revoke needs the role model, which arrives at Prompt
+7"_. The role model has been in place for twenty-five prompts and §27.1 asks for admin session
 revoke inside the company's own Security Center, so this closes it.
 
 Two things the company route checks that the platform one does not.
 
 **The session belongs to a member of this company.** `sessions` carries a `user_id` and **no
-`tenant_id`**, because a session belongs to a *person* — one sign-in, several workspaces. Without
+`tenant_id`**, because a session belongs to a _person_ — one sign-in, several workspaces. Without
 a membership check, a company administrator could sign out somebody who has never worked for them,
 by id. The refusal is deliberately the same message as a session that does not exist: telling an
 administrator "that one belongs to another company" confirms the id is real.
@@ -4129,21 +4129,21 @@ CRM or ledger is not built. So the view shows what an agent has been **permitted
 live and revoked `connection_tool_grants` in those five categories, with who granted them and why
 — and says so on the view itself rather than in a document nobody reading the screen will open.
 
-Revoked grants are shown deliberately: "who *used* to be able to delete from our CRM" is a
+Revoked grants are shown deliberately: "who _used_ to be able to delete from our CRM" is a
 question an investigation asks.
 
 ---
 
 ## ADR-180 — Data classification is its own module, introduced here and owned by Prompt 35
 
-**Prompt 33.** §19 states the rule that forces the issue: *"Sensitive data classification controls
-whether a memory record can be persisted."* A memory policy cannot enforce a sensitive-data
+**Prompt 33.** §19 states the rule that forces the issue: _"Sensitive data classification controls
+whether a memory record can be persisted."_ A memory policy cannot enforce a sensitive-data
 restriction without a vocabulary of sensitivity, so Prompt 33 needs one.
 
 But classification is not memory's property. **Prompt 35 owns Knowledge, Files and Data
-Classification**, and §23 names the four classes for the whole product: *"Company can classify data
+Classification**, and §23 names the four classes for the whole product: _"Company can classify data
 such as Public / Internal / Confidential / Restricted and apply stricter AI/tool policies to
-sensitive classes."* So `packages/types/src/classification.ts` exists on its own, where files,
+sensitive classes."_ So `packages/types/src/classification.ts` exists on its own, where files,
 knowledge sources, connections and exports will all reach it — rather than inside `memory.ts`,
 which would leave Prompt 35 either importing from memory or declaring a second set of labels.
 
@@ -4176,12 +4176,12 @@ row per mode is the shape the requirement has.
 
 The defaults, with the reasoning:
 
-| Mode | Kept | Visible to | Up to | On offboarding |
-| --- | --- | --- | --- | --- |
-| Current run only | 1 day | the run | Confidential | delete |
-| Objective memory | 90 days | the Objective | Internal | transfer to successor |
-| Agent memory | 180 days | the agent | Internal | keep, anonymised |
-| Approved long-term | until deleted | the company | Confidential | keep, anonymised |
+| Mode               | Kept          | Visible to    | Up to        | On offboarding        |
+| ------------------ | ------------- | ------------- | ------------ | --------------------- |
+| Current run only   | 1 day         | the run       | Confidential | delete                |
+| Objective memory   | 90 days       | the Objective | Internal     | transfer to successor |
+| Agent memory       | 180 days      | the agent     | Internal     | keep, anonymised      |
+| Approved long-term | until deleted | the company   | Confidential | keep, anonymised      |
 
 **The substantive decision is the classification ceiling: nothing persists `Restricted` by
 default, and only the ephemeral and approved modes may hold `Confidential`.** §19 makes
@@ -4190,7 +4190,7 @@ have to permit deliberately rather than inherit. The ephemeral mode may hold sen
 because it is the only way a run can work on a confidential document at all — and it is gone within
 the day.
 
-### What is *not* configurable
+### What is _not_ configurable
 
 `MEMORY_MODE_MAX_VISIBILITY` is a **ceiling, not a setting**. A company may narrow Agent Memory to
 `SameObjective`; it may not widen Objective Memory to `SameAgent`, because §19's rule for that mode
@@ -4201,17 +4201,17 @@ And there is no field anywhere for cross-tenant memory — see ADR-182.
 
 ## ADR-182 — "No cross-tenant memory" is structural, so it has no code
 
-**Prompt 33.** §19 says *"Never use unrestricted cross-tenant or cross-user memory."* The two
+**Prompt 33.** §19 says _"Never use unrestricted cross-tenant or cross-user memory."_ The two
 halves are enforced completely differently, and the difference is the point.
 
 **Cross-user is a policy field**, because there is a legitimate case for it: `CompanyWide`
-visibility under `ApprovedLongTermMemory` *is* cross-user reading, and it is the mode whose name
+visibility under `ApprovedLongTermMemory` _is_ cross-user reading, and it is the mode whose name
 says somebody approved it. So `allowCrossUser` exists, defaults to false in every mode, and is
 refused by both the validator and a check constraint unless visibility is `CompanyWide`.
 
 **Cross-tenant has no field, no flag and no code path.** `memory_records` is tenant-owned with
 `FORCE ROW LEVEL SECURITY`, and `run_id` carries a composite foreign key including `tenant_id`
-(ADR-064) — so a record cannot even *reference* another company's run, let alone be read across
+(ADR-064) — so a record cannot even _reference_ another company's run, let alone be read across
 companies. A test proves the foreign key refuses it.
 
 `memoryReadable` deliberately contains **no tenant check**, and that is a decision rather than an
@@ -4286,7 +4286,7 @@ would have caught it before anything ran.
 - **`ExactMatch`** fails on a better answer than the one the reviewer wrote.
 - **`ContainsAll`** treats a sentence of prose as a list of required fragments.
 
-Prompt 18 defined `HumanJudged` as *"a person judged it — recorded, never computed"*, which is
+Prompt 18 defined `HumanJudged` as _"a person judged it — recorded, never computed"_, which is
 exactly the provenance of a case built from human feedback. Somebody has to look at the result, and
 pretending otherwise would produce a regression gate that fails for the wrong reasons.
 
@@ -4296,8 +4296,8 @@ do".
 
 ## ADR-187 — There is nothing to disable, and the product says so
 
-**Prompt 33's own words:** *"Do NOT assume or automatically enable external provider model training
-on company data."* §27.1 puts it as "it is not assumed to train external provider models".
+**Prompt 33's own words:** _"Do NOT assume or automatically enable external provider model training
+on company data."_ §27.1 puts it as "it is not assumed to train external provider models".
 
 The strongest form of that is not a setting defaulted to off — a setting implies the capability
 exists and somebody may turn it on. So feedback goes exactly two places, both inside UBoss: this
@@ -4305,7 +4305,7 @@ company's own quality figures, and this company's own evaluation cases. There is
 field, no adapter parameter and no route** that could send a correction to a provider, and
 `FEEDBACK_TRAINING_STANCE` says so in words the UI renders verbatim.
 
-Two tests assert the *absence*: a unit test that the only exported name matching `/train/i` is the
+Two tests assert the _absence_: a unit test that the only exported name matching `/train/i` is the
 stance constant itself, and an e2e test that the meta response contains no `trainingEnabled`,
 `trainingConsent` or `allowTraining`. A later prompt adding a consent toggle fails here rather than
 shipping.
@@ -4332,8 +4332,8 @@ the two, and the outcome says which it took.
 **Prompt 34.** §27.1 asks for "controlled Pause/Resume" on a live objective and a formal
 `Completed -> Outcome Review -> Closed -> Archived` lifecycle. Those are objective states, so they
 went into `OBJECTIVE_STATUSES` and `ALLOWED_OBJECTIVE_TRANSITIONS` — the table whose own comment
-already says why it is one table: *"once there are two tables they disagree. That has already
-happened twice in this codebase."*
+already says why it is one table: _"once there are two tables they disagree. That has already
+happened twice in this codebase."_
 
 Eight states became eleven. The authoring states keep their order and wording, and a test pins
 both — a reordering would break every screen that reads the list as a progression.
@@ -4348,8 +4348,8 @@ Four decisions inside the new edges:
 - **`Completed` may be archived without a review.** A company that wants no review of a finished
   objective should not be forced through one — and the archive event records that there was none,
   so a report asking "how did this turn out" can tell.
-- **`OutcomeReview` and `Closed` have no edge back to `Active`.** §27.1: *"Reopening a
-  closed/live definition follows version rules."* Reopening is `startNewDraft` — a new version —
+- **`OutcomeReview` and `Closed` have no edge back to `Active`.** §27.1: _"Reopening a
+  closed/live definition follows version rules."_ Reopening is `startNewDraft` — a new version —
   never a resurrection of the version people executed. A `reopen` route would have been a second
   way to do it and the one thing the document is explicit about.
 
@@ -4396,11 +4396,11 @@ compared figures.
 
 **Why a snapshot rather than a join.** A review read live would change after it was signed: a late
 cost settlement or a reopened exception would silently alter what somebody put their name to.
-§27.1 asks for a *formal* closure, and a signed document whose contents move is not one. The live
+§27.1 asks for a _formal_ closure, and a signed document whose contents move is not one. The live
 figures stay available beside the snapshot, so a drift between them is visible rather than hidden
 — the screen labels which it is showing.
 
-**One review per objective *version*, not per objective.** An objective reopened under the
+**One review per objective _version_, not per objective.** An objective reopened under the
 versioning rule becomes a new Draft, and that version gets its own review when it finishes. The
 old one stays exactly as it was signed, enforced by a unique index.
 
@@ -4416,7 +4416,7 @@ objective cost" is a question about what the company was actually charged.
 `human_tasks` has a `started_at` and a `completed_at` and no time log; nobody logs effort against a
 task anywhere in the product.
 
-So the honest measure is the task counts plus the *elapsed* time between starting and completing,
+So the honest measure is the task counts plus the _elapsed_ time between starting and completing,
 and the field is called `humanElapsedMinutes` rather than something that implies effort. A task
 somebody picked up on Monday and finished on Friday reads as four days whether they spent four
 days or twenty minutes on it.
@@ -4426,7 +4426,7 @@ next to "AI cost: ₹125.00" is a comparison a manager would act on, and the two
 the same kind of thing. The screen says so in a line under the figure.
 
 The first cut had a `humanMinutesRecorded` field reading a `minutesSpent` column that does not
-exist — the compiler caught the column, and the *name* was the part worth fixing.
+exist — the compiler caught the column, and the _name_ was the part worth fixing.
 
 ## ADR-193 — Unresolved work is reported, not blocking
 
@@ -4444,7 +4444,7 @@ So `readinessForReview` separates `outstanding` from `blocking`:
 
 ## ADR-194 — Sign-off is configuration, defaulting to the owner
 
-**Prompt 34.** §27.1: *"approval/owner sign-off **where policy requires**"* — a company decision,
+**Prompt 34.** §27.1: _"approval/owner sign-off **where policy requires**"_ — a company decision,
 and the document states no default. Three policies, in the existing settings catalogue rather than
 in a table of their own (`objective.closure_sign_off`, `objective` category, which existed with
 nothing in it):
@@ -4493,13 +4493,13 @@ because a service-level test passes whatever the decorator says.
 
 **Prompt 34.** Six acts, four grants:
 
-| Act | Grant | Why |
-| --- | --- | --- |
-| Pause, resume | `objective:Publish` | Authority over live work is one authority (ADR-195) |
-| Complete, archive | `objective:Publish` | Declaring work finished weighs the same as declaring it started |
-| Review | `objective:Approve` | A judgement, not an edit |
-| Sign off | `objective:View` + **is the owner** | A permission cannot express "the owner of *this* objective" |
-| Close | `objective:Publish` + the review's policy | |
+| Act               | Grant                                     | Why                                                             |
+| ----------------- | ----------------------------------------- | --------------------------------------------------------------- |
+| Pause, resume     | `objective:Publish`                       | Authority over live work is one authority (ADR-195)             |
+| Complete, archive | `objective:Publish`                       | Declaring work finished weighs the same as declaring it started |
+| Review            | `objective:Approve`                       | A judgement, not an edit                                        |
+| Sign off          | `objective:View` + **is the owner**       | A permission cannot express "the owner of _this_ objective"     |
+| Close             | `objective:Publish` + the review's policy |                                                                 |
 
 **Review is deliberately not `Publish`.** The person who declared the work finished should not be
 the only one who can grade it. A company that wants those to be the same person assigns both roles,
@@ -4513,8 +4513,8 @@ where the control lives.
 
 ## ADR-197 — The database holds a reference to a file, never its bytes
 
-**Prompt 35.** §22's store list says `files / knowledge_sources` carry *"tenant, classification,
-storage ref, scan status, retention policy"*. `files.storage_ref` is an opaque key a storage
+**Prompt 35.** §22's store list says `files / knowledge_sources` carry _"tenant, classification,
+storage ref, scan status, retention policy"_. `files.storage_ref` is an opaque key a storage
 adapter understands and nothing else interprets; the content lives in the adapter.
 
 The same rule as `secret_ref` at Prompt 16, for the same reasons. A database that holds file
@@ -4565,13 +4565,13 @@ business-cron scheduler is the right answer and would have meant building a seco
 
 ## ADR-200 — Export and external egress are two different ceilings
 
-§22: *"Apply stricter tool/AI/export rules by classification"* and *"add DLP/redaction hooks before
-sensitive data leaves the permitted boundary."* Those are two questions, and one ceiling could only
+§22: _"Apply stricter tool/AI/export rules by classification"_ and _"add DLP/redaction hooks before
+sensitive data leaves the permitted boundary."_ Those are two questions, and one ceiling could only
 answer one of them.
 
-* **`exportCeiling`** (default `Confidential`) — what may be exported *inside* the company. A
+- **`exportCeiling`** (default `Confidential`) — what may be exported _inside_ the company. A
   Confidential contract downloaded by the administrator who is entitled to it is an ordinary act.
-* **`externalEgressCeiling`** (default `Internal`) — what may leave UBoss through a connected
+- **`externalEgressCeiling`** (default `Internal`) — what may leave UBoss through a connected
   system. The strictest default in the module, and the one worth defending: too strict costs
   somebody a settings change; too loose costs a confidential document in a third party's system,
   which cannot be undone.
@@ -4586,7 +4586,7 @@ STANCE` says this in the product's own words and the screen renders it verbatim.
 
 ## ADR-201 — A knowledge source is approved, not assembled
 
-§Settings calls them *"approved knowledge sources"*, which is a requirement rather than a label:
+§Settings calls them _"approved knowledge sources"_, which is a requirement rather than a label:
 `decideKnowledgeRead` refuses any source not in `Approved`, so a collection somebody built and
 never had signed off is consulted by nothing.
 
@@ -4600,15 +4600,15 @@ role templates — CompanyAdmin and Approver — so by default the person who as
 source is not the person who approves it. The only structural separation of duties in this module,
 and the one that matters, because an approved source is what an Engine Agent is allowed to read.
 
-**There is no vector store, no embedding index and no semantic sharing**, per §35's *"do not build
-unrestricted vector-memory sharing"*. A source is a named list of files and a scope; a read is a
+**There is no vector store, no embedding index and no semantic sharing**, per §35's _"do not build
+unrestricted vector-memory sharing"_. A source is a named list of files and a scope; a read is a
 decision about that list. A test asserts the module exposes nothing resembling a shared vector
 store, because an absence is only durable if something checks for it.
 
 ## ADR-202 — An agent's classification ceiling is the company's export ceiling, for now
 
 `decideKnowledgeRead` takes an `agentClassificationCeiling`. **UBoss has no per-agent classification
-ceiling**: Prompt 16's tool grants are by *action category* — read, write, delete — not by data
+ceiling**: Prompt 16's tool grants are by _action category_ — read, write, delete — not by data
 class, and the approved documents specify no such field.
 
 Passing `null` would skip the check entirely for agents, which is the wrong default. So an agent is
@@ -4631,13 +4631,13 @@ exists to prevent.
 
 So an incident is an alert with `incident_severity`, `declared_at`, `declared_by_user_id`,
 `owner_user_id`, `mitigation`, `customer_visible` and `customer_impact`. **Not every alert is an
-incident**: an alert is *raised*, an incident is *declared*, and declaration is a human judgement
+incident**: an alert is _raised_, an incident is _declared_, and declaration is a human judgement
 that this is worth owning and publishing. `incident_severity IS NULL` is the ordinary case.
 
 **The P-level is a separate column from `severity`.** The alert's own scale is Info/Warning/
 Critical; mapping Critical onto P0 would assert a judgement nobody made.
 
-The incident *workflow* — timeline, postmortem, corrective actions — belongs to the observability
+The incident _workflow_ — timeline, postmortem, corrective actions — belongs to the observability
 prompt, which extends this record rather than adding its own. `INCIDENT_WORKFLOW_BOUNDARY` states
 that in the product's own words so the boundary need not be rediscovered.
 
@@ -4663,8 +4663,8 @@ Running `prisma validate` is now part of adding a relation.
 
 ## ADR-205 — Break-glass is the support session, extended rather than duplicated
 
-Prompt 36 asks for *"support session with reason, scope, expiry, operator, actions"* plus
-*"revoke/expire"* and *"complete audit"*. Prompt 8's `BreakGlassRequest` already carries every one
+Prompt 36 asks for _"support session with reason, scope, expiry, operator, actions"_ plus
+_"revoke/expire"_ and _"complete audit"_. Prompt 8's `BreakGlassRequest` already carries every one
 of those fields, plus identity verification, approval by somebody other than the requester, usage
 counting and customer notification.
 
@@ -4687,7 +4687,7 @@ The operator's System Health view is assembled from **probes**: the health endpo
 `health()`, the provider adapters, the connections table. The customer-facing status is assembled
 from **incidents an operator deliberately published**, and the two methods share no code path.
 
-That asymmetry is the whole of *"permitted customer-visible status where appropriate"*. A shared
+That asymmetry is the whole of _"permitted customer-visible status where appropriate"_. A shared
 path would eventually leak a probe reading into a customer response — and an early version of the
 customer view did exactly that with the alert's internal headline, which a test caught by asserting
 on the words (S-257).
@@ -4712,7 +4712,7 @@ green figure nothing measured on a health page. Same honesty rule as `produced_b
 ## ADR-208 — A report needs two permissions, and the second one names its action
 
 **Prompt 37.** `reports:View` is on every company role template — it is what lets anybody open the
-Reports section. A report is a *view onto another module's rows*, so it also requires the
+Reports section. A report is a _view onto another module's rows_, so it also requires the
 permission that governs those rows.
 
 The first version of this carried a `sourceModule` and **assumed `View`**, and that assumption was
@@ -4722,12 +4722,12 @@ A unit test written against the role templates caught it.
 
 So a report names a `{ module, action }` pair:
 
-| Report | Needs, beyond `reports:View` |
-| --- | --- |
-| AI Usage & Cost | `settings:Administer` — what AI work cost is commercial information |
-| Audit Activity | `settings:Audit` — the trail has its own grant, and reading it through Reports must need the same one as reading it directly |
-| Human vs AI Work Mix | nothing; it is this person's own work, aggregated |
-| the other seven | their own module's `View` |
+| Report               | Needs, beyond `reports:View`                                                                                                 |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| AI Usage & Cost      | `settings:Administer` — what AI work cost is commercial information                                                          |
+| Audit Activity       | `settings:Audit` — the trail has its own grant, and reading it through Reports must need the same one as reading it directly |
+| Human vs AI Work Mix | nothing; it is this person's own work, aggregated                                                                            |
+| the other seven      | their own module's `View`                                                                                                    |
 
 **A report the reader may not open is absent from the catalogue, not present-and-empty.** An empty
 Approval Aging table tells a reader there is nothing waiting, which is a different and wrong
@@ -4820,7 +4820,7 @@ in somebody else's verification.
 
 ## ADR-214 — "Authorized HR/Admin" is `users:Administer`, not `profile-search:View`
 
-The source documents say *"Authorized HR/Admin can search a person by UBoss Unique ID"*.
+The source documents say _"Authorized HR/Admin can search a person by UBoss Unique ID"_.
 `profile-search:View` is on **every** company role template — it governs whether the nav item
 appears — so it cannot be the control. An Employee reading another company's employment records is
 exactly what "Authorized HR/Admin" excludes.
@@ -4834,12 +4834,12 @@ guard before touching the database; the service then applies the real one.
 
 ## ADR-215 — Two company policies, and the source company owns the second
 
-§905 lists profile search among Settings *"where enabled"*, so the capability is configured:
+§905 lists profile search among Settings _"where enabled"_, so the capability is configured:
 
-* **`security.portable_profile_search_enabled`** — may *our* people look outward. **Off by
+- **`security.portable_profile_search_enabled`** — may _our_ people look outward. **Off by
   default.** Looking into other companies' employment records is a capability a company should
   choose rather than inherit.
-* **`security.portable_performance_sharing`** — how much of *our own* performance record travels
+- **`security.portable_performance_sharing`** — how much of _our own_ performance record travels
   when somebody verifies our former employee. `Nothing` / `BadgeOnly` / `BadgeAndScore`, defaulting
   to **`Nothing`**.
 
@@ -4858,7 +4858,7 @@ settings-free and carries a note pointing at the Users & Access screen, which a 
 
 ## ADR-216 — An achievement summary is a count and a date, because titles are forbidden
 
-The prompt asks for an *"approved achievement/reward summary"* and forbids exposing Objectives.
+The prompt asks for an _"approved achievement/reward summary"_ and forbids exposing Objectives.
 A `RewardAward`'s only human-readable label **is** the Objective it was earned against.
 
 So the summary is `{ count, mostRecentAt }`: "three approved rewards, most recently in March". That
@@ -4873,17 +4873,17 @@ because counting only `Approved` would under-report the people whose rewards wer
 
 ## ADR-217 — Exit deletes by classification, and the classification is exhaustive by test
 
-**Prompt 38** leads with *"without silently erasing accountability"*, which forbids the obvious
+**Prompt 38** leads with _"without silently erasing accountability"_, which forbids the obvious
 implementation. `DELETE FROM ... WHERE tenant_id = $1` over every tenant-owned table would satisfy
 "delete eligible tenant content" and destroy the audit trail, the financial record and every
 person's employment history — with nothing left to show what went or on whose authority.
 
 So `TABLE_DISPOSITION` classifies **all 91** tenant-scoped tables into three buckets:
 
-* **`Content`** — the company's work. Deleted.
-* **`Accountability`** — the audit trail, the security trail, break-glass history, lifecycle
+- **`Content`** — the company's work. Deleted.
+- **`Accountability`** — the audit trail, the security trail, break-glass history, lifecycle
   transitions, who held what authority, who approved what, and the financial record. Preserved.
-* **`PersonRecord`** — records that belong to a *person* rather than the company: employment dates
+- **`PersonRecord`** — records that belong to a _person_ rather than the company: employment dates
   and designation, badge history, performance events, and the departments those name. **A company
   leaving UBoss does not get to erase somebody's career**, and these are what a portable profile
   reads at Prompt 37A.
@@ -4899,13 +4899,13 @@ and nothing else in this codebase would notice.
 The database refused five versions of this design before it worked, and each refusal was
 informative:
 
-| Dependency | Outcome |
-| --- | --- |
-| `employment_records → departments` | **Departments preserved.** A record saying "Analyst in Delivery" must not point at nothing. |
-| `performance_events → performance_policies` (NOT NULL) | **Policy preserved** — and right on its own terms: a score cannot be read without the policy that produced it, the same argument ADR-215 makes. |
-| `approval_requests → objectives / objective_versions` (nullable) | **Detached.** The approval keeps what it decided and who decided it, and loses the pointer. |
-| `cost_ledger_entries → budget_reservations` (nullable) | **Detached.** |
-| `reward_awards → objectives / objective_rewards` (**NOT NULL**) | **Deleted.** No detach is possible and preserving every objective would defeat the exercise. |
+| Dependency                                                       | Outcome                                                                                                                                         |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `employment_records → departments`                               | **Departments preserved.** A record saying "Analyst in Delivery" must not point at nothing.                                                     |
+| `performance_events → performance_policies` (NOT NULL)           | **Policy preserved** — and right on its own terms: a score cannot be read without the policy that produced it, the same argument ADR-215 makes. |
+| `approval_requests → objectives / objective_versions` (nullable) | **Detached.** The approval keeps what it decided and who decided it, and loses the pointer.                                                     |
+| `cost_ledger_entries → budget_reservations` (nullable)           | **Detached.**                                                                                                                                   |
+| `reward_awards → objectives / objective_rewards` (**NOT NULL**)  | **Deleted.** No detach is possible and preserving every objective would defeat the exercise.                                                    |
 
 `DETACH_BEFORE_DELETE` nulls the pointers before the deletion runs; a unit test asserts every
 column in it belongs to a non-`Content` table, so nobody adds a NOT NULL column and discovers it at
@@ -4923,10 +4923,10 @@ the Prompt 8 tamper-protection pattern. Four are already preserved (consistent).
 
 Three possible responses, and only one is honest:
 
-* grant `DELETE` — undoes a deliberate tamper protection for one feature's convenience;
-* run the deletion as the database owner — a real privilege escalation needing its own credentials,
+- grant `DELETE` — undoes a deliberate tamper protection for one feature's convenience;
+- run the deletion as the database owner — a real privilege escalation needing its own credentials,
   wiring and review, not something to add in passing;
-* **delete what the application may delete, and report exactly what it could not.**
+- **delete what the application may delete, and report exactly what it could not.**
 
 The third. The certificate carries `retainedByPrivilege` with row counts per table, and the audit
 summary names the figure. A company asking "is it all gone" gets the truth. Closing the gap — by
@@ -4942,12 +4942,12 @@ A genuine conflict between two approved requirements, resolved by reading both.
 
 Prompt 11 locks `Closed` as terminal through `CompanyLifecycleService`: reopening a closed company
 would restore access to data whose retention decision has already been made. Prompt 38 requires
-*"cancellation before destructive point **where policy allows**"*.
+_"cancellation before destructive point **where policy allows**"_.
 
 So:
 
-* cancelling from `ReadOnly` — the company is still `ReadOnly` — restores it to `Active`;
-* cancelling from `RetentionHold` — the company is `Closed` — **stops the exit and leaves it
+- cancelling from `ReadOnly` — the company is still `ReadOnly` — restores it to `Active`;
+- cancelling from `RetentionHold` — the company is `Closed` — **stops the exit and leaves it
   closed.** Nothing has been deleted, which is the entire value of the retention window, but
   restoring access is the deliberate re-provisioning Prompt 11 reserves.
 
@@ -4964,14 +4964,14 @@ Four things must be true before content is deleted: the exit is in `RetentionHol
 window has elapsed, a **second person** approved the original request, and the identifier is typed.
 The service checks all four; the database independently refuses a row violating the second, the
 third or the certificate's completeness. A service is a thing somebody eventually adds a code path
-around, and *"delete it now, the customer is on the phone"* is exactly that pressure.
+around, and _"delete it now, the customer is on the phone"_ is exactly that pressure.
 
 ---
 
 ## ADR-222 — The correlation chain reaches the money, and the last two stages were missing
 
-**Prompt 39** asks for propagation *"browser/API → queue → run → provider/tool → cost
-settlement"*. `CorrelationIdMiddleware` has generated one since Prompt 5 and both trails carry it —
+**Prompt 39** asks for propagation _"browser/API → queue → run → provider/tool → cost
+settlement"_. `CorrelationIdMiddleware` has generated one since Prompt 5 and both trails carry it —
 and it **stopped at the run row**. `model_gateway_calls` and `cost_ledger_entries` had no column for
 it, so "what did this click actually spend" could not be answered at all.
 
@@ -4986,7 +4986,7 @@ caller forgets.
 
 The queue is the exception, because a worker is a different async context. `RunEngineService` now
 wraps each job in `runWithRequestContext(createRequestContext(job.correlationId), …)`. Without that
-one line the chain would be *nearly* unbroken — a run's provider call and cost entry would record
+one line the chain would be _nearly_ unbroken — a run's provider call and cost entry would record
 no correlation at all — which is the worst kind of observability: present enough to be trusted and
 absent exactly where it matters.
 
@@ -4997,10 +4997,10 @@ it, and a test asserts no permitted label matches anything in `FORBIDDEN_METRIC_
 
 Two distinct reasons, both sufficient:
 
-* **Cardinality.** A label is a dimension every series is multiplied by. `tenant_id` on a
+- **Cardinality.** A label is a dimension every series is multiplied by. `tenant_id` on a
   per-request metric means one series per customer per route; `user_id` means one per person. That
   is how a metrics system takes down the thing it was meant to observe.
-* **Disclosure.** `/metrics` is scraped by a machine with no session (ADR-224). A tenant label would
+- **Disclosure.** `/metrics` is scraped by a machine with no session (ADR-224). A tenant label would
   make a shared operations dashboard a cross-tenant disclosure.
 
 `provider_errors` is labelled by **logical profile, never provider name** — the locked rule is that
@@ -5024,7 +5024,7 @@ application has it covered.
 
 ## ADR-225 — There is no OpenTelemetry exporter, and the seam says so
 
-The prompt asks for *"OpenTelemetry traces"*. There is no collector: no endpoint, no credentials, no
+The prompt asks for _"OpenTelemetry traces"_. There is no collector: no endpoint, no credentials, no
 backend. Installing the SDK and pointing it at nothing would buy a dependency, a startup cost and a
 claim.
 
@@ -5055,8 +5055,8 @@ It deliberately does **not** auto-resolve when a metric recovers. A queue that d
 still happened, and an operator acknowledging and resolving it is how anybody learns that it did.
 Auto-resolution would mean a 3am incident nobody ever saw.
 
-This closes the limitation Prompt 36 recorded in its own words: *"Nothing raises a service alert
-automatically."*
+This closes the limitation Prompt 36 recorded in its own words: _"Nothing raises a service alert
+automatically."_
 
 ## ADR-227 — A P0 cannot be resolved without a postmortem, and the two rules resolve together
 
@@ -5075,8 +5075,8 @@ incident happens twice.
 
 ## ADR-228 — A timeline is written, and backdatable
 
-The state changes are already in the audit trail. What an audit trail cannot produce is *"we thought
-it was the database, it was the connection pool"* — and that sentence is what a postmortem is
+The state changes are already in the audit trail. What an audit trail cannot produce is _"we thought
+it was the database, it was the connection pool"_ — and that sentence is what a postmortem is
 written from. So `incident_timeline_entries` is narrative, entered by an operator.
 
 `occurredAt` is a parameter defaulting to now, because **an operator catching up after an outage
@@ -5088,7 +5088,7 @@ new entry saying so is better than an edit that hides the first one. There is no
 
 A corrective action has a **mandatory owner and due date** — the commonest failure of an incident
 process is a postmortem full of actions nobody agreed to do. Dropping one requires a reason;
-completing one does not. Deciding *not* to fix something a postmortem identified is the decision
+completing one does not. Deciding _not_ to fix something a postmortem identified is the decision
 somebody will be asked about.
 
 ## ADR-229 — A token bucket, not a fixed window
@@ -5118,7 +5118,7 @@ of the biggest one's backlog.**
 
 Not a weighted or priority queue, because somebody would have to choose the weights and nobody can —
 a company's plan does not tell you whose run matters more this minute. Round-robin needs no such
-judgement. FIFO *within* a tenant, because there the oldest work is the likeliest to have somebody
+judgement. FIFO _within_ a tenant, because there the oldest work is the likeliest to have somebody
 waiting on it.
 
 A pure function over the pending set rather than logic inside a queue adapter: a fairness rule buried
@@ -5128,7 +5128,7 @@ in a transport is a fairness rule nobody can prove.
 
 The **cap** (`concurrencySlotsFor`, default eight per company) limits runs in flight. Without it one
 company holds every worker for as long as its work takes. The **order** (`fairOrder`) decides who is
-next. Without it a capped company still owns the whole *queue*: as each of its runs finishes the next
+next. Without it a capped company still owns the whole _queue_: as each of its runs finishes the next
 job in line is another of its own.
 
 The cap is enforced at **pickup, not at enqueue**. At enqueue the answer would be stale by the time
@@ -5141,7 +5141,7 @@ fire on a queue that was merely busy.
 
 A counter drifts. A worker killed mid-run decrements nothing, and after a few crashes the cap is
 permanently consumed by runs that no longer exist — a company quietly limited to zero with no way to
-see why. `COUNT(*) WHERE state IN ('Reserved','Running')` is derived from the rows that *are* the
+see why. `COUNT(*) WHERE state IN ('Reserved','Running')` is derived from the rows that _are_ the
 truth, so it self-heals: whatever state the rows end up in, the count agrees with them. It costs an
 indexed count per job, which is the right price. No migration, no column, nothing to reconcile.
 
@@ -5159,7 +5159,7 @@ served by `GET /platform/limits` with the caveat spelled out rather than implied
 
 The Redis implementation is a **Lua script**, so refill-and-take is atomic. Read-then-write from four
 processes is a lost-update race whose lost update is a token somebody already spent — a non-atomic
-limiter lets *more* through under load, which is the worst possible direction for this control. The
+limiter lets _more_ through under load, which is the worst possible direction for this control. The
 arithmetic mirrors `consumeToken` and a contract test asserts the two agree rather than trusting it.
 
 ## ADR-234 — The limits are platform configuration, not company settings
@@ -5167,7 +5167,7 @@ arithmetic mirrors `consumeToken` and a contract test asserts the two agree rath
 Every other knob affecting one company lives in that company's Settings. These do not.
 
 A per-user limit protects a company from its own broken script. A **per-company** limit protects
-every *other* company from this one — it is the API-layer counterpart of the run concurrency cap. A
+every _other_ company from this one — it is the API-layer counterpart of the run concurrency cap. A
 customer who could raise their own would be a customer who could opt out of a protection the rest
 depend on, which makes the control decorative. So they are rows in `platform_settings`
 (`limits.*`, section "Limits & fairness"), changed through the Master Console path that already
@@ -5180,7 +5180,7 @@ every customer — is logged and **ignored** in favour of the code default.
 
 ## ADR-235 — Idempotency is opt-in, per actor, and forgets
 
-`AgentRun` has had an idempotency key since Prompt 26, but it is *derived* from the occurrence, so
+`AgentRun` has had an idempotency key since Prompt 26, but it is _derived_ from the occurrence, so
 it only deduplicates work the server can name in advance. A client-initiated POST has no natural
 occurrence: two "create this objective" requests a second apart are indistinguishable unless the
 client says they are the same one. The engine's key protects the scheduler; this protects the client.
@@ -5218,7 +5218,7 @@ A non-retryable failure sets **no** cooldown: a rejected prompt or a refused cre
 refused identically next time, so backing off spends a customer's wait to reach the same answer. The
 classifier is a string match on the adapter's error text, which is stated as a limitation rather than
 dressed up — the adapters throw `Error`, not a typed failure, and anything unrecognised is treated
-as *not* retryable so the unknown is never the retrying default.
+as _not_ retryable so the unknown is never the retrying default.
 
 State is in memory, because it is worth seconds: a cooldown surviving a restart would describe a
 provider's behaviour from before the restart. The cost — each process learns separately — is the
@@ -5236,7 +5236,7 @@ exhaustion, which presents as a slow database rather than as a misconfiguration.
 
 ## ADR-238 — A starved run becomes an Executor exception; a fairly queued one does not
 
-The prompt asks for *"Executor exceptions where appropriate"*, and the appropriate case is the one
+The prompt asks for _"Executor exceptions where appropriate"_, and the appropriate case is the one
 fairness itself creates. Round-robin ordering and a per-company ceiling both mean a company waits —
 correctly — and both are **invisible to the person who asked for the work**. The run sits in
 `Queued`, which reads as normal, indefinitely.
@@ -5252,7 +5252,7 @@ ten minutes would fire on a normal busy morning and teach everybody to ignore th
 the failure mode every alert and exception in this product is designed against, and the same
 argument as `abuse-suspected` being `Warning` rather than `Critical`.
 
-It reuses the exception framework rather than adding a second one, and it is the *customer's* view
+It reuses the exception framework rather than adding a second one, and it is the _customer's_ view
 of the fact that Prompt 39's `queue-stuck` alert tells UBoss. The deferral reason already on
 `agent_runs.progress_message` carries into the exception detail, because "your company is at its
 concurrency ceiling" is the actual answer to "why is this waiting".
@@ -5280,8 +5280,8 @@ route guard refuses on. There is nothing to keep in step.
 ## ADR-240 — Capabilities are a vocabulary over the existing engine, never a second one
 
 CR-03 asks for a business-friendly Access & Permissions step and says "do not create a second RBAC
-system". So `CAPABILITIES` is a map from a phrase an administrator understands — *"can build
-agents"* — onto grants the existing engine already evaluates, and granting one writes a `Custom`
+system". So `CAPABILITIES` is a map from a phrase an administrator understands — _"can build
+agents"_ — onto grants the existing engine already evaluates, and granting one writes a `Custom`
 role assignment, the mechanism that has existed since Prompt 7. The engine's own union across a
 person's assignments does the rest, which is what makes "a standard Employee plus an explicit grant"
 the definition of a Power Employee rather than a new user type.
@@ -5290,8 +5290,8 @@ the definition of a Power Employee rather than a new user type.
 rather than the recomputation of a matrix — and a matrix diff that goes wrong silently removes
 access.
 
-A granted capability is always scoped `OwnWork`. Widening what somebody *can do* must not widen
-*whose work they can do it to*; somebody who needs wider reach gets a role, which is a more visible
+A granted capability is always scoped `OwnWork`. Widening what somebody _can do_ must not widen
+_whose work they can do it to_; somebody who needs wider reach gets a role, which is a more visible
 decision.
 
 ## ADR-241 — Four of the five agent roles already existed
@@ -5306,8 +5306,8 @@ the row already answered.
 What was genuinely missing was the **operator**, and it needed a table rather than a column, because
 an agent can be run by several people — a rota, holiday cover. A single `assignedToUserId` would
 have forced the second person to borrow a login or be given a builder role, which are the two things
-this amendment exists to avoid. Plus one column, `builtForUserId`: *who was it built for* is a
-different question from *who may run it*.
+this amendment exists to avoid. Plus one column, `builtForUserId`: _who was it built for_ is a
+different question from _who may run it_.
 
 ## ADR-242 — A live share is what makes a manager-built agent the operator's own work
 
@@ -5318,7 +5318,7 @@ unreachable**. Found by a test.
 
 The resolution is not to weaken the scope check. It is to recognise what a share means:
 `EngineAgentOperator` is the record that this work was given to this person, which is exactly what
-`OwnWork` describes. So when a live share exists, the operator is the owner *for that check*. The
+`OwnWork` describes. So when a live share exists, the operator is the owner _for that check_. The
 share is still evaluated separately and **first**, so nothing is let through without one; and
 `createdByUserId` stays the manager, because separation of duties asks who wrote it and that answer
 has not changed.
@@ -5331,13 +5331,13 @@ not Manager, not Head, not CompanyAdmin — which is a real property of the appr
 in the product, and a test is what said so.
 
 So the gate composes two grants that exist: `agents:View` (you must see the agent you are staffing)
-and `todo:Assign` (you must be entitled to hand work to a person — and the agent *is* the work).
+and `todo:Assign` (you must be entitled to hand work to a person — and the agent _is_ the work).
 Manager and Head hold both; a standard Employee holds the first and not the second.
 
 ## ADR-244 — The Job Method is a third artifact, not part of Form 2 or of the Skill
 
 Five of its thirteen columns have no home in either: **TOOL / SYSTEM / WORKPLACE** (distinct from
-*where* the work happens), **HOW**, **RULE / FORMULA / CHECK**, **AGENT MUST NEVER DO** and **IF
+_where_ the work happens), **HOW**, **RULE / FORMULA / CHECK**, **AGENT MUST NEVER DO** and **IF
 MISSING / WRONG**. Those five are precisely what turns a described business step into something an
 agent could be built from, which is why the client asks for them — and folding this into Form 2
 would either lose them or corrupt a locked structure.
@@ -5354,7 +5354,7 @@ front of the person least likely to challenge it.
 The whole point of the file flow. **Download** is `todo:View`, which a standard Employee holds — the
 person who knows how the work is actually done can receive the form, fill it in offline, and send it
 back with no Agent Builder access at all. **Upload** is `agent-builder:EditDraft`, because bringing
-somebody's answers into a draft *is* building, and it is the moment a business description becomes
+somebody's answers into a draft _is_ building, and it is the moment a business description becomes
 agent configuration.
 
 Nothing is invented: a blank cell is reported `Missing` and stays blank, and an over-long cell is
@@ -5387,7 +5387,7 @@ through them would have meant either refusing an employee their own picture or w
 Knowledge & Data grant for everybody, which would hand every employee the company file store to
 prove a point about avatars.
 
-So the *work* is shared and the *gate* is the caller's:
+So the _work_ is shared and the _gate_ is the caller's:
 `uploadAuthorizedElsewhere` / `deleteAuthorizedElsewhere`, named to say out loud that the caller
 has taken on the obligation. The legal-hold refusal is **not** bypassed and must never be.
 
@@ -5421,7 +5421,7 @@ preview more restrictive, never less.
 
 ## ADR-250 — Reward awards are gated on `performance`, not `objective`
 
-Found by the full suite after the CR-03 narrowing, and worth recording because of *how* it was
+Found by the full suite after the CR-03 narrowing, and worth recording because of _how_ it was
 found rather than what it was.
 
 `GET /reward-awards/:subjectUserId` and `RewardService.listForSubject` both checked
@@ -5435,7 +5435,7 @@ different door eight prompts later.
 
 `performance:View` is both the fix and the more accurate gate: a reward award is performance
 information about a person, not part of authoring an Objective. Every company role holds it. The
-real restriction has always been the row-level check on somebody *else's* awards, which is
+real restriction has always been the row-level check on somebody _else's_ awards, which is
 unchanged.
 
 **The general lesson**: removing a grant breaks routes that depended on it incidentally, and a
@@ -5456,29 +5456,29 @@ shared either.
 Ordinary messages are **not audited** — CR-03 says so, and it is right: an audit trail holding every
 message would be a second copy of every conversation in the one table designed never to be deleted.
 What is audited is the structural act — starting a conversation, linking a context — because those
-change who can see what. The conversation audit records the participant *count*, not the list.
+change who can see what. The conversation audit records the participant _count_, not the list.
 
-## ADR-251 — An operator share is a second way to *reach* an agent, not a second permission system
+## ADR-251 — An operator share is a second way to _reach_ an agent, not a second permission system
 
 `AgentOperatorService.assertMayRun` was written at Prompt 40A and **called by nothing**. The
 operator screen asked `mayRun`, was told yes, and enabled Run; the run route then decided visibility
 from ownership, and a manager-built agent is owned by the manager while the employee is capped at
 `OwnWork`. Pressing Run answered 404.
 
-Nothing failed, because every test covering the share asked the *service*. The route was only
+Nothing failed, because every test covering the share asked the _service_. The route was only
 exercised by tests that used the owner, so the one path CR-03 exists to create was the one path
 nobody drove.
 
 `RunController.assertOnAgent` now consults a live `EngineAgentOperator` row first. What makes this a
 reach rather than a grant:
 
-  * `mayRun` asks the same `AuthorizationService` for `agents:Run` and for scope. A share does not
-    confer either.
-  * The share substitutes who counts as the *owner of that one row* for the scope question, and
-    nothing else. `createdByUserId` deliberately stays the manager, because separation of duties
-    asks who wrote it.
-  * `Pause` is excluded. Cancelling a run in flight is the authority to stop somebody's work, and
-    being handed a job to do is not being handed that.
+- `mayRun` asks the same `AuthorizationService` for `agents:Run` and for scope. A share does not
+  confer either.
+- The share substitutes who counts as the _owner of that one row_ for the scope question, and
+  nothing else. `createdByUserId` deliberately stays the manager, because separation of duties
+  asks who wrote it.
+- `Pause` is excluded. Cancelling a run in flight is the authority to stop somebody's work, and
+  being handed a job to do is not being handed that.
 
 The lesson is about test level rather than about agents: **a rule enforced in a service and a rule
 enforced by a route are two different claims**, and a suite that only ever makes the first will
@@ -5517,7 +5517,7 @@ answer is the one holding the least. The route is `@TenantScoped()` and answers 
 caller, which is what makes it safe to leave ungated.
 
 It is separate from `authorizationApi`, which is platform-only and answers the same question about
-*other* people. Without this endpoint a standard Employee's own navigation could not be rendered at
+_other_ people. Without this endpoint a standard Employee's own navigation could not be rendered at
 all, because every existing way to ask required a grant they do not hold.
 
 ## ADR-255 — The sidebar is derived from grants, in one hook, for every page
@@ -5576,8 +5576,8 @@ breakpoint each, which is exactly the per-page styling the locked UI rule forbid
 
 ## ADR-259 — Configured, taken and verified are three different states
 
-The distinction the whole module is built on. A backup that is *configured* means somebody wrote a
-policy; *taken* means a file exists; *verified* means a restore actually succeeded and something
+The distinction the whole module is built on. A backup that is _configured_ means somebody wrote a
+policy; _taken_ means a file exists; _verified_ means a restore actually succeeded and something
 checked the result. Only the third is worth anything, and `mayBeReliedOn` returns true for
 `Verified` alone.
 
@@ -5639,7 +5639,7 @@ verification that cries wolf is a verification people learn to skip.**
 
 `rpoStatus` takes `newestVerifiedAt`. A company whose last verified restore was a week ago has a
 week-old RPO in practice, however many files were written since — and measuring against the newest
-*file* would report a healthy figure for a backup chain nobody has ever read.
+_file_ would report a healthy figure for a backup chain nobody has ever read.
 
 No verified restore at all returns `withinTarget: false` with an infinite breach, rather than a
 null that a status page would render as blank and a reader would take for fine.
@@ -5750,7 +5750,7 @@ The scale harness produced three confident false findings before it produced a t
 would have caused real damage if acted on.
 
 **It seeded one company.** With a single tenant, `tenant_id = X` matches every row, so a
-tenant-prefixed index means reading the whole index *and* the whole heap — strictly worse than
+tenant-prefixed index means reading the whole index _and_ the whole heap — strictly worse than
 scanning. The planner chose the scan because the planner was right, and
 `audit_events_tenant_id_occurred_at_idx` already existed and was correctly ignored. The harness
 reported it as a missing index. Acting on that would have added a duplicate production never uses.
@@ -5785,8 +5785,8 @@ as scripts, each line's own backticks substituting again.
 
 **What could not be established.** Which fragment removed the file. The root directory holds no stray
 file of the kind a botched `>` redirection leaves, and the file was not in the recycle bin —
-consistent with a shell removal rather than an editor deletion. A successful lint ran *after* that
-broken command and *before* the file went missing, so the incident cannot be pinned to it with
+consistent with a shell removal rather than an editor deletion. A successful lint ran _after_ that
+broken command and _before_ the file went missing, so the incident cannot be pinned to it with
 confidence either. That is stated rather than resolved, because inventing a mechanism would be worse
 than admitting the gap.
 
@@ -5797,15 +5797,15 @@ bin.
 **How it was reconstructed.** Four independent sources agreed, which is what makes the result
 trustworthy despite the loss:
 
-  1. **ADR-008** states the design in as many words — a single flat config at the root delegating to
-     `packages/config/eslint.base.mjs`, *"imported by relative path so `npm run lint`
-     works on a cold clone"*. That sentence is the file.
-  2. **`packages/config/eslint.base.mjs` survived untouched.** Every rule lives there; the root
-     file held none of its own. Nothing about the rules was lost or guessed.
-  3. **Lint output captured earlier in the same session** matched the surviving base exactly:
-     `no-console` reporting *"Only these console methods are allowed: warn, error"*, and
-     `@typescript-eslint/no-unused-vars` reporting *"Allowed unused vars must match /^_/u"*.
-  4. **No workspace carries its own ESLint config**, so the root must apply the base unscoped.
+1. **ADR-008** states the design in as many words — a single flat config at the root delegating to
+   `packages/config/eslint.base.mjs`, _"imported by relative path so `npm run lint`
+   works on a cold clone"_. That sentence is the file.
+2. **`packages/config/eslint.base.mjs` survived untouched.** Every rule lives there; the root
+   file held none of its own. Nothing about the rules was lost or guessed.
+3. **Lint output captured earlier in the same session** matched the surviving base exactly:
+   `no-console` reporting _"Only these console methods are allowed: warn, error"_, and
+   `@typescript-eslint/no-unused-vars` reporting _"Allowed unused vars must match /^\_/u"_.
+4. **No workspace carries its own ESLint config**, so the root must apply the base unscoped.
 
 **Verification that it is faithful.** Running the reconstructed config reproduced **the identical
 violation set** observed before the deletion — same file, same nine lines, same rule, same message —
@@ -5828,7 +5828,7 @@ directory. That is convenience, not a category.
 
 It is an operational script — nothing asserts, and its console output is its interface. The shared
 lint config already carves out operational scripts from `no-console`, with the rationale
-written beside the rule: *"a seed that reports nothing is worse than one that does"*. The repository
+written beside the rule: _"a seed that reports nothing is worse than one that does"_. The repository
 already keeps such things in `apps/api/scripts/`.
 
 So when lint flagged the harness, the choice was between changing the rule and moving the file. Moving
@@ -5842,3 +5842,76 @@ slash, which **ends a block comment**. The comment closed mid-sentence and the r
 parsed as code. TypeScript accepted it, because the fragments happened to be valid expressions;
 `@typescript-eslint/no-unused-expressions` is what caught it. A small argument for the rule
 being set to `error`.
+
+## ADR-275 — CI runs the same commands a developer runs, and nothing else
+
+Every step in `ci.yml` is an existing npm script: `npm run lint`, `npm run format:check`,
+`npm run typecheck`, `npm test`, `npm run build`. There is no CI-only script and no
+CI-only flag.
+
+Two things follow, and both are the point. A green pipeline cannot mean something different from a
+green machine — the two are running identical commands. And any failure can be reproduced locally by
+running the command the log shows, rather than by guessing what the runner did differently.
+
+The jobs are split by **what they need**, not by what they check: `static` needs only the source
+and fails in under a minute; `integration` needs PostgreSQL and takes far longer. A formatting
+slip is therefore reported in a minute rather than behind a twenty-minute database suite, and the
+expensive job still runs in parallel rather than behind it.
+
+## ADR-276 — Migrate, then release; roll back the release, never the database
+
+The order in `.github/actions/promote/action.yml`, written once and reused by all four
+environments so it cannot drift between them. Staging deploying differently from production is how a
+release passes staging and fails in production for reasons nobody can reproduce.
+
+**Schema first.** There is always a window where the new schema is live and the old application is
+still serving, so every migration has to be additive or flag-gated. A migration that breaks the
+running version cannot be deployed without downtime — that is a design problem, not a pipeline
+problem, and pushing it into the pipeline would only hide it.
+
+**Roll back the release, leave the migration applied.** The previous version was built to tolerate
+the new schema, so leaving it is safe; un-applying it is not, because schema reversal loses the data
+the change touched.
+
+**No down-migrations at all**, and that is a decision rather than an omission. The reverse of
+`DROP COLUMN` is a column full of nulls, not the column you had. Recovery from a bad migration is
+point-in-time restore, and which tool to reach for is in `DECISION_TREE` — which the release
+pipeline asserts is present and coherent before anything is promoted (ADR-277).
+
+## ADR-277 — The pipeline says plainly when it did nothing
+
+`UBOSS_DEPLOY_COMMAND` is a per-environment variable holding the host's own command. No host has
+been chosen, so on every environment today it is unset — and every step that would use it checks,
+logs `NOTE: nothing was released`, and exits zero.
+
+The alternative was a step that printed "deployed to production" while running nothing. That is the
+single most dangerous thing this work could have produced: a green tick that reads as a deployment,
+in a repository whose documentation would then describe UBoss as having a working pipeline.
+
+The same guard is on the health check (absent URL ⇒ _"the release was not verified"_) and on the
+rollback (absent command ⇒ an **error**, because a failed release with no rollback needs a person
+now, not a reassuring log line).
+
+So: UBoss has a promotion **process** that is defined, ordered and gated. It does not have a
+**deployment**. Both halves are stated in `docs/DEPLOYMENT.md` and neither should be quoted
+without the other.
+
+## ADR-278 — A release flag must declare when it will be deleted
+
+`packages/types/src/release-flags.ts` is a registry rather than scattered `process.env` reads,
+and every entry carries a `removeWhen`. A flag without one is a permanent branch in the product,
+and two permanent branches are two products.
+
+Three properties come from the registry that a bare environment read cannot give: somebody can list
+what is currently gated without grepping; a flag that is not declared **cannot be read at all**, so
+the registry is a constraint rather than documentation; and a typo in a flag name is a type error
+rather than a silently-off feature.
+
+Unset means **off**. A flag exists because something is not yet safe everywhere, so the failure mode
+of a missing variable should be "the new thing did not switch on" — not the reverse. Only `true`,
+`1` and `on` turn one on: a permissive reader turns `FLAG=false` into "on", which is
+invisible in a dashboard and obvious only during an incident.
+
+The registry ships **empty**, which is the correct state — nothing is currently gated. Its behaviour
+is tested against example registries so that "empty" does not mean "untested" when the first real
+flag is added by somebody in a hurry during a deploy.

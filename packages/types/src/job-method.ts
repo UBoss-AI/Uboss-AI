@@ -262,9 +262,7 @@ export const FORM2_PREFILL: Readonly<Partial<Record<JobMethodColumnKey, string>>
 
 /** The columns nothing prefills, stated positively so the set is testable. */
 export const COLUMNS_THE_EMPLOYEE_MUST_ANSWER: readonly JobMethodColumnKey[] =
-  JOB_METHOD_COLUMN_KEYS.filter(
-    (key) => key !== 'step' && FORM2_PREFILL[key] === undefined,
-  );
+  JOB_METHOD_COLUMN_KEYS.filter((key) => key !== 'step' && FORM2_PREFILL[key] === undefined);
 
 // ---------------------------------------------------------------------------
 // The import pipeline
@@ -635,7 +633,11 @@ export function suggestAgentGroups(rows: readonly JobMethodRow[]): {
 
   return {
     groups: [...groups.entries()]
-      .map(([key, value]) => ({ key, steps: value.steps.sort((a, b) => a - b), because: value.because }))
+      .map(([key, value]) => ({
+        key,
+        steps: value.steps.sort((a, b) => a - b),
+        because: value.because,
+      }))
       // Deterministic, so a screen and a test see the same order twice.
       .sort((left, right) => (left.steps[0] ?? 0) - (right.steps[0] ?? 0)),
   };

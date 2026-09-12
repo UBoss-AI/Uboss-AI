@@ -65,9 +65,7 @@ export function AccessPermissionsStep({
       setStep(await capabilitiesApi.step(tenantId, userId));
     } catch (caught) {
       setError(
-        caught instanceof ApiError
-          ? caught.message
-          : 'Access and permissions could not be loaded.',
+        caught instanceof ApiError ? caught.message : 'Access and permissions could not be loaded.',
       );
     }
   }, [tenantId, userId]);
@@ -146,15 +144,16 @@ export function AccessPermissionsStep({
                         data-testid={`capability-${capability.key}`}
                       />
                       <span className="access-capability-name">{capability.label}</span>
-                      {capability.held ? (
-                        <StatusBadge status="Granted" tone="success" />
-                      ) : null}
+                      {capability.held ? <StatusBadge status="Granted" tone="success" /> : null}
                     </label>
 
                     <p className="access-capability-help">{capability.help}</p>
 
                     {capability.canGrant ? null : (
-                      <p className="access-capability-why" data-testid={`why-not-${capability.key}`}>
+                      <p
+                        className="access-capability-why"
+                        data-testid={`why-not-${capability.key}`}
+                      >
                         {capability.whyNot}
                       </p>
                     )}
@@ -170,7 +169,10 @@ export function AccessPermissionsStep({
                     </button>
 
                     {showGrants === capability.key ? (
-                      <dl className="access-capability-grants" data-testid={`grants-${capability.key}`}>
+                      <dl
+                        className="access-capability-grants"
+                        data-testid={`grants-${capability.key}`}
+                      >
                         {Object.entries(capability.grants).map(([module, actions]) => (
                           <div key={module}>
                             <dt>{module}</dt>

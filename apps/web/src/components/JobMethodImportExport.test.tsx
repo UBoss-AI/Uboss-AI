@@ -107,10 +107,7 @@ describe('JobMethodImportExport', () => {
     render(<JobMethodImportExport {...PROPS} canImport />);
     await screen.findByTestId('upload-job-method');
 
-    await userEvent.upload(
-      screen.getByLabelText('Choose a completed Job Method form'),
-      workbook(),
-    );
+    await userEvent.upload(screen.getByLabelText('Choose a completed Job Method form'), workbook());
 
     const review = await screen.findByTestId('jm-review');
     expect(screen.getByTestId('jm-objective')).toHaveTextContent('Reduce late payments');
@@ -123,10 +120,7 @@ describe('JobMethodImportExport', () => {
     render(<JobMethodImportExport {...PROPS} canImport />);
     await screen.findByTestId('upload-job-method');
 
-    await userEvent.upload(
-      screen.getByLabelText('Choose a completed Job Method form'),
-      workbook(),
-    );
+    await userEvent.upload(screen.getByLabelText('Choose a completed Job Method form'), workbook());
 
     await waitFor(() => expect(importWorkbook).toHaveBeenCalledTimes(1));
     expect(importWorkbook.mock.calls[0]?.[2]).toMatchObject({ filename: 'job-method.xlsx' });
@@ -135,10 +129,7 @@ describe('JobMethodImportExport', () => {
   it('never offers Test or Activate from an import', async () => {
     render(<JobMethodImportExport {...PROPS} canImport />);
     await screen.findByTestId('upload-job-method');
-    await userEvent.upload(
-      screen.getByLabelText('Choose a completed Job Method form'),
-      workbook(),
-    );
+    await userEvent.upload(screen.getByLabelText('Choose a completed Job Method form'), workbook());
     await screen.findByTestId('jm-review');
 
     // The rule is structural: a spreadsheet must not be able to put an agent into production.
@@ -149,10 +140,7 @@ describe('JobMethodImportExport', () => {
   it('offers Cancel Import and Review Job Method, and nothing else that writes', async () => {
     render(<JobMethodImportExport {...PROPS} canImport />);
     await screen.findByTestId('upload-job-method');
-    await userEvent.upload(
-      screen.getByLabelText('Choose a completed Job Method form'),
-      workbook(),
-    );
+    await userEvent.upload(screen.getByLabelText('Choose a completed Job Method form'), workbook());
     await screen.findByTestId('jm-review');
 
     expect(screen.getByTestId('jm-cancel')).toBeInTheDocument();
@@ -162,13 +150,11 @@ describe('JobMethodImportExport', () => {
   it('says plainly that nothing was tested and nothing was activated', async () => {
     render(<JobMethodImportExport {...PROPS} canImport />);
     await screen.findByTestId('upload-job-method');
-    await userEvent.upload(
-      screen.getByLabelText('Choose a completed Job Method form'),
-      workbook(),
-    );
+    await userEvent.upload(screen.getByLabelText('Choose a completed Job Method form'), workbook());
 
-    expect(await screen.findByText(/Nothing has been tested and nothing has been activated/))
-      .toBeInTheDocument();
+    expect(
+      await screen.findByText(/Nothing has been tested and nothing has been activated/),
+    ).toBeInTheDocument();
     expect(screen.getByTestId('jm-automation-stance')).toHaveTextContent(
       'An import saves a draft. It never tests and never activates.',
     );
@@ -189,10 +175,7 @@ describe('JobMethodImportExport', () => {
 
     render(<JobMethodImportExport {...PROPS} canImport />);
     await screen.findByTestId('upload-job-method');
-    await userEvent.upload(
-      screen.getByLabelText('Choose a completed Job Method form'),
-      workbook(),
-    );
+    await userEvent.upload(screen.getByLabelText('Choose a completed Job Method form'), workbook());
 
     await screen.findByTestId('jm-review');
     for (const kind of ['Missing', 'Invalid', 'Ambiguous', 'Unmapped']) {
@@ -212,10 +195,7 @@ describe('JobMethodImportExport', () => {
 
     render(<JobMethodImportExport {...PROPS} canImport />);
     await screen.findByTestId('upload-job-method');
-    await userEvent.upload(
-      screen.getByLabelText('Choose a completed Job Method form'),
-      workbook(),
-    );
+    await userEvent.upload(screen.getByLabelText('Choose a completed Job Method form'), workbook());
 
     await screen.findByTestId('jm-review');
     expect(screen.getByTestId('jm-cancel')).toBeInTheDocument();
@@ -235,10 +215,7 @@ describe('JobMethodImportExport', () => {
 
     render(<JobMethodImportExport {...PROPS} canImport />);
     await screen.findByTestId('upload-job-method');
-    await userEvent.upload(
-      screen.getByLabelText('Choose a completed Job Method form'),
-      workbook(),
-    );
+    await userEvent.upload(screen.getByLabelText('Choose a completed Job Method form'), workbook());
 
     const suggestion = await screen.findByTestId('jm-suggestion');
     expect(suggestion).toHaveTextContent('2 Engine Agents');
@@ -249,10 +226,7 @@ describe('JobMethodImportExport', () => {
     const onImported = vi.fn();
     render(<JobMethodImportExport {...PROPS} canImport onImported={onImported} />);
     await screen.findByTestId('upload-job-method');
-    await userEvent.upload(
-      screen.getByLabelText('Choose a completed Job Method form'),
-      workbook(),
-    );
+    await userEvent.upload(screen.getByLabelText('Choose a completed Job Method form'), workbook());
     await screen.findByTestId('jm-review');
 
     await userEvent.click(screen.getByTestId('jm-cancel'));
@@ -267,10 +241,7 @@ describe('JobMethodImportExport', () => {
 
     render(<JobMethodImportExport {...PROPS} canImport />);
     await screen.findByTestId('upload-job-method');
-    await userEvent.upload(
-      screen.getByLabelText('Choose a completed Job Method form'),
-      workbook(),
-    );
+    await userEvent.upload(screen.getByLabelText('Choose a completed Job Method form'), workbook());
 
     expect(await screen.findByText('That is not a Job Method form.')).toBeInTheDocument();
     expect(screen.queryByTestId('jm-review')).not.toBeInTheDocument();

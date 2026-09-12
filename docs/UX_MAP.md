@@ -1206,8 +1206,8 @@ disabled; nothing can execute a workflow until the Run Engine prompt.
 ## Agent Builder — `/agent-builder` (Prompt 24)
 
 Follows the reference's `agentBuilder()`: a `1fr 320px` grid. Left card carries the readiness
-banner, *Inherited from objective (read-only)*, then *Missing setup (only what's needed)*. Right
-card is *Readiness* with **Test agent** and **Activate agent**.
+banner, _Inherited from objective (read-only)_, then _Missing setup (only what's needed)_. Right
+card is _Readiness_ with **Test agent** and **Activate agent**.
 
 The screen renders exactly the questions the server reports in `missing`, in that order — it does
 not decide for itself what to ask. When `missing` is empty it says so and offers Test / Activate,
@@ -1223,8 +1223,8 @@ cannot know:
 
 Two things the screen states rather than implies: whether the last test ran against a real
 provider or the built-in mock, and that a healthy connection is not yet this agent's permission to
-use it. A `uboss-notice-min` line closes the readiness card: *"A connection is chosen by identity.
-No credential is ever shown on this screen."*
+use it. A `uboss-notice-min` line closes the readiness card: _"A connection is chosen by identity.
+No credential is ever shown on this screen."_
 
 ## Engine Agents — `/agents` (Prompt 25)
 
@@ -1341,12 +1341,11 @@ The Risk column comes from `APPROVAL_TYPE_RISK`. Five of the eight levels are tr
 reference's own `APPROVALS` sample rows; the other three are reasoned in the vocabulary's comment.
 Nothing authorizes off it — every approval decision exercises the same `Approve` action, which
 `HIGH_RISK_ACTIONS` already treats as high-risk uniformly, so the column has to distinguish
-*between* approvals rather than classify the act of approving.
+_between_ approvals rather than classify the act of approving.
 
 No new CSS was needed: `uboss-seg`, `uboss-chip`, `uboss-kv`, `uboss-field` and
 `uboss-notice-min` already existed. Note `uboss-seg` marks the active button with `is-on`, not
 `on`.
-
 
 ## `/master/providers` — Providers & Models (Prompt 29)
 
@@ -1387,15 +1386,14 @@ reason, which is the sentence the gateway would have refused with.
 No new CSS: `uboss-grid`, `uboss-row-2`, `uboss-kv`, `uboss-section-label`, `uboss-notice-min` and
 `uboss-mono` already existed.
 
-
 ## Settings › Tokens & Cost (Prompt 30)
 
 The reference's `setTokens()`, implemented as a bespoke panel rather than a list of generic
 setting controls — because that is what the reference is.
 
 **It lives in Settings and nowhere else.** The reference states the rule in its own words and the
-panel repeats it verbatim: *"These budget widgets belong here in Settings — never duplicated on
-the Dashboard."* The Company Dashboard stays the two-slice donut.
+panel repeats it verbatim: _"These budget widgets belong here in Settings — never duplicated on
+the Dashboard."_ The Company Dashboard stays the two-slice donut.
 
 ### The reference's layout, §20's figures
 
@@ -1405,7 +1403,7 @@ percentage, next reset/expiry and projected exhaustion. The layout is the refere
 are §20's.
 
 **Reserved is the figure a reader will not expect, and the one that explains the others** —
-remaining is the allowance minus what has been spent *and* what is set aside for runs in flight.
+remaining is the allowance minus what has been spent _and_ what is set aside for runs in flight.
 Without it the numbers look like they do not add up.
 
 ### What is absent rather than invented
@@ -1444,7 +1442,7 @@ same subject.
 
 **Any decision control.** Not a disabled Approve button either — a greyed-out one implies the
 permission exists somewhere in this workspace, and it does not. The panel shows the request's
-state and Finance's reason, and the only action on an open request is *Withdraw*.
+state and Finance's reason, and the only action on an open request is _Withdraw_.
 
 ### What it says out loud
 
@@ -1478,16 +1476,16 @@ views become a segmented control beneath them. Nothing the client approved was r
 which view each card drills into — so the screen cannot disagree with the API about where "Failed
 logins" leads.
 
-**The badge text carries the meaning, not the colour.** A tone renders as *Healthy*, *Worth a
-look*, *Needs attention* or *For information*, because a screen read without colour has to be as
+**The badge text carries the meaning, not the colour.** A tone renders as _Healthy_, _Worth a
+look_, _Needs attention_ or _For information_, because a screen read without colour has to be as
 informative as one read with it.
 
 ### What it says out loud
 
 - **On Active Sessions**: a session belongs to a person rather than to a company, so revoking one
-  signs them out of UBoss entirely. Shown as a banner on the view *and* in bold in the revoke
+  signs them out of UBoss entirely. Shown as a banner on the view _and_ in bold in the revoke
   drawer, before the button.
-- **On Agent high-risk actions**: this is what an agent was *permitted* to do; UBoss records no
+- **On Agent high-risk actions**: this is what an agent was _permitted_ to do; UBoss records no
   tool invocations because no run performs an external tool action yet (ADR-179).
 - **In the footer**: the Security Center stores nothing of its own — which is why nobody, here or
   anywhere, can edit or delete what it shows.
@@ -1508,7 +1506,7 @@ administrators cannot edit or delete these records, and the store enforces it be
 application. The single act is "Sign out", offered only on a live session and only to somebody
 holding `settings:Administer`.
 
-"Open my own Login & Security" still links to `/sessions`. That screen is the *person's* own
+"Open my own Login & Security" still links to `/sessions`. That screen is the _person's_ own
 factors and devices, which is a different question from the company's security history and stays
 separate.
 
@@ -1556,7 +1554,7 @@ exists, but a promote control belongs beside the Skill it would gate rather than
 
 ## Objective › Outcome review & closure (Prompt 34)
 
-A screen of its own at `/objective/closure`, because §27.1 asks for a *formal* closure and a formal
+A screen of its own at `/objective/closure`, because §27.1 asks for a _formal_ closure and a formal
 closure is a document somebody signs. Putting the verdict, the comparison and the signature into
 the versions screen — which is about what changed between drafts — would mix "what did we plan"
 with "how did it turn out".
@@ -1590,7 +1588,7 @@ written**.
 
 ### Pause
 
-A reason category and a free-text note, asked for *before* the Pause button is pressed rather than
+A reason category and a free-text note, asked for _before_ the Pause button is pressed rather than
 defaulted — a paused objective somebody finds three weeks later needs to say what it is waiting
 for. While paused, a banner carries the server's own description of what a pause does. The history
 below lists every pause with the days stopped, and says why it keeps them all.
@@ -1600,8 +1598,8 @@ below lists every pause with the days stopped, and says why it keeps them all.
 ## Settings › Knowledge & Data (Prompt 35)
 
 The section already existed in `SETTINGS_SECTIONS` with a note and no panel. It now has one, and it
-is §Settings' three subjects in §Settings' order: *"approved knowledge sources, classification /
-retention policy where available"*.
+is §Settings' three subjects in §Settings' order: _"approved knowledge sources, classification /
+retention policy where available"_.
 
 ### The banner at the top
 
@@ -1743,9 +1741,9 @@ and the button is disabled. Better than a box that looks usable and always retur
 A result is the person's name and ID, then one card per employer: company, designation, a Current
 or Past badge, and the period. Under each, one of two things:
 
-* the performance the employer chose to share — badge, score where shared, on-time percentage and
+- the performance the employer chose to share — badge, score where shared, on-time percentage and
   the approved-reward count with its most recent date; or
-* **"This company does not share performance data in portable search."**
+- **"This company does not share performance data in portable search."**
 
 Said out loud rather than left blank, because an absent number and a zero are different facts about
 somebody's career and a screen that blurred them would be unfair to the person being verified. The
@@ -1799,18 +1797,18 @@ leans the other way (ADR-255).
 ## Access & Permissions — a step in Add/Invite/Edit User
 
 A step, not a new screen, and not a permission grid. Eight capabilities grouped under three
-headings — *Run work assigned to them* / *Manage people and assigned work* / *Design objectives and
-build agents* — each a checkbox with its own help text, taken verbatim from `GET
+headings — _Run work assigned to them_ / _Manage people and assigned work_ / _Design objectives and
+build agents_ — each a checkbox with its own help text, taken verbatim from `GET
 /access/capabilities/:userId`.
 
 Three things the screen must get right:
 
-* **A new employee starts with the two Operate capabilities ticked and nothing else.**
+- **A new employee starts with the two Operate capabilities ticked and nothing else.**
   `defaultForNewEmployee` says so; do not re-derive it in the client.
-* **A capability the administrator cannot grant is disabled with its `whyNot` shown**, not hidden.
+- **A capability the administrator cannot grant is disabled with its `whyNot` shown**, not hidden.
   Hiding it would make the form look complete while quietly withholding an option, and the
   administrator would never learn why.
-* **The real grants are available behind a disclosure.** The response carries them; an administrator
+- **The real grants are available behind a disclosure.** The response carries them; an administrator
   who wants to know what "can build agents" means should not have to ask an engineer.
 
 ## Agent Builder — Import / Export, and nothing else moved
@@ -1822,10 +1820,10 @@ Assigned AI Work block.**
 
 Two controls are added, under a compact **Import / Export** grouping if the toolbar is crowded:
 
-* **Download Job Method Form** — available to anybody who can see the work, including an employee
+- **Download Job Method Form** — available to anybody who can see the work, including an employee
   who cannot open this screen at all. In practice the download link belongs on the employee's own
   To-do or Engine Agents view as well, because they are the person who will fill it in.
-* **Upload Completed Job Method** — builder only, and it opens the import review rather than saving
+- **Upload Completed Job Method** — builder only, and it opens the import review rather than saving
   straight away.
 
 ### The import review
@@ -1897,18 +1895,18 @@ problem at once, a person with no photo beside one who has one.
 Then the four states a page load cannot reach, because each needs a click: the Access & Permissions
 dialog, the import review, View Result / History / Report Issue, and Discuss.
 
-| Screen | CR-03 | Verified |
-| --- | --- | --- |
-| Users & Access, with the Access dialog open | §1 | ✅ |
-| Hierarchy, with avatars | §3 | ✅ |
-| Employee profile | §3 | ✅ |
-| Agent Builder, Import / Export | §4 | ✅ |
-| Import review | §5 | ✅ |
-| Engine Agents — Assigned to you | §5 | ✅ |
-| Workspace Chat | §6 | ✅ |
-| Standard Employee sidebar | §1 | ✅ |
-| Admin/Manager sidebar | §1 | ✅ |
-| Contextual Discuss, from an exception | §6 | ✅ |
+| Screen                                      | CR-03 | Verified |
+| ------------------------------------------- | ----- | -------- |
+| Users & Access, with the Access dialog open | §1    | ✅       |
+| Hierarchy, with avatars                     | §3    | ✅       |
+| Employee profile                            | §3    | ✅       |
+| Agent Builder, Import / Export              | §4    | ✅       |
+| Import review                               | §5    | ✅       |
+| Engine Agents — Assigned to you             | §5    | ✅       |
+| Workspace Chat                              | §6    | ✅       |
+| Standard Employee sidebar                   | §1    | ✅       |
+| Admin/Manager sidebar                       | §1    | ✅       |
+| Contextual Discuss, from an exception       | §6    | ✅       |
 
 The faults it found, all fixed: bullet markers on the chat message list and the capability list;
 context icons rendered on top of their own titles; the operator section touching the banner above
@@ -1922,4 +1920,4 @@ capability is granted to a person, and until the save there is no person. The si
 are untouched, which is what §3 actually protects.
 
 **A native `<select>` cannot show a photo.** §3 names selectors alongside Hierarchy and profile;
-the person *picker* shows faces, the reporting-manager dropdown cannot and does not.
+the person _picker_ shows faces, the reporting-manager dropdown cannot and does not.

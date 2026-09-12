@@ -1662,7 +1662,7 @@ depended on them.
   means nobody has opened the builder, and every field inside is independently nullable because
   "not yet answered" is the state the zero-question rule reads.
 - **`ai_work_assignments.last_tested_at / last_test_passed / last_test_summary /
-  last_test_was_real`** — the controlled test's record.
+last_test_was_real`** — the controlled test's record.
 
 Two constraints worth naming:
 
@@ -1698,8 +1698,8 @@ replacement freeze trigger. Every constraint probed in raw SQL before code depen
   Agent Builder test, including the honesty constraint that a recorded test cannot be silent about
   whether a real provider was involved.
 - **`one_open_draft_per_engine_agent`** — a partial unique index on `(tenant_id, engine_agent_id)
-  WHERE status = 'Draft'`. Two open drafts of one agent is a state nobody can reason about; any
-  number of *published* versions is the history and must accumulate. The probe checks both halves.
+WHERE status = 'Draft'`. Two open drafts of one agent is a state nobody can reason about; any
+  number of _published_ versions is the history and must accumulate. The probe checks both halves.
 - The freeze trigger is **replaced** (append-only, not edited) to cover `impact`,
   `approval_required` and the test columns. Those are what a reviewer relied on when they approved
   the version, so freezing the config alone would have left the justification editable.
@@ -1712,7 +1712,7 @@ replacement freeze trigger. Every constraint probed in raw SQL before code depen
 Two tables (`agent_runs`, `agent_run_events`), five scheduling columns on `engine_agents`, 22
 constraints and an append-only trigger.
 
-**`agent_runs`** — the durable record that exists *before* the work. Unique on
+**`agent_runs`** — the durable record that exists _before_ the work. Unique on
 `(tenant_id, idempotency_key)`, which is what makes a scheduler safe on two instances: both ticks
 compute the same key for one due moment and the index refuses the second. Indexed on
 `correlation_id` because tracing one request across the API, the queue and the provider is the
@@ -1755,7 +1755,7 @@ Two tables, 17 constraints, a partial unique index and an append-only trigger. E
 probed in raw SQL before code depended on it.
 
 **`executor_exceptions`** — what the Executor found that needs somebody. Distinct from Prompt 23's
-`ExecutorExpectation`, which is what it is *watching for*; a company needs both answers separately.
+`ExecutorExpectation`, which is what it is _watching for_; a company needs both answers separately.
 
 The source is recorded as `(source_type, source_id)` rather than four nullable foreign keys,
 because an exception can arise from a human task, an agent run, a connection or an approval, and
@@ -1872,7 +1872,6 @@ depended on them: 21 cases in two rounds, the second because `psql` masks later 
 transaction aborts, so five had to be re-run under their own savepoints rather than inferred.
 `migrate diff --from-migrations` is empty.
 
-
 ## 20260910130000_provider_profiles_and_model_gateway — Prompt 29
 
 Five tables. **No business table gained a provider column**, which is the migration's main
@@ -1946,8 +1945,7 @@ The immutability trigger refused every DELETE unconditionally, which was wrong t
 from a deleted company `provider_model` would have failed with an error naming a table the customer
 has never heard of, and the test reset could not isolate. It gains the standard
 `uboss.allow_history_truncate` hatch **for DELETE only** — UPDATE stays refused absolutely, because
-what is protected is that a published price must never be *restated*.
-
+what is protected is that a published price must never be _restated_.
 
 ## 20260911090000_cost_engine_wallets_reservations_ledger — Prompt 30
 
@@ -1996,13 +1994,13 @@ makes a drift visible at the entry where it began.
 - **`reservation_movements_name_their_reservation`** — a reserve, release or settle always belongs
   to one, so the pair can be matched up in an investigation.
 - **`ledger_amount_sign_matches_its_kind`** — signs are vocabulary, not the caller's choice. A
-  `Reserve` of a negative amount would *release* budget through a code path that says it is taking
+  `Reserve` of a negative amount would _release_ budget through a code path that says it is taking
   some. `Adjustment` and `Reallocation` are the two legitimately signed kinds: a correction can go
   either way, and a reallocation is a negative entry on one budget and a positive on another.
 - **`ledger_entry_kind_is_known`**, **`ledger_reason_is_not_blank`**,
   **`ledger_currency_is_three_letters`**.
 
-Worth recording: an unknown `kind` is refused by the *sign* constraint rather than the kind
+Worth recording: an unknown `kind` is refused by the _sign_ constraint rather than the kind
 constraint, because an unlisted kind fails both and PostgreSQL evaluates them in an unspecified
 order. Both refuse it, so the row cannot exist; only the message is less pointed than it looks.
 
@@ -2126,8 +2124,8 @@ check constraints, each one a rule from the approved documents:
 
 ### `memory_records`
 
-The architecture's `memory_records`: *"agent/objective scope, owner, classification, content
-reference, retention/expiry"*. `visibility` is copied at write time (ADR-183). Five constraints:
+The architecture's `memory_records`: _"agent/objective scope, owner, classification, content
+reference, retention/expiry"_. `visibility` is copied at write time (ADR-183). Five constraints:
 
 - `objective_scoped_memory_names_its_objective` — a record whose visibility is "the same Objective"
   and which has no Objective has no scope to be visible in, and a read that treated the null as a
@@ -2142,8 +2140,8 @@ memory structurally impossible (ADR-182).
 
 ### `ai_output_feedback`
 
-The architecture's `feedback`: *"run/output, rating, correction/evidence, reviewer, evaluation
-eligibility"*. Unique on `(tenant_id, run_id, reviewer_user_id)`. Three constraints:
+The architecture's `feedback`: _"run/output, rating, correction/evidence, reviewer, evaluation
+eligibility"_. Unique on `(tenant_id, run_id, reviewer_user_id)`. Three constraints:
 
 - `negative_feedback_says_what_is_wrong` — twenty non-blank characters, via
   `length(btrim(COALESCE(...)))`.
@@ -2243,16 +2241,16 @@ empty.
 Four tables, all with RLS + `FORCE ROW LEVEL SECURITY` and the usual `USING` + `WITH CHECK` on
 `app.current_tenant_id`.
 
-* **`files`** — name, content type, size, `storage_ref` (a key, never bytes), `content_hash`,
+- **`files`** — name, content type, size, `storage_ref` (a key, never bytes), `content_hash`,
   scan state and result, `scanned_by_real_scanner`, classification, retention action and expiry,
   the four legal-hold columns, the three deletion columns. Indexed by tenant on scan state,
   classification, retention expiry and legal hold.
-* **`knowledge_sources`** — name (unique per tenant), kind, state, access scope, department,
+- **`knowledge_sources`** — name (unique per tenant), kind, state, access scope, department,
   `named_agent_ids uuid[]`, classification, optional composite FK to `connections`.
-* **`knowledge_source_files`** — the join, composite FKs to both sides. A join table because a file
+- **`knowledge_source_files`** — the join, composite FKs to both sides. A join table because a file
   legitimately belongs to more than one source: the same contract is in "Supplier agreements" and
   in "Q3 legal review".
-* **`company_knowledge_policies`** — one row per tenant.
+- **`company_knowledge_policies`** — one row per tenant.
 
 ### ~16 constraints and one trigger
 
@@ -2302,11 +2300,11 @@ All four tables added to `tablesInDeletionOrder`, join table first.
 
 ### Two new tables, and deliberately not a third
 
-* **`support_tickets`** — tenant-scoped, RLS + `FORCE`, with a **per-company** `reference` so people
+- **`support_tickets`** — tenant-scoped, RLS + `FORCE`, with a **per-company** `reference` so people
   can say "ticket 14" rather than reading a uuid aloud. Unique on `(tenant_id, reference)`.
-* **`support_ticket_notes`** — replies and operational notes in one table, ordered by time, with
+- **`support_ticket_notes`** — replies and operational notes in one table, ordered by time, with
   `is_internal` defaulting to **true**.
-* **No `platform_incidents`.** It was written and deleted before it shipped — `service_alerts`
+- **No `platform_incidents`.** It was written and deleted before it shipped — `service_alerts`
   already answers "what is wrong with UBoss right now" and is already on the Master Console
   dashboard (ADR-203).
 
@@ -2347,7 +2345,7 @@ Running `validate` after adding a relation is now part of the routine.
 
 **19 probes in raw SQL against `uboss_dev`**, each under its own savepoint: 13 named refusals, 6
 accepted as intended, plus the before-and-after probe of the composite-FK defect. Two probes had to
-be tightened after they tripped a *different* constraint — `check_violation` catches them all, so a
+be tightened after they tripped a _different_ constraint — `check_violation` catches them all, so a
 probe that fails for the wrong reason proves nothing about the one it was written for.
 
 `migrate diff --from-migrations` empty. Both databases deployed. All three tables added to
@@ -2370,19 +2368,19 @@ certificate with its manifest and both row counts; and the cancellation.
 
 **No second lifecycle.** `tenant_lifecycle_transitions` (Prompt 11) already moves a company between
 `Active`, `ReadOnly` and `Closed` on a schedule with a history. This row is the request/approval
-wrapper that *drives* it.
+wrapper that _drives_ it.
 
 ### The constraints worth naming
 
-* **`exit_approver_is_not_the_requester`** — ending a customer's contract and approving that
+- **`exit_approver_is_not_the_requester`** — ending a customer's contract and approving that
   decision are two people.
-* **`deletion_respects_the_retention_window`** — `deleted_at >= deletion_eligible_from`. The window
+- **`deletion_respects_the_retention_window`** — `deleted_at >= deletion_eligible_from`. The window
   cannot be skipped by a code path somebody adds later.
-* **`deletion_certificate_is_complete`** — a `Deleted` row must carry a timestamp, an author, a
+- **`deletion_certificate_is_complete`** — a `Deleted` row must carry a timestamp, an author, a
   manifest and both row counts.
-* **`approved_exit_is_scheduled`** and **`exit_windows_are_ordered`** — nothing is approved without
+- **`approved_exit_is_scheduled`** and **`exit_windows_are_ordered`** — nothing is approved without
   its dates, and deletion never precedes the read-only period.
-* **`one_open_exit_per_company`** — a *partial* unique index, so finished exits accumulate as
+- **`one_open_exit_per_company`** — a _partial_ unique index, so finished exits accumulate as
   history.
 
 ### What the dependency graph decided
@@ -2420,7 +2418,7 @@ and the exhaustiveness test caught its absence on the first run.
 tenant. Nullable, because a call made by a scheduled sweep has no originating request — and a
 `NOT NULL` here would have forced a fabricated id, which is worse than an honest absence.
 
-These are the last two stages of *"browser/API → queue → run → provider/tool → cost settlement"*.
+These are the last two stages of _"browser/API → queue → run → provider/tool → cost settlement"_.
 The id previously stopped at `agent_runs`, so **"what did this click spend" was unanswerable**
 (ADR-222).
 
@@ -2429,9 +2427,9 @@ The id previously stopped at `agent_runs`, so **"what did this click spend" was 
 Three columns on `service_alerts` — `postmortem`, `postmortem_at`, `postmortem_by_user_id` — plus
 two new platform-plane tables:
 
-* **`incident_timeline_entries`** — kind, note, `occurred_at` (**not** `created_at`: an operator
+- **`incident_timeline_entries`** — kind, note, `occurred_at` (**not** `created_at`: an operator
   backfills after an outage), author. Append-only by convention; there is no update route.
-* **`corrective_actions`** — description, state, **mandatory** owner and due date, completion or
+- **`corrective_actions`** — description, state, **mandatory** owner and due date, completion or
   drop with its note.
 
 Both cascade from `service_alerts` and inherit its reasoning for having no RLS: an incident is
@@ -2440,12 +2438,12 @@ projects `customer_impact` alone.
 
 ### The constraints worth naming
 
-* **`serious_incident_is_post_mortemed_before_resolving`** — a `Resolved` P0 or P1 must carry a
+- **`serious_incident_is_post_mortemed_before_resolving`** — a `Resolved` P0 or P1 must carry a
   postmortem. The one that makes a severity scale mean something, and it is in the database because
-  *"we'll write it up later"* is the pressure it resists.
-* **`dropped_action_says_why`** — `COALESCE`d, because a CHECK whose expression is NULL passes. **The
+  _"we'll write it up later"_ is the pressure it resists.
+- **`dropped_action_says_why`** — `COALESCE`d, because a CHECK whose expression is NULL passes. **The
   fourth appearance of that failure mode** in this schema (Prompts 14, 22, 35, and this).
-* **`postmortem_is_attributed`**, **`corrective_action_completion_is_attributed`**,
+- **`postmortem_is_attributed`**, **`corrective_action_completion_is_attributed`**,
   **`finished_action_records_when`** — all three directions, so no row can half-record a decision.
 
 ### Verification
@@ -2471,33 +2469,33 @@ out. The request is **hashed rather than stored**: a body can be 340 MB (a file 
 body would be a second copy of customer content with its own lifetime, its own RLS surface and its
 own deletion obligation. A hash answers "is this the same request?" and nothing else.
 
-What did *not* need a table:
+What did _not_ need a table:
 
-* **The API token buckets.** State with a lifetime of one minute. Writing it to PostgreSQL would put
+- **The API token buckets.** State with a lifetime of one minute. Writing it to PostgreSQL would put
   a row-level write in front of every request in the product — the limiter would become the load
   problem. Redis, or in process (ADR-233).
-* **The run concurrency counter.** `COUNT(*) WHERE state IN ('Reserved','Running')` is derived from
+- **The run concurrency counter.** `COUNT(*) WHERE state IN ('Reserved','Running')` is derived from
   the rows that already exist and therefore cannot drift out of step with them (ADR-232).
-* **The per-company limit configuration.** `platform_settings`, which already exists, is lockable,
+- **The per-company limit configuration.** `platform_settings`, which already exists, is lockable,
   is audited on change, and is platform-controlled — which is exactly the requirement (ADR-234).
 
 ### Columns
 
-* **`provider_models.quota_requests_per_minute`** — nullable, and null is the expected value.
+- **`provider_models.quota_requests_per_minute`** — nullable, and null is the expected value.
   `declared_model_quota_is_positive` allows a positive number or nothing: zero would mean "never call
   this model", which is what `enabled` is for, and two controls with the same effect and different
   names is how one of them gets forgotten.
 
 ### Constraints
 
-* **`idempotency_key_is_unique_per_actor`** — `(scope_key, user_id, key)`. The one that makes the
+- **`idempotency_key_is_unique_per_actor`** — `(scope_key, user_id, key)`. The one that makes the
   feature safe rather than dangerous (S-302).
-* **`idempotency_scope_matches_its_plane`** — `scope_key` is `'platform'` exactly when `tenant_id`
+- **`idempotency_scope_matches_its_plane`** — `scope_key` is `'platform'` exactly when `tenant_id`
   is NULL, and the tenant id as text otherwise. Without it a row could claim to be platform-plane
   while carrying a tenant id, and the unique index would scope it by the wrong key.
-* **`idempotency_record_is_finished_or_not`** — a status code and a completion time, or neither. The
+- **`idempotency_record_is_finished_or_not`** — a status code and a completion time, or neither. The
   in-flight state is meaningful and must be representable; "half finished" must not be.
-* **`idempotency_record_expires_after_it_was_created`** — a record that expired before it was written
+- **`idempotency_record_expires_after_it_was_created`** — a record that expired before it was written
   would be swept immediately, which looks exactly like a client whose retries never work.
 
 Every one is wrapped in `COALESCE(..., false)`. **A CHECK whose expression is NULL passes** — the
@@ -2524,7 +2522,7 @@ security boundary without moving it is worse than no control.
 Six behaviours probed in raw SQL under savepoints before any code depended on them: the scope
 mismatch refused in both directions, the half-finished row refused, the backwards expiry refused, a
 valid in-flight row accepted, the same key for the same actor refused, and the same key for a
-*different* actor accepted. `migrate diff --from-migrations` empty. `idempotency_records` classified
+_different_ actor accepted. `migrate diff --from-migrations` empty. `idempotency_records` classified
 in `TABLE_DISPOSITION` as `Content`, which the Prompt 38 exhaustiveness test requires.
 
 **One note on process:** the quota column was appended to this migration after it had already been
@@ -2571,22 +2569,22 @@ configurator, owner and activator — with the approver on the `ApprovalRequest`
 
 ### One column
 
-* **`engine_agents.built_for_user_id`** — *who was this built for*, which is a different question
-  from *who may run it*. Setting it grants nothing.
+- **`engine_agents.built_for_user_id`** — _who was this built for_, which is a different question
+  from _who may run it_. Setting it grants nothing.
 
 ### Nine tables
 
-* **`employee_photos`** — a pointer into `files`. Keyed on tenant and user rather than on the
+- **`employee_photos`** — a pointer into `files`. Keyed on tenant and user rather than on the
   employment record, so a photo survives re-employment; one per person, so "remove my photo" cannot
   leave an earlier one reachable by id.
-* **`engine_agent_operators`** — who may run an agent. A table rather than a column because an
+- **`engine_agent_operators`** — who may run an agent. A table rather than a column because an
   agent can be operated by several people (a rota, holiday cover), and a single
   `assignedToUserId` would have forced the second person to borrow a login or be given a builder
   role. Withdrawal sets `revoked_at` rather than deleting: "this person could run this, until this
   date" is what an access review asks for.
-* **`job_methods`**, **`job_method_rows`**, **`job_method_imports`** — the thirteen columns, their
+- **`job_methods`**, **`job_method_rows`**, **`job_method_imports`** — the thirteen columns, their
   provenance, and the record of every upload attempt.
-* **`chat_conversations`**, **`chat_participants`**, **`chat_messages`**,
+- **`chat_conversations`**, **`chat_participants`**, **`chat_messages`**,
   **`chat_message_attachments`**, **`chat_context_refs`**.
 
 A photo and a chat attachment are both rows in `files`, deliberately: that inherits the storage
@@ -2596,19 +2594,19 @@ chat" is how one upload path in a product ends up being the unscanned one.
 
 ### Constraints worth naming
 
-* **`one_direct_conversation_per_pair`** with **`conversation_shape_matches_its_kind`** — the pair
+- **`one_direct_conversation_per_pair`** with **`conversation_shape_matches_its_kind`** — the pair
   that prevents a bug nobody would diagnose. Two people messaging each other at the same moment
   would otherwise get two conversations, each holding half the history, which presents as lost
   messages. The shape constraint is what stops a `Direct` row with a NULL `direct_key` escaping the
   unique index.
-* **`deleted_message_keeps_no_text`** — a deleted message keeps its row so the conversation keeps
+- **`deleted_message_keeps_no_text`** — a deleted message keeps its row so the conversation keeps
   its shape and the reply beneath it still makes sense, and keeps none of its words. The service
   blanks the body; the constraint makes that a guarantee rather than a habit.
-* **`refused_import_says_why`** — a refused import is the more valuable record. "I sent that form in
+- **`refused_import_says_why`** — a refused import is the more valuable record. "I sent that form in
   three weeks ago" is answered by a row saying it arrived, which version it claimed, and why it was
   not applied.
-* **`revoked_share_is_attributed`** — both the time and the person, or neither.
-* **`import_stage_is_known`** — enumerated **knowing what that costs**: the fourth CHECK in this
+- **`revoked_share_is_attributed`** — both the time and the person, or neither.
+- **`import_stage_is_known`** — enumerated **knowing what that costs**: the fourth CHECK in this
   schema that lists a set (Prompts 25, 34, 40, and this), and the first three all silently became
   incomplete when their sets grew. Kept anyway, because it is what stops a typo becoming a row no
   screen can render.

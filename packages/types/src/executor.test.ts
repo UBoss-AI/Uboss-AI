@@ -58,10 +58,9 @@ describe('the ten exception types come from the source document', () => {
         'MissingEvidence',
       ],
     );
-    assert.deepEqual(
-      EXCEPTION_KINDS.slice(0, SOURCE_DOCUMENT_EXCEPTION_KINDS.length),
-      [...SOURCE_DOCUMENT_EXCEPTION_KINDS],
-    );
+    assert.deepEqual(EXCEPTION_KINDS.slice(0, SOURCE_DOCUMENT_EXCEPTION_KINDS.length), [
+      ...SOURCE_DOCUMENT_EXCEPTION_KINDS,
+    ]);
   });
 
   it('accounts for every kind that is not one of the document’s ten', () => {

@@ -1196,7 +1196,7 @@ them.
 `packages/types/src/agents.test.ts` — 69 unit tests. The client's vocabularies transcribed and
 pinned (four run types, six missing-data behaviours, seven Engine Agent statuses, Form 3's eight
 job-level groups and seventeen action columns); `missingSetupFields` as the ZERO-QUESTION RULE,
-including the two cases it must *not* ask about (a manual agent's schedule, a connection for work
+including the two cases it must _not_ ask about (a manual agent's schedule, a connection for work
 with no tool needs); and the Engine Agent lifecycle, including that Archived is terminal.
 
 `apps/api/test/agent-builder.e2e.spec.ts` — 32 integration tests across six areas: the
@@ -1204,15 +1204,15 @@ zero-question rule, Test, Activate, Form 3, authorization/scope/isolation, and c
 
 Four of these earn their keep by defending decisions rather than behaviour:
 
-- *records the result, and records that the model was a mock* — asserts `wasReal === false` on a
+- _records the result, and records that the model was a mock_ — asserts `wasReal === false` on a
   mock run, so no screen or report can present it as a live provider integration.
-- *never creates a second Engine Agent for the same work* — the locked lifecycle rule.
-- *freezes the published configuration* — proves the database trigger, not just the service.
-- *returns nothing that could be a credential* — greps the serialised response for `secret`,
+- _never creates a second Engine Agent for the same work_ — the locked lifecycle rule.
+- _freezes the published configuration_ — proves the database trigger, not just the service.
+- _returns nothing that could be a credential_ — greps the serialised response for `secret`,
   `apikey`, `credential`, `password`, `token`.
 
-One test records a limitation instead of forcing a path: *never even sees an AI step with no
-approved Skill, because assignment refuses first*. The readiness check does carry that blocker,
+One test records a limitation instead of forcing a path: _never even sees an AI step with no
+approved Skill, because assignment refuses first_. The readiness check does carry that blocker,
 but Prompt 23's gate refuses to publish such a plan at all, so Agent Builder never receives one.
 Asserting the earlier refusal is honest; faking an assignment the product cannot produce would
 not have been.
@@ -1233,13 +1233,13 @@ fixture chain because the registry is about an agent that activation produced.
 
 Five that defend decisions rather than behaviour:
 
-- *reports no run data rather than a fabricated success rate* and *reports usage as absent rather
-  than zero* — ADR-123.
-- *needs no approval to narrow memory back again* — ADR-124's narrowing rule.
-- *refuses to let the activator be their own approver* — otherwise the requirement is decorative.
-- *cannot have a published version edited, even in the database* — three separate attempts
+- _reports no run data rather than a fabricated success rate_ and _reports usage as absent rather
+  than zero_ — ADR-123.
+- _needs no approval to narrow memory back again_ — ADR-124's narrowing rule.
+- _refuses to let the activator be their own approver_ — otherwise the requirement is decorative.
+- _cannot have a published version edited, even in the database_ — three separate attempts
   (config, impact, test result), proving the replacement trigger covers the new columns.
-- *reports Run now as available but serves no route for it* — records ADR-122's boundary as a
+- _reports Run now as available but serves no route for it_ — records ADR-122's boundary as a
   test, so the gap cannot be mistaken for an oversight.
 
 One bug this suite caught in review: `EngineAgentService.mayTouch` first omitted the department
@@ -1267,13 +1267,13 @@ routes ADR-122 deferred.
 
 Five that defend decisions rather than behaviour:
 
-- *makes two callers meaning one occurrence into one run* and *lets a person start the same agent
-  twice on purpose* — the two halves of the idempotency rule, which are opposites.
-- *spends its bounded attempts then dead-letters, preserving the context* — asserts the attempt
-  ceiling *and* that every attempt is still on the record.
-- *leaves the durable history complete even with nobody listening* — the point of the event table.
-- *does not fail the run when a listener throws* — losing the animation beats losing the work.
-- *reports an unreadable schedule instead of silently never firing* — the worst available outcome
+- _makes two callers meaning one occurrence into one run_ and _lets a person start the same agent
+  twice on purpose_ — the two halves of the idempotency rule, which are opposites.
+- _spends its bounded attempts then dead-letters, preserving the context_ — asserts the attempt
+  ceiling _and_ that every attempt is still on the record.
+- _leaves the durable history complete even with nobody listening_ — the point of the event table.
+- _does not fail the run when a listener throws_ — losing the animation beats losing the work.
+- _reports an unreadable schedule instead of silently never firing_ — the worst available outcome
   is a company believing an agent is scheduled when it is not.
 
 **Two real bugs this suite found**, both mine and both in the constraints I had just written:
@@ -1295,8 +1295,8 @@ on it, so the next one is diagnosed rather than deduced.
 owner and severity; the lifecycle as properties (closed leads nowhere, no self-transitions, an
 escalation can be handed back); every branch of `concludeValidation`; and the escalation window.
 
-A whole describe block is given to the locked rule — *THE LOCKED RULE — the Executor never
-decides* — asserting across **every** exception kind that the Executor cannot resolve or dismiss,
+A whole describe block is given to the locked rule — _THE LOCKED RULE — the Executor never
+decides_ — asserting across **every** exception kind that the Executor cannot resolve or dismiss,
 that it cannot even retry when a control refused the work, and that it still can route and
 escalate. Written as loops over `EXCEPTION_KINDS` rather than examples, so a kind added later is
 covered automatically.
@@ -1307,14 +1307,14 @@ Center over HTTP.
 
 Six that defend decisions rather than behaviour:
 
-- *cannot be closed by the Executor even directly in the database* — proves the third layer, by
+- _cannot be closed by the Executor even directly in the database_ — proves the third layer, by
   writing the event row directly rather than through the service.
-- *refuses even to retry work a control has refused* — the subtler half of the rule.
-- *records whether a person or the Executor did each thing* — the history distinguishes them.
-- *acknowledges a provider outage that has passed, but does not close it* — ADR-135.
-- *does not escalate into the void when nobody owns it* — and asserts it still reports itself
+- _refuses even to retry work a control has refused_ — the subtler half of the rule.
+- _records whether a person or the Executor did each thing_ — the history distinguishes them.
+- _acknowledges a provider outage that has passed, but does not close it_ — ADR-135.
+- _does not escalate into the void when nobody owns it_ — and asserts it still reports itself
   overdue, so it is not merely silent.
-- *does not treat a retry as progress* — otherwise an exception would look handled because
+- _does not treat a retry as progress_ — otherwise an exception would look handled because
   somebody pressed retry.
 
 Two fixture facts worth recording, both found by failures: a Skill key and an Engine Agent name
@@ -1327,47 +1327,47 @@ than working around either constraint, and it names the four mappings in the out
 **`packages/types/src/approvals.test.ts` — 47 unit tests.** Decisions, the type→module mapping,
 routing, delegation windows, aging and escalation. Two are invariants rather than examples:
 
-- *leaves no approval type that nobody can decide* — `everyApprovalTypeIsDecidable` run against
+- _leaves no approval type that nobody can decide_ — `everyApprovalTypeIsDecidable` run against
   the real `ROLE_TEMPLATES`. This caught a live bug: `WorkflowStepApproval` pointed at `todo`,
   `OutputApproval` at `executor` and `GuestAccess` at `users`, and **no role holds `Approve` on
   any of those three**, so all three could be raised and never decided. Invisible in the type
   system and in review; it only shows up as a stuck queue.
-- *reports an undecidable mapping rather than passing quietly* — the same invariant against a
+- _reports an undecidable mapping rather than passing quietly_ — the same invariant against a
   fabricated template with no `Approve` anywhere, so a green result means something.
-- *has no opinion on self-approval, which the authorization engine owns* — pins that
+- _has no opinion on self-approval, which the authorization engine owns_ — pins that
   `isAddressedTo` does **not** refuse the requester, so the duplication ADR-137 forbids cannot
   creep back.
-- *reads every step approval kind that reaches the column* — loops `STEP_APPROVAL_KINDS` and
+- _reads every step approval kind that reaches the column_ — loops `STEP_APPROVAL_KINDS` and
   asserts each routes to something decidable, which is what would have caught the `FourEyes`
   deadlock (ADR-138).
 
 **`apps/api/test/approvals.e2e.spec.ts` — 51 tests**, on the Prompt 23–27 fixture chain so the
 approvals decided are the real ones. Grouped by what they defend:
 
-- *one engine across every domain* — every one of the eight types raised through the same call;
+- _one engine across every domain_ — every one of the eight types raised through the same call;
   the queue aged; a request addressed to nobody refused.
-- *separation of duties* — a self-approval refused by the **platform** control with the
-  `security.separation_of_duties_blocked` row counted; the creator refused from *rejecting* their
+- _separation of duties_ — a self-approval refused by the **platform** control with the
+  `security.separation_of_duties_blocked` row counted; the creator refused from _rejecting_ their
   own request too; a comment on your own request allowed; a `FourEyes` gate applied against a
   company with zero `FourEyes` policy rows, satisfied once a second person has acted, and refused
   for a second decision from the same person.
-- *the decision record is immutable* — a verdict change, a reopen, a rewritten reason, and an edit
+- _the decision record is immutable_ — a verdict change, a reopen, a rewritten reason, and an edit
   or delete of the history, each asserted **against the database** rather than through the service,
   because the service can be bypassed by the next prompt and the trigger cannot. Plus the
   send-back → resubmit chain and the one-resubmission limit.
-- *routing* — named approver excludes everybody else; a role-addressed request refused without the
-  role; and *tells a screen exactly what it may do, matching what the server will allow*, which
+- _routing_ — named approver excludes everybody else; a role-addressed request refused without the
+  role; and _tells a screen exactly what it may do, matching what the server will allow_, which
   asserts the `available` reason is the same sentence `decide` throws.
-- *out-of-office delegation* — a delegate decides; **grants no authority they did not have**;
+- _out-of-office delegation_ — a delegate decides; **grants no authority they did not have**;
   **does not launder a self-approval**; type-scoped cover honoured and ignored elsewhere;
   revocation immediate; a delegate cannot hand cover back.
-- *escalation* — routes one step up the reporting hierarchy; **never decides anything, however
+- _escalation_ — routes one step up the reporting hierarchy; **never decides anything, however
   overdue** (sweeps twice, then asserts no row left `Pending`); does not escalate on age alone;
   escalates once; escalates to nobody rather than inventing a recipient.
-- *integration* — the Executor's `RequestApproval` produces a row somebody can see, and cannot
+- _integration_ — the Executor's `RequestApproval` produces a row somebody can see, and cannot
   decide it; a workflow step gate reaches the same queue and is governed by `approvals`, not
   `todo`.
-- *tenant isolation and the API* — unauthenticated 401, cross-tenant 403/404 with no body, nothing
+- _tenant isolation and the API_ — unauthenticated 401, cross-tenant 403/404 with no body, nothing
   stored outside its own tenant, meta and queue over HTTP, an unknown decision 400, audit events
   for every decision.
 
@@ -1395,45 +1395,44 @@ address the approval to themselves.
 all three re-run because `ApprovalService` is now injected into the Executor and the registry.
 `apps/web` 30/30 and a clean `next build` including the `/approvals` route.
 
-
 ## Prompt 29 — AI Provider Profiles and the Model Gateway
 
 **`packages/types/src/providers.test.ts` — 37 unit tests.** Modes, the five profiles, lifecycle
 transitions, routing under each fallback policy, pricing arithmetic, custom-config validation. Two
 are about the shape of the seam rather than its behaviour:
 
-- *keeps provider kinds and logical profiles disjoint* — nothing can be both a name business code
+- _keeps provider kinds and logical profiles disjoint_ — nothing can be both a name business code
   may store and a provider name that must stay behind the gateway.
-- *never names a provider in a routing reason* — those reasons are shown when a call cannot be
+- _never names a provider in a routing reason_ — those reasons are shown when a call cannot be
   routed, so they must not leak which vendor was unavailable.
 
-Also worth naming: *rounds once at the end rather than per component* (three separate ceilings
-would have billed 4 minor units where the exact total is 2.49), and *bills cached tokens at the
-full input rate when the model does not discount them* — `null` means "not priced separately", not
+Also worth naming: _rounds once at the end rather than per component_ (three separate ceilings
+would have billed 4 minor units where the exact total is 2.49), and _bills cached tokens at the
+full input rate when the model does not discount them_ — `null` means "not priced separately", not
 free.
 
 **`apps/api/test/model-gateway.e2e.spec.ts` — 37 tests** against the real `RoutingModelGateway`,
 not the mock one. Grouped by what they defend:
 
-- *provider names stay behind the gateway* — the response is serialised and asserted not to
+- _provider names stay behind the gateway_ — the response is serialised and asserted not to
   contain a provider name; the call record names the logical profile; a company user gets 403 on
   the platform route.
-- *nothing claims a real provider* — `usesRealModel` false; every recorded call
+- _nothing claims a real provider_ — `usesRealModel` false; every recorded call
   `producedByRealModel = false` with a null request id; Anthropic and OpenAI both refuse with
   `ProviderNotConfiguredError` and the message says the adapter has never been run; `meta` reports
-  which adapters are registered *and* which can reach a provider; Test Connection reports
+  which adapters are registered _and_ which can reach a provider; Test Connection reports
   `ok: true, reachedProvider: false`.
-- *routing* — all five profiles resolve; `MigrationRequired` refuses new work and records an
+- _routing_ — all five profiles resolve; `MigrationRequired` refuses new work and records an
   `Unroutable` call with no model; `AGENT_STANDARD` falls back and says it did; `HIGH_REASONING`
   refuses to substitute; the planner refuses a different capability.
-- *company modes* — a BYOK route overrides the platform default outright; the four
+- _company modes_ — a BYOK route overrides the platform default outright; the four
   mode/ownership mismatches are each refused.
-- *custom enterprise provider* — the secret is stored as a handle and appears in no response;
+- _custom enterprise provider_ — the secret is stored as a handle and appears in no response;
   plain http, a missing usage mapping and an endpoint on a first-party profile are each refused.
-- *pricing* — a call cites the version that priced it; superseding leaves the earlier call's price
+- _pricing_ — a call cites the version that priced it; superseding leaves the earlier call's price
   intact; editing is refused in the database; exactly one current price survives.
-- *lifecycle* — no return to `Active`; a withdrawn removal notice steps back to `Deprecated`.
-- *the call record* — append-only; records exactly what the adapter reported; stays in its tenant.
+- _lifecycle_ — no return to `Active`; a withdrawn removal notice steps back to `Deprecated`.
+- _the call record_ — append-only; records exactly what the adapter reported; stays in its tenant.
 
 ### Two real bugs the tests found, both mine
 
@@ -1455,43 +1454,42 @@ executor 35/35, run-engine 41/41, engine-agent 31/31, agent-builder 32/32, appro
 five re-run because `ModelRequest` gained a required field and the harness reset changed. Web
 30/30 and a clean `next build` including `/master/providers`.
 
-
 ## Prompt 30 — the Token/Cost Engine
 
 **`packages/types/src/cost.test.ts` — 53 unit tests.** The hierarchy, wallet arithmetic,
 thresholds, the three spend decisions, reservation transitions, the ledger's effect table, replay,
 reconciliation and projection. The ones that carry weight:
 
-- *keeps a stable lock order, which is what stops two reservations deadlocking* — looks like a
+- _keeps a stable lock order, which is what stops two reservations deadlocking_ — looks like a
   tautology and is not; it is what stops somebody tidying the function into a different order.
-- *does not hard stop a spend that lands exactly on the allowance* and *compares in minor units,
-  so a floored percentage cannot mislead it* — both pin ADR-157, the off-by-one that made the last
+- _does not hard stop a spend that lands exactly on the allowance_ and _compares in minor units,
+  so a floored percentage cannot mislead it_ — both pin ADR-157, the off-by-one that made the last
   slice of every budget unspendable.
-- *lets remaining go negative rather than hiding an overspend*.
-- *reports rather than corrects* — reconciliation leaves the wrong number in place.
-- *projects nothing when nothing has been spent / from less than an hour of data* — a date
+- _lets remaining go negative rather than hiding an overspend_.
+- _reports rather than corrects_ — reconciliation leaves the wrong number in place.
+- _projects nothing when nothing has been spent / from less than an hour of data_ — a date
   extrapolated from twenty minutes would be quoted in a meeting.
 
 **`apps/api/test/cost-engine.e2e.spec.ts` — 33 tests**, against a real database:
 
-- *concurrent agents cannot overspend the same balance* — ten and twenty genuinely concurrent
+- _concurrent agents cannot overspend the same balance_ — ten and twenty genuinely concurrent
   reservations; the assertion is `reserved <= allowance`, not a particular count.
-- *the flow* — hold the estimate, charge the actual, give the rest back; an overspend recorded at
+- _the flow_ — hold the estimate, charge the actual, give the rest back; an overspend recorded at
   what it cost; a double settle refused by the service **and** by the database; `Released` kept
   distinct from settled-at-zero.
-- *the hierarchy* — holds against every level at once; a department limit stops a spend the
+- _the hierarchy_ — holds against every level at once; a department limit stops a spend the
   company could afford; the **company** is reported as binding when both would stop; a level with
   no budget defers rather than meaning zero.
-- *thresholds* — hard stops past the allowance and not merely at it; the crossed level appears on
+- _thresholds_ — hard stops past the allowance and not merely at it; the crossed level appears on
   the wallet; an admin is notified; three runs crossing one level do not produce three alerts.
-- *the ledger* — every movement written and replaying to the balance; reserve and release present
+- _the ledger_ — every movement written and replaying to the balance; reserve and release present
   though they net to zero; append-only; drift found when something writes around the engine, and
   left uncorrected.
-- *abandoned reservations* — expired after the window and marked `Expired`, fresh ones untouched.
-- *through the model gateway* — the whole flow with no caller involvement; a call the budget
+- _abandoned reservations_ — expired after the window and marked `Expired`, fresh ones untouched.
+- _through the model gateway_ — the whole flow with no caller involvement; a call the budget
   cannot afford refused and recorded as never having happened; the hold given back when no model
   could answer.
-- *the API and tenant isolation* — no route that spends by hand (404 asserted), unauthenticated
+- _the API and tenant isolation_ — no route that spends by hand (404 asserted), unauthenticated
   401, one company's budget invisible to another, an audit event for an allowance change.
 
 ### Two real defects the concurrency tests found, both mine
@@ -1502,7 +1500,7 @@ reconciliation and projection. The ones that carry weight:
 2. **A threshold notification could fail a reservation** (ADR-162, S-203) — twenty concurrent
    reservations raced on one dedupe key and the unique-index error escaped.
 
-Both are cases where the test expectation was *also* wrong, and it was worth deciding which of the
+Both are cases where the test expectation was _also_ wrong, and it was worth deciding which of the
 two was right rather than adjusting whichever was easier.
 
 ### Regression
@@ -1518,30 +1516,30 @@ a full-verify checkpoint, so the whole API suite was run.
 rules, grant lifetimes, the five commercial policies, carry-forward arithmetic, negative-balance
 grace, plan-change pro-rating, reallocation and the resume rule. The ones that carry weight:
 
-- *does not model an adjusted approval as its own state* (ADR-169).
-- *defaults to never expiring purchased credit* — a default, asserted, because it is a decision.
-- *does not count a grant that has not started* — what makes a future-dated top-up safe.
-- *carries nothing from an overspent period* — a negative balance is a debt, not credit to carry.
-- *leaves every other block alone* — loops the other blocked states to prove a top-up clears none.
-- *refuses to move more than is uncommitted* — the reallocation invariant.
+- _does not model an adjusted approval as its own state_ (ADR-169).
+- _defaults to never expiring purchased credit_ — a default, asserted, because it is a decision.
+- _does not count a grant that has not started_ — what makes a future-dated top-up safe.
+- _carries nothing from an overspent period_ — a negative balance is a debt, not credit to carry.
+- _leaves every other block alone_ — loops the other blocked states to prove a top-up clears none.
+- _refuses to move more than is uncommitted_ — the reallocation invariant.
 
 **`apps/api/test/credits.e2e.spec.ts` — 40 tests** against a real database:
 
-- *a company cannot grant itself credit* — no company decide route (404), no company grant route
+- _a company cannot grant itself credit_ — no company decide route (404), no company grant route
   (404), no platform queue from the company plane (403), and an Employee refused (403).
-- *Finance decides* — approve, adjust, reject with a reason, refuse a second decision through the
+- _Finance decides_ — approve, adjust, reject with a reason, refuse a second decision through the
   service and through the database, and a future-dated approval that is not yet spendable.
-- *reallocation does not create allowance* — the total is unchanged, more-than-uncommitted is
+- _reallocation does not create allowance_ — the total is unchanged, more-than-uncommitted is
   refused, **reserved budget cannot be moved**, and both ledger halves are equal and opposite.
-- *the commercial policy* — starts at the documented defaults, is refused from the company plane,
+- _the commercial policy_ — starts at the documented defaults, is refused from the company plane,
   refuses an incoherent combination, and audits a change.
-- *the edge cases* — reset not due, forfeit, carry-forward, capped carry-forward; a top-up with
+- _the edge cases_ — reset not due, forfeit, carry-forward, capped carry-forward; a top-up with
   no expiry surviving ten years; a dated grant expiring exactly once; payment-failure revocation
   taking the balance negative and the policy then blocking; grace tolerating an overdraft;
   plan change deferred, immediate and pro-rated.
-- *resuming blocked runs* — a budget-blocked run re-queued with its reservation cleared, other
+- _resuming blocked runs_ — a budget-blocked run re-queued with its reservation cleared, other
   blocks untouched, resume as part of an approval, and **no resume on a future-dated approval**.
-- *the ledger still explains the balance* — a top-up, a reallocation, an expiry and a revocation
+- _the ledger still explains the balance_ — a top-up, a reallocation, an expiry and a revocation
   in one test, then `reconcile` finds nothing. That is the single most valuable assertion in the
   suite: it proves this prompt added no second way to move money.
 
@@ -1554,7 +1552,7 @@ Four defects, none of which a reading of the code had caught:
    maintained balance from the replayed ledger if it had not. Fixed in `adjustAllowance`
    (ADR-171), which now takes direction from `LEDGER_EFFECT` and a magnitude from the caller.
 2. **A withdrawal was recorded as a `Refund`.** Wrong kind: `Refund` reduces `used`, so an unpaid
-   top-up would have left the allowance untouched and written off real spend. The *test* had the
+   top-up would have left the allowance untouched and written off real spend. The _test_ had the
    same mistake in it, and was corrected along with the code rather than kept as the expectation.
 3. **Two clocks in one operation.** `applyPeriodReset` was given a period boundary and threaded it
    into the grant's `effectiveFrom`, but `grant` judged liveness against `Date.now()` — so a reset
@@ -1572,7 +1570,7 @@ types 98/98 (credits 45, cost 53), cost-engine 33/33 and platform-console 46/46 
 
 The Prompt 29 change to `providers` module status broke one Prompt 9-era assertion that every
 Master Console module was a shell. **Updated rather than relaxed**: it now checks that every
-module has a real blocker *and* that a live module is honest about what it still cannot do. The
+module has a real blocker _and_ that a live module is honest about what it still cannot do. The
 same test covers `credits` going live at Prompt 31.
 
 ---
@@ -1583,44 +1581,44 @@ same test covers `credits` going live at Prompt 31.
 and their sources, the eleven metrics and their drill-downs, the time-range arithmetic, MFA
 coverage, guest expiry and SSO status. The ones that carry weight:
 
-- *leaves no recorded event category invisible* — **this test found a real gap.** With Active
+- _leaves no recorded event category invisible_ — **this test found a real gap.** With Active
   Sessions reading live state, the `Session` category (sign-outs, admin revokes, expiries)
   appeared in no view, so a company could not have seen that somebody was signed out.
-- *leaves no view unreachable from a metric* — a view with no card leading to it is a screen
+- _leaves no view unreachable from a metric_ — a view with no card leading to it is a screen
   nobody finds.
-- *claims a correlation id only where a request produced the row* — state rows have none, and
+- _claims a correlation id only where a request produced the row_ — state rows have none, and
   offering the filter would send an investigator after a request that never existed.
-- *judges incomplete coverage against the company's own policy* — the approved documents set no
+- _judges incomplete coverage against the company's own policy_ — the approved documents set no
   MFA target, so a red badge on a company that does not require MFA would be invented policy.
-- *floors rather than rounds* — 249 of 250 must not read as 100% on a screen asking "is everybody
+- _floors rather than rounds_ — 249 of 250 must not read as 100% on a screen asking "is everybody
   covered".
-- *sets no threshold it was not given* — one failed login and five hundred are both `watch`.
-- *builds the exports view from named actions rather than a category* — `Access` holds fifty
+- _sets no threshold it was not given_ — one failed login and five hundred are both `watch`.
+- _builds the exports view from named actions rather than a category_ — `Access` holds fifty
   actions, so a category filter would answer the wrong question.
 
 **`apps/api/test/security-center.e2e.spec.ts` — 45 tests** against a real database:
 
-- *who may look* — a Company Admin reads and acts; an `Auditor` reads and exports and is refused
+- _who may look_ — a Company Admin reads and acts; an `Auditor` reads and exports and is refused
   the revoke route; an Employee, a Manager and a guest are refused outright; and **a UBoss
   platform actor is refused too** — support reaching a customer’s security history goes through
   break-glass, not through the customer’s own screen.
-- *tenant isolation* — a cross-tenant request refused, and another company's events, guests and
+- _tenant isolation_ — a cross-tenant request refused, and another company's events, guests and
   live sessions absent from the three views that could have leaked them.
-- *the posture* — MFA coverage judged against the company's policy, a confirmed factor counted and
+- _the posture_ — MFA coverage judged against the company's policy, a confirmed factor counted and
   a pending one not, SSO reported as a word, a lapsed guest reported as a problem, failed logins
   counted inside the window and not outside it, and a single administrator flagged as a lockout
   risk.
-- *the views* — every advertised view served, an unknown view 404, a sign-out visible as an
+- _the views_ — every advertised view served, an unknown view 404, a sign-out visible as an
   authentication event, a live session carrying its device and a revoke handle, a refused
   permission listed, filters by actor and correlation id, and the total counting the filter rather
   than the trail.
-- *export* — the export records itself and appears under Data exports; a custom role with `Audit`
+- _export_ — the export records itself and appears under Data exports; a custom role with `Audit`
   and no `Export` is refused.
-- *revoking a session* — a colleague signed out with the reason recorded; the act distinguished
+- _revoking a session_ — a colleague signed out with the reason recorded; the act distinguished
   from a platform revoke in the trail; another company's person refused and left signed in; an
   empty reason refused; a second revoke refused; and the cross-company count reported when the
   person belongs to two companies.
-- *tamper protection* — update and delete refused by the database for both trails, with the
+- _tamper protection_ — update and delete refused by the database for both trails, with the
   application role, and no route on this controller that edits or deletes anything.
 
 ### Regression
@@ -1639,55 +1637,55 @@ defaults, policy validation, the write decision, the four read scopes, expiry, o
 ratings, eligibility, validation, evaluation candidacy and the quality summary. The ones that carry
 weight:
 
-- *gates promotion on a module a company user can actually hold* — **this test found a real
+- _gates promotion on a module a company user can actually hold_ — **this test found a real
   defect.** The promote route was gated on `skills:EditDraft`, and `skills` is a platform module,
   so nobody in any company could have promoted anything (ADR-185).
-- *has coherent defaults, by its own validator* — a default the product would refuse if a company
+- _has coherent defaults, by its own validator_ — a default the product would refuse if a company
   entered it is not a default.
-- *persists no Restricted data by default, in any mode* — the substantive classification decision,
+- _persists no Restricted data by default, in any mode_ — the substantive classification decision,
   pinned.
-- *never treats two nulls as the same Objective* — treating null as a matching value is how a
+- _never treats two nulls as the same Objective_ — treating null as a matching value is how a
   scoped read silently becomes a company-wide one.
-- *checks the cross-user rule before the scope* — §19's "never" holds however narrow the scope is.
-- *deletes rather than leaving a record owned by somebody who has left* — the offboarding fallback.
-- *exposes no field, flag or function that could enable it* — asserts the *absence* of provider
+- _checks the cross-user rule before the scope_ — §19's "never" holds however narrow the scope is.
+- _deletes rather than leaving a record owned by somebody who has left_ — the offboarding fallback.
+- _exposes no field, flag or function that could enable it_ — asserts the _absence_ of provider
   training, so a later prompt adding a consent toggle fails here (ADR-187).
-- *floors rather than rounds* — 66.6% must not read as 67% on a screen asking "is this agent
+- _floors rather than rounds_ — 66.6% must not read as 67% on a screen asking "is this agent
   reliable".
 
 **`apps/api/test/memory-feedback.e2e.spec.ts` — 58 tests** against a real database:
 
-- *the memory policy* — all four created from the documented defaults, idempotently; an admin can
-  narrow a mode; a Manager is refused in the service *and* at the route; widening past the
+- _the memory policy_ — all four created from the documented defaults, idempotently; an admin can
+  narrow a mode; a Manager is refused in the service _and_ at the route; widening past the
   architecture's ceiling is refused; cross-user on a narrow scope is refused **by the database**;
   and a change is audited with both the old and the new value.
-- *remembering* — the mode comes from the agent rather than the caller; data above the ceiling is
+- _remembering_ — the mode comes from the agent rather than the caller; data above the ceiling is
   refused and the refusal is audited; Objective memory with no Objective is refused; approved
   long-term with no approval is refused; another company's run is refused; and **no route writes a
   record**.
-- *memory scope leaks* — the prompt's own words, and the heaviest section: run, agent, person and
+- _memory scope leaks_ — the prompt's own words, and the heaviest section: run, agent, person and
   company scope each confining what they claim to, the composite foreign key refusing a
   cross-tenant write outright, and expired and deleted records never returned.
-- *forgetting* — content cleared and the record of the deletion kept; a Manager refused; a second
+- _forgetting_ — content cleared and the record of the deletion kept; a Manager refused; a second
   deletion refused; the sweep clearing content too; and nothing swept before its time.
-- *offboarding* — delete, transfer, anonymise, the no-successor fallback, and other people's
+- _offboarding_ — delete, transfer, anonymise, the no-successor fallback, and other people's
   memory left alone.
-- *feedback permissions* — the prompt's other named requirement: an Employee may rate; somebody
+- _feedback permissions_ — the prompt's other named requirement: an Employee may rate; somebody
   with no role may not; an Employee is refused the promote route; a second rating from one reviewer
   is refused in the service **and** by the unique index; two reviewers may both rate; only your own
   is amendable; another company's output is refused; and a run with no output is refused.
-- *feedback and quality* — a correction insisted on (and refused at the database for one word); the
+- _feedback and quality_ — a correction insisted on (and refused at the database for one word); the
   mock-model flag copied onto the row; quality reported with how much of it was real; eligibility
   decided and explained; promotion of an ineligible rating refused at the database; and the
   provider-training stance asserted twice.
-- *promotion* — a `HumanJudged` case created in the Prompt 18 tables, a second promotion refused,
+- _promotion_ — a `HumanJudged` case created in the Prompt 18 tables, a second promotion refused,
   and amending a promoted rating refused because its correction is now an assertion other work
   depends on.
 
 ### What running them found
 
 **The guest test asserted the wrong thing.** It claimed a guest cannot rate an output; the guest
-was refused for having *no role at all*, which proves nothing about guest-ness. Under the client's
+was refused for having _no role at all_, which proves nothing about guest-ness. Under the client's
 own model an External Guest holds read, comment and draft — "an External Guest with a Manager role
 is still a guest" — and a rating is a comment, so a guest who has been given a role may
 legitimately judge an output they can see. The test now asserts the true statement.
@@ -1709,52 +1707,52 @@ users-access 54/54 (offboarding gained a step), skills 47/47, engine-agent 31/31
 **`packages/types/src/objective-closure.test.ts` — 41 unit tests**, plus three Prompt 19 tests
 updated for the extended lifecycle. The ones that carry weight:
 
-- *gates every closure act on a grant some role actually holds* — **this found a real defect.**
+- _gates every closure act on a grant some role actually holds_ — **this found a real defect.**
   The pause route was gated on `objective:Pause`, which the role templates grant on `agents` only
   (ADR-195).
-- *does not gate anything on `objective:Pause`* — pinned, so a later prompt does not reach for the
+- _does not gate anything on `objective:Pause`_ — pinned, so a later prompt does not reach for the
   name that reads better and is held by nobody.
-- *refuses skipping the review to reach Closed* — closure is what the review produces.
-- *refuses completing a paused objective without resuming it*.
-- *offers no route from Outcome Review back to Active* — reopening is a new version.
-- *freezes content from Active onwards, pause included* — the assumption ADR-190 is about.
-- *does not count a paused objective as finished* — a report counting it as closed would
+- _refuses skipping the review to reach Closed_ — closure is what the review produces.
+- _refuses completing a paused objective without resuming it_.
+- _offers no route from Outcome Review back to Active_ — reopening is a new version.
+- _freezes content from Active onwards, pause included_ — the assumption ADR-190 is about.
+- _does not count a paused objective as finished_ — a report counting it as closed would
   understate what a company still has open.
-- *rounds lateness up, so three hours over is a day late* — rounding down would report a missed
+- _rounds lateness up, so three hours over is a day late_ — rounding down would report a missed
   deadline as met.
-- *says no target was set rather than calling it on time* — `Unknown` is a first-class answer.
-- *reports unresolved exceptions without blocking on them* (ADR-193).
-- *does not let an owner's own signature stand in for an approval*.
+- _says no target was set rather than calling it on time_ — `Unknown` is a first-class answer.
+- _reports unresolved exceptions without blocking on them_ (ADR-193).
+- _does not let an owner's own signature stand in for an approval_.
 
 The three Prompt 19 tests were **updated rather than relaxed**, and two got stronger:
 
-- *carries the client's states with their full approved wording* — eight became eleven, and the
+- _carries the client's states with their full approved wording_ — eight became eleven, and the
   authoring states must still be in their original order with their original labels.
-- *reaches Active for the first time only through ReadyForApproval* — now asserts the two states
+- _reaches Active for the first time only through ReadyForApproval_ — now asserts the two states
   that reach `Active` **and** that nothing in the authoring half can jump the approval gate. A
   resume is not a second route to publication.
-- *freezes content from Active onwards, pause included*.
+- _freezes content from Active onwards, pause included_.
 
 **`apps/api/test/objective-closure.e2e.spec.ts` — 37 tests** against a real database, built on the
 versioning suite's fixture so every objective really goes live through draft → submit → confirm →
 review → approve → publish:
 
-- *controlled pause and resume* — paused with a reason, work no longer assignable, a second pause
+- _controlled pause and resume_ — paused with a reason, work no longer assignable, a second pause
   refused by the transition table, a pause with no reason refused, resumed with the days counted,
   every pause kept, and **a paused version's Form 2 refused at the database**.
-- *completion* — completed from live, refused from paused, and the outstanding work reported.
-- *the outcome review* — refused while the work is unfinished, recorded once it has finished, the
+- _completion_ — completed from live, refused from paused, and the outstanding work reported.
+- _the outcome review_ — refused while the work is unfinished, recorded once it has finished, the
   comparison carrying what §27.1 asks for, **the snapshot proved not to move** when a later run
   lands, explanations and actual results insisted on, a second review of the same version refused
   by the unique index, and a review refused to somebody without `Approve`.
-- *sign-off and closure* — the default policy read from the settings catalogue, a closure by a
+- _sign-off and closure_ — the default policy read from the settings catalogue, a closure by a
   non-owner refused, the owner signing and then closure succeeding, a signature from the wrong
   person refused, second signatures and second closures refused, and the policy recorded on the
   review.
-- *archive and reopening* — archived from closed, archived from completed **with the audit event
+- _archive and reopening_ — archived from closed, archived from completed **with the audit event
   recording that there was no review**, no route back to live, and a reopen producing V2 Draft
   while V1 stays Closed.
-- *the route guards* — a Head pausing over the route, an Employee refused at pause and at review,
+- _the route guards_ — a Head pausing over the route, an Employee refused at pause and at review,
   the meta served to anybody who may see the objective, and an invented verdict refused with a 400.
   These exist because a service-level test passes whatever the decorator says.
 
@@ -1772,7 +1770,7 @@ types 735/735, web 30/30, `next build` clean, `eslint .` clean.
 
 The rules with no database: the scan transition table, `fileIsUsable` returning true for exactly
 one state, upload validation returning **every** problem rather than the first, retention expiry,
-`decideDeletion` with a legal hold beating an expired retention *and* an explicit request,
+`decideDeletion` with a legal hold beating an expired retention _and_ an explicit request,
 `decideKnowledgeRead`'s three conditions, and both egress ceilings including the
 permitted-but-needs-redaction case.
 
@@ -1781,31 +1779,31 @@ One test asserts an **absence**: the module exposes nothing resembling a shared 
 
 ### E2E — `apps/api/test/knowledge.e2e.spec.ts` (30/30, real PostgreSQL)
 
-- *uploads* — a permitted file stored outside the database with a sha-256 hash; an `.exe` refused
+- _uploads_ — a permitted file stored outside the database with a sha-256 hash; an `.exe` refused
   whatever it claims to be, **with nothing reaching storage**; a filename containing a path
   refused; an archive refused; an oversized file refused **and recorded as a security event**.
-- *scanning* — the EICAR test file flagged `Infected` with a `Critical` security event; an infected
+- _scanning_ — the EICAR test file flagged `Infected` with a `Critical` security event; an infected
   file refused at download; an unscanned file refused entry to a knowledge source; a clean file
   refused a second scan and a quarantined one allowed it.
-- *classification* — `Confidential` downloadable and `Restricted` not, under the default ceiling; a
+- _classification_ — `Confidential` downloadable and `Restricted` not, under the default ceiling; a
   download recorded so Data Exports can show it; `Confidential` egress refused, then still refused
   after the ceiling is raised because it would need redaction; an incoherent policy refused by the
   database.
-- *knowledge sources* — an unapproved source refused to a named agent and permitted after approval;
+- _knowledge sources_ — an unapproved source refused to a named agent and permitted after approval;
   an agent not named on it refused; an approved source returned to Draft when changed; a file more
   sensitive than its source refused; a source refused a reclassification below what it holds; a
   quarantined file excluded from what an agent receives.
-- *retention and holds* — content deleted with the record surviving **and the bytes gone from the
-  adapter**; a held file refused deletion in the service *and* by
+- _retention and holds_ — content deleted with the record surviving **and the bytes gone from the
+  adapter**; a held file refused deletion in the service _and_ by
   `held_file_is_not_deleted`; a sweep deleting one file and holding back both the held one and the
   one whose policy asks for a person.
-- *permissions* — an Employee refused the list, the upload, the download, the knowledge sources
+- _permissions_ — an Employee refused the list, the upload, the download, the knowledge sources
   **and the access preview** (which returns file ids, so it goes through the same rule); an Approver
   able to approve, to see the inventory and to run the preview but **not** to download; an Approver
   refused the authoring routes.
-- *tenant isolation* — one company's files invisible to another through the API, by id, and
+- _tenant isolation_ — one company's files invisible to another through the API, by id, and
   directly against the table under RLS; a path-swapped tenant id refused.
-- *the seam* — every `S3StorageAdapter` method refusing rather than appearing to store anything.
+- _the seam_ — every `S3StorageAdapter` method refusing rather than appearing to store anything.
 
 ### Regression
 
@@ -1813,8 +1811,8 @@ One test asserts an **absence**: the module exposes nothing resembling a shared 
 every e2e spec and this prompt added four tables to it.
 
 **1769 of 1770 passed across 327 suites.** The one failure was
-`performance-badges.e2e.spec.ts` → *"starts at Bronze and climbs through every configured
-threshold"*, which reported `A query cannot be executed on an expired transaction. The timeout for
+`performance-badges.e2e.spec.ts` → _"starts at Bronze and climbs through every configured
+threshold"_, which reported `A query cannot be executed on an expired transaction. The timeout for
 this transaction was 5000 ms, however 412526 ms passed`. **412 seconds inside a 5-second
 transaction window is the machine stalling, not a defect**: the test does not open a long
 transaction, and nothing in this prompt touches performance events. Re-run on its own alongside the
@@ -1834,37 +1832,37 @@ able to go back to work and `Closed` not; `WaitingOnCustomer` counted as open bu
 own backlog; the three incident severities pinned to exactly P0/P1/P2.
 
 The weight is on `decideSessionStart`: every authorization state under `NotRequired`, a pending
-session refused with the words *"no emergency bypass"*, a declined one refused as *"not retried"*,
+session refused with the words _"no emergency bypass"_, a declined one refused as _"not retried"_,
 and a request raised before the policy was turned on refused rather than waved through.
 
 One test iterates `COMPANY_MODULES` and asserts `PlatformSupport` holds **nothing** on any of them.
 
 ### E2E — `apps/api/test/support.e2e.spec.ts` (22/22, real PostgreSQL)
 
-- *tickets* — an Employee raising one; references numbered per company so two companies both start
+- _tickets_ — an Employee raising one; references numbered per company so two companies both start
   at 1; a resolution refused without an explanation; a closed ticket never reopened; a company reply
   moving a parked ticket back into UBoss's queue; one company's tickets invisible to another through
   the API, by id, and under RLS.
-- *internal notes* — an operator's note absent from the company's detail **and from the serialized
+- _internal notes_ — an operator's note absent from the company's detail **and from the serialized
   API response**, present in the operator's; the default asserted as internal.
-- *support sessions* — activation without asking under `NotRequired`; refused under `Required` with
+- _support sessions_ — activation without asking under `NotRequired`; refused under `Required` with
   **the security event asserted, not just the 403**; activated once authorized; refused for good
   once declined; a decline refused without a reason; a second decision refused; an Employee refused
   the decision and the list; one company refused a decision about another's session.
-- *incidents* — declaring an alert (and that declaring acknowledges); a second declaration refused;
+- _incidents_ — declaring an alert (and that declaring acknowledges); a second declaration refused;
   publishing refused without customer wording; publishing an undeclared alert refused; tickets tied
   to an incident so "how many companies" is answerable; linking to an undeclared alert refused.
-- *the customer status* — a published P0 reads `down` and carries the operator's wording, and the
+- _the customer status_ — a published P0 reads `down` and carries the operator's wording, and the
   **serialized response is asserted not to contain** `db-primary-2.internal`, `pool max 200`,
   `query 40s` or `exhausted`; an unpublished incident reads `ok` to the company while the operator
   sees it.
-- *honest health* — the inline queue and the absent providers reported as `measured: false` rather
+- _honest health_ — the inline queue and the absent providers reported as `measured: false` rather
   than green; the database as measured and `ok`.
 
 ### Two real defects the tests found
 
 **The customer status leaked the alert's internal headline.** `CustomerVisibleStatus.title` was
-filled from `service_alerts.summary`, so *"db-primary-2 exhausted its connection pool"* would have
+filled from `service_alerts.summary`, so _"db-primary-2 exhausted its connection pool"_ would have
 been published to every company. Fixed structurally: the field is gone and the query no longer
 selects the internal columns.
 
@@ -1912,25 +1910,25 @@ Built on a **real reporting tree** with the real `ReportingHierarchyResolver` �
 (`WholeCompany`), manager (`TeamSubtree`), one employee reporting to them, and a fourth person in
 the same company outside the subtree, who is the leakage control.
 
-- *the locked contract* — the response's whole key set asserted; six forbidden keys checked; both
+- _the locked contract_ — the response's whole key set asserted; six forbidden keys checked; both
   slices and both destinations from `/meta`.
-- *scoped counts* — 4 agents for the admin, **2** for the manager, 1 for the employee; an archived
+- _scoped counts_ — 4 agents for the admin, **2** for the manager, 1 for the employee; an archived
   agent not counted, so the donut matches the list it drills into; the scope sentence differing per
   role.
-- *the catalogue* — AI Cost and Audit Activity **absent** for an Employee and present for an admin;
+- _the catalogue_ — AI Cost and Audit Activity **absent** for an Employee and present for an admin;
   both **403 at their own route**, because hiding them in the catalogue is presentation; an
   invented report key 404s.
-- *scoped rows* — a manager's Engine Agent Health containing their own and their report's agents
+- _scoped rows_ — a manager's Engine Agent Health containing their own and their report's agents
   and **not** the stranger's or the admin's, asserted on full uuids; Approval Aging showing 1 row
   to the employee, 2 to the manager, 3 to the admin.
-- *the empty scope* — a `Department` grant held by somebody with no employment record resolving to
+- _the empty scope_ — a `Department` grant held by somebody with no employment record resolving to
   `[]` and the report returning nothing rather than everything.
-- *export* — an Employee reading Approval Aging (200) and refused its export (403); a manager
+- _export_ — an Employee reading Approval Aging (200) and refused its export (403); a manager
   exporting; `report.exported` written for an export and **no audit row for a read**; a seeded
   `=cmd|"/c calc"!A1` title escaped in the file.
-- *windows* — a two-year range refused 400; a row 200 days old excluded from both the 30- and
+- _windows_ — a two-year range refused 400; a row 200 days old excluded from both the 30- and
   90-day windows.
-- *tenant isolation* — the other company seeing only its own agent in both the report and the
+- _tenant isolation_ — the other company seeing only its own agent in both the report and the
   dashboard, and a path-swapped tenant id refused.
 
 ### Four test bugs worth recording
@@ -1954,7 +1952,7 @@ types 824/824; reports, authorization, hierarchy, company-settings and health �
 
 The input is one identifier and the stance says why. The three field whitelists asserted exactly.
 The prompt's forbidden list checked to actually contain what the prompt forbids — **and** a test
-asserting no *permitted* field name contains a forbidden word, so the e2e grep cannot start failing
+asserting no _permitted_ field name contains a forbidden word, so the e2e grep cannot start failing
 against a correct response and tempt somebody into weakening it.
 
 Both defaults off. And the one that would be a quiet leak: `shareablePerformance` under `BadgeOnly`
@@ -1973,23 +1971,23 @@ let a leak hide behind "the searcher is one of the employers".
 Company names carry none of the forbidden words on purpose — a company called "TaskForce Ltd" would
 fail a correct response, and the fix would then be to weaken the grep instead of the field.
 
-- *the capability* — refused before it is enabled, with a message saying it is a setting; `/meta`
+- _the capability_ — refused before it is enabled, with a message saying it is a setting; `/meta`
   reporting `enabled` both ways so the screen need not offer a box that always 403s.
-- *authority* — an Employee refused with the feature **on**; a CompanyAdmin permitted.
-- *the input* — an email, a name and a twelve-digit number each refused 400; an unknown but
+- _authority_ — an Employee refused with the feature **on**; a CompanyAdmin permitted.
+- _the input_ — an email, a name and a twelve-digit number each refused 400; an unknown but
   well-formed id 404.
-- *the projection* — the response's key set asserted against the whitelist, and every employment
+- _the projection_ — the response's key set asserted against the whitelist, and every employment
   entry's too; then the serialized JSON greped for all ten forbidden words **and** for the six
   specific values the employers hold: `internal.example`, the phone number, both employee ids, the
   department name and the person's own email address.
-- *the useful facts* — designation and current/past per employer, so the whitelist has not
+- _the useful facts_ — designation and current/past per employer, so the whitelist has not
   narrowed the feature into uselessness.
-- *sharing* — nothing travels by default; `BadgeOnly` returning a badge and a null score;
+- _sharing_ — nothing travels by default; `BadgeOnly` returning a badge and a null score;
   `BadgeAndScore` returning a number; and Beta's choice to share **not** speaking for Alpha.
-- *audit* — two rows for two lookups including the one that found nobody, each recording the id
+- _audit_ — two rows for two lookups including the one that found nobody, each recording the id
   searched; and **both employers' trails asserted empty**, because a company must not learn who
   has been verifying their former employees.
-- *cross-tenant* — a searcher refused when another company's id is in the path, and one company's
+- _cross-tenant_ — a searcher refused when another company's id is in the path, and one company's
   enablement not enabling another's.
 
 ### What the tests found
@@ -2037,36 +2035,36 @@ exclusions with real reasons.
 tenant-scoped table and fails if any is unclassified. It caught `company_exits` itself on the first
 run.
 
-- *request and approval* — an unexplained exit refused; a second open exit refused and permitted
+- _request and approval_ — an unexplained exit refused; a second open exit refused and permitted
   after the first is cancelled; **the requester refused their own approval with the security event
   asserted**; the schedule frozen at approval with both windows stacked.
-- *the lifecycle* — `ReadOnly` and `Closed` applied through `CompanyLifecycleService`, with that
+- _the lifecycle_ — `ReadOnly` and `Closed` applied through `CompanyLifecycleService`, with that
   service's own transition history asserted, because going through it is the point.
-- *the export* — the audit trail present and non-empty; the exclusions naming credentials and
+- _the export_ — the audit trail present and non-empty; the exclusions naming credentials and
   Aadhaar; **no work email address in the payload**; refused once the content is gone.
-- *the confirmation* — `DELETE`, `delete`, the upper-cased slug and **another company's slug** each
+- _the confirmation_ — `DELETE`, `delete`, the upper-cased slug and **another company's slug** each
   refused, four security events asserted, then the correct slug accepted.
-- *what survives* — row counts before and after a real deletion: agents and memberships gone;
+- _what survives_ — row counts before and after a real deletion: agents and memberships gone;
   **the audit trail grown**, the financial record intact, the deletion certificate present,
   employment records and badges untouched; the manifest carrying `engine_agents` and **not**
   `audit_events` or `employment_records`; and `notifications` reported under
   `retainedByPrivilege` rather than claimed as deleted.
-- *the other company* — agents, notifications, audit rows, employment records, memberships and
+- _the other company_ — agents, notifications, audit rows, employment records, memberships and
   lifecycle state all asserted unchanged **after** the deletion, because it runs as a platform
   operation and RLS protects nobody there.
-- *cancellation* — from `RetentionHold` leaving the company `Closed` with the trail saying why;
+- _cancellation_ — from `RetentionHold` leaving the company `Closed` with the trail saying why;
   from `ReadOnly` restoring it to `Active`; refused after deletion; refused with no reason.
-- *audit* — all six step actions asserted present in the company's own trail.
+- _audit_ — all six step actions asserted present in the company's own trail.
 
 ### Three latent Prompt 37 bugs this prompt found
 
-Adding *"runs every report in the catalogue without throwing"* — a loop that simply asks for each
+Adding _"runs every report in the catalogue without throwing"_ — a loop that simply asks for each
 of the ten and expects a 200 — found **three runtime errors that tsc had passed**:
 
-* `ObjectiveVersion.title` does not exist; the field is `objectiveName`.
-* `AiOutputFeedback` has no `skillVersionId` — feedback is recorded against a *run*, so Skill
+- `ObjectiveVersion.title` does not exist; the field is `objectiveName`.
+- `AiOutputFeedback` has no `skillVersionId` — feedback is recorded against a _run_, so Skill
   Usage & Quality now measures evaluation pass/fail, which the schema can actually attribute.
-* `SkillEvaluationRun` has no `createdAt`; the column is `runAt`.
+- `SkillEvaluationRun` has no `createdAt`; the column is `runAt`.
 
 The original Prompt 37 suite exercised two of the ten reports, so all three shipped. The loop is
 cheap and would have caught every one.
@@ -2083,7 +2081,7 @@ profile-search — **181/181**. `eslint` clean on every changed path; both API t
 ### Unit — `packages/types/src/observability.test.ts` (23/23)
 
 Every metric the prompt lists by name, each with its kind and the question it answers — latency a
-histogram, depth a gauge, errors a counter, because a latency *counter* would grow forever and mean
+histogram, depth a gauge, errors a counter, because a latency _counter_ would grow forever and mean
 nothing.
 
 Then the two that matter: **no permitted label matches `FORBIDDEN_METRIC_LABELS`** anywhere, and
@@ -2100,23 +2098,23 @@ not for P2.
 
 ### E2E — `apps/api/test/observability.e2e.spec.ts` (24/24, real PostgreSQL)
 
-- *the correlation chain* — one id written onto **both** `model_gateway_calls` and
+- _the correlation chain_ — one id written onto **both** `model_gateway_calls` and
   `cost_ledger_entries` inside a real ambient context, then read back by that id. This is the gap
   the prompt found and the headline of the suite.
-- *tracing* — the correlation id used as the trace id with parent/child nesting recorded; a span
+- _tracing_ — the correlation id used as the trace id with parent/child nesting recorded; a span
   recorded for work that **threw** and the error re-raised; an `apiKey` attribute redacted;
   `exportsSpans` asserted **false**.
-- *metrics* — counter, gauge and histogram recorded and rendered, with `# TYPE` lines and the
+- _metrics_ — counter, gauge and histogram recorded and rendered, with `# TYPE` lines and the
   required `le="+Inf"` bucket; **an observation carrying `tenant_id` dropped and the drop counted**;
   differently-ordered labels treated as one series; a histogram mean reported.
-- *alert rules* — drift measured from a two-hour-old held reservation; **an alert raised once and
+- _alert rules_ — drift measured from a two-hour-old held reservation; **an alert raised once and
   not twice** across two evaluations, with the reading and threshold in its detail; nothing raised
   when quiet.
-- *the incident workflow* — a **backfilled** timeline ordered by when things happened rather than
+- _the incident workflow_ — a **backfilled** timeline ordered by when things happened rather than
   when they were typed; an empty entry refused; a **P0 refused resolution without a postmortem**
   then accepted with one; a P1 refused with no timeline at all; a **P2 resolved on its mitigation
   alone** with a `Resolved` entry appended.
-- *corrective actions* — owner and due date recorded and **overdue flagged**; a vague description
+- _corrective actions_ — owner and due date recorded and **overdue flagged**; a vague description
   refused; `Done` accepted with no note and `Dropped` **refused without a reason** then accepted
   with one; a second close refused; every open action listed across incidents for a weekly review.
 
@@ -2143,17 +2141,17 @@ clean on all six changed paths; both API tsconfigs clean.
 
 The prompt asks for **load-oriented tests**, so the weight is on behaviour under volume:
 
-* a burst that exhausts a bucket, the refusal that follows, and the headers that let a client
+- a burst that exhausts a bucket, the refusal that follows, and the headers that let a client
   cooperate rather than merely be punished;
-* **one person's exhausted bucket not refusing their colleague**, and one company's not refusing
+- **one person's exhausted bucket not refusing their colleague**, and one company's not refusing
   another company — tenant isolation applied to capacity, not just to data;
-* **fifty queued runs from one company not putting another company's single run behind them** — the
+- **fifty queued runs from one company not putting another company's single run behind them** — the
   quiet company lands second, not fifty-first — plus a thousand jobs across ten companies with every
   quiet company served in the first pass;
-* a retried `POST` doing the work **once** and returning the same answer, proved by a handler that
+- a retried `POST` doing the work **once** and returning the same answer, proved by a handler that
   counts its own calls;
-* a provider that says "slow down" being obeyed and one that says "no" not being retried;
-* the Redis and in-memory stores returning **identical decisions**, which is what makes the Lua
+- a provider that says "slow down" being obeyed and one that says "no" not being retried;
+- the Redis and in-memory stores returning **identical decisions**, which is what makes the Lua
   script trustworthy — skipped and reported as skipped where no broker is running, never passed
   silently.
 
@@ -2184,9 +2182,9 @@ cancelled at once. A type-level optional is not a DI-level optional.
 
 `apps/api/test/executor.e2e.spec.ts` gains two, and they are a pair on purpose:
 
-* a run queued **45 minutes** raises `AgentRunOverdue` at `Medium`, with the wait and the deferral
+- a run queued **45 minutes** raises `AgentRunOverdue` at `Medium`, with the wait and the deferral
   reason both in its detail;
-* a run queued **5 minutes** raises **nothing** — the threshold is what makes the first test worth
+- a run queued **5 minutes** raises **nothing** — the threshold is what makes the first test worth
   having, and without this second one the feature could fire on every busy morning and nobody would
   notice until the exception list was being ignored.
 
@@ -2219,7 +2217,7 @@ Three failures, all from the eleventh exception kind, and the third is the inter
    without rotting each time the set grows.
 3. **`exception_kind_is_known`** refused the row at runtime. A CHECK enumerating the ten kinds,
    written five prompts earlier. TypeScript, 930 type tests and lint all passed; only a test that
-   actually *raised* one found it. Fixed by `20260915110000_executor_knows_a_starved_run` — see the
+   actually _raised_ one found it. Fixed by `20260915110000_executor_knows_a_starved_run` — see the
    DB changelog for why the constraint stays rather than going away.
 
 `idempotency_records` was also added to `tablesInDeletionOrder`: a platform-plane record has a null
@@ -2230,30 +2228,30 @@ types **930/930**. Both API tsconfigs clean; `eslint` clean on every changed pat
 
 ## Prompt 40A (CR-03) — access, the Job Method, photos and chat
 
-| Suite | Result |
-| --- | --- |
-| `packages/types/src/operating-model.test.ts` | **28/28** |
-| `packages/types/src/job-method.test.ts` | **41/41** |
-| `packages/types/src/workspace-chat.test.ts` | **30/30** |
-| `apps/api/test/workspace-chat.e2e.spec.ts` | **24/24** |
+| Suite                                                  | Result    |
+| ------------------------------------------------------ | --------- |
+| `packages/types/src/operating-model.test.ts`           | **28/28** |
+| `packages/types/src/job-method.test.ts`                | **41/41** |
+| `packages/types/src/workspace-chat.test.ts`            | **30/30** |
+| `apps/api/test/workspace-chat.e2e.spec.ts`             | **24/24** |
 | `apps/api/test/cr03-access-and-job-method.e2e.spec.ts` | **38/38** |
 
 The weight is on the distinctions the amendment exists to draw, not on the plumbing:
 
-* a standard Employee refused Agent Builder **and** an explicitly granted one allowed — proved by
+- a standard Employee refused Agent Builder **and** an explicitly granted one allowed — proved by
   reading the effective grants back out of the live engine, not by inspecting a constant;
-* an administrator refused a capability they do not hold, and refused their own;
-* a manager building for an employee who can then run it **and still holds no builder grant**;
-* download with no builder permission, upload with it;
-* an upload that activates nothing, proved by counting runs either side;
-* two people in one conversation seeing different previews of the same reference, with the
+- an administrator refused a capability they do not hold, and refused their own;
+- a manager building for an employee who can then run it **and still holds no builder grant**;
+- download with no builder permission, upload with it;
+- an upload that activates nothing, proved by counting runs either side;
+- two people in one conversation seeing different previews of the same reference, with the
   restricted one's whole response greped for the objective's name.
 
 ### What the tests found — nine things, and seven were the product or the approved matrix
 
 1. **An `OwnWork` employee could not run a manager-built agent.** `ownerUserId` is the manager, the
    employee is capped at `OwnWork`, and the scope engine correctly refused — which made the entire
-   build-for-employee case unreachable. Resolved by recognising that a live share *is* what makes
+   build-for-employee case unreachable. Resolved by recognising that a live share _is_ what makes
    the work theirs (ADR-242), with the share still checked first so nothing is let through without
    one.
 2. **`agents:Assign` is granted to no role template at all.** Gating the share on it made the
@@ -2295,7 +2293,7 @@ Three more fixture refusals were constraints doing their job:
 ### Regression
 
 The CR-03 authorization change broke **62 existing tests**, all legitimately: `agent-builder.e2e`,
-`engine-agent.e2e`, `approvals.e2e` and `objectives.e2e` all drove Agent Builder *as an employee*,
+`engine-agent.e2e`, `approvals.e2e` and `objectives.e2e` all drove Agent Builder _as an employee_,
 which is the documented journey CR-03 supersedes. Each now grants builder access explicitly through
 `grantBuilderAccess` — a new test helper that writes a `Custom` role, the existing mechanism — and
 new tests assert a standard Employee is refused the same journey. **No assertion was weakened**: the
@@ -2303,7 +2301,7 @@ guard test that pinned the old rule now pins the new one with CR-03 cited in it,
 `objectives.e2e` gained a Power Employee so its `OwnWork` scoping coverage survived intact.
 
 `authorization.e2e` needed its probe routes retargeted from `objective` onto `agents`: those tests
-are about the *engine* — granted, lacked, expired, denied-by-rule — and `objective` was merely the
+are about the _engine_ — granted, lacked, expired, denied-by-rule — and `objective` was merely the
 exemplar module an Employee happened to hold. The `objective` routes stay, because the custom-role
 tests deliberately grant `objective` through a stored matrix and must keep exercising that path.
 
@@ -2318,16 +2316,16 @@ and building them found two defects the API tests could not have found.
 
 ### What the screens are
 
-| Screen | Component | CR-03 |
-| --- | --- | --- |
-| Users & Access — row action and Invite | `AccessPermissionsStep` | §1 |
-| Hierarchy — Add Employee, after the save | `AccessPermissionsStep` | §1 |
-| Hierarchy list, employee profile, person picker | `EmployeePhoto` | §3 |
-| Agent Builder — Import / Export and the import review | `JobMethodImportExport` | §4, §5 |
-| Engine Agents — "Assigned to you" | `MyEngineAgents` | §5 |
-| Workspace Chat | `app/chat/page.tsx` | §6 |
-| Objective, Task, Engine Agent, Run, Approval, Exception | `DiscussButton` | §6 |
-| Every company page's sidebar | `useCompanyNavigation` | §1, §6 |
+| Screen                                                  | Component               | CR-03  |
+| ------------------------------------------------------- | ----------------------- | ------ |
+| Users & Access — row action and Invite                  | `AccessPermissionsStep` | §1     |
+| Hierarchy — Add Employee, after the save                | `AccessPermissionsStep` | §1     |
+| Hierarchy list, employee profile, person picker         | `EmployeePhoto`         | §3     |
+| Agent Builder — Import / Export and the import review   | `JobMethodImportExport` | §4, §5 |
+| Engine Agents — "Assigned to you"                       | `MyEngineAgents`        | §5     |
+| Workspace Chat                                          | `app/chat/page.tsx`     | §6     |
+| Objective, Task, Engine Agent, Run, Approval, Exception | `DiscussButton`         | §6     |
+| Every company page's sidebar                            | `useCompanyNavigation`  | §1, §6 |
 
 ### Frontend — 102 tests across 9 files
 
@@ -2372,7 +2370,7 @@ empty group dropped; source order kept; and a granted module with no nav item co
 `AgentOperatorController` and `JobMethodController` inside a real request context. It covers
 `/my-access` for a standard Employee; the absence of `objective` and `agent-builder` and their
 return on a grant; run history refused to a stranger **with the same sentence an invented id gets**;
-the redaction asserted on the *serialised* response, not the type; a real `.xlsx` (a zip, so `PK`)
+the redaction asserted on the _serialised_ response, not the type; a real `.xlsx` (a zip, so `PK`)
 under a filename naming the work; the declared spreadsheet content type; a download → upload round
 trip; and an unopenable file **answered rather than thrown away**.
 
@@ -2431,15 +2429,15 @@ result that skipped one, and refuses one that ran the same check twice instead o
 environment allow-list refuses anything that is not scratch or staging.
 
 The decision tree is asserted to never recommend restoring blind — every `restore` action in it goes
-to scratch, to a point in time, or to a standby, or says *do not restore*.
+to scratch, to a point in time, or to a standby, or says _do not restore_.
 
 And a test asserts the product **does not describe itself as disaster-recovery ready**, even after a
 fresh verified restore.
 
 ### The reporting layer — 15 tests in `recovery.e2e.spec.ts`
 
-`GET /platform/recovery` answers the only question that matters — *when did a restore last
-succeed* — and `neverVerified` is true until one has. The service reports; it cannot take or restore
+`GET /platform/recovery` answers the only question that matters — _when did a restore last
+succeed_ — and `neverVerified` is true until one has. The service reports; it cannot take or restore
 a backup, because the application holds no owner credentials (ADR-260).
 
 ### The drill itself — evidence, not a test
@@ -2450,7 +2448,7 @@ database**: 6 checks passed, 0 failed, state `Verified`, restore completed in 3 
 events every one of which hashed, and a restored database that accepted connections and answered.
 
 **The drill found a defect in its own check.** `SchemaMatches` first failed against a migration row
-that had been rolled back — the check was reading the latest row rather than the latest *applied*
+that had been rolled back — the check was reading the latest row rather than the latest _applied_
 row, and would have reported a healthy restore as a schema mismatch at 3am. It now excludes
 `rolled_back_at IS NOT NULL`.
 
@@ -2481,50 +2479,50 @@ recorded below rather than quietly dropped, because a coverage report that only 
 is indistinguishable from one that looked in the wrong place.
 
 Nobody should read the table below as "these areas are adequately tested". A pattern match proves a
-subject is *addressed*; only reading the assertions proves it is covered. The areas this prompt
+subject is _addressed_; only reading the assertions proves it is covered. The areas this prompt
 actually changed were read.
 
 ### The audit, area by area
 
-| Area the prompt names | Verdict |
-| --- | --- |
-| Unit domain rules | Covered — 32 files in `packages/types`, 1062 assertions |
-| Integration: DB, queue, provider, connection | Covered — every `*.e2e.spec.ts` runs against a real PostgreSQL under RLS |
-| Integration: Redis | Covered, thinly — the queue selects BullMQ by `REDIS_URL` and the inline fallback is what runs in CI |
-| API contract | Covered by route-level specs; **no OpenAPI document exists**, so there is nothing to contract-test against. See the gap list |
-| E2E complete company journey | **Was missing. Added this prompt.** |
-| Tenant isolation | Covered — 51 titles across 27 files, plus the new CR-03 §7 block |
-| IDOR negatives | Covered under other words — 55 titles asserting a guessed id, a cross-company read or a 404-rather-than-403 |
-| Auth / session | Covered — 43 titles |
-| MFA | Covered — 8 titles |
-| SSO | Covered — OIDC and SAML providers, SCIM |
-| Strict Objective versioning | Covered — `objective-versioning.e2e` |
-| Approve & Assign transaction | Covered — `approvals.e2e` and `assignment.e2e` |
-| Engine Agent run state / retry / idempotency | Covered — 25 titles in `run-engine.e2e` |
-| Executor exception / escalation | Covered — 40 titles |
-| Credit concurrent reservation / top-up | Covered — 23 titles |
-| Audit immutability | Covered — `audit-chain.spec` |
-| **Prompt-injection / tool policy** | Tool policy covered (`knowledge.test.ts`). **Injection was not tested at all. Added this prompt.** |
-| Memory scope isolation | Covered — 32 titles |
-| Seat limits / company exit | Covered — 20 titles |
-| AI decomposition / Skill routing | Covered — `objective-analysis.e2e`, `skill-router.e2e` |
-| Login six-section presentation | Covered — `shells.test.tsx` asserts all six in order *and* the approved copy |
-| **Auth back/forward routes** | **Was missing. Added this prompt.** |
-| Workspace header identity | Covered — `shells.test.tsx` |
-| Dashboard two-slice-only rule | Covered — `DonutDashboard.test.tsx` |
-| Hierarchy Vision/Mission | Covered — `hierarchy.e2e` |
-| Six mandatory Add Employee fields | Covered — `hierarchy.e2e`, and CR-03 asserts they did not change |
-| Global UBoss person match / link / duplicates | Covered — `enterprise-identity.e2e` |
-| Performance score / badge events | Covered — `performance-badges.e2e` |
-| Cross-company lookup privacy | Covered — `profile-search.e2e` |
-| Objective extra-work reward | Covered — `rewards.e2e`, 27 titles |
-| TCSiON mapping matrix | **Correctly deferred.** The prompt says "once approved client definitions are supplied"; they have not been. `TcsionMappingService` exists and is unexercised by design |
+| Area the prompt names                         | Verdict                                                                                                                                                                 |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit domain rules                             | Covered — 32 files in `packages/types`, 1062 assertions                                                                                                                 |
+| Integration: DB, queue, provider, connection  | Covered — every `*.e2e.spec.ts` runs against a real PostgreSQL under RLS                                                                                                |
+| Integration: Redis                            | Covered, thinly — the queue selects BullMQ by `REDIS_URL` and the inline fallback is what runs in CI                                                                    |
+| API contract                                  | Covered by route-level specs; **no OpenAPI document exists**, so there is nothing to contract-test against. See the gap list                                            |
+| E2E complete company journey                  | **Was missing. Added this prompt.**                                                                                                                                     |
+| Tenant isolation                              | Covered — 51 titles across 27 files, plus the new CR-03 §7 block                                                                                                        |
+| IDOR negatives                                | Covered under other words — 55 titles asserting a guessed id, a cross-company read or a 404-rather-than-403                                                             |
+| Auth / session                                | Covered — 43 titles                                                                                                                                                     |
+| MFA                                           | Covered — 8 titles                                                                                                                                                      |
+| SSO                                           | Covered — OIDC and SAML providers, SCIM                                                                                                                                 |
+| Strict Objective versioning                   | Covered — `objective-versioning.e2e`                                                                                                                                    |
+| Approve & Assign transaction                  | Covered — `approvals.e2e` and `assignment.e2e`                                                                                                                          |
+| Engine Agent run state / retry / idempotency  | Covered — 25 titles in `run-engine.e2e`                                                                                                                                 |
+| Executor exception / escalation               | Covered — 40 titles                                                                                                                                                     |
+| Credit concurrent reservation / top-up        | Covered — 23 titles                                                                                                                                                     |
+| Audit immutability                            | Covered — `audit-chain.spec`                                                                                                                                            |
+| **Prompt-injection / tool policy**            | Tool policy covered (`knowledge.test.ts`). **Injection was not tested at all. Added this prompt.**                                                                      |
+| Memory scope isolation                        | Covered — 32 titles                                                                                                                                                     |
+| Seat limits / company exit                    | Covered — 20 titles                                                                                                                                                     |
+| AI decomposition / Skill routing              | Covered — `objective-analysis.e2e`, `skill-router.e2e`                                                                                                                  |
+| Login six-section presentation                | Covered — `shells.test.tsx` asserts all six in order _and_ the approved copy                                                                                            |
+| **Auth back/forward routes**                  | **Was missing. Added this prompt.**                                                                                                                                     |
+| Workspace header identity                     | Covered — `shells.test.tsx`                                                                                                                                             |
+| Dashboard two-slice-only rule                 | Covered — `DonutDashboard.test.tsx`                                                                                                                                     |
+| Hierarchy Vision/Mission                      | Covered — `hierarchy.e2e`                                                                                                                                               |
+| Six mandatory Add Employee fields             | Covered — `hierarchy.e2e`, and CR-03 asserts they did not change                                                                                                        |
+| Global UBoss person match / link / duplicates | Covered — `enterprise-identity.e2e`                                                                                                                                     |
+| Performance score / badge events              | Covered — `performance-badges.e2e`                                                                                                                                      |
+| Cross-company lookup privacy                  | Covered — `profile-search.e2e`                                                                                                                                          |
+| Objective extra-work reward                   | Covered — `rewards.e2e`, 27 titles                                                                                                                                      |
+| TCSiON mapping matrix                         | **Correctly deferred.** The prompt says "once approved client definitions are supplied"; they have not been. `TcsionMappingService` exists and is unexercised by design |
 
 ### What was added
 
 **Prompt injection — `apps/api/test/prompt-injection.spec.ts`, 9 tests.**
 
-The finding behind it: UBoss has a *good* injection posture and **nothing tested it**. `ModelRequest`
+The finding behind it: UBoss has a _good_ injection posture and **nothing tested it**. `ModelRequest`
 separates `instruction` from `context`; every adapter puts the instruction in the provider's system
 turn and the context in the user turn; every caller passes a literal instruction. That is the whole
 defence, and it is the kind that costs nothing to break and whose breach is invisible until a cell
@@ -2540,7 +2538,7 @@ two into one field.
 cannot fail is worse than no test, and this one had to be shown to bite.
 
 There is deliberately **no filter and no denylist**. A test asserts hostile content reaches the
-provider *verbatim*: redacting "ignore all previous instructions" from a genuine compliance document
+provider _verbatim_: redacting "ignore all previous instructions" from a genuine compliance document
 would corrupt the work, and a filter is a defence that can be phrased around. The separation is the
 defence; the content is evidence.
 
@@ -2582,7 +2580,7 @@ point at it.
 - **TCSiON mapping matrix.** Conditional on client definitions that have not been supplied.
 - **PITR drill.** Named in Prompt 41's limitations and unchanged by this prompt.
 - **Redis is exercised through the inline queue.** The BullMQ path is selected by `REDIS_URL` and a
-  container runs locally, but no test asserts behaviour *specific to* the broker — a restart losing
+  container runs locally, but no test asserts behaviour _specific to_ the broker — a restart losing
   queue position, for instance. `REDIS_STANCE` says Redis is never authoritative, which is what
   makes this acceptable rather than urgent.
 
@@ -2634,3 +2632,63 @@ queries written by hand that did not match the repository. Each looked like a mi
 Naming the tenant in eight reads is behaviour-preserving by construction: RLS already confined them.
 `objectives`, `objective-analysis`, `objective-versioning`, `assignment` and `workflow-editor` pass
 **249/249** unchanged, and the full API suite was run because the change is cross-cutting.
+
+## Prompt 44 — CI/CD, environments and release controls
+
+### The pipeline is the test surface
+
+Most of this prompt is machinery rather than assertions, so the honest question is: what was
+actually _verified_, as opposed to written?
+
+**Every CI step was run by hand locally before being written into a workflow.** `npm run lint`,
+`npm run format:check`, `npm run typecheck`, `npm test` and `npm run build` are the same commands the
+workflow calls — there is no CI-only script — so the pipeline's steps are known-good commands rather
+than plausible ones.
+
+**Every workflow file was parsed.** `prettier --check .github/**/*.yml` uses a real YAML parser, and
+it caught a genuine defect: `with: { ref: ${{ inputs.ref }} }` is invalid YAML, because a `${{ }}`
+expression inside a flow map opens a nested map that never closes. Four occurrences, all rewritten to
+block form. A workflow that fails to parse does not fail loudly on GitHub — it simply never runs.
+
+### Release flags — 13 tests in `packages/types/release-flags.test.ts`
+
+The registry ships **empty**, which is correct — nothing is currently gated — so the behaviour is
+tested against example registries. "Empty" must not mean "untested", because the first real flag will
+be added by somebody in a hurry during a deploy.
+
+Only `true`, `1` and `on` switch a flag on. `false`, `0`, `off`, `""`, `yes`, `enabled` and a typo all
+leave it off, and each is asserted: a permissive reader turns `FLAG=false` into "on", which is
+invisible in a dashboard and obvious only during an incident. A flag not declared in the registry
+**throws** rather than reading as off, so the registry is a constraint rather than documentation. And
+the registry holds itself to its own rules — a flag with no `removeWhen` is refused.
+
+### The rollback gate, proven to fail
+
+`apps/api/scripts/check-rollback-tree.mjs` runs in the release workflow and asserts the failover
+decision tree is present and that no branch recommends restoring blind.
+
+**It was verified by breaking it.** A branch was rewritten to _"Restore the production cluster and see
+what happens"_, the build re-run, and the gate failed with the right message; the source was then
+restored and rebuilt.
+
+The first attempt at that proof was itself wrong — it replaced one line of a two-line string
+concatenation and left `"Do not restore the cluster."` behind, which still matched the safe pattern,
+so the gate passed and proved nothing. Recorded because it is the same lesson as the Prompt 42 scans:
+**a check that has not been shown to fail is not a check**, and neither is a proof that has not been
+shown to detect.
+
+### The formatting prerequisite
+
+`prettier --check` failed on **102 files** — formatting had never been enforced. The prompt requires
+formatting as a CI gate, so the choice was to format the repository or ship a pipeline that was red on
+its first run. The repository was formatted, and the full suite re-run to prove nothing moved:
+
+API **2052/2052**, web **111/111**, design system **114/114**, types **1075/1075** (13 new),
+`npm run verify` exit 0.
+
+### What is not tested, and cannot be yet
+
+**No workflow has executed.** The YAML is valid and its steps are known-good commands, but no GitHub
+Actions run exists. Things that appear only on a runner — a missing system package, a service
+container coming up slower than its health check allows — will appear on the first push and not
+before. That is stated rather than papered over.

@@ -505,7 +505,10 @@ describe('portable profile search (e2e)', () => {
 
     const badgeOnly = await search(gammaAdminUboss, gammaId);
     const beta = (
-      badgeOnly['employments'] as { companyName: string; performance: Record<string, unknown> | null }[]
+      badgeOnly['employments'] as {
+        companyName: string;
+        performance: Record<string, unknown> | null;
+      }[]
     ).find((entry) => entry.companyName === 'Beta Labs');
 
     assert.notEqual(beta?.performance, null, 'BadgeOnly shares something');
@@ -520,7 +523,10 @@ describe('portable profile search (e2e)', () => {
 
     const withScore = await search(gammaAdminUboss, gammaId);
     const betaAgain = (
-      withScore['employments'] as { companyName: string; performance: Record<string, unknown> | null }[]
+      withScore['employments'] as {
+        companyName: string;
+        performance: Record<string, unknown> | null;
+      }[]
     ).find((entry) => entry.companyName === 'Beta Labs');
     assert.equal(typeof betaAgain?.performance?.['score'], 'number');
   });

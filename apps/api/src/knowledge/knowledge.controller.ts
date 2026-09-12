@@ -1,21 +1,5 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Post,
-  Query,
-  UnauthorizedException,
-} from '@nestjs/common';
-import {
-  IsArray,
-  IsIn,
-  IsOptional,
-  IsString,
-  IsUUID,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
+import { Body, Controller, Get, Param, Post, Query, UnauthorizedException } from '@nestjs/common';
+import { IsArray, IsIn, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 
 import {
   DATA_CLASSIFICATIONS,
@@ -54,7 +38,9 @@ class CreateSourceDto {
   @IsOptional() @IsUUID(7) departmentId?: string;
   @IsOptional() @IsArray() @IsUUID(7, { each: true }) namedAgentIds?: string[];
 
-  @IsOptional() @IsIn(DATA_CLASSIFICATIONS as readonly string[]) classification?: DataClassification;
+  @IsOptional()
+  @IsIn(DATA_CLASSIFICATIONS as readonly string[])
+  classification?: DataClassification;
   @IsOptional() @IsUUID(7) connectionId?: string;
 }
 
@@ -68,7 +54,9 @@ class UpdateSourceDto {
 
   @IsOptional() @IsUUID(7) departmentId?: string;
   @IsOptional() @IsArray() @IsUUID(7, { each: true }) namedAgentIds?: string[];
-  @IsOptional() @IsIn(DATA_CLASSIFICATIONS as readonly string[]) classification?: DataClassification;
+  @IsOptional()
+  @IsIn(DATA_CLASSIFICATIONS as readonly string[])
+  classification?: DataClassification;
 }
 
 class ApproveSourceDto {

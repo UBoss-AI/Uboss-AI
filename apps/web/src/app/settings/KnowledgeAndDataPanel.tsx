@@ -82,7 +82,11 @@ function size(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export function KnowledgeAndDataPanel({ tenantId }: { tenantId: string | null }): React.JSX.Element {
+export function KnowledgeAndDataPanel({
+  tenantId,
+}: {
+  tenantId: string | null;
+}): React.JSX.Element {
   const [meta, setMeta] = useState<FileMeta | null>(null);
   const [knowledgeMeta, setKnowledgeMeta] = useState<KnowledgeMeta | null>(null);
   const [policy, setPolicy] = useState<KnowledgePolicyView | null>(null);

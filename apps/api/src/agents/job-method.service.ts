@@ -1,11 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import {
-  ForbiddenException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 
 import {
   AUTOMATION_STANCE,
@@ -497,9 +492,7 @@ export class JobMethodService {
       });
 
       await this.audit.appendWithinCurrentScope(scope.tenantId, {
-        action: input.accepted
-          ? 'agents.job_method_imported'
-          : 'agents.job_method_import_refused',
+        action: input.accepted ? 'agents.job_method_imported' : 'agents.job_method_import_refused',
         actorUserId: input.actorUserId,
         resourceType: 'job-method',
         resourceId: input.jobMethodId,
@@ -591,12 +584,12 @@ export class JobMethodService {
       const employeeRef =
         operator?.builtForUserId == null
           ? null
-          : (
+          : ((
               await this.prisma.client.employmentRecord.findFirst({
                 where: { tenantId: scope.tenantId, userId: operator.builtForUserId },
                 select: { employeeId: true },
               })
-            )?.employeeId ?? null;
+            )?.employeeId ?? null);
 
       return {
         id: row.id,

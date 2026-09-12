@@ -1,0 +1,149 @@
+# One promotion, to one environment — Prompt 44.
+#
+# Written once and reused by all four environments, so the order of operations cannot drift between
+# them. Staging deploying differently from production is how a release passes staging and fails in
+# production for reasons nobody can reproduce.
+#
+# ## The order, and why it is this order
+#
+#   1. **Migrate, then release.** Always. The new schema has to be there before the new code runs
+#      against it, and the old code has to keep working while it does — which is why every migration
+#      in this repository is additive or gated behind a release flag. A migration that breaks the
+#      running version is one that cannot be deployed without downtime, and that is a design problem
+#      rather than a pipeline problem.
+#   2. **Health check before declaring success.** A deploy that returned exit 0 has proved that a
+#      command ran, not that the product works.
+#   3. **Roll back on a failed health check** — automatically, and only the release. Never the
+#      database: the migration stays, because the previous version was built to tolerate it and
+#      un-applying schema changes loses data (see `docs/PERFORMANCE.md` and the DR decision tree).
+#
+# ## Honesty about what runs
+#
+# `UBOSS_DEPLOY_COMMAND` is a per-environment variable holding the host's own command. When it is
+# not set, every step below **says it did nothing** rather than printing success. UBoss must not be
+# describable as having a working deployment pipeline on the strength of a green tick.
+
+name: Promote to an environment
+description: Migrate, release, health check, and roll back the release if the check fails.
+
+inputs:
+  environment:
+    description: dev | staging | uat | production
+    required: true
+  sha:
+    description: The commit being promoted
+    required: true
+  staged:
+    description: Roll out to a slice first and watch it before completing
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: What is configured
+      shell: bash
+      run: |
+        echo "environment : ${{ inputs.environment }}"
+        echo "commit      : ${{ inputs.sha }}"
+        if [ -z "${UBOSS_DEPLOY_COMMAND:-}" ]; then
+          echo "::warning::UBOSS_DEPLOY_COMMAND is not set for '${{ inputs.environment }}'."
+          echo "::warning::Every step below will run nothing and will say so. No deployment occurs."
+        fi
+      env:
+        UBOSS_DEPLOY_COMMAND: ${{ vars.UBOSS_DEPLOY_COMMAND }}
+
+    # ---- 1. schema first ----
+    - name: Apply migrations
+      shell: bash
+      working-directory: apps/api
+      env:
+        DATABASE_MIGRATION_URL: ${{ env.DATABASE_MIGRATION_URL }}
+      run: |
+        if [ -z "${DATABASE_MIGRATION_URL:-}" ]; then
+          echo "no DATABASE_MIGRATION_URL for ${{ inputs.environment }} — skipping migrations"
+          echo "NOTE: nothing was migrated."
+          exit 0
+        fi
+        # `deploy`, never `dev`: it applies committed migrations and never generates or resets one.
+        npx prisma migrate deploy
+        npx prisma migrate status
+
+    # ---- 2. then the code ----
+    - name: Release
+      id: release
+      shell: bash
+      env:
+        UBOSS_DEPLOY_COMMAND: ${{ vars.UBOSS_DEPLOY_COMMAND }}
+        UBOSS_RELEASE_SHA: ${{ inputs.sha }}
+        UBOSS_STAGED: ${{ inputs.staged }}
+      run: |
+        if [ -z "${UBOSS_DEPLOY_COMMAND:-}" ]; then
+          echo "NOTE: no deploy command configured — nothing was released."
+          echo "released=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        if [ "${UBOSS_STAGED}" = "true" ]; then
+          # Production goes to a slice first. The point is not the percentage — it is that there is
+          # a window in which a fault affects some customers rather than all of them.
+          echo "staged rollout: first slice"
+          UBOSS_ROLLOUT_PERCENT=10 bash -c "$UBOSS_DEPLOY_COMMAND"
+        else
+          bash -c "$UBOSS_DEPLOY_COMMAND"
+        fi
+        echo "released=true" >> "$GITHUB_OUTPUT"
+
+    # ---- 3. prove it works ----
+    - name: Health check
+      id: health
+      shell: bash
+      env:
+        UBOSS_HEALTH_URL: ${{ vars.UBOSS_HEALTH_URL }}
+      run: |
+        if [ -z "${UBOSS_HEALTH_URL:-}" ]; then
+          echo "NOTE: no health URL configured — the release was not verified."
+          echo "healthy=unknown" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        # Ten attempts over roughly a minute. A container that has not finished starting is not the
+        # same as a broken release, and failing on the first attempt would roll back every deploy.
+        for attempt in $(seq 1 10); do
+          if curl -fsS --max-time 10 "$UBOSS_HEALTH_URL" > /tmp/health.json; then
+            echo "healthy after ${attempt} attempt(s)"
+            cat /tmp/health.json
+            echo "healthy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          sleep 6
+        done
+        echo "::error::${{ inputs.environment }} did not become healthy"
+        echo "healthy=false" >> "$GITHUB_OUTPUT"
+        exit 1
+
+    # ---- 4. and undo it if it does not ----
+    - name: Roll back the release
+      if: failure() && steps.release.outputs.released == 'true'
+      shell: bash
+      env:
+        UBOSS_ROLLBACK_COMMAND: ${{ vars.UBOSS_ROLLBACK_COMMAND }}
+      run: |
+        echo "::error::health check failed — rolling back ${{ inputs.environment }}"
+        if [ -z "${UBOSS_ROLLBACK_COMMAND:-}" ]; then
+          echo "::error::No UBOSS_ROLLBACK_COMMAND configured. Roll back by hand, now."
+          echo "::error::See docs/DEPLOYMENT.md — 'When a promotion fails'."
+          exit 1
+        fi
+        bash -c "$UBOSS_ROLLBACK_COMMAND"
+        echo "release rolled back. The migration was left applied — see docs/DEPLOYMENT.md."
+
+    - name: Summary
+      if: always()
+      shell: bash
+      run: |
+        {
+          echo "### ${{ inputs.environment }}"
+          echo ""
+          echo "- commit: \`${{ inputs.sha }}\`"
+          echo "- released: ${{ steps.release.outputs.released || 'no' }}"
+          echo "- healthy: ${{ steps.health.outputs.healthy || 'not checked' }}"
+        } >> "$GITHUB_STEP_SUMMARY"

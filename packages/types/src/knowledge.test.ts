@@ -257,11 +257,31 @@ describe('retention, legal hold and deletion', () => {
   it('sweeps only what has expired and is not held', () => {
     const ids = filesDueForRetention(
       [
-        { id: 'due', retentionExpiresAt: new Date(now.getTime() - 1), onLegalHold: false, deletedAt: null },
-        { id: 'held', retentionExpiresAt: new Date(now.getTime() - 1), onLegalHold: true, deletedAt: null },
-        { id: 'later', retentionExpiresAt: new Date(now.getTime() + 1), onLegalHold: false, deletedAt: null },
+        {
+          id: 'due',
+          retentionExpiresAt: new Date(now.getTime() - 1),
+          onLegalHold: false,
+          deletedAt: null,
+        },
+        {
+          id: 'held',
+          retentionExpiresAt: new Date(now.getTime() - 1),
+          onLegalHold: true,
+          deletedAt: null,
+        },
+        {
+          id: 'later',
+          retentionExpiresAt: new Date(now.getTime() + 1),
+          onLegalHold: false,
+          deletedAt: null,
+        },
         { id: 'forever', retentionExpiresAt: null, onLegalHold: false, deletedAt: null },
-        { id: 'gone', retentionExpiresAt: new Date(now.getTime() - 1), onLegalHold: false, deletedAt: now },
+        {
+          id: 'gone',
+          retentionExpiresAt: new Date(now.getTime() - 1),
+          onLegalHold: false,
+          deletedAt: now,
+        },
       ],
       now,
     );
@@ -310,10 +330,7 @@ describe('knowledge sources', () => {
   it('confines a department source to its department', () => {
     const scoped = read({ sourceScope: 'Department' });
     assert.deepEqual(decideKnowledgeRead(scoped), { permitted: true });
-    assert.equal(
-      decideKnowledgeRead({ ...scoped, askingDepartmentId: 'dept-2' }).permitted,
-      false,
-    );
+    assert.equal(decideKnowledgeRead({ ...scoped, askingDepartmentId: 'dept-2' }).permitted, false);
   });
 
   it('never treats two nulls as the same department', () => {

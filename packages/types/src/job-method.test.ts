@@ -250,7 +250,10 @@ describe('verifying the linkage before anything is parsed', () => {
     assert.equal(both.ok, false);
     if (both.ok) return;
     assert.equal(both.stage, 'ValidateFile');
-    assert.equal(IMPORT_STAGES.indexOf('ValidateFile') < IMPORT_STAGES.indexOf('VerifyLinkage'), true);
+    assert.equal(
+      IMPORT_STAGES.indexOf('ValidateFile') < IMPORT_STAGES.indexOf('VerifyLinkage'),
+      true,
+    );
   });
 });
 
@@ -298,7 +301,10 @@ describe('reading a row without inventing anything', () => {
       step: 1,
       cells: { whatExactWork: 'Fine', approval: { nested: true } },
     });
-    assert.equal(problems.some((problem) => problem.kind === 'Invalid'), true);
+    assert.equal(
+      problems.some((problem) => problem.kind === 'Invalid'),
+      true,
+    );
   });
 
   it('accepts a number, because a spreadsheet produces them', () => {
@@ -329,12 +335,7 @@ describe('deciding whether to merge', () => {
   it('keeps the four problem kinds distinct', () => {
     // Only one of them is a mistake: `Unmapped` is feedback about the *form*, and collapsing them
     // into one "error" would hide that.
-    assert.deepEqual([...IMPORT_PROBLEM_KINDS], [
-      'Missing',
-      'Invalid',
-      'Ambiguous',
-      'Unmapped',
-    ]);
+    assert.deepEqual([...IMPORT_PROBLEM_KINDS], ['Missing', 'Invalid', 'Ambiguous', 'Unmapped']);
   });
 
   it('says plainly that an import activates nothing', () => {

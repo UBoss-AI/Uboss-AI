@@ -166,7 +166,10 @@ describe('recovery reporting (e2e)', () => {
       const position = (await recovery().position({
         lastVerifiedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
         now: new Date().toISOString(),
-      })) as { rpo: { withinTarget: boolean; neverVerified: boolean }; drill: { overdue: boolean } };
+      })) as {
+        rpo: { withinTarget: boolean; neverVerified: boolean };
+        drill: { overdue: boolean };
+      };
 
       assert.equal(position.rpo.neverVerified, false);
       assert.equal(position.rpo.withinTarget, true);

@@ -58,9 +58,11 @@ function WorkspaceChatInner() {
   const [draft, setDraft] = useState('');
   const [search, setSearch] = useState('');
   const [found, setFound] = useState<Record<string, unknown>[] | null>(null);
-  const [stances, setStances] = useState<{ realtime: string; context: string; search: string } | null>(
-    null,
-  );
+  const [stances, setStances] = useState<{
+    realtime: string;
+    context: string;
+    search: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -127,7 +129,9 @@ function WorkspaceChatInner() {
         if (!cancelled) setConversations(refreshed.conversations);
       } catch (caught) {
         if (!cancelled) {
-          setError(caught instanceof ApiError ? caught.message : 'That conversation could not be opened.');
+          setError(
+            caught instanceof ApiError ? caught.message : 'That conversation could not be opened.',
+          );
         }
       }
     })();
@@ -237,7 +241,9 @@ function WorkspaceChatInner() {
                   <li key={conversation.id}>
                     <button
                       type="button"
-                      className={conversation.id === openId ? 'chat-item chat-item-open' : 'chat-item'}
+                      className={
+                        conversation.id === openId ? 'chat-item chat-item-open' : 'chat-item'
+                      }
                       onClick={() => setOpenId(conversation.id)}
                     >
                       <span className="chat-item-name">

@@ -208,7 +208,9 @@ export function SupportPanel({ tenantId }: { tenantId: string | null }): React.J
                 <p className="uboss-muted">
                   Scope: {requestItem.allowedModules.join(', ') || 'none'} ·{' '}
                   {requestItem.allowedActions.join(', ') || 'none'}
-                  {requestItem.expiresAt === null ? null : ` · expires ${when(requestItem.expiresAt)}`}
+                  {requestItem.expiresAt === null
+                    ? null
+                    : ` · expires ${when(requestItem.expiresAt)}`}
                 </p>
                 <div className="uboss-actions">
                   <Button
@@ -402,7 +404,8 @@ export function SupportPanel({ tenantId }: { tenantId: string | null }): React.J
             {open.notes.map((note) => (
               <div key={note.id} className="uboss-stack uboss-bordered">
                 <small className="uboss-muted">
-                  {note.authorIsOperator ? 'UBoss support' : 'Your company'} · {when(note.createdAt)}
+                  {note.authorIsOperator ? 'UBoss support' : 'Your company'} ·{' '}
+                  {when(note.createdAt)}
                 </small>
                 <p>{note.body}</p>
               </div>

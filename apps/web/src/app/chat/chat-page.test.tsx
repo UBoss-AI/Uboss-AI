@@ -135,7 +135,9 @@ describe('Workspace Chat', () => {
   it('opens a conversation and marks it read', async () => {
     render(<WorkspaceChatPage />);
 
-    await waitFor(() => expect(readConversation).toHaveBeenCalledWith('tenant-1', 'conversation-1'));
+    await waitFor(() =>
+      expect(readConversation).toHaveBeenCalledWith('tenant-1', 'conversation-1'),
+    );
     expect(markRead).toHaveBeenCalledWith('tenant-1', 'conversation-1');
     expect(await screen.findByTestId('chat-messages')).toHaveTextContent(
       'Can you look at step three?',
@@ -148,7 +150,9 @@ describe('Workspace Chat', () => {
 
     render(<WorkspaceChatPage />);
 
-    await waitFor(() => expect(readConversation).toHaveBeenCalledWith('tenant-1', 'conversation-9'));
+    await waitFor(() =>
+      expect(readConversation).toHaveBeenCalledWith('tenant-1', 'conversation-9'),
+    );
   });
 
   it('renders a permitted context reference as a link with its title', async () => {
@@ -218,9 +222,7 @@ describe('Workspace Chat', () => {
       messages: [
         {
           ...CONVERSATION.messages[0],
-          attachments: [
-            { storedFileId: 'file-1', filename: 'terms.pdf', downloadable: false },
-          ],
+          attachments: [{ storedFileId: 'file-1', filename: 'terms.pdf', downloadable: false }],
         },
       ],
     });

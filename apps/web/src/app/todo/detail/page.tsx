@@ -134,18 +134,14 @@ function TaskDetailInner() {
           <>
             {/* Prompt 40A (CR-03) §6 — the person doing the work, asking about the work. */}
             {taskId === null ? null : (
-              <DiscussButton
-                tenantId={tenantId}
-                contextType="HumanTask"
-                resourceId={taskId}
-              />
+              <DiscussButton tenantId={tenantId} contextType="HumanTask" resourceId={taskId} />
             )}
-          <Link href="/todo">
-            <Button size="sm">
-              <Icon name="back" size={16} />
-              Back
-            </Button>
-          </Link>
+            <Link href="/todo">
+              <Button size="sm">
+                <Icon name="back" size={16} />
+                Back
+              </Button>
+            </Link>
           </>
         }
       />

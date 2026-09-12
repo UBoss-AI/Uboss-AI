@@ -397,9 +397,7 @@ export function tablesWithDisposition(disposition: Disposition): string[] {
 // Cancellation and confirmation
 // ---------------------------------------------------------------------------
 
-export type CancellationDecision =
-  | { mayCancel: true }
-  | { mayCancel: false; reason: string };
+export type CancellationDecision = { mayCancel: true } | { mayCancel: false; reason: string };
 
 /**
  * Whether an exit can still be stopped.

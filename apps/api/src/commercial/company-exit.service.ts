@@ -553,10 +553,7 @@ export class CompanyExitService {
    * what that period is *for*. After deletion there is nothing left to export, and the method says
    * so rather than returning an empty package.
    */
-  async exportPackage(input: {
-    exitId: string;
-    actorUserId: string;
-  }): Promise<{
+  async exportPackage(input: { exitId: string; actorUserId: string }): Promise<{
     manifest: {
       companyName: string;
       producedAt: string;

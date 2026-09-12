@@ -320,10 +320,7 @@ export function retentionProblems(policy: RetentionPolicy): string[] {
 /**
  * When a file's retention expires. Null when it has none.
  */
-export function retentionExpiry(
-  policy: RetentionPolicy,
-  uploadedAt: Date,
-): Date | null {
+export function retentionExpiry(policy: RetentionPolicy, uploadedAt: Date): Date | null {
   return policy.retentionDays === null
     ? null
     : new Date(uploadedAt.getTime() + policy.retentionDays * 86_400_000);
@@ -337,9 +334,7 @@ export function retentionExpiry(
  * deletion that every other rule would permit, and a hold that could be overridden by the policy
  * it was placed against would not be one.
  */
-export type DeletionDecision =
-  | { mayDelete: true }
-  | { mayDelete: false; reason: string };
+export type DeletionDecision = { mayDelete: true } | { mayDelete: false; reason: string };
 
 export function decideDeletion(input: {
   onLegalHold: boolean;
@@ -439,11 +434,7 @@ export function mayMoveKnowledgeSource(
  * classification."* The scope is the first of those three — the tenant is structural, and the
  * classification is a separate ceiling — so this says *which agents and people within the company*.
  */
-export const KNOWLEDGE_ACCESS_SCOPES = [
-  'NamedAgentsOnly',
-  'Department',
-  'WholeCompany',
-] as const;
+export const KNOWLEDGE_ACCESS_SCOPES = ['NamedAgentsOnly', 'Department', 'WholeCompany'] as const;
 export type KnowledgeAccessScope = (typeof KNOWLEDGE_ACCESS_SCOPES)[number];
 
 export const KNOWLEDGE_ACCESS_SCOPE_LABELS: Record<KnowledgeAccessScope, string> = {
@@ -482,9 +473,7 @@ export interface KnowledgeReadRequest {
   agentClassificationCeiling: DataClassification | null;
 }
 
-export type KnowledgeReadDecision =
-  | { permitted: true }
-  | { permitted: false; reason: string };
+export type KnowledgeReadDecision = { permitted: true } | { permitted: false; reason: string };
 
 /**
  * Whether this read is permitted.
@@ -593,8 +582,7 @@ export const DEFAULT_EXPORT_CEILING: DataClassification = 'Confidential';
 export const DEFAULT_EXTERNAL_EGRESS_CEILING: DataClassification = 'Internal';
 
 export type EgressDecision =
-  | { permitted: true; redactionRequired: boolean }
-  | { permitted: false; reason: string };
+  { permitted: true; redactionRequired: boolean } | { permitted: false; reason: string };
 
 /**
  * Whether classified content may leave the permitted boundary, and whether it must be redacted

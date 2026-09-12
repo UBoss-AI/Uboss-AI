@@ -214,9 +214,7 @@ export const DEFAULT_PERFORMANCE_SHARING: PerformanceSharingMode = 'Nothing';
 /** Whether this company's people may perform a portable lookup at all. Off by default. */
 export const DEFAULT_PROFILE_SEARCH_ENABLED = false;
 
-export type ProfileSearchDecision =
-  | { permitted: true }
-  | { permitted: false; reason: string };
+export type ProfileSearchDecision = { permitted: true } | { permitted: false; reason: string };
 
 /**
  * Whether a lookup may proceed.

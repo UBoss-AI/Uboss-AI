@@ -322,9 +322,7 @@ export class SupportTicketService {
         where: { id: ticket.id },
         data: {
           assignedOperatorUserId: input.operatorUserId,
-          ...(ticket.state === 'New'
-            ? { state: 'Acknowledged', acknowledgedAt: new Date() }
-            : {}),
+          ...(ticket.state === 'New' ? { state: 'Acknowledged', acknowledgedAt: new Date() } : {}),
           version: { increment: 1 },
         },
       });
@@ -382,9 +380,7 @@ export class SupportTicketService {
           ...(input.to === 'Resolved' ? { resolvedAt: now } : {}),
           // Closing from `New` or `InProgress` skips `Resolved`, so the resolution timestamp has
           // to be filled in here too or `resolved_ticket_records_when` refuses the row.
-          ...(input.to === 'Closed'
-            ? { closedAt: now, resolvedAt: ticket.resolvedAt ?? now }
-            : {}),
+          ...(input.to === 'Closed' ? { closedAt: now, resolvedAt: ticket.resolvedAt ?? now } : {}),
           ...(input.to === 'Acknowledged' && ticket.acknowledgedAt === null
             ? { acknowledgedAt: now }
             : {}),
@@ -535,7 +531,9 @@ export class SupportTicketService {
   }> {
     return this.prisma.runAsPlatformOperation(async () => {
       const [open, waitingOnCustomer, unassigned, urgent] = await Promise.all([
-        this.prisma.client.supportTicket.count({ where: { state: { in: [...OPEN_TICKET_STATES] } } }),
+        this.prisma.client.supportTicket.count({
+          where: { state: { in: [...OPEN_TICKET_STATES] } },
+        }),
         this.prisma.client.supportTicket.count({ where: { state: 'WaitingOnCustomer' } }),
         this.prisma.client.supportTicket.count({
           where: { state: { in: [...OPEN_TICKET_STATES] }, assignedOperatorUserId: null },

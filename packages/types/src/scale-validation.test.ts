@@ -147,10 +147,9 @@ describe('verdicts', () => {
 describe('query plans — the evidence that transfers', () => {
   it('spots a sequential scan on a table that grows without bound', () => {
     const plan = `Seq Scan on employment_records e  (cost=0.00..1842.00 rows=10000 width=280)`;
-    assert.deepEqual(
-      planSeqScansLargeTable(plan, { largeTables: ['employment_records'] }),
-      ['employment_records'],
-    );
+    assert.deepEqual(planSeqScansLargeTable(plan, { largeTables: ['employment_records'] }), [
+      'employment_records',
+    ]);
   });
 
   it('is not fooled by a schema-qualified or quoted name', () => {

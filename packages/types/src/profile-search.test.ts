@@ -109,10 +109,7 @@ describe('company policy', () => {
   it('refuses a lookup for a company that has not enabled it, and says why', () => {
     const decision = decideProfileSearch({ enabledForSearcher: false });
     assert.equal(decision.permitted, false);
-    assert.equal(
-      decision.permitted === false && decision.reason.includes('switched off'),
-      true,
-    );
+    assert.equal(decision.permitted === false && decision.reason.includes('switched off'), true);
   });
 
   it('permits one for a company that has', () => {

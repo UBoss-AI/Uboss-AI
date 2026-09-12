@@ -92,9 +92,7 @@ export function JobMethodImportExport({
       await jobMethodApi.downloadWorkbook(tenantId, assignmentId);
       setNotice('The form has been downloaded. Send it to whoever does this work.');
     } catch (caught) {
-      setError(
-        caught instanceof ApiError ? caught.message : 'The form could not be downloaded.',
-      );
+      setError(caught instanceof ApiError ? caught.message : 'The form could not be downloaded.');
     } finally {
       setBusy(false);
     }
@@ -206,9 +204,7 @@ export function JobMethodImportExport({
                 Saved into the draft. Nothing has been tested and nothing has been activated.
               </Banner>
             ) : (
-              <Banner tone="danger">
-                {outcome.refusedBecause ?? 'Nothing was saved.'}
-              </Banner>
+              <Banner tone="danger">{outcome.refusedBecause ?? 'Nothing was saved.'}</Banner>
             )}
 
             {(['Missing', 'Invalid', 'Ambiguous', 'Unmapped'] as const).map((kind) => {

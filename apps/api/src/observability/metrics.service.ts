@@ -221,7 +221,9 @@ export class MetricsService {
     const entries = Object.entries(labels);
     if (entries.length === 0) return '';
     const rendered = entries
-      .map(([label, value]) => `${label}="${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`)
+      .map(
+        ([label, value]) => `${label}="${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`,
+      )
       .join(',');
     return `{${rendered}}`;
   }

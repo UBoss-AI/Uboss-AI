@@ -7,8 +7,8 @@ what changes once it is applied.
 
 It is written out rather than left as "configure archiving" because the gap it closes is the
 expensive one. `pg-backup.sh` takes a logical dump; a dump gets you back to the moment it was taken
-and no other moment. The decision tree's second branch — *a migration destroyed data, recover to
-just before it* — is the case where that is not good enough, and it is also the likeliest real
+and no other moment. The decision tree's second branch — _a migration destroyed data, recover to
+just before it_ — is the case where that is not good enough, and it is also the likeliest real
 disaster in a system that ships migrations. Until archiving is on, that branch is unavailable and
 the honest fallback is the last dump.
 
@@ -78,7 +78,7 @@ pg_basebackup \
   --username=uboss --host=$PGHOST
 ```
 
-`--wal-method=stream` matters: it streams the WAL generated *during* the backup alongside it, so the
+`--wal-method=stream` matters: it streams the WAL generated _during_ the backup alongside it, so the
 base backup is self-consistent and restorable on its own even if the archive has a gap at that
 moment.
 
@@ -96,7 +96,7 @@ silently empty it the way it empties a logical dump (S-332), but the role still 
 1. **Stop the server.** Do not attempt this against a running primary.
 2. Move the damaged data directory aside. Do not delete it — it is evidence, and if the recovery
    target is wrong you will want another attempt.
-3. Restore the most recent base backup taken *before* the target time.
+3. Restore the most recent base backup taken _before_ the target time.
 4. In the restored data directory, create `recovery.signal` (an empty file) and set:
 
 ```conf
@@ -123,8 +123,8 @@ recovery_target_action = 'pause'
 `recovery_target_time` is the usual choice and the least precise. Two others are better when you
 have them:
 
-* `recovery_target_lsn` — exact, when you can read the LSN out of the logs.
-* `recovery_target_xid` — exact, when you know the transaction. A migration runs in one, and
+- `recovery_target_lsn` — exact, when you can read the LSN out of the logs.
+- `recovery_target_xid` — exact, when you know the transaction. A migration runs in one, and
   `_prisma_migrations` records `started_at`, which gets you close enough to find it.
 
 ---

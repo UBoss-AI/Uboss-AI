@@ -30,7 +30,10 @@ export interface EmployeePhotoProps {
 
 /** First and last initial — the same rule the server uses, so the two never disagree. */
 function initialsOf(displayName: string): string {
-  const words = displayName.trim().split(/\s+/).filter((word) => word.length > 0);
+  const words = displayName
+    .trim()
+    .split(/\s+/)
+    .filter((word) => word.length > 0);
   if (words.length === 0) return '?';
   if (words.length === 1) return (words[0] as string).charAt(0).toUpperCase();
   return `${(words[0] as string).charAt(0)}${(words[words.length - 1] as string).charAt(0)}`.toUpperCase();

@@ -210,10 +210,7 @@ describe('the correlation chain', () => {
    * they are where the money is.
    */
   it('names all five stages, ending at the money', () => {
-    assert.deepEqual(
-      [...CORRELATION_CHAIN],
-      ['request', 'queue', 'run', 'provider', 'settlement'],
-    );
+    assert.deepEqual([...CORRELATION_CHAIN], ['request', 'queue', 'run', 'provider', 'settlement']);
   });
 });
 
@@ -252,8 +249,7 @@ describe('the incident workflow', () => {
     });
     assert.equal(readiness.ready, false);
     assert.equal(
-      readiness.ready === false &&
-        readiness.reasons.some((reason) => reason.includes('happens')),
+      readiness.ready === false && readiness.reasons.some((reason) => reason.includes('happens')),
       true,
       'a postmortem written from memory is how the same incident happens twice',
     );

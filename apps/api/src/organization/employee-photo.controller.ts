@@ -32,7 +32,9 @@ class UploadPhotoDto {
    * The real limit is enforced on the **decoded** length in the service — a check on the encoded
    * string would refuse a file that is actually within the limit.
    */
-  @IsString() @MinLength(1) @MaxLength(Math.ceil((MAX_PHOTO_BYTES * 4) / 3) + 1024)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(Math.ceil((MAX_PHOTO_BYTES * 4) / 3) + 1024)
   contentBase64!: string;
 }
 
@@ -122,10 +124,7 @@ export class EmployeePhotoController {
   }
 
   @Post(':userId')
-  async upload(
-    @Param('userId') userId: string,
-    @Body() body: UploadPhotoDto,
-  ): Promise<unknown> {
+  async upload(@Param('userId') userId: string, @Body() body: UploadPhotoDto): Promise<unknown> {
     return this.photos.upload({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),

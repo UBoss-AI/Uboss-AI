@@ -1,10 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import {
-  REPORT_ROW_LIMIT,
-  type ReportScope,
-  type ReportWindow,
-} from '@uboss/types';
+import { REPORT_ROW_LIMIT, type ReportScope, type ReportWindow } from '@uboss/types';
 
 import { PrismaService } from '../persistence/prisma.service.js';
 import type { TenantScope } from '../persistence/tenant-context.js';
@@ -179,24 +175,40 @@ export class ReportsService {
         groups: { _count: { _all: number } }[],
         predicate: (group: never) => boolean,
       ): number =>
-        groups.filter(predicate as (group: unknown) => boolean).reduce(
-          (total, group) => total + group._count._all,
-          0,
-        );
+        groups
+          .filter(predicate as (group: unknown) => boolean)
+          .reduce((total, group) => total + group._count._all, 0);
 
-      const humanCompleted = countOf(tasks, ((group: { status: string }) =>
-        group.status === 'Completed') as never);
-      const humanFailed = countOf(tasks, ((group: { status: string }) =>
-        group.status === 'Blocked') as never);
-      const humanInFlight = countOf(tasks, ((group: { status: string }) =>
-        group.status !== 'Completed' && group.status !== 'Blocked') as never);
+      const humanCompleted = countOf(
+        tasks,
+        ((group: { status: string }) => group.status === 'Completed') as never,
+      );
+      const humanFailed = countOf(
+        tasks,
+        ((group: { status: string }) => group.status === 'Blocked') as never,
+      );
+      const humanInFlight = countOf(
+        tasks,
+        ((group: { status: string }) =>
+          group.status !== 'Completed' && group.status !== 'Blocked') as never,
+      );
 
-      const aiCompleted = countOf(runs, ((group: { state: string }) =>
-        group.state === 'Succeeded') as never);
-      const aiFailed = countOf(runs, ((group: { state: string }) =>
-        group.state === 'Failed' || group.state === 'DeadLettered') as never);
-      const aiInFlight = countOf(runs, ((group: { state: string }) =>
-        group.state !== 'Succeeded' && group.state !== 'Failed' && group.state !== 'DeadLettered') as never);
+      const aiCompleted = countOf(
+        runs,
+        ((group: { state: string }) => group.state === 'Succeeded') as never,
+      );
+      const aiFailed = countOf(
+        runs,
+        ((group: { state: string }) =>
+          group.state === 'Failed' || group.state === 'DeadLettered') as never,
+      );
+      const aiInFlight = countOf(
+        runs,
+        ((group: { state: string }) =>
+          group.state !== 'Succeeded' &&
+          group.state !== 'Failed' &&
+          group.state !== 'DeadLettered') as never,
+      );
 
       const rows = [
         { kind: 'Human', completed: humanCompleted, failed: humanFailed, inFlight: humanInFlight },
@@ -523,9 +535,7 @@ export class ReportsService {
           type: requestRow.type,
           status: requestRow.status,
           requestedBy: requestRow.requestedByUserId,
-          waitingDays: Math.floor(
-            (until.getTime() - requestRow.createdAt.getTime()) / 86_400_000,
-          ),
+          waitingDays: Math.floor((until.getTime() - requestRow.createdAt.getTime()) / 86_400_000),
           dueAt: requestRow.dueAt?.toISOString() ?? '—',
         };
       });
@@ -556,10 +566,7 @@ export class ReportsService {
    * that counted reservations would overstate every figure and then quietly correct itself when
    * the unused part was released. The same rule the Prompt 34 objective comparison applies.
    */
-  async aiUsageAndCost(input: {
-    scope: TenantScope;
-    window: ReportWindow;
-  }): Promise<ReportResult> {
+  async aiUsageAndCost(input: { scope: TenantScope; window: ReportWindow }): Promise<ReportResult> {
     const columns = ['day', 'entries', 'amountMinor', 'inputTokens', 'outputTokens'];
 
     return this.prisma.runInTenantTransaction(input.scope, async () => {
@@ -623,10 +630,7 @@ export class ReportsService {
   // 9. Audit Activity
   // -------------------------------------------------------------------------
 
-  async auditActivity(input: {
-    scope: TenantScope;
-    window: ReportWindow;
-  }): Promise<ReportResult> {
+  async auditActivity(input: { scope: TenantScope; window: ReportWindow }): Promise<ReportResult> {
     const columns = ['action', 'resourceType', 'events', 'lastAt'];
 
     return this.prisma.runInTenantTransaction(input.scope, async () => {

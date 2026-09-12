@@ -112,21 +112,19 @@ export const SUPPORT_TICKET_STATE_LABELS: Record<SupportTicketState, string> = {
   Closed: 'Closed',
 };
 
-export const ALLOWED_TICKET_TRANSITIONS: Record<
-  SupportTicketState,
-  readonly SupportTicketState[]
-> = {
-  New: ['Acknowledged', 'InProgress', 'Resolved', 'Closed'],
-  Acknowledged: ['InProgress', 'WaitingOnCustomer', 'Resolved', 'Closed'],
-  InProgress: ['WaitingOnCustomer', 'Resolved', 'Closed'],
-  WaitingOnCustomer: ['InProgress', 'Resolved', 'Closed'],
-  // Back to work when the company says it is not fixed. This is the reason `Resolved` and
-  // `Closed` are two states rather than one.
-  Resolved: ['InProgress', 'Closed'],
-  // Terminal. Reopening is a new ticket that references this one, so the history of what was
-  // closed and when stays intact.
-  Closed: [],
-};
+export const ALLOWED_TICKET_TRANSITIONS: Record<SupportTicketState, readonly SupportTicketState[]> =
+  {
+    New: ['Acknowledged', 'InProgress', 'Resolved', 'Closed'],
+    Acknowledged: ['InProgress', 'WaitingOnCustomer', 'Resolved', 'Closed'],
+    InProgress: ['WaitingOnCustomer', 'Resolved', 'Closed'],
+    WaitingOnCustomer: ['InProgress', 'Resolved', 'Closed'],
+    // Back to work when the company says it is not fixed. This is the reason `Resolved` and
+    // `Closed` are two states rather than one.
+    Resolved: ['InProgress', 'Closed'],
+    // Terminal. Reopening is a new ticket that references this one, so the history of what was
+    // closed and when stays intact.
+    Closed: [],
+  };
 
 export function mayMoveTicket(from: SupportTicketState, to: SupportTicketState): boolean {
   return ALLOWED_TICKET_TRANSITIONS[from].includes(to);
@@ -211,9 +209,7 @@ export const CUSTOMER_AUTHORIZATION_STATE_LABELS: Record<CustomerAuthorizationSt
   Declined: 'The company declined',
 };
 
-export type SessionStartDecision =
-  | { mayStart: true }
-  | { mayStart: false; reason: string };
+export type SessionStartDecision = { mayStart: true } | { mayStart: false; reason: string };
 
 /**
  * Whether a support session may begin.
@@ -284,12 +280,7 @@ export const INCIDENT_SEVERITY_LABELS: Record<IncidentSeverity, string> = {
   P2: 'P2 — a limited or worked-around problem',
 };
 
-export const INCIDENT_STATES = [
-  'Open',
-  'Acknowledged',
-  'Mitigated',
-  'Resolved',
-] as const;
+export const INCIDENT_STATES = ['Open', 'Acknowledged', 'Mitigated', 'Resolved'] as const;
 export type IncidentState = (typeof INCIDENT_STATES)[number];
 
 export const INCIDENT_STATE_LABELS: Record<IncidentState, string> = {
@@ -344,13 +335,7 @@ export const INCIDENT_WORKFLOW_BOUNDARY =
  * *"queue depth/age"* and *"connection health"*. These five are those, plus the database, which is
  * the one dependency whose failure makes every other reading meaningless.
  */
-export const HEALTH_COMPONENTS = [
-  'Api',
-  'Database',
-  'Queue',
-  'Providers',
-  'Connections',
-] as const;
+export const HEALTH_COMPONENTS = ['Api', 'Database', 'Queue', 'Providers', 'Connections'] as const;
 export type HealthComponent = (typeof HEALTH_COMPONENTS)[number];
 
 export const HEALTH_COMPONENT_LABELS: Record<HealthComponent, string> = {

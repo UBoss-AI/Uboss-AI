@@ -1418,10 +1418,7 @@ export {
   type RunPreconditionKey,
 } from './operating-model.js';
 
-export {
-  EXCEPTION_KINDS_ADDED_SINCE,
-  SOURCE_DOCUMENT_EXCEPTION_KINDS,
-} from './executor.js';
+export { EXCEPTION_KINDS_ADDED_SINCE, SOURCE_DOCUMENT_EXCEPTION_KINDS } from './executor.js';
 
 export {
   BACKUP_KIND_LABELS,
@@ -1478,3 +1475,21 @@ export {
   type ScenarioMeasurement,
   type ScenarioResult,
 } from './scale-validation.js';
+
+// ---------------------------------------------------------------------------
+// Release flags — Prompt 44
+//
+// A flag makes one change safe to deploy and is deleted once that change is everywhere. The
+// registry ships empty, which is the correct state; its rules are what stop it filling up.
+// ---------------------------------------------------------------------------
+
+export {
+  flagIsOn,
+  flagStates,
+  RELEASE_FLAG_STANCE,
+  RELEASE_FLAGS,
+  registryProblems,
+  type FlagEnvironment,
+  type ReleaseFlag,
+  type ReleaseFlagKey,
+} from './release-flags.js';

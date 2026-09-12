@@ -23,14 +23,14 @@ still there.
 
 ## Lifecycle
 
-| Rule | Setting | Why |
-| --- | --- | --- |
-| Noncurrent version retention | **35 days** | Longer than the 30-day exit retention window, so an exit's deletion is still reversible for a few days after the window closes. A shorter window would make the two paths disagree. |
-| Abort incomplete multipart uploads | **7 days** | A failed 250 MB upload otherwise bills forever and appears in no listing. |
-| Transition to infrequent access | **90 days** | Knowledge files are read constantly for a quarter and then almost never. |
-| Expire noncurrent versions | **35 days** | The other half of the retention rule: a version kept indefinitely is a copy of deleted customer data with no deletion obligation attached to it, which is the opposite of what Prompt 35 promised. |
+| Rule                               | Setting     | Why                                                                                                                                                                                                |
+| ---------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Noncurrent version retention       | **35 days** | Longer than the 30-day exit retention window, so an exit's deletion is still reversible for a few days after the window closes. A shorter window would make the two paths disagree.                |
+| Abort incomplete multipart uploads | **7 days**  | A failed 250 MB upload otherwise bills forever and appears in no listing.                                                                                                                          |
+| Transition to infrequent access    | **90 days** | Knowledge files are read constantly for a quarter and then almost never.                                                                                                                           |
+| Expire noncurrent versions         | **35 days** | The other half of the retention rule: a version kept indefinitely is a copy of deleted customer data with no deletion obligation attached to it, which is the opposite of what Prompt 35 promised. |
 
-**No lifecycle rule may expire a *current* version.** A current object is referenced by a live row;
+**No lifecycle rule may expire a _current_ version.** A current object is referenced by a live row;
 expiring it would break a file the product believes it has, and the product would find out when a
 customer clicked it. Deletion of current objects belongs to the application, where it is audited.
 
@@ -59,5 +59,5 @@ application's database.
    an earlier point, objects deleted since must be recovered from their noncurrent versions.
 
 Step 3 is the one that is easy to forget and impossible to fake: the verification checks in this
-build prove the *database* came back, and they say nothing about the bucket. That gap is stated in
+build prove the _database_ came back, and they say nothing about the bucket. That gap is stated in
 the runbook rather than papered over.

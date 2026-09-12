@@ -63,7 +63,11 @@ describe('DiscussButton', () => {
 
   it('names the kind of work in the dialog', async () => {
     render(
-      <DiscussButton tenantId="tenant-1" contextType="ExecutorException" resourceId="exception-1" />,
+      <DiscussButton
+        tenantId="tenant-1"
+        contextType="ExecutorException"
+        resourceId="exception-1"
+      />,
     );
 
     await userEvent.click(screen.getByTestId('discuss-button'));

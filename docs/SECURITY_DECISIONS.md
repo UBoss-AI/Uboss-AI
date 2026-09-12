@@ -2235,7 +2235,7 @@ readable, which is the difference between archiving and deleting.
 **S-169 — A bounded retry policy that silently never retries is a security-relevant failure.**
 The `running_run_was_reserved_first` CHECK omitted `Retrying`, so every retry rolled back and each
 run stopped at attempt one. Recorded here rather than only in the changelog because the failure
-mode is the dangerous kind: the policy *appeared* configured, the audit trail showed a failure, and
+mode is the dangerous kind: the policy _appeared_ configured, the audit trail showed a failure, and
 nothing indicated that the remaining attempts had never happened. A control that looks enforced and
 is not is worse than an absent one. The lesson for the raw-SQL probe discipline: probe every state
 the code actually writes, not the one the constraint is named after.
@@ -2269,7 +2269,7 @@ tell the difference. The value comes from the gateway's own answer, never from a
 The Executor never closes its own findings. `EXECUTOR_PERMITTED_ACTIONS` has no word for it, the
 service refuses it, and `executor_never_closes_an_exception` refuses the row (ADR-131). This is the
 only rule in the codebase given three layers, because it is the one the whole oversight design
-rests on. There is also no endpoint through which a caller can act *as* the Executor: `act` takes
+rests on. There is also no endpoint through which a caller can act _as_ the Executor: `act` takes
 its actor from the authenticated session, never from a parameter, so there is nothing to forge.
 
 **S-175 — The Executor cannot act at all on an exception a control raised.**
@@ -2320,7 +2320,7 @@ catch, whether it was a mistake or not. A test now counts the
 **S-182 — A four-eyes gate cannot be read as a role and quietly bypassed.**
 `approver_role_kind` can hold the literal `FourEyes` from `STEP_APPROVAL_KINDS`. Treating it as a
 role would have deadlocked every gate; treating it as "anyone may decide" would have removed the
-control. It routes to any authorized approver *and* carries a mandatory `FourEyes` policy of its
+control. It routes to any authorized approver _and_ carries a mandatory `FourEyes` policy of its
 own, so the control applies whether or not the company configured one (ADR-138). Tested against a
 company with no `FourEyes` policy rows at all.
 
@@ -2375,7 +2375,7 @@ the building — the same class of harm as presenting mock output as a model's j
 Not even read-only. §19 of the approved functional document says "employees do not manage provider
 keys", and §18 keeps provider names behind the gateway — so a company that could enumerate
 profiles could tell which vendor answers its work. A test asserts a company user gets 403 on the
-platform route, and the routing reasons a company *can* see are asserted not to contain a provider
+platform route, and the routing reasons a company _can_ see are asserted not to contain a provider
 name.
 
 **S-191 — A credential is revealed at the moment of use and nowhere else.**
@@ -2391,7 +2391,7 @@ data and, under BYOK, its credential. The second because without it the gateway 
 what it had just spent and record the estimate as measured (ADR-150).
 
 **S-193 — An auth type and its secret must agree, in both directions.**
-`auth_type_and_secret_agree` refuses `BearerToken` or `ApiKeyHeader` with no secret, *and* refuses
+`auth_type_and_secret_agree` refuses `BearerToken` or `ApiKeyHeader` with no secret, _and_ refuses
 `None` carrying one. The second half matters: a stored credential nothing reads is a credential
 nobody rotates.
 
@@ -2413,7 +2413,6 @@ Fixing that was a real bug found by the tests: `ProviderService` audited from in
 platform transaction must not write into a company's trail without saying which company — so the
 audit now opens its own tenant transaction and declares the scope. Related:
 [[uboss-authorize-outside-transactions]] is the same class of mistake in the opposite direction.
-
 
 **S-197 — Two agents cannot spend the same last of a budget.**
 The property §20's Reserve step exists for, and the one that cannot be established by reading
@@ -2442,7 +2441,7 @@ the budget.
 
 **S-201 — Drift is reported, never corrected.**
 `reconcile` replays each wallet's ledger and reports disagreement. A test writes around the engine
-and asserts both that the drift is found *and* that the stored balance is left wrong — because
+and asserts both that the drift is found _and_ that the stored balance is left wrong — because
 silently repairing it would destroy the only evidence that a write bypassed the engine.
 
 **S-202 — An overspend is visible rather than capped.**
@@ -2519,7 +2518,7 @@ revokes a session, which changes a session rather than a record.
 
 **S-215 — Tamper protection is below the application, and proved there.**
 A company administrator's update and delete against `security_events` and `audit_events` are
-attempted with the *application* role in the test and refused by PostgreSQL with `42501 permission
+attempted with the _application_ role in the test and refused by PostgreSQL with `42501 permission
 denied` — the role holds no UPDATE or DELETE grant at all, on top of the append-only triggers. The
 refusal therefore applies to every caller, including an administrator with every action granted
 (ADR-174).
@@ -2559,7 +2558,7 @@ the screen that shows exports.
 `guest_membership_has_an_expiry` makes `guest_access_expires_at` mandatory for an `ExternalGuest`.
 The Security Center still handles and flags a missing expiry, as defence for a nullable column —
 if that count is ever non-zero, something has gone wrong below the application and this is where it
-should show. The test asserts the *refusal* rather than the badge, because the refusal is the
+should show. The test asserts the _refusal_ rather than the badge, because the refusal is the
 stronger guarantee.
 
 ---
@@ -2574,7 +2573,7 @@ cross-tenant sharing because there is nothing to set (ADR-182).
 §19's "never unrestricted cross-user memory" as a rule: `allowCrossUser` is false in every default,
 and both `memoryPolicyProblems` and the check constraint
 `cross_user_memory_needs_company_wide_visibility` refuse it on any narrower scope. Asserted through
-the service *and* by updating the row directly.
+the service _and_ by updating the row directly.
 
 **S-225 — Each of the four scopes confines what it claims to.**
 Six tests: a run cannot read another run's ephemeral memory; an agent cannot read another agent's;
@@ -2582,7 +2581,7 @@ the same agent can read its own across runs; one person cannot read another's; t
 are never "the same Objective"; and expired or deleted records are never returned.
 
 **S-226 — Classification controls persistence, not use.**
-A mode refuses to *remember* data above its ceiling and says so in those words — the run may still
+A mode refuses to _remember_ data above its ceiling and says so in those words — the run may still
 work with it. §19 makes classification the control over persistence and nothing more, and a message
 that implied otherwise would send somebody to change the wrong setting.
 
@@ -2646,7 +2645,7 @@ policy requires. A company loosening the rule next quarter cannot retroactively 
 
 **S-238 — Only the objective's owner signs it off.**
 The route gates on `View` because no permission can express "the owner of this particular
-objective"; the service then requires the actor to *be* the owner. A signature from anybody else
+objective"; the service then requires the actor to _be_ the owner. A signature from anybody else
 would satisfy the letter of the policy while defeating it.
 
 **S-239 — There is no route that reopens a closed objective.**
@@ -2678,7 +2677,7 @@ with two answers.
 read path — download, adding a file to a knowledge source, and the file list an agent receives —
 rather than in one shared guard. A shared guard is a thing somebody later calls a method around.
 `Quarantined` is separate from `Infected` on purpose: a scan that did not complete leaves a file
-nobody should use *and* nobody should treat as proven malicious.
+nobody should use _and_ nobody should treat as proven malicious.
 
 **S-244 — The upload allowlist is an allowlist, and the extension check is a second lock.**
 A blocklist is a list of the attacks somebody thought of. `DEFAULT_ALLOWED_CONTENT_TYPES` is
@@ -2701,7 +2700,7 @@ stored object with no row.
 
 **S-246 — A download is an export, and the trail says so.**
 `security.file_downloaded` was added to `SECURITY_EXPORT_ACTIONS`, so the Security Center's Data
-Exports view — whose description already promised *"what left this company as a file"* — can finally
+Exports view — whose description already promised _"what left this company as a file"_ — can finally
 show it. Three gates in order: `settings:Export`, the scan, and the export ceiling.
 
 **S-247 — A legal hold beats everything, in the service and in the database.**
@@ -2743,11 +2742,11 @@ material would be a ceiling that no longer means anything.
 A base64 upload needs roughly a third more than the configured maximum on the wire. Raising the
 global JSON limit to that would let **every** route in the product buffer a third of a gigabyte from
 an unauthenticated client. `main.ts` binds 1 MB everywhere and the larger limit only on the files
-collection; the company's configured limit is then enforced against the *decoded* length, so a
+collection; the company's configured limit is then enforced against the _decoded_ length, so a
 client cannot understate the size.
 
 **S-253 — The scan state a synchronous scan never occupies.**
-A file moves from `Pending` straight to its verdict; the guard asks whether a scan may *start*, not
+A file moves from `Pending` straight to its verdict; the guard asks whether a scan may _start_, not
 whether `Scanning` may be written. `Scanning` is in the vocabulary now rather than being added later
 because the state becomes real the day the scan moves onto a queue, and a state added after the
 fact is a state every existing CHECK and trigger has to be re-read for — the failure this schema
@@ -2758,8 +2757,8 @@ has already had twice (Prompt 25 agents, Prompt 34 objectives).
 ## Prompt 36 — Support, authorized support sessions and system health
 
 **S-254 — Platform support holds no permission on any company module.**
-The prompt's own requirement: *"Platform support staff must not automatically gain unrestricted
-tenant content access."* `PlatformSupport` is granted `support: Administer`, `companies: View` and
+The prompt's own requirement: _"Platform support staff must not automatically gain unrestricted
+tenant content access."_ `PlatformSupport` is granted `support: Administer`, `companies: View` and
 `system-health: View`, and **nothing on any of the fourteen company modules**. That was already
 true at Prompt 9; what this prompt adds is a test that iterates `COMPANY_MODULES` and asserts the
 grant is empty for every one, so widening it becomes a test failure rather than a decision nobody
@@ -2784,8 +2783,8 @@ than only the 403. The gate now runs in its own read before the transaction.
 
 **S-257 — The customer status has no field an internal string can travel in.**
 `CustomerVisibleStatus` originally carried a `title`, which the service filled from the alert's
-`summary` — an operator's internal headline, in the test's own fixture *"db-primary-2 exhausted its
-connection pool"*. That published a host name and an architecture detail to every company. A test
+`summary` — an operator's internal headline, in the test's own fixture _"db-primary-2 exhausted its
+connection pool"_. That published a host name and an architecture detail to every company. A test
 asserting on those words caught it.
 
 The fix is structural rather than a sanitiser: the type no longer has a title or a summary, and the
@@ -2806,7 +2805,7 @@ report one is a product where problems go unreported. Letting UBoss into the com
 opposite, and takes the grant that governs the company's configuration.
 
 **S-260 — A ticket cannot grant access.**
-`AccessRequest` is a ticket *kind*. `break_glass_requests.support_ticket_id` links a session to the
+`AccessRequest` is a ticket _kind_. `break_glass_requests.support_ticket_id` links a session to the
 ticket it came from, in that direction only — no amount of ticket activity widens anybody's access,
 and the support ticket service takes no part in authorization beyond checking who may read a
 ticket.
@@ -2877,7 +2876,7 @@ must be present. The locked contract erodes by addition, so the test is written 
 **S-270 — The input is a UBoss Unique ID and nothing else.**
 `isUbossUniqueId` validates the format before anything reads. An email, a name and a
 twelve-digit Aadhaar-shaped number are all refused with a 400 saying a portable profile is found by
-UBoss Unique ID *and by nothing else*. There is no name search, no email search and no "advanced
+UBoss Unique ID _and by nothing else_. There is no name search, no email search and no "advanced
 search", because a search that accepts those is a way to **enumerate** people rather than to verify
 one. The requirement is stated as `PROFILE_SEARCH_INPUT_STANCE` so it cannot erode into a
 convenience somebody adds.
@@ -2885,7 +2884,7 @@ convenience somebody adds.
 **S-271 — Aadhaar is neither an input nor an output.**
 Never a search key, never returned, and the e2e test greps the serialized response for the word.
 `person_identifiers` is not read by this feature at all — not even the masked last four, which
-exists for a person's *own* profile screen and has no business in another company's verification.
+exists for a person's _own_ profile screen and has no business in another company's verification.
 
 **S-272 — The projection is a whitelist, and the leak test greps rather than inspects.**
 Three field lists, asserted against the response's own keys. Then a second test greps the
@@ -2895,7 +2894,7 @@ values the source companies hold: the internal work email, the phone number, bot
 the department name. A shape test passes the moment somebody nests a forbidden thing one level
 deeper; a grep does not.
 
-A unit test also asserts no *permitted* field name contains a forbidden word, so the grep cannot
+A unit test also asserts no _permitted_ field name contains a forbidden word, so the grep cannot
 start failing against a correct response and tempt somebody into weakening it.
 
 **S-273 — Reading another company's employment history needs HR/Admin authority.**
@@ -2906,10 +2905,10 @@ the feature switched on is still refused, asserted through the API.
 **S-274 — The capability is off until a company turns it on, and a settings failure keeps it off.**
 `DEFAULT_PROFILE_SEARCH_ENABLED` is false, the refusal says it is a setting rather than a
 permission, and `searchEnabledFor` returns **false** when the settings read throws — a settings
-failure must never make a cross-company lookup *more* available than the company configured.
+failure must never make a cross-company lookup _more_ available than the company configured.
 
 **S-275 — Each source company decides whether its performance travels, and `BadgeOnly` cannot leak a score.**
-The sharing mode is read from the *source* company's settings, not the searcher's, and
+The sharing mode is read from the _source_ company's settings, not the searcher's, and
 `shareablePerformance` returns `score: null` under `BadgeOnly` **by construction**. A test passes a
 score in and asserts it does not come out. One company choosing to share does not speak for
 another: proved by a test where Beta shares and Alpha does not.
@@ -2919,14 +2918,14 @@ Including a lookup that found nobody — the audit row is written **before** the
 that 404s or throws is still on the record. "Who has this person been verifying" is the question
 the trail exists to answer, and a failed search is as interesting as a successful one.
 
-The row is written in the *searching* company's trail and a test asserts the two employers'
+The row is written in the _searching_ company's trail and a test asserts the two employers'
 trails stay empty: a company must not learn who has been verifying their former employees.
 
 **S-277 — Cross-tenant and IDOR.**
 A searcher who puts another company's tenant id in the path is refused by the tenant guard before
 anything reads. One company enabling the feature does not enable it for another. And the cross-tenant
 read itself is confined to the narrow `select` of ADR-213 — the platform privilege buys access to
-*those columns* and nothing else.
+_those columns_ and nothing else.
 
 **S-278 — On-time percentage is null, not zero, when nothing had a due date.**
 A person whose work carried no due dates has no on-time percentage, and 0% would read as "never on
@@ -2960,7 +2959,7 @@ whole value of a retention window is that it cannot be skipped by a code path so
 security event with the transaction — so the control works invisibly. **This is the identical bug
 S-256 fixed at Prompt 36, reintroduced here within the same session.** Both gates now run in their
 own read before the transaction. The recurrence is the point: the pattern is easy to write and the
-only thing that catches it is a test asserting the *event* rather than the 403.
+only thing that catches it is a test asserting the _event_ rather than the 403.
 
 **S-283 — The certificate carries evidence, including what could not be deleted.**
 `deletion_manifest` holds per-table row counts for what went **and** `retainedByPrivilege` for the
@@ -2969,7 +2968,7 @@ six `Content` tables the application role cannot delete (ADR-219). A certificate
 constraint refuses a `Deleted` row without a manifest, both counts, a timestamp and an author.
 
 **S-284 — The typed confirmation is the company's slug, not `DELETE`.**
-Case-sensitive and exact. `DELETE`, `delete`, the slug upper-cased and *another company's slug* are
+Case-sensitive and exact. `DELETE`, `delete`, the slug upper-cased and _another company's slug_ are
 each refused and each recorded as `security.company_exit_confirmation_failed` — four refusals
 asserted in the test, because the interesting case is not a typo but somebody confirming against
 the wrong company.
@@ -2999,8 +2998,8 @@ in which Row-Level Security protects nobody — so the second company's agents, 
 rows, employment records, memberships and lifecycle state are all asserted unchanged afterwards.
 
 **S-289 — A legal hold blocks a company exit, not just retention.**
-Prompt 35 set the rule in its strongest form: *"a legal hold beats everything — not by retention,
-and not by request"* (S-247). A company exit is a request, and emptying `files` would have deleted
+Prompt 35 set the rule in its strongest form: _"a legal hold beats everything — not by retention,
+and not by request"_ (S-247). A company exit is a request, and emptying `files` would have deleted
 held files — a direct contradiction of a locked rule, and one the first version of this suite did
 not check. It is now a **refusal rather than a skip**: any file under an unlifted hold stops the
 whole deletion and the message names the count. Deleting everything except the held files would
@@ -3048,7 +3047,7 @@ withheld deliberately.
 
 **S-295 — The correlation chain now reaches the money, which is a disclosure decision as well as an operability one.**
 One id links a request to the run, the provider call and the cost ledger entry. That makes "what did
-this click spend" answerable — and it is deliberately an *internal* join: the id appears in no
+this click spend" answerable — and it is deliberately an _internal_ join: the id appears in no
 customer-facing payload, and the customer status endpoint projects `customer_impact` alone (S-257).
 
 **S-296 — A tracer that exports nothing reports `exportsSpans: false`.**
@@ -3062,8 +3061,8 @@ outage cannot lose the fact that anybody was told. Asserted by evaluating twice 
 row.
 
 **S-298 — A P0 or P1 cannot be closed without a postmortem and a timeline.**
-In the service and in `serious_incident_is_post_mortemed_before_resolving`, because *"we'll write it
-up later"* is the pressure this resists and later never comes once the incident is off the board.
+In the service and in `serious_incident_is_post_mortemed_before_resolving`, because _"we'll write it
+up later"_ is the pressure this resists and later never comes once the incident is off the board.
 A P2 may close on its mitigation alone. Asserted both ways.
 
 **S-299 — Dropping a corrective action needs a reason; completing one does not.**
@@ -3072,11 +3071,11 @@ the decision somebody will be asked about — and an unowned or undated action i
 because a postmortem full of actions nobody agreed to do is the commonest way an incident process
 becomes theatre.
 
-**S-300 — The rate limiter fails *open*, and that is a decision rather than a catch block.**
+**S-300 — The rate limiter fails _open_, and that is a decision rather than a catch block.**
 Everywhere else in UBoss the rule is fail-closed: an authorization check that cannot reach the
 database refuses. This one is the opposite. The reasoning is about what each control protects — a
 failing authorization check that let a request through would expose a customer's data, whereas a
-failing rate limiter that let a request through removes a protection against *load*. Failing closed
+failing rate limiter that let a request through removes a protection against _load_. Failing closed
 would mean a Redis blip takes the entire API down for every customer, converting a capacity
 protection into the outage it exists to prevent. Counted (`failures()`) and reported, so a degraded
 limiter is visible rather than assumed. Asserted against an unreachable broker.
@@ -3099,7 +3098,7 @@ own answer.
 
 **S-303 — `idempotency_records` gets the strict RLS policy, not the shared one.**
 `provider_profiles` admits a NULL-tenant row to a tenant reader, because there a NULL row is shared
-platform *configuration* with no company data in it. This table is the opposite: a NULL-tenant row is
+platform _configuration_ with no company data in it. This table is the opposite: a NULL-tenant row is
 a platform operator's own request and response. `NULL = <tenant>` is NULL, which fails the policy —
 so the strict form is also the fail-closed form, and a platform-plane record is reachable only inside
 a platform operation. Asserted by reading the table in another company's scope and getting nothing.
@@ -3107,7 +3106,7 @@ a platform operation. Asserted by reading the table in another company's scope a
 **S-304 — A reused key with different content is refused, not answered.**
 Answering with the first response would silently discard the second request, which is the failure
 idempotency exists to prevent rather than cause. Recorded as `idempotency_key_reused` because it is
-the one outcome that is *not* a retry: either a client is generating keys wrongly — in which case
+the one outcome that is _not_ a retry: either a client is generating keys wrongly — in which case
 somebody's requests are being discarded somewhere — or somebody is probing what a replay does.
 Recorded **outside** any transaction, so the refusal cannot roll its own record back (the mistake of
 S-256 and S-282).
@@ -3135,7 +3134,7 @@ Asserted by throttling a keyed POST and checking no record exists.
 **S-308 — An expired idempotency key is usable again, and this was a real defect.**
 The read treats an expired record as absent, but the row remains, so the insert tripped the unique
 index and the caller was told `InFlight` by a request that finished last week — a key unusable
-*forever* rather than for twenty-four hours. Found by the test that reuses a key after its window.
+_forever_ rather than for twenty-four hours. Found by the test that reuses a key after its window.
 `begin` now clears the expired claim for that exact key in the same transaction as the new one.
 
 **S-309 — A provider name never leaves the Model Gateway, including through the throttle.**
@@ -3155,7 +3154,7 @@ by setting zero and getting a served request.
 **S-311 — A standard Employee cannot reach Objective Optimization or Agent Builder, by the same
 absent grant that hides them.**
 `visibleModules` is derived from whichever modules a person holds any grant on, so removing
-`objective` and `agent-builder` from the Employee template hides the screens *and* makes the route
+`objective` and `agent-builder` from the Employee template hides the screens _and_ makes the route
 guard refuse. Hidden navigation is presentation only — here there is nothing to keep in step,
 because the presentation reads the same fact the guard does. Asserted both ways: the published
 permission matrix omits both modules, and `GET /objectives` returns 403 to a standard Employee.
@@ -3173,7 +3172,7 @@ already hold it" is not reassurance.
 
 **S-314 — A granted capability never widens scope.**
 Every capability grant is written at `OwnWork`, and the custom role's own `maxScope` is `OwnWork`
-as well. A Power Employee builds their *own* assigned work and nobody else's; somebody who needs
+as well. A Power Employee builds their _own_ assigned work and nobody else's; somebody who needs
 wider reach gets a role, which is a more visible decision. Asserted by reading the effective scope
 back after granting two Build capabilities.
 
@@ -3196,7 +3195,7 @@ serialised response. A screen built for somebody who cannot open Agent Builder m
 Builder's contents.
 
 **S-318 — A downloaded Job Method form is checked for secrets on the way out.**
-`exportLeaks` runs on the produced form every time, over the context *and* every cell, with
+`exportLeaks` runs on the produced form every time, over the context _and_ every cell, with
 separators stripped — the same gap that let `API_KEY` through a forbidden-field check at Prompt 39.
 A refusal rather than a redaction: quietly stripping something forbidden out of a company's own
 Form 2 text would hide a real problem in their data. The form carries the company's own Employee ID
@@ -3233,12 +3232,12 @@ editing the conversation.
 **S-323 — You cannot link something you cannot see yourself.**
 Otherwise anybody could attach an arbitrary id and wait for a colleague with access to open the
 conversation and render the preview — using somebody else's permissions as an oracle. Checked at
-attach time *and* at every read, so losing access afterwards is also covered. Asserted, including
+attach time _and_ at every read, so losing access afterwards is also covered. Asserted, including
 that no row is stored on refusal.
 
 **S-324 — Chat search never reaches a conversation you are not in.**
 The same escalation as an unchecked preview wearing a different hat, and far easier to run. Scoped
-to the searcher's own participant rows; attachment *contents* are not searched at all.
+to the searcher's own participant rows; attachment _contents_ are not searched at all.
 `SEARCH_STANCE` says so. Asserted with a secret word in a conversation the searcher is not in.
 
 **S-325 — A chat attachment is an ordinary file, and an uncleared one cannot be opened.**
@@ -3254,12 +3253,12 @@ who needs a conversation goes through break-glass, which is recorded and tells t
 **S-328 — A person can always see their own reward awards.**
 The CR-03 narrowing broke this by removing the `objective:View` grant the route happened to be
 gated on. Re-gated on `performance:View` (ADR-250), which is what a reward award actually is. The
-row-level check on somebody *else's* awards is unchanged, and it is what has always done the
+row-level check on somebody _else's_ awards is unchanged, and it is what has always done the
 restricting — the module grant was never keeping anybody out.
 
 **S-327 — Ordinary chat messages are not audited; structural changes are.**
 An audit trail holding every message would be a second copy of every conversation in the one table
-designed never to be deleted. Starting a conversation and linking a context *are* audited, because
+designed never to be deleted. Starting a conversation and linking a context _are_ audited, because
 they change who can see what — and the conversation's audit row records the participant **count**,
 not the list, because an audit trail is read by people who are not in it.
 
@@ -3320,7 +3319,7 @@ through which a compromised application session could dump the database — and 
 write to make itself look recoverable.
 
 **S-337 — The product does not claim disaster-recovery readiness.**
-`RECOVERY_CLAIM_STANCE` is served verbatim and asserted by a test that checks even a *fresh*
+`RECOVERY_CLAIM_STANCE` is served verbatim and asserted by a test that checks even a _fresh_
 verified restore does not produce a "ready" flag. Most of DR — archiving, replication, key custody,
 DNS failover — is configured where UBoss runs, and `DEPLOYMENT_RESPONSIBILITIES` names all of it so
 a green status cannot be read as more than it is.
@@ -3357,3 +3356,25 @@ predicate is what provides isolation will eventually write a query without it an
 opened a hole — they have not, they have written a slow query. And somebody who removes RLS because
 "the queries name the tenant anyway" would remove the only thing that actually enforces it. See
 ADR-271.
+
+**S-342 — CI holds no secrets, and the secret scan reads history rather than the working tree.**
+Every CI job runs against a service container created in the workflow with throwaway credentials, so
+there is no repository secret for a pull request from a fork to reach. Deployment secrets are
+injected per environment by GitHub Environments, which also means a staging secret is not visible to
+a production job or the reverse.
+
+The scan runs over **commit history**, not the checked-out tree: a secret removed in a later commit
+was still published the moment it was pushed, and a working-tree scan would report it clean.
+
+**S-343 — Approvals are enforced by GitHub Environments, not by workflow YAML.**
+A required-reviewer rule on an environment pauses the job until a named person approves, and it
+cannot be bypassed by editing a workflow file in a pull request. Putting the gate in YAML would mean
+the gate could be removed by the same change it is meant to gate. Production requires two reviewers,
+one of whom did not write the change.
+
+**S-344 — Staging never holds a copy of production data.**
+A copy into a lower environment is a second, less-guarded place customer data lives, and every
+control that protects production — break-glass, the audit chain, restricted access — would have to
+be duplicated there to make it defensible. Synthetic data is less convenient and is the only
+position that can be held. Recorded here because "just restore prod into staging to reproduce it" is
+the most natural suggestion anybody will make during an incident.

@@ -2,11 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
 
-import {
-  decideIdempotency,
-  IDEMPOTENCY_WINDOW_HOURS,
-  type IdempotencyOutcome,
-} from '@uboss/types';
+import { decideIdempotency, IDEMPOTENCY_WINDOW_HOURS, type IdempotencyOutcome } from '@uboss/types';
 
 import { SECURITY_ACTIONS, SecurityEventPublisher } from '../auth/security-event.publisher.js';
 import { PrismaService } from '../persistence/prisma.service.js';
@@ -96,8 +92,7 @@ export class IdempotencyService {
     // An expired record is not a replay. Deliberately treated as absent rather than refused: a
     // key reused a week later is a new request, and pretending to remember forever would make
     // this table grow without bound for no benefit anybody can name.
-    const live =
-      existing === null || existing.expiresAt.getTime() <= Date.now() ? null : existing;
+    const live = existing === null || existing.expiresAt.getTime() <= Date.now() ? null : existing;
 
     const outcome = decideIdempotency({
       existing:

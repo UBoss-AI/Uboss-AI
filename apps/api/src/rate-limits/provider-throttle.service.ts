@@ -21,8 +21,7 @@ interface ModelState {
 }
 
 export type ProviderGate =
-  | { proceed: true }
-  | { proceed: false; reason: string; retryAfterMs: number };
+  { proceed: true } | { proceed: false; reason: string; retryAfterMs: number };
 
 /**
  * Provider and model quota-aware throttling and backoff — Prompt 40.

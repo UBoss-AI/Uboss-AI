@@ -233,7 +233,9 @@ export function MyEngineAgents({ tenantId, showEmptyState = true }: MyEngineAgen
                 <div>
                   <dt>Last run</dt>
                   <dd>
-                    {agent.lastRunAt === null ? 'Never' : new Date(agent.lastRunAt).toLocaleString()}
+                    {agent.lastRunAt === null
+                      ? 'Never'
+                      : new Date(agent.lastRunAt).toLocaleString()}
                   </dd>
                 </div>
                 <div>
@@ -295,9 +297,7 @@ export function MyEngineAgents({ tenantId, showEmptyState = true }: MyEngineAgen
                 <div className="operator-panel" data-testid="operator-result-panel">
                   <h4>Latest result</h4>
                   {finished === null ? (
-                    <p className="operator-panel-empty">
-                      This agent has not finished a run yet.
-                    </p>
+                    <p className="operator-panel-empty">This agent has not finished a run yet.</p>
                   ) : finished.failureReason !== null ? (
                     <p className="operator-panel-failure">{finished.failureReason}</p>
                   ) : finished.resultText === null ? (

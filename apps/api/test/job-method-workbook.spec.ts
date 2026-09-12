@@ -53,7 +53,10 @@ describe('the Job Method workbook', () => {
     const headings: string[] = [];
     sheet?.getRow(1).eachCell((cell) => headings.push(String(cell.value)));
 
-    assert.deepEqual(headings, JOB_METHOD_COLUMNS.map((column) => column.heading));
+    assert.deepEqual(
+      headings,
+      JOB_METHOD_COLUMNS.map((column) => column.heading),
+    );
   });
 
   it('round-trips a filled form back to the same answers', async () => {
@@ -100,14 +103,14 @@ describe('the Job Method workbook', () => {
     // for nothing.
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(
-      (await JobMethodWorkbook.toBuffer(form([{ step: 1, whatExactWork: 'Reconcile' }]))) as unknown as ArrayBuffer,
+      (await JobMethodWorkbook.toBuffer(
+        form([{ step: 1, whatExactWork: 'Reconcile' }]),
+      )) as unknown as ArrayBuffer,
     );
     const sheet = workbook.getWorksheet('Job Method');
     if (sheet !== undefined) sheet.name = 'Sheet1 (2)';
 
-    const read = await JobMethodWorkbook.fromBuffer(
-      Buffer.from(await workbook.xlsx.writeBuffer()),
-    );
+    const read = await JobMethodWorkbook.fromBuffer(Buffer.from(await workbook.xlsx.writeBuffer()));
     assert.equal(read.unreadable, null);
     assert.equal(read.rows.length, 1);
   });
@@ -157,10 +160,7 @@ describe('the Job Method workbook', () => {
     sheet.addRow(['Step', 'WHAT - Exact Work']);
     const row = sheet.addRow([1, null]);
     row.getCell(2).value = {
-      richText: [
-        { text: 'Reconcile ' },
-        { text: 'carefully', font: { bold: true } },
-      ],
+      richText: [{ text: 'Reconcile ' }, { text: 'carefully', font: { bold: true } }],
     };
 
     const context = workbook.addWorksheet('UBoss');
@@ -187,7 +187,10 @@ describe('the Job Method workbook', () => {
     sheet.addRow(['January', 1000]);
 
     const read = await JobMethodWorkbook.fromBuffer(Buffer.from(await workbook.xlsx.writeBuffer()));
-    assert.match(read.unreadable ?? '', /no sheet in that file has the Job Method column headings/i);
+    assert.match(
+      read.unreadable ?? '',
+      /no sheet in that file has the Job Method column headings/i,
+    );
   });
 
   it('reports a missing linkage block rather than inventing one', async () => {

@@ -1,7 +1,7 @@
 # Implementation State
 
-**Last updated:** 2026-09-12 · **Last completed prompt:** 43 — Performance and Scale
-Validation · **Next recommended prompt: 44**
+**Last updated:** 2026-09-12 · **Last completed prompt:** 44 — CI/CD, Environments and
+Release Controls · **Next recommended prompt: 45**
 
 ---
 
@@ -22,8 +22,8 @@ away**.
   own (S-313).
 - **The operator, which was the one agent role that did not exist** (ADR-241). Four of the five
   CR-03 asks for were already columns on `engine_agents`; the fifth needed a table, because an
-  agent can be run by a rota. Plus `builtForUserId`: *who was this built for* is a different
-  question from *who may run it*, and **neither grants anything** (S-315).
+  agent can be run by a rota. Plus `builtForUserId`: _who was this built for_ is a different
+  question from _who may run it_, and **neither grants anything** (S-315).
 - **A live share is what makes a manager-built agent the employee's own work** (ADR-242) — the fix
   for the defect that made the whole build-for-employee case unreachable.
 - **Seven run preconditions, assignment first** so a refusal to a stranger leaks nothing about
@@ -79,7 +79,7 @@ argument for why a UI pass is not decoration:
 - **The operator’s Run button was a lie.** `AgentOperatorService.assertMayRun` had no caller. The
   screen asked `mayRun`, was told yes, and enabled Run; the run route decided visibility from
   ownership and answered 404 — for precisely the person CR-03 exists to serve. Every test covering
-  the share asked the *service*, so nothing failed. ADR-251, S-329.
+  the share asked the _service_, so nothing failed. ADR-251, S-329.
 - **Every modal in the product accepted one character per click.** `useFocusTrap` listed `onClose`
   in its dependencies and every caller passes an inline arrow, so the effect re-ran on each render
   and pulled focus back to the first control. The work email on Invite User, the reason on Suspend,
@@ -88,14 +88,14 @@ argument for why a UI pass is not decoration:
 ### What renders
 
 - **Access & Permissions** (§1) in three places, one component: a row action on Users & Access, the
-  Invite dialog, and the end of Add Employee — where it can only appear *after* the save, because a
+  Invite dialog, and the end of Add Employee — where it can only appear _after_ the save, because a
   capability is granted to a person and until then there is no person. The six mandatory Add
   Employee fields are untouched.
 - **The employee photo** (§3) on the Hierarchy list, the employee profile and the person picker —
   the three places the amendment names. Lists read every photo in one request; a photo awaiting its
   malware scan renders exactly as no photo, because a "pending" badge would tell an uploader what
   the scanner is doing.
-- **Import / Export** (§4) as a compact card *below* the approved Agent Builder layout. Nothing in
+- **Import / Export** (§4) as a compact card _below_ the approved Agent Builder layout. Nothing in
   A. Skill / Job Overview or B. One-time Job Method moved, and the removed right sidebar was not
   restored. Download needs no builder grant; Upload does, and the screen says so.
 - **The import review** (§5) naming the objective, the assigned work, the person, the step count and
@@ -134,7 +134,7 @@ screenful between import problem groups, and Agent Builder forcing a 400px viewp
   prove layout and wiring rather than end-to-end behaviour. The end-to-end behaviour is what the
   2029 API tests are for.
 - **A person selector that is a native `<select>` cannot show a photo.** The reporting-manager
-  dropdown is one. The person *picker* — a list — does.
+  dropdown is one. The person _picker_ — a list — does.
 - **Chat still has no group membership editing** and **still does not notify a mentioned person**,
   both unchanged from the first pass.
 
@@ -150,7 +150,7 @@ screenful between import problem groups, and Agent Builder forcing a 400px viewp
   transport-free publisher the run engine uses. **UBoss must not be described as having realtime
   chat.**
 - ~~**The Job Method is a JSON contract, not a spreadsheet.**~~ **Closed.** `GET
-  /job-methods/:id/form.xlsx` serves a real OOXML workbook through `exceljs`, and
+/job-methods/:id/form.xlsx` serves a real OOXML workbook through `exceljs`, and
   `POST /job-methods/:id/import-workbook` reads one back. The tolerant heading matching was indeed
   what made the adapter thin: it survives renamed tabs, mangled headings, formula cells and rich
   text. The JSON routes stay for a client that renders the form rather than downloading it.
@@ -181,10 +181,10 @@ was genuinely missing.
 - **Queue fairness, as a pure function** (ADR-230). `fairOrder` takes each company's oldest job in
   turn, so **a tenant's wait depends on how many companies are busy, not on the size of the busiest
   one's backlog**. Fifty queued runs from one company put another company's single run in position
-  *two*, not fifty-one. Round-robin rather than weighted, because nobody can choose the weights.
+  _two_, not fifty-one. Round-robin rather than weighted, because nobody can choose the weights.
 - **A per-company concurrency ceiling, enforced at pickup with no counter** (ADR-231/232). The
   in-flight figure is `COUNT(*) WHERE state IN ('Reserved','Running')`, so a worker killed
-  mid-run cannot permanently consume a company's cap. Checked *before* `Reserved`, so a deferred
+  mid-run cannot permanently consume a company's cap. Checked _before_ `Reserved`, so a deferred
   run never holds money against a wallet.
 - **Per-user and per-tenant API limits** as a token bucket (ADR-229), with a store seam that
   **reports whether it is shared across processes** (ADR-233) — because a per-process Map behind a
@@ -253,7 +253,7 @@ was genuinely missing.
 - **No UI.** The 429 carries everything a screen needs and `GET /platform/limits` is
   permission-gated and tested, but no Master Console screen renders limits or the fairness queue,
   and no web-side handler turns a 429 into a banner yet.
-- **The load-oriented tests are load-*shaped*, not a load test.** They prove the decisions under
+- **The load-oriented tests are load-_shaped_, not a load test.** They prove the decisions under
   volume — a thousand jobs across ten companies, a bucket exhausted and refused — in process,
   deterministically. Nothing here measures throughput or latency under concurrent real traffic, and
   UBoss must not be described as load-tested.
@@ -325,7 +325,7 @@ was genuinely missing.
 
 - **All seven steps**, with three of them reusing Prompt 11's lifecycle rather than rebuilding it:
   `ReadOnly` is the read-only period, `tenant_lifecycle_transitions` carries the scheduled dates,
-  and the exit *drives* `CompanyLifecycleService` instead of writing `lifecycleState` itself.
+  and the exit _drives_ `CompanyLifecycleService` instead of writing `lifecycleState` itself.
 - **Deletion is by classification** (ADR-217). All 91 tenant-scoped tables are `Content`,
   `Accountability` or `PersonRecord`, and **an e2e test reads `information_schema` and fails if
   any is unclassified** — which caught `company_exits` itself on its first run.
@@ -345,7 +345,7 @@ was genuinely missing.
   privilege. The certificate reports them under `retainedByPrivilege` rather than claiming they
   went (ADR-219).
 - **The self-approval security event was rolled back with its own exception** — the identical bug
-  S-256 fixed at Prompt 36, reintroduced in the same session. Only a test asserting the *event*
+  S-256 fixed at Prompt 36, reintroduced in the same session. Only a test asserting the _event_
   rather than the 403 catches it.
 - **Three latent Prompt 37 runtime bugs** surfaced from one new loop that asks for each of the ten
   reports and expects a 200: `ObjectiveVersion.title`, `AiOutputFeedback.skillVersionId` and
@@ -369,7 +369,7 @@ was genuinely missing.
 - **No notifications.** The prompt asks for operator/customer notifications and the exit raises
   none — no email to the company when the read-only period starts, no operator alert when a
   retention window elapses. The notifications engine exists; `awaitingDeletion` is the query a
-  producer would read. Deliberately not wired, because a notification that fired on a *test* exit
+  producer would read. Deliberately not wired, because a notification that fired on a _test_ exit
   would be the worst possible first bug.
 - **No Master Console screen.** The routes are permission-gated and covered, and a destructive
   confirmation flow deserves a screen designed with the client rather than assembled here.
@@ -391,7 +391,7 @@ was genuinely missing.
   Aadhaar is neither an input nor an output.
 - **"Authorized HR/Admin" is `users:Administer`** (ADR-214), not `profile-search:View` — which
   every role template holds and which governs only whether the nav item appears.
-- **Two company policies, both off by default** (ADR-215), and the second is owned by the *source*
+- **Two company policies, both off by default** (ADR-215), and the second is owned by the _source_
   company: each employer decides whether its own performance record travels, and `BadgeOnly`
   cannot return a score by construction.
 - **Every lookup audited in the searcher's trail and only there**, before the read, so a search
@@ -492,7 +492,7 @@ was genuinely missing.
 
 ## Completed at Prompt 36 — Support, Authorized Support Sessions and System Health
 
-- **Break-glass *is* the support session** (ADR-205). Prompt 8 already had the reason, the scope,
+- **Break-glass _is_ the support session** (ADR-205). Prompt 8 already had the reason, the scope,
   the expiry, the operator, revocation and the audit; this prompt added the one missing piece — the
   company's own authorization — to that record rather than building a parallel one.
 - **Customer authorization has no bypass** (S-255). Where a company's policy requires it, a session
@@ -531,7 +531,7 @@ was genuinely missing.
   `apps/web`. The Master Console is a thin shell across the whole product so far, and building two
   screens here would have been the first of many — it belongs with the UI pass.
 - **The operator ticket queue has no notification.** A new ticket appears in `/platform/support/
-  tickets` and nothing tells anybody it arrived. The notifications engine exists and this does not
+tickets` and nothing tells anybody it arrived. The notifications engine exists and this does not
   use it.
 - **Nothing raises a service alert automatically.** Every alert in the product is written by hand.
   §30's metrics — latency, error rate, queue age, provider error — are not collected, so no
@@ -679,7 +679,7 @@ was genuinely missing.
 
 - **Four governed memory modes, enforced** (ADR-181). Retention, visibility, classification
   ceiling, cross-user and cross-objective limits, and offboarding behaviour — per mode, configurable
-  with documented conservative defaults, because §27.1 requires them *defined* and states no value.
+  with documented conservative defaults, because §27.1 requires them _defined_ and states no value.
   Nothing persists `Restricted` by default and only the ephemeral and approved modes may hold
   `Confidential`.
 - **"No cross-tenant memory" has no code, because it is structural** (ADR-182): RLS plus a
@@ -702,7 +702,7 @@ was genuinely missing.
 ### What the tests found
 
 - **The promote route was unreachable by everybody.** It was gated on `skills:EditDraft`, and
-  `skills` is a *platform* module — `COMPANY_MODULES` does not contain it, because the reference
+  `skills` is a _platform_ module — `COMPANY_MODULES` does not contain it, because the reference
   puts Skills & AI inside Settings. No company user could hold that grant, so every promotion would
   have been a 403. Moved to `settings:Administer`, the gate Prompt 17 already uses for every change
   to a company Skill, and a unit test now asserts the promote module is a company module.
@@ -719,7 +719,7 @@ was genuinely missing.
   scheduler, alongside the Prompt 30 reservation sweep and the Prompt 31 period reset — three jobs
   now waiting on one scheduler, which is worth doing once rather than three times badly.
 - **No run writes a memory record yet.** The write path is built, governed and tested, and the run
-  engine does not call it: deciding *what* is worth remembering from a run is a prompt about agent
+  engine does not call it: deciding _what_ is worth remembering from a run is a prompt about agent
   execution rather than about memory governance. Every test writes through the service, which is the
   same path a run would use.
 - **Approved long-term memory needs an approval that nothing raises.** The check is real — a record
@@ -815,10 +815,10 @@ was genuinely missing.
   March" means knowing which part of the allowance it was. Carry-forward and plan changes reuse
   the same shape.
 - **Every commercial term is configuration** (ADR-165), because UBoss_Final_1 line 1048 asks for
-  them to be *defined* and states no value. Each has a documented, conservative default — and the
+  them to be _defined_ and states no value. Each has a documented, conservative default — and the
   one that matters: **a purchased top-up does not expire unless somebody says it does.**
 - **Reallocation cannot create allowance** (ADR-170): two equal and opposite entries, against
-  *uncommitted* budget only, so reserved money cannot be moved out from under a run.
+  _uncommitted_ budget only, so reserved money cannot be moved out from under a run.
 - **All seven edge cases implemented**: monthly reset, carry-forward (three policies), top-up
   expiry, refunds/promotional/manual adjustments, plan change mid-cycle (three policies),
   payment failure after top-up, and negative balance with an optional grace.
@@ -839,7 +839,7 @@ Prompt 30's full-verify checkpoint ran the whole API suite: **1561/1561 in 287 s
 `npm run lint` is clean repo-wide again, which it had not been for several prompts: forty
 unused imports and fixture values had accumulated across fourteen older specs, and a red lint
 gate hides the next real one. Ten of them were `reachabilityFailureReason`, imported and never
-called — those specs now say *why* the database was unreachable instead of only that it was.
+called — those specs now say _why_ the database was unreachable instead of only that it was.
 The 178 tests in the specs touched still pass.
 
 ### Four defects the tests found
@@ -847,10 +847,10 @@ The 178 tests in the specs touched still pass.
 1. **The ledger kind carried the wrong sign.** `adjustAllowance` moved the wallet by the raw
    delta, so an `Expiry` was passed as a negative number — which
    `ledger_amount_sign_matches_its_kind` refuses, and which `replayLedger` would have read back as
-   an *increase* if it had not. Direction now comes from `LEDGER_EFFECT` and the amount is a
+   an _increase_ if it had not. Direction now comes from `LEDGER_EFFECT` and the amount is a
    magnitude (ADR-171). The maintained balance and the replayed ledger have to be the same
    arithmetic or `reconcile` means nothing.
-2. **A withdrawal was recorded as a `Refund`.** `Refund` reduces what has been *used*; taking back
+2. **A withdrawal was recorded as a `Refund`.** `Refund` reduces what has been _used_; taking back
    an unpaid top-up removes allowance that was never spent. As written it would have left the
    allowance intact and written off real spend. The test asserted the same wrong kind, and both
    were corrected — the vocabulary was right and the reasoning around it was not.
@@ -868,7 +868,7 @@ The 178 tests in the specs touched still pass.
 1. **The period reset was arithmetically wrong.** `usedMinor` is cumulative because the ledger is
    immutable, so writing off the whole previous allowance would have left last period's spend
    still subtracted from the new period's budget — a company using ₹10,000 of ₹100,000 would
-   start the new month able to spend ₹90,000. Only the *unused, non-carried* part lapses
+   start the new month able to spend ₹90,000. Only the _unused, non-carried_ part lapses
    (ADR-165's worked examples), and a test now pins the remaining figure rather than the
    allowance total.
 2. **`grant` was not atomic.** Row, balance movement and audit ran in three transactions; a
@@ -879,7 +879,7 @@ The 178 tests in the specs touched still pass.
 ### Real limitations at Prompt 31
 
 - **No payment is taken, anywhere.** No payment provider is integrated or approved. A request
-  records an amount, a reason and a billing *intent*; Finance records the invoice reference from
+  records an amount, a reason and a billing _intent_; Finance records the invoice reference from
   whatever system actually bills. This is **not** a purchase flow and nothing in the product
   claims it is (ADR-173).
 - **Nothing runs the periodic jobs on a schedule.** `applyPeriodReset`, `expireGrants` and the
@@ -913,7 +913,7 @@ The 178 tests in the specs touched still pass.
 - **§20's flow, in full**: Check → Estimate → Reserve → Execute → Provider actual usage → Settle →
   Release unused reserve → Reconcile.
 - **Concurrency-safe by row lock, not by hope.** `reserve` locks every wallet in the hierarchy
-  with `SELECT ... FOR UPDATE` in a fixed outermost-first order and decides *inside* the lock
+  with `SELECT ... FOR UPDATE` in a fixed outermost-first order and decides _inside_ the lock
   (ADR-153). Two e2e tests fire ten and twenty genuinely concurrent reservations and assert the
   total held never exceeds the allowance.
 - **The four-level hierarchy holds at every level at once** — a reservation that held only against
@@ -975,8 +975,8 @@ The 178 tests in the specs touched still pass.
   unit test asserts the profile and provider vocabularies are disjoint (ADR-144).
 - **The five logical profiles are transcribed, not designed.** `LOGICAL_MODEL_PROFILE_SPEC` holds
   §18's own sentences; the machine-readable defaults beside them say which phrase they read.
-- **All three provider modes**, with §19's own descriptions. §19's fourth row, *Auto / Policy
-  Choice*, is deliberately not a fourth mode — it states the behaviour logical profiles *are*, and
+- **All three provider modes**, with §19's own descriptions. §19's fourth row, _Auto / Policy
+  Choice_, is deliberately not a fourth mode — it states the behaviour logical profiles _are_, and
   modelling it as a mode would have made "policy chooses" opt-out-able.
 - **Anthropic and OpenAI adapters behind one interface**, written against their real APIs and
   refusing without a credential, plus a custom-endpoint adapter driven entirely by stored
@@ -1011,8 +1011,8 @@ The 178 tests in the specs touched still pass.
   `model_gateway_calls.latency_ms` and `used_fallback` — but with mock calls the answer is zero,
   so the screen says the figures need real calls rather than showing them.
 - **The custom adapter's request body shape is a guess.** `{model, max_tokens, instruction,
-  input}` is not from any approved specification, because the source documents describe the field
-  list of a custom profile and not the wire format of a customer's endpoint. The usage *mapping* is
+input}` is not from any approved specification, because the source documents describe the field
+  list of a custom profile and not the wire format of a customer's endpoint. The usage _mapping_ is
   configurable and the body is not; a real enterprise endpoint will likely need a request template,
   which is the extension point.
 - **Provider health is not monitored.** Test Connection is on demand. Nothing polls, and no
@@ -1128,7 +1128,7 @@ The 178 tests in the specs touched still pass.
    document's escalation paths are per-kind ("employee reminder then manager escalation", "manager
    / Head based on threshold"), and resolving those needs the reporting tree plus the delegation
    rules that Prompt 28 introduces. Until then escalation is a state change and a notification
-   target rather than a route to a *different* person, and `EXCEPTION_DEFAULT_OWNER` carries the
+   target rather than a route to a _different_ person, and `EXCEPTION_DEFAULT_OWNER` carries the
    intended path as text so it is visible rather than lost.
 4. **No notification is sent when an exception is raised or escalated.** The audit event is
    written and the queue shows it. `notifications.notify_on_agent_exception` already exists as a
@@ -1150,7 +1150,7 @@ The 178 tests in the specs touched still pass.
   the truth, and live progress is a convenience.
 - **Thirteen states, transcribed from the architecture and made total.** The four `Blocked by`
   variants stay four states because four different people resolve them, and `BLOCK_OWNER` records
-  who. `Queued → Reserved → Running` is enforced by the transition table *and* a database CHECK,
+  who. `Queued → Reserved → Running` is enforced by the transition table _and_ a database CHECK,
   because `Reserved` is where budget is set aside.
 - **Idempotency is the scheduler's safety.** Two ticks noticing one due moment produce one run; a
   person pressing the button twice gets two. No lock is needed anywhere.
@@ -1178,7 +1178,7 @@ The 178 tests in the specs touched still pass.
    handling are tested by steering the executor.
 4. **Nothing yet raises an exception row from a dead-lettered run.** The context is preserved on
    the run (`dead_lettered_at`, the failure reason, the full event history, the correlation id) and
-   audited. `ExecutorExpectation` is foreign-keyed to an objective *version*, which a run started
+   audited. `ExecutorExpectation` is foreign-keyed to an objective _version_, which a run started
    directly against an agent does not have — writing the agent id there would have been fabricated
    linkage. Prompt 27 owns the Exception Center and can find these precisely.
 5. **No timer drives the scheduler.** `tickAllCompanies` exists and one tick is exposed per company
@@ -1197,7 +1197,7 @@ The 178 tests in the specs touched still pass.
 ## Completed at Prompt 25 — Engine Agent Registry and Versioning
 
 - **The registry shows every field the source document lists** (§17), plus the memory mode and
-  connection the prompt adds. Its action set is *derived* from the status lifecycle rather than
+  connection the prompt adds. Its action set is _derived_ from the status lifecycle rather than
   restated, so a screen cannot offer a button the service will refuse.
 - **Agent → Assignment/Job → Run is structural.** The registry owns the agent and runs nothing.
   `Run Now` and `Open Runs` are reported as permitted and have no routes, because the engine is
@@ -1223,7 +1223,7 @@ The 178 tests in the specs touched still pass.
    across departments would need a set rather than a single value, and the scope engine takes one
    `departmentId`. Stated rather than hidden — it cannot leak across tenants, but a Head of one
    department could reach a shared agent whose first assignment is in another.
-3. **No approval *record*.** `approvedByUserId` is supplied by the caller and checked against the
+3. **No approval _record_.** `approvedByUserId` is supplied by the caller and checked against the
    activator, but there is no row in the Approvals queue proving the approval happened. The
    Approval Engine prompt owns that table, and this should route through it rather than trusting a
    parameter. Worth closing at Prompt 28.
@@ -1240,8 +1240,8 @@ The 178 tests in the specs touched still pass.
 
 - **The ZERO-QUESTION RULE lives in one function.** `missingSetupFields` in the shared types is
   what both the screen and the server consult, so they cannot disagree about whether a question
-  needs asking. An empty result is the client's requirement met literally: show *Ready to Test /
-  Activate* and ask nothing extra. Two cases it deliberately stays silent about — a manual agent's
+  needs asking. An empty result is the client's requirement met literally: show _Ready to Test /
+  Activate_ and ask nothing extra. Two cases it deliberately stays silent about — a manual agent's
   schedule, and a connection for work whose Definition of Done lists no tools — because asking
   either is exactly the unnecessary question the rule forbids.
 - **Nothing is re-entered.** Prompt 23 already wrote an `AgentSetupPrefill` per AI node from the
@@ -2417,18 +2417,15 @@ a public-suffix check on domain claims, and the role and permission model.
 `reconcile` and `sweep-reservations`. There is deliberately no route that spends, reserves or
 settles. The web app's Settings › Tokens & Cost category gained its bespoke panel.
 
-
 **Prompt 29** added `/platform/providers` — `meta`, `profiles`, `routing`, model and pricing
 writes, lifecycle, and `profiles/:id/test`. All platform-only; there is deliberately no
 company-facing provider route. The web app's `/master/providers` shell became live.
-
 
 **Prompt 28** added `/tenants/:tenantId/approvals` — `meta`, the queue, one request,
 `:approvalId/decide`, `delegations` (list / create / revoke) and `escalate` — plus
 `POST /tenants/:tenantId/agents/:agentId/versions/:versionId/request-approval`. The web app gained
 `/approvals`. There is deliberately no per-module approve route and no route that decides without
 a person.
-
 
 Prompt 5's `/auth` and `/invitations` routes are unchanged except `POST /auth/login`, which now has
 three successful response shapes. New at Prompt 6:
@@ -2592,18 +2589,15 @@ Full request/response shapes in `docs/API_CONTRACTS.md`.
 triggers, sixteen check constraints and three partial unique indexes. 19 raw-SQL probes;
 `migrate diff` empty.
 
-
 **Prompt 29:** `20260910130000_provider_profiles_and_model_gateway` — five tables, three
 triggers, twenty check constraints, seven partial unique indexes, and a mock-provider baseline.
 `20260910133000_pricing_immutability_has_the_same_escape_hatch` corrects the pricing trigger so a
 cascade and the test reset can delete. 28 raw-SQL probes; `migrate diff` empty.
 
-
 **Prompt 28:** `20260910120000_approval_engine_delegation_and_four_eyes` — four columns on
 `approval_requests`, the `approval_decisions` history (append-only by trigger) and
 `approval_delegations`. Two triggers, twelve check constraints, one partial unique index. All
 probed in raw SQL before use; `migrate diff --from-migrations` empty.
-
 
 **13 applied.** Every one expand-only: no migration in the chain contains a `DROP`, verified with
 `prisma migrate diff --from-migrations` against the shadow database.
@@ -2643,15 +2637,12 @@ suspended in March" becomes unanswerable outside the audit trail. All are record
 concurrent-overspend and reconciliation tests the prompt names. Full API suite run at this
 checkpoint.
 
-
 **Prompt 29:** `packages/types` providers 37/37; `model-gateway.e2e.spec.ts` 37/37. Regression:
 executor 35/35, run-engine 41/41, engine-agent 31/31, agent-builder 32/32, approvals 51/51, web
 30/30, `next build` clean.
 
-
 **Prompt 28:** `packages/types` approvals 47/47; `approvals.e2e.spec.ts` 51/51. Regression after
 the rewiring: engine-agent 31/31, executor 35/35, run-engine 41/41, web 30/30, `next build` clean.
-
 
 **853 passing, 0 failing** — `apps/api` 743, `packages/ui` 96, `apps/web` 7, `packages/types` 7.
 
@@ -2902,7 +2893,7 @@ What Prompt 35 will find already built, and must not rebuild:
   for memory to keep. Extend it; a second set of labels is the specific failure it exists to
   prevent (ADR-180).
 - **Sensitive-data restriction has a working precedent.** Memory refuses to persist above its
-  mode's ceiling and says so in words that distinguish *using* data from *keeping* it. Files and
+  mode's ceiling and says so in words that distinguish _using_ data from _keeping_ it. Files and
   knowledge sources want the same distinction.
 - **Connections already carry high-risk tool categories**, including `SensitiveExport`, so "apply
   stricter AI/tool policies to sensitive classes" extends `HIGH_RISK_TOOL_CATEGORIES` rather than
@@ -2947,7 +2938,7 @@ own interactive transaction: live role assignments, company policy rules, compan
 policies, platform policy rules, platform separation-of-duties policies. It runs on **every
 authorized request**.
 
-The consequence is that each request needs five connection-pool slots *simultaneously*, so a pool
+The consequence is that each request needs five connection-pool slots _simultaneously_, so a pool
 of N serves only N/5 concurrent authorized requests before the next one waits. That is what made
 four unrelated tests fail inside `platformSodPolicies` once the suite grew past thirty spec files —
 and the symptom named nothing about pools, only "Unable to start a transaction in the given time".
@@ -2997,14 +2988,14 @@ All eight things the prompt asks for exist, and the one it forbids claiming is n
 The prompt says not to claim DR is complete until a restore test succeeds in a safe environment. One
 did: `infra/backup/evidence/uboss-20260912T042244Z.verification.json`, 6/6 checks, 3-second restore,
 against a real database. **The drill found a defect in its own `SchemaMatches` check on the first
-run** — it read the latest migration row rather than the latest *applied* one, so a rolled-back
+run** — it read the latest migration row rather than the latest _applied_ one, so a rolled-back
 migration made a healthy restore look like a schema mismatch.
 
 ### Real limitations at Prompt 41
 
 - **What was verified is a logical dump, not PITR.** `infra/backup/pitr-configuration.md` writes
   out the settings to apply, the base-backup pairing archiving depends on, and the recovery
-  procedure — including the step people skip, which is to look at the paused replica *before*
+  procedure — including the step people skip, which is to look at the paused replica _before_
   promoting it. None of it has been exercised: this environment has one container and no archive
   destination. The decision tree’s "restore to just before the migration" therefore rests on
   documentation rather than on a drill. **A recovery path nobody has run is a belief, not a
@@ -3029,7 +3020,7 @@ what it changed and what it found.
 **The repository was in better shape than the first pass of the audit suggested.** A pattern match
 over test titles produced a list of eleven apparent gaps; checking them one at a time reduced that
 to three. Six were the matcher looking for words nobody writes in a test title — "IDOR" is tested 55
-times under phrasings like *an id somebody guessed must not confirm that the agent exists*, and the
+times under phrasings like _an id somebody guessed must not confirm that the agent exists_, and the
 login six-section rule is asserted in `shells.test.tsx` including its approved copy. Two were
 correctly deferred work (TCSiON, PITR). That correction is recorded in the report rather than
 dropped, because a coverage report that only lists what it found looks identical to one that looked
@@ -3049,7 +3040,7 @@ in the wrong place.
 
 Worth stating plainly, because "fix critical failures" is in the prompt and the honest answer is
 that the audit did not surface any. Every new test passed against the existing implementation once
-the *tests themselves* were corrected. The three defects this session found were found by **building
+the _tests themselves_ were corrected. The three defects this session found were found by **building
 the CR-03 screens and opening them**, not by auditing the test matrix — which is a fair argument
 about where defects actually hide.
 
@@ -3153,12 +3144,12 @@ for. Worth fixing on its own terms, as its own change.
 Asserted by printing the **resolved** configuration for a representative file of each kind, rather
 than by reading the config and hoping:
 
-| File | no-console | no-unused-vars | no-explicit-any | rules-of-hooks |
-| --- | --- | --- | --- | --- |
-| `apps/api/src/main.ts` | error | error | error | — |
-| `apps/web/src/components/MyEngineAgents.tsx` | error | error | error | error |
-| `apps/api/test/tenant-predicate.spec.ts` | error | error | error | — |
-| `apps/api/scripts/perf/scale-run.ts` | **off** | error | error | — |
+| File                                         | no-console | no-unused-vars | no-explicit-any | rules-of-hooks |
+| -------------------------------------------- | ---------- | -------------- | --------------- | -------------- |
+| `apps/api/src/main.ts`                       | error      | error          | error           | —              |
+| `apps/web/src/components/MyEngineAgents.tsx` | error      | error          | error           | error          |
+| `apps/api/test/tenant-predicate.spec.ts`     | error      | error          | error           | —              |
+| `apps/api/scripts/perf/scale-run.ts`         | **off**    | error          | error           | —              |
 
 Application code and React surfaces keep every rule at `error`. **Tests are not exempt from
 `no-console`.** The single relaxation is the last row, and it is not new: the untouched
@@ -3179,3 +3170,60 @@ Checked rather than assumed, since there was no reason to think one file was the
   every workspace, and a clean build — a deleted source file could not survive any of those.
 
 The only file lost was `eslint.config.mjs`.
+
+## Completed at Prompt 44 — CI/CD, Environments and Release Controls
+
+Three workflows, one shared promotion action, a release-flag registry, and the deployment
+documentation. Nothing existed before this: there was no `.github` directory at all.
+
+### What runs on a pull request — `.github/workflows/ci.yml`
+
+Four jobs. `static` (lint, formatting, typecheck, build), `unit` (types, design system, web),
+`integration` (PostgreSQL 17 service container, migration validation, the API suite), and
+`security` (dependency audit, Gitleaks over history, CodeQL).
+
+Every step is an existing npm script, so a green pipeline and a green machine cannot disagree
+(ADR-275). **Migration validation asks two questions**: that every migration applies in order to an
+empty database, and that `schema.prisma` and the migrations agree — the second matters because
+this repository holds hand-written SQL that Prisma cannot see and would otherwise report as drift.
+
+### What qualifies a release candidate — `.github/workflows/release.yml`
+
+Triggered by a `prompt-*-pass` or `v*` tag. Full `npm run verify`, a migration rehearsal
+on a fresh database run **twice** to prove idempotence, the rollback decision-tree gate, the security
+suite as its own job, and the AI regression suites. **It does not deploy** — qualifying and promoting
+are separate decisions, and a pipeline that promoted on green would make the approval gate
+decorative.
+
+### What promotes it — `.github/workflows/deploy.yml`
+
+Manual, ordered Dev ▸ Staging ▸ UAT ▸ Production, each behind a GitHub Environment approval, with a
+precheck that refuses to promote a commit that is not an ancestor of `main`. The per-environment
+work is one shared composite action so the order cannot drift: migrate, release, health check, roll
+back the release on failure (ADR-276).
+
+### The prerequisite nobody asked for
+
+**The repository was not formatted.** `prettier --check` failed on 102 files, and the prompt
+requires formatting as a CI gate. Adding the gate without formatting would have made CI red on its
+first run; omitting the gate would have been dropping a requirement. So the repository was formatted
+— 102 files, mechanical, and the full suite re-run afterwards to prove nothing moved.
+
+### Real limitations at Prompt 44
+
+- **No workflow has ever executed.** The YAML is valid and each step is a real command that has been
+  run by hand locally, but no GitHub Actions run exists yet. The first push is the first execution,
+  and things that only appear on a runner — a missing system package, a service-container timing
+  difference — will appear then.
+- **No host, so nothing deploys.** `UBOSS_DEPLOY_COMMAND` is unset on every environment and every
+  step that would use it says so in the log rather than claiming success (ADR-277). UBoss has a
+  promotion _process_; it does not have a _deployment_.
+- **No container image, so no image scan.** The prompt says "image/container scan if applicable" and
+  it is not yet applicable. A scan step that scanned nothing would be worse than its absence.
+- **No smoke test against a deployed environment.** The health check proves the process answers, not
+  that a journey works. The staging checklist asks for that by hand until there is an environment to
+  automate against.
+- **The GitHub Environments themselves are not created.** Approvals, secrets and variables are
+  configured in repository settings, which is outside the repository. `docs/DEPLOYMENT.md` lists
+  exactly what to create; until then the `environment:` keys refer to environments that do not
+  exist and the jobs would run unapproved.

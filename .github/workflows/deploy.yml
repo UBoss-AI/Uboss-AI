@@ -1,0 +1,184 @@
+# Environment promotion — Prompt 44.
+#
+# Dev → Staging → UAT → Production, in that order, with a human approval in front of each
+# environment that matters.
+#
+# ## What this file is, and what it is not
+#
+# It is the **promotion machinery**: the order, the gates, the migration-before-release rule, the
+# health check, and the rollback. Those are product decisions and they belong in the repository.
+#
+# It is **not** a working deployment. `UBOSS_DEPLOY_COMMAND` is where a host's own command goes —
+# `kubectl rollout`, `fly deploy`, `az webapp up`, whatever the deployment turns out to be — and
+# until a host is chosen the steps below run the command if it is configured and **say plainly that
+# they did nothing** if it is not.
+#
+# That is deliberate. A pipeline that printed "deployed to production" while running nothing is the
+# single most dangerous thing this file could contain, and the temptation to write it is exactly why
+# the guard is explicit rather than a TODO.
+#
+# ## Approvals
+#
+# Enforced by **GitHub Environments**, not by this YAML: an environment with required reviewers
+# pauses the job until a named person approves it. That cannot be bypassed by editing this file in a
+# pull request, which is the point. Setup is in `docs/DEPLOYMENT.md`.
+#
+# ## Secrets
+#
+# Injected per environment by GitHub Environments. Nothing here reads a secret from the repository,
+# and no environment's secret is visible to another environment's job.
+
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Commit or tag to deploy (must already be a qualified release candidate)'
+        required: true
+      target:
+        description: 'How far to promote'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - uat
+          - production
+
+concurrency:
+  # One promotion at a time. Two deploys racing to the same environment is how a migration lands
+  # against an application that has not been replaced yet.
+  group: deploy-${{ inputs.target }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # The candidate must already have passed the release workflow. This does not
+  # re-run it — it refuses to promote something that never qualified.
+  # ---------------------------------------------------------------------------
+  precheck:
+    name: Confirm the candidate qualified
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Needed to read the conclusion of the release workflow for this commit.
+      actions: read
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - id: resolve
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: The candidate must be on main
+        # A commit nobody merged is not a release candidate, however green its own pipeline was.
+        run: |
+          git fetch origin main --quiet
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::$(git rev-parse --short HEAD) is not an ancestor of main. Merge it first."
+            exit 1
+          fi
+          echo "candidate is on main"
+
+      - name: The release-candidate workflow must have passed for this exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # The check the job name promises. Ancestry proves the commit was merged; it proves
+        # nothing about whether the commit was ever qualified — a merge can happen while the
+        # release workflow is still running, or after it failed.
+        #
+        # So this asks GitHub directly: is there a *successful, completed* run of
+        # `Release candidate` whose head_sha is this commit? Anything else — no run, a failed run,
+        # a run still in progress, or a run for a different commit — refuses the promotion.
+        run: |
+          SHA="${{ steps.resolve.outputs.sha }}"
+          CONCLUSIONS=$(gh api \
+            "repos/${{ github.repository }}/actions/workflows/release.yml/runs?head_sha=${SHA}&status=completed" \
+            --jq '[.workflow_runs[] | select(.conclusion == "success")] | length')
+
+          if [ "${CONCLUSIONS:-0}" -lt 1 ]; then
+            echo "::error::No successful 'Release candidate' run for ${SHA}."
+            echo "::error::Qualify it first — push a tag, or run the release workflow by hand."
+            echo "::error::See docs/DEPLOYMENT.md, 'Before promoting anything'."
+            exit 1
+          fi
+
+          echo "release candidate qualified: ${CONCLUSIONS} successful run(s) for ${SHA}"
+  dev:
+    name: Dev
+    needs: precheck
+    # No reviewer on dev. It is where a change is seen working, and a gate here would only teach
+    # people to skip it.
+    environment:
+      name: dev
+      url: ${{ vars.UBOSS_ENVIRONMENT_URL }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: ./.github/actions/promote
+        with:
+          environment: dev
+          sha: ${{ needs.precheck.outputs.sha }}
+
+  staging:
+    name: Staging
+    needs: [precheck, dev]
+    if: ${{ contains(fromJSON('["staging","uat","production"]'), inputs.target) }}
+    environment:
+      name: staging
+      url: ${{ vars.UBOSS_ENVIRONMENT_URL }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: ./.github/actions/promote
+        with:
+          environment: staging
+          sha: ${{ needs.precheck.outputs.sha }}
+
+  uat:
+    name: UAT
+    needs: [precheck, staging]
+    if: ${{ contains(fromJSON('["uat","production"]'), inputs.target) }}
+    environment:
+      name: uat
+      url: ${{ vars.UBOSS_ENVIRONMENT_URL }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: ./.github/actions/promote
+        with:
+          environment: uat
+          sha: ${{ needs.precheck.outputs.sha }}
+
+  production:
+    name: Production
+    needs: [precheck, uat]
+    if: ${{ inputs.target == 'production' }}
+    environment:
+      name: production
+      url: ${{ vars.UBOSS_ENVIRONMENT_URL }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: ./.github/actions/promote
+        with:
+          environment: production
+          sha: ${{ needs.precheck.outputs.sha }}
+          staged: 'true'

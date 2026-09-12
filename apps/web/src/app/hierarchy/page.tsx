@@ -437,7 +437,7 @@ export default function HierarchyPage() {
                             rather than one request per row.
                           */}
                           <EmployeePhoto
-                            tenantId={tenantId ?? ""}
+                            tenantId={tenantId ?? ''}
                             userId={row.userId}
                             displayName={row.displayName}
                             size="sm"

@@ -3269,15 +3269,15 @@ records whether the work was late against its due date.
 
 `/tenants/:tenantId/agent-builder` — `@TenantScoped`.
 
-| Route | Action | Notes |
-|---|---|---|
-| `GET meta` | `View` | Run types, missing-data behaviours, Engine Agent statuses, and Form 3's shape. Served so the screen's controls cannot drift from the server's validation. |
-| `GET ` | `View` | Assigned AI work this person may act on. Filtered row by row through the scope engine. |
-| `GET :assignmentId` | `View` | The builder screen. |
-| `PUT :assignmentId/setup` | `EditDraft` | A **patch** — one answer at a time, never blanking a field it did not carry. |
-| `POST :assignmentId/test` | `EditDraft` | Controlled test. Writes nothing to the real output destination. |
-| `POST :assignmentId/activate` | `Run` | Creates the reusable Engine Agent and its first published version. |
-| `GET :assignmentId/form3` | `Publish` | The canonical job method, as a read. |
+| Route                         | Action      | Notes                                                                                                                                                     |
+| ----------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET meta`                    | `View`      | Run types, missing-data behaviours, Engine Agent statuses, and Form 3's shape. Served so the screen's controls cannot drift from the server's validation. |
+| `GET `                        | `View`      | Assigned AI work this person may act on. Filtered row by row through the scope engine.                                                                    |
+| `GET :assignmentId`           | `View`      | The builder screen.                                                                                                                                       |
+| `PUT :assignmentId/setup`     | `EditDraft` | A **patch** — one answer at a time, never blanking a field it did not carry.                                                                              |
+| `POST :assignmentId/test`     | `EditDraft` | Controlled test. Writes nothing to the real output destination.                                                                                           |
+| `POST :assignmentId/activate` | `Run`       | Creates the reusable Engine Agent and its first published version.                                                                                        |
+| `GET :assignmentId/form3`     | `Publish`   | The canonical job method, as a read.                                                                                                                      |
 
 **Why `Run` for activate and `Publish` for Form 3** — see ADR-270. Activating your own assigned
 agent is doing the work; deciding what the company releases is not, and no Employee holds `Publish`
@@ -3287,28 +3287,28 @@ Every route makes a second, row-level decision through the scope engine after th
 module-level check, so an `Employee` with `OwnWork` and a `Manager` with a team subtree get
 different answers about the same URL.
 
-**Nothing here returns a credential.** The builder chooses a *connection by id* and the server
+**Nothing here returns a credential.** The builder chooses a _connection by id_ and the server
 answers whether it may be used. A test asserts this against the serialised response rather than
 the declared shape, because a leak would arrive as a field nobody declared.
 
 `missing` is the ZERO-QUESTION RULE's answer, computed server-side: an empty array means the
-screen asks nothing and offers *Ready to Test / Activate*.
+screen asks nothing and offers _Ready to Test / Activate_.
 
 ## Engine Agent registry (Prompt 25)
 
 `/tenants/:tenantId/agents` — `@TenantScoped`.
 
-| Route | Action | Notes |
-|---|---|---|
-| `GET meta` | `View` | Statuses with tones, the action set, and each memory mode **with its technical rule** — so nobody picks a mode without seeing what it commits the company to. |
-| `GET ` | `View` | The registry. `?includeArchived=true` to see retired agents. |
-| `GET :agentId` | `View` | Detail, including every version and the open draft's impact. |
-| `POST :agentId/pause` | `Pause` | Reason required. |
-| `POST :agentId/resume` | `Pause` | Clears the reason. |
-| `POST :agentId/archive` | `Publish` | Terminal. |
-| `POST :agentId/versions` | `Publish` | Drafts from the version in force, with impact analysis. |
-| `POST :agentId/versions/:versionId/test` | `Publish` | Draft only. |
-| `POST :agentId/versions/:versionId/activate` | `Publish` | `approvedByUserId` where the impact analysis requires one, and it may not be the caller. |
+| Route                                        | Action    | Notes                                                                                                                                                         |
+| -------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET meta`                                   | `View`    | Statuses with tones, the action set, and each memory mode **with its technical rule** — so nobody picks a mode without seeing what it commits the company to. |
+| `GET `                                       | `View`    | The registry. `?includeArchived=true` to see retired agents.                                                                                                  |
+| `GET :agentId`                               | `View`    | Detail, including every version and the open draft's impact.                                                                                                  |
+| `POST :agentId/pause`                        | `Pause`   | Reason required.                                                                                                                                              |
+| `POST :agentId/resume`                       | `Pause`   | Clears the reason.                                                                                                                                            |
+| `POST :agentId/archive`                      | `Publish` | Terminal.                                                                                                                                                     |
+| `POST :agentId/versions`                     | `Publish` | Drafts from the version in force, with impact analysis.                                                                                                       |
+| `POST :agentId/versions/:versionId/test`     | `Publish` | Draft only.                                                                                                                                                   |
+| `POST :agentId/versions/:versionId/activate` | `Publish` | `approvedByUserId` where the impact analysis requires one, and it may not be the caller.                                                                      |
 
 **No `run` and no `runs` routes.** See ADR-122 — the engine is the next prompt, and a route that
 queued nothing would be indistinguishable from one that worked.
@@ -3323,15 +3323,15 @@ including archiving — retiring an identity permanently is a Head decision.
 `Agent → Assignment/Job → Run` is the locked relationship; a top-level `/runs` collection would
 invite code that reads a run without establishing whose it is.
 
-| Route | Action | Notes |
-|---|---|---|
-| `GET meta` | `View` | States with tones, triggers, **who resolves each kind of block**, the policy vocabularies, and which transport is carrying the work. |
-| `GET ` | `View` | Runs for this agent, newest first. |
-| `GET :runId` | `View` | One run with its full durable event history. |
-| `POST ` | `Run` | **Run now.** |
-| `POST :runId/cancel` | `Pause` | Safe from every unfinished state, including waiting and blocked. |
-| `POST :runId/resume` | `Pause` | A waiting run returns to `Running`; a blocked one to `Queued`. |
-| `POST scheduler/tick` | `Schedule` | One idempotent tick for this company. |
+| Route                 | Action     | Notes                                                                                                                                |
+| --------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET meta`            | `View`     | States with tones, triggers, **who resolves each kind of block**, the policy vocabularies, and which transport is carrying the work. |
+| `GET `                | `View`     | Runs for this agent, newest first.                                                                                                   |
+| `GET :runId`          | `View`     | One run with its full durable event history.                                                                                         |
+| `POST `               | `Run`      | **Run now.**                                                                                                                         |
+| `POST :runId/cancel`  | `Pause`    | Safe from every unfinished state, including waiting and blocked.                                                                     |
+| `POST :runId/resume`  | `Pause`    | A waiting run returns to `Running`; a blocked one to `Queued`.                                                                       |
+| `POST scheduler/tick` | `Schedule` | One idempotent tick for this company.                                                                                                |
 
 **This closes ADR-122.** `Run Now` and `Open Runs` were reported as permitted actions at Prompt 25
 with no routes behind them, deliberately.
@@ -3341,19 +3341,19 @@ rather than assumed because "does my queue survive a restart?" is not a question
 have to answer by reading deployment config.
 
 The row-level check delegates to `EngineAgentService.view`, which hands the scope engine the
-agent's owner *and* department. Writing a third copy of that policy here is what S-165 is about.
+agent's owner _and_ department. Writing a third copy of that policy here is what S-165 is about.
 
 ## The Executor Agent and Exception Center (Prompt 27)
 
 `/tenants/:tenantId/executor` — `@TenantScoped`.
 
-| Route | Action | Notes |
-|---|---|---|
-| `GET meta` | `View` | The ten kinds with their **default owner and severity**, the states, the resolution actions with `executorMayTakeItAlone`, and the validation order. |
-| `GET exceptions` | `View` | Filter by `kind`, `severity`, `state`, `engineAgentId`; `openOnly` defaults on. |
-| `GET exceptions/:id` | `View` | One exception with its full resolution history. |
-| `POST exceptions/:id/act` | `Comment`, plus `Administer` to close | Acknowledge, reassign, escalate, retry, pause, request approval, resolve, dismiss. |
-| `POST sweep` | `Pause` | One idempotent monitoring pass. |
+| Route                     | Action                                | Notes                                                                                                                                                |
+| ------------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET meta`                | `View`                                | The ten kinds with their **default owner and severity**, the states, the resolution actions with `executorMayTakeItAlone`, and the validation order. |
+| `GET exceptions`          | `View`                                | Filter by `kind`, `severity`, `state`, `engineAgentId`; `openOnly` defaults on.                                                                      |
+| `GET exceptions/:id`      | `View`                                | One exception with its full resolution history.                                                                                                      |
+| `POST exceptions/:id/act` | `Comment`, plus `Administer` to close | Acknowledge, reassign, escalate, retry, pause, request approval, resolve, dismiss.                                                                   |
+| `POST sweep`              | `Pause`                               | One idempotent monitoring pass.                                                                                                                      |
 
 **There is deliberately no way to act as the Executor.** `act` always attributes the action to the
 authenticated person; a parameter that could make the actor null would be a route around
@@ -3371,20 +3371,20 @@ exception is deciding it is dealt with — a stronger act than annotating one. A
 **One queue for every module.** There is no `/objectives/:id/approve`, no `/agents/:id/approve` and
 no per-module approval route — that is the client's constraint rather than a routing preference.
 
-| Method | Path | Permission | Purpose |
-| --- | --- | --- | --- |
-| `GET` | `meta` | `approvals:View` | Types (with governing module), statuses, decisions, aging buckets, SoD rules, thresholds |
-| `GET` | `` | `approvals:View` | The queue; `status`, `type`, `mineOnly` filters |
-| `GET` | `:approvalId` | `approvals:View` | One request, its history, and what this actor may do |
-| `POST` | `:approvalId/decide` | `approvals:View` | Approve, reject, send back or comment |
-| `GET` | `delegations` | `approvals:View` | Delegations in either direction |
-| `POST` | `delegations` | `approvals:View` | Create; naming somebody else needs `approvals:ManageAccess` |
-| `DELETE` | `delegations/:id` | `approvals:View` | Revoke, immediately |
-| `POST` | `escalate` | `approvals:Pause` | Run the overdue sweep |
+| Method   | Path                 | Permission        | Purpose                                                                                  |
+| -------- | -------------------- | ----------------- | ---------------------------------------------------------------------------------------- |
+| `GET`    | `meta`               | `approvals:View`  | Types (with governing module), statuses, decisions, aging buckets, SoD rules, thresholds |
+| `GET`    | ``                   | `approvals:View`  | The queue; `status`, `type`, `mineOnly` filters                                          |
+| `GET`    | `:approvalId`        | `approvals:View`  | One request, its history, and what this actor may do                                     |
+| `POST`   | `:approvalId/decide` | `approvals:View`  | Approve, reject, send back or comment                                                    |
+| `GET`    | `delegations`        | `approvals:View`  | Delegations in either direction                                                          |
+| `POST`   | `delegations`        | `approvals:View`  | Create; naming somebody else needs `approvals:ManageAccess`                              |
+| `DELETE` | `delegations/:id`    | `approvals:View`  | Revoke, immediately                                                                      |
+| `POST`   | `escalate`           | `approvals:Pause` | Run the overdue sweep                                                                    |
 
 **The route guard is deliberately the weaker check.** `POST :approvalId/decide` is gated on
-`approvals:View`, and the real authorization happens in the service against the *governing module*
-and the *loaded row* — a workflow publish needs `objective:Approve`, an agent activation needs
+`approvals:View`, and the real authorization happens in the service against the _governing module_
+and the _loaded row_ — a workflow publish needs `objective:Approve`, an agent activation needs
 `agents:Approve`. A route-level guard cannot know who raised this particular request or who has
 already acted on it, and both decide the answer. `meta.types[].module` publishes the mapping so a
 screen can explain why somebody who can see the queue still cannot decide one row.
@@ -3407,20 +3407,19 @@ a version is exactly the person who should be able to ask. `POST .../activate` n
 `approvalRequestId` in place of Prompt 25's `approvedByUserId`, which was a name nobody verified
 (ADR-143).
 
-
 ## `/platform/providers` — Providers & Models (Prompt 29)
 
-| Method | Path | Permission | Purpose |
-| --- | --- | --- | --- |
-| `GET` | `meta` | `providers:View` | Kinds with adapter/reachability, modes, auth types, lifecycle states, the five profile specs |
-| `GET` | `profiles` | `providers:View` | Every profile with its models and current pricing |
-| `GET` | `routing` | `providers:View` | What each logical profile resolves to; `tenantId` for a company's view |
-| `POST` | `profiles` | `providers:Administer` | Register a profile; the secret is accepted once and stored in the vault |
-| `POST` | `profiles/:id/models` | `providers:Administer` | Add a model, optionally with its first price |
-| `POST` | `models/:id/pricing` | `providers:Administer` | Publish a new price — supersedes, never edits |
-| `POST` | `models/:id/lifecycle` | `providers:Administer` | Move a model's lifecycle, with a required note |
-| `POST` | `routing` | `providers:Administer` | Point a profile at a model at a preference |
-| `POST` | `profiles/:id/test` | `providers:Administer` | Test Connection |
+| Method | Path                   | Permission             | Purpose                                                                                      |
+| ------ | ---------------------- | ---------------------- | -------------------------------------------------------------------------------------------- |
+| `GET`  | `meta`                 | `providers:View`       | Kinds with adapter/reachability, modes, auth types, lifecycle states, the five profile specs |
+| `GET`  | `profiles`             | `providers:View`       | Every profile with its models and current pricing                                            |
+| `GET`  | `routing`              | `providers:View`       | What each logical profile resolves to; `tenantId` for a company's view                       |
+| `POST` | `profiles`             | `providers:Administer` | Register a profile; the secret is accepted once and stored in the vault                      |
+| `POST` | `profiles/:id/models`  | `providers:Administer` | Add a model, optionally with its first price                                                 |
+| `POST` | `models/:id/pricing`   | `providers:Administer` | Publish a new price — supersedes, never edits                                                |
+| `POST` | `models/:id/lifecycle` | `providers:Administer` | Move a model's lifecycle, with a required note                                               |
+| `POST` | `routing`              | `providers:Administer` | Point a profile at a model at a preference                                                   |
+| `POST` | `profiles/:id/test`    | `providers:Administer` | Test Connection                                                                              |
 
 **Every route is `@PlatformOnly`, and there is no company-facing counterpart at all** — not even
 read-only (S-190). A company's BYOK credential is registered here, by platform staff, against that
@@ -3436,17 +3435,16 @@ The company-facing surface changed in exactly one way: nothing. `ModelRequest` g
 `profile` field, which is internal — no tenant endpoint gained or lost anything, which is the
 evidence the seam was in the right place.
 
-
 ## `/tenants/:tenantId/cost` — Tokens & Cost (Prompt 30)
 
-| Method | Path | Permission | Purpose |
-| --- | --- | --- | --- |
-| `GET` | `meta` | `settings:View` | Scopes, thresholds with defaults, ledger kinds, reservation states |
-| `GET` | `wallets` | `settings:View` | Every budget with §20's full display set |
-| `GET` | `ledger` | `settings:View` | Credit history; `walletId` or `agentRunId` filters |
-| `POST` | `allowance` | `settings:Administer` | Set a budget at one level, with a required reason |
-| `POST` | `reconcile` | `settings:View` | §20's reconciliation job |
-| `POST` | `sweep-reservations` | `settings:Administer` | Release holds nobody closed |
+| Method | Path                 | Permission            | Purpose                                                            |
+| ------ | -------------------- | --------------------- | ------------------------------------------------------------------ |
+| `GET`  | `meta`               | `settings:View`       | Scopes, thresholds with defaults, ledger kinds, reservation states |
+| `GET`  | `wallets`            | `settings:View`       | Every budget with §20's full display set                           |
+| `GET`  | `ledger`             | `settings:View`       | Credit history; `walletId` or `agentRunId` filters                 |
+| `POST` | `allowance`          | `settings:Administer` | Set a budget at one level, with a required reason                  |
+| `POST` | `reconcile`          | `settings:View`       | §20's reconciliation job                                           |
+| `POST` | `sweep-reservations` | `settings:Administer` | Release holds nobody closed                                        |
 
 **There is deliberately no route that spends, reserves or settles** (S-198). Those happen inside
 the Model Gateway as part of a real call.
@@ -3468,26 +3466,26 @@ fields, which are internal.
 
 **Company plane** (`settings:View` to read, `settings:Administer` to write):
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `meta` | Request states, billing choices, grant sources, the policy vocabulary |
-| `GET` | `policy` | The commercial terms, read-only |
-| `GET` | `requests` / `grants` | The company's own history |
-| `POST` | `requests` | Request / Buy More Credits |
-| `POST` | `requests/:id/cancel` | Withdraw your own request |
-| `POST` | `reallocate` | Move budget between levels without increasing the total |
-| `GET` | `negative-balance` | Whether a negative balance is currently blocking work |
+| Method | Path                  | Purpose                                                               |
+| ------ | --------------------- | --------------------------------------------------------------------- |
+| `GET`  | `meta`                | Request states, billing choices, grant sources, the policy vocabulary |
+| `GET`  | `policy`              | The commercial terms, read-only                                       |
+| `GET`  | `requests` / `grants` | The company's own history                                             |
+| `POST` | `requests`            | Request / Buy More Credits                                            |
+| `POST` | `requests/:id/cancel` | Withdraw your own request                                             |
+| `POST` | `reallocate`          | Move budget between levels without increasing the total               |
+| `GET`  | `negative-balance`    | Whether a negative balance is currently blocking work                 |
 
 **Platform plane** (`@PlatformOnly`, `credits:View` / `credits:Administer`):
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `requests` | Finance's queue for one company |
-| `POST` | `requests/:id/decide` | Approve (for any amount), or reject with a reason |
-| `POST` | `grants` | Promotional, manual or refund credit with no request behind it |
-| `POST` | `grants/:id/revoke` | Payment failure after a top-up |
-| `GET` / `POST` | `policy` | The commercial terms |
-| `POST` | `period-reset` / `expire-grants` / `plan-change` | The periodic edge cases |
+| Method         | Path                                             | Purpose                                                        |
+| -------------- | ------------------------------------------------ | -------------------------------------------------------------- |
+| `GET`          | `requests`                                       | Finance's queue for one company                                |
+| `POST`         | `requests/:id/decide`                            | Approve (for any amount), or reject with a reason              |
+| `POST`         | `grants`                                         | Promotional, manual or refund credit with no request behind it |
+| `POST`         | `grants/:id/revoke`                              | Payment failure after a top-up                                 |
+| `GET` / `POST` | `policy`                                         | The commercial terms                                           |
+| `POST`         | `period-reset` / `expire-grants` / `plan-change` | The periodic edge cases                                        |
 
 **There is no company route that approves anything** (S-205), and no route anywhere that takes a
 payment (S-213). `reference` is where Finance records the invoice raised in whatever system
@@ -3504,13 +3502,13 @@ conversation, and an admin who needs it gone can have Finance reject it, which l
 `Audit` to read, `Export` to export, `Administer` to revoke. The service then adds the
 whole-company scope check the guard cannot make.
 
-| Route | Method | Action | Returns |
-| --- | --- | --- | --- |
-| `/vocabulary` | GET | Audit | the seven views with `hasCorrelationIds`, the metric and range lists, and a note saying what the Security Center is |
-| `/posture` | GET | Audit | the eleven metric readings, plus `mayExport` and `mayRevokeSessions` |
-| `/views/:view` | GET | Audit | one view's rows, its purpose, the filtered total, a cursor, and any `limitation` |
-| `/views/:view/export` | POST | Export | the same shape, up to 5,000 rows, and records a security event |
-| `/sessions/:sessionId/revoke` | POST | Administer | `{ revoked, signedOutOfCompanies, personDisplayName }` |
+| Route                         | Method | Action     | Returns                                                                                                             |
+| ----------------------------- | ------ | ---------- | ------------------------------------------------------------------------------------------------------------------- |
+| `/vocabulary`                 | GET    | Audit      | the seven views with `hasCorrelationIds`, the metric and range lists, and a note saying what the Security Center is |
+| `/posture`                    | GET    | Audit      | the eleven metric readings, plus `mayExport` and `mayRevokeSessions`                                                |
+| `/views/:view`                | GET    | Audit      | one view's rows, its purpose, the filtered total, a cursor, and any `limitation`                                    |
+| `/views/:view/export`         | POST   | Export     | the same shape, up to 5,000 rows, and records a security event                                                      |
+| `/sessions/:sessionId/revoke` | POST   | Administer | `{ revoked, signedOutOfCompanies, personDisplayName }`                                                              |
 
 **Filters** (`range`, `actorUserId`, `correlationId`, `severity`, `outcome`, `before`, `limit`,
 `guestHorizonDays`) are query parameters under `forbidNonWhitelisted`, which matters more here
@@ -3544,14 +3542,14 @@ the ordering to be got right.
 
 ### Memory
 
-| Route | Method | Action | Returns |
-| --- | --- | --- | --- |
-| `/memory/vocabulary` | GET | `agents:View` | the four modes with each one's §19 rule **and its visibility ceiling**, the visibilities, the classifications, the offboarding behaviours, and a note on why cross-tenant memory has no setting |
-| `/memory/policies` | GET | `agents:View` | the four policies, in ephemeral-to-permanent order |
-| `/memory/policies/:mode` | PUT | `settings:Administer` | the changed policy |
-| `/memory/records` | GET | `agents:View` | what the agents are holding; `includeDeleted` shows the deletions too |
-| `/memory/records/:recordId` | DELETE | `settings:Administer` | the record, with its content gone and the deletion recorded |
-| `/platform/memory/tenants/:tenantId/sweep` | POST | platform `support:Administer` | `{ expired }` |
+| Route                                      | Method | Action                        | Returns                                                                                                                                                                                         |
+| ------------------------------------------ | ------ | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/memory/vocabulary`                       | GET    | `agents:View`                 | the four modes with each one's §19 rule **and its visibility ceiling**, the visibilities, the classifications, the offboarding behaviours, and a note on why cross-tenant memory has no setting |
+| `/memory/policies`                         | GET    | `agents:View`                 | the four policies, in ephemeral-to-permanent order                                                                                                                                              |
+| `/memory/policies/:mode`                   | PUT    | `settings:Administer`         | the changed policy                                                                                                                                                                              |
+| `/memory/records`                          | GET    | `agents:View`                 | what the agents are holding; `includeDeleted` shows the deletions too                                                                                                                           |
+| `/memory/records/:recordId`                | DELETE | `settings:Administer`         | the record, with its content gone and the deletion recorded                                                                                                                                     |
+| `/platform/memory/tenants/:tenantId/sweep` | POST   | platform `support:Administer` | `{ expired }`                                                                                                                                                                                   |
 
 **There is no route that writes a memory record**, and that is the design rather than an omission
 (S-230). **The vocabulary carries each mode's ceiling** so the policy form offers only what the
@@ -3563,14 +3561,14 @@ finished would be the wrong trade.
 
 ### Feedback
 
-| Route | Method | Action | Returns |
-| --- | --- | --- | --- |
-| `/feedback/meta` | GET | `agents:View` | the four ratings with descriptions, which need a correction, the minimum length, and **the provider-training stance** |
-| `/feedback/runs/:runId` | GET | `agents:View` | that run's feedback |
-| `/feedback/runs/:runId` | POST | `agents:Comment` | the recorded rating, with its evaluation eligibility and the reason where it has none |
-| `/feedback/:feedbackId` | PATCH | `agents:Comment` | the amended rating — your own only |
-| `/feedback/quality` | GET | `agents:View` | the summary, **always including `onRealModelOutput`** |
-| `/feedback/:feedbackId/promote` | POST | `settings:Administer` | `{ caseId, feedback }` |
+| Route                           | Method | Action                | Returns                                                                                                               |
+| ------------------------------- | ------ | --------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `/feedback/meta`                | GET    | `agents:View`         | the four ratings with descriptions, which need a correction, the minimum length, and **the provider-training stance** |
+| `/feedback/runs/:runId`         | GET    | `agents:View`         | that run's feedback                                                                                                   |
+| `/feedback/runs/:runId`         | POST   | `agents:Comment`      | the recorded rating, with its evaluation eligibility and the reason where it has none                                 |
+| `/feedback/:feedbackId`         | PATCH  | `agents:Comment`      | the amended rating — your own only                                                                                    |
+| `/feedback/quality`             | GET    | `agents:View`         | the summary, **always including `onRealModelOutput`**                                                                 |
+| `/feedback/:feedbackId/promote` | POST   | `settings:Administer` | `{ caseId, feedback }`                                                                                                |
 
 **`onRealModelOutput` is never omitted.** A 100% correct rate over mock output says nothing about a
 provider's quality, and a response that left the figure out would let a screen imply otherwise.
@@ -3583,19 +3581,19 @@ agent's runs — not the Runs screen, which is a prompt of its own.
 
 ## `/tenants/:tenantId/objectives/:objectiveId/closure` — Prompt 34
 
-| Route | Method | Grant | Returns |
-| --- | --- | --- | --- |
-| `/meta` | GET | `objective:View` | the pause reasons, **what a pause does**, the company's sign-off policy, the minimum explanation length |
-| `/readiness` | GET | `objective:View` | the live comparison and what is outstanding, separated into blocking and not |
-| `/review` | GET | `objective:View` | the review, or null |
-| `/pauses` | GET | `objective:View` | every pause, with days stopped |
-| `/pause` | POST | `objective:Publish` | the pause |
-| `/resume` | POST | `objective:Publish` | the closed pause |
-| `/complete` | POST | `objective:Publish` | `{ status, readiness }` |
-| `/review` | POST | `objective:Approve` | the review |
-| `/sign-off` | POST | `objective:View` + **is the owner** | the signed review |
-| `/close` | POST | `objective:Publish` + the review's policy | the closed review |
-| `/archive` | POST | `objective:Publish` | `{ status }` |
+| Route        | Method | Grant                                     | Returns                                                                                                 |
+| ------------ | ------ | ----------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `/meta`      | GET    | `objective:View`                          | the pause reasons, **what a pause does**, the company's sign-off policy, the minimum explanation length |
+| `/readiness` | GET    | `objective:View`                          | the live comparison and what is outstanding, separated into blocking and not                            |
+| `/review`    | GET    | `objective:View`                          | the review, or null                                                                                     |
+| `/pauses`    | GET    | `objective:View`                          | every pause, with days stopped                                                                          |
+| `/pause`     | POST   | `objective:Publish`                       | the pause                                                                                               |
+| `/resume`    | POST   | `objective:Publish`                       | the closed pause                                                                                        |
+| `/complete`  | POST   | `objective:Publish`                       | `{ status, readiness }`                                                                                 |
+| `/review`    | POST   | `objective:Approve`                       | the review                                                                                              |
+| `/sign-off`  | POST   | `objective:View` + **is the owner**       | the signed review                                                                                       |
+| `/close`     | POST   | `objective:Publish` + the review's policy | the closed review                                                                                       |
+| `/archive`   | POST   | `objective:Publish`                       | `{ status }`                                                                                            |
 
 **There is no `/reopen`.** Reopening is `POST /objectives/:id/versions` on the authoring
 controller — the versioning rule — and a second route here would be a second way to do it (S-239).
@@ -3611,19 +3609,19 @@ frozen.
 
 ## Files — `/tenants/:tenantId/files` (Prompt 35)
 
-| Route | Method | Grant | Returns |
-| --- | --- | --- | --- |
-| `/meta` | GET | `settings:View` | scan states, classifications, retention actions, the redaction stance, **and which adapters are in use** |
-| `/policy` | GET | `settings:View` | the company's file policy |
-| `/policy` | POST | `settings:Administer` | the updated policy |
-| `` | GET | `settings:Administer` **or** `settings:Approve` | `{ files }` |
-| `` | POST | `settings:EditDraft` | the stored file, already scanned |
-| `/:fileId/scan` | POST | `settings:EditDraft` | the file, rescanned |
-| `/:fileId/content` | GET | `settings:Export` | `{ file, contentBase64 }` |
-| `/:fileId/classification` | POST | `settings:Administer` | the file |
-| `/:fileId/legal-hold` | POST | `settings:Administer` | the file |
-| `/:fileId/delete` | POST | `settings:Administer` | the file, content gone, record intact |
-| `/retention/sweep` | POST | `settings:Administer` | `{ deleted, heldBack }` |
+| Route                     | Method | Grant                                           | Returns                                                                                                  |
+| ------------------------- | ------ | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `/meta`                   | GET    | `settings:View`                                 | scan states, classifications, retention actions, the redaction stance, **and which adapters are in use** |
+| `/policy`                 | GET    | `settings:View`                                 | the company's file policy                                                                                |
+| `/policy`                 | POST   | `settings:Administer`                           | the updated policy                                                                                       |
+| ``                        | GET    | `settings:Administer` **or** `settings:Approve` | `{ files }`                                                                                              |
+| ``                        | POST   | `settings:EditDraft`                            | the stored file, already scanned                                                                         |
+| `/:fileId/scan`           | POST   | `settings:EditDraft`                            | the file, rescanned                                                                                      |
+| `/:fileId/content`        | GET    | `settings:Export`                               | `{ file, contentBase64 }`                                                                                |
+| `/:fileId/classification` | POST   | `settings:Administer`                           | the file                                                                                                 |
+| `/:fileId/legal-hold`     | POST   | `settings:Administer`                           | the file                                                                                                 |
+| `/:fileId/delete`         | POST   | `settings:Administer`                           | the file, content gone, record intact                                                                    |
+| `/retention/sweep`        | POST   | `settings:Administer`                           | `{ deleted, heldBack }`                                                                                  |
 
 **The list is not `settings:View`.** That grant is on the Employee template; a list of every
 document the company holds is not a general settings view (S-249). The route decorator asks for
@@ -3641,17 +3639,17 @@ something half the HTTP stack drops.
 
 ## Knowledge sources — `/tenants/:tenantId/knowledge-sources`
 
-| Route | Method | Grant | Returns |
-| --- | --- | --- | --- |
-| `/meta` | GET | `settings:View` | kinds, states, access scopes, classifications |
-| `` | GET | `settings:Administer` **or** `settings:Approve` | `{ sources }` |
-| `` | POST | `settings:EditDraft` | the draft source |
-| `/:sourceId` | POST | `settings:EditDraft` | the source, **returned to Draft if it was approved** |
-| `/:sourceId/approve` | POST | `settings:Approve` | the approved source |
-| `/:sourceId/retire` | POST | `settings:Administer` | the retired source |
-| `/:sourceId/files` | POST | `settings:EditDraft` | `{ added }` |
-| `/:sourceId/files/remove` | POST | `settings:EditDraft` | `{ removed }` |
-| `/:sourceId/access` | GET | `settings:Administer` **or** `settings:Approve` | the read decision and the usable file ids |
+| Route                     | Method | Grant                                           | Returns                                              |
+| ------------------------- | ------ | ----------------------------------------------- | ---------------------------------------------------- |
+| `/meta`                   | GET    | `settings:View`                                 | kinds, states, access scopes, classifications        |
+| ``                        | GET    | `settings:Administer` **or** `settings:Approve` | `{ sources }`                                        |
+| ``                        | POST   | `settings:EditDraft`                            | the draft source                                     |
+| `/:sourceId`              | POST   | `settings:EditDraft`                            | the source, **returned to Draft if it was approved** |
+| `/:sourceId/approve`      | POST   | `settings:Approve`                              | the approved source                                  |
+| `/:sourceId/retire`       | POST   | `settings:Administer`                           | the retired source                                   |
+| `/:sourceId/files`        | POST   | `settings:EditDraft`                            | `{ added }`                                          |
+| `/:sourceId/files/remove` | POST   | `settings:EditDraft`                            | `{ removed }`                                        |
+| `/:sourceId/access`       | GET    | `settings:Administer` **or** `settings:Approve` | the read decision and the usable file ids            |
 
 **Authoring and approving are different grants on different templates** (ADR-201), so a source is
 approved by somebody other than the person who built it unless a company deliberately assigns both
@@ -3660,22 +3658,22 @@ roles to one person.
 **There is no route that reads a source's files as a download.** Reading content is
 `GET /files/:fileId/content` under `settings:Export`; a second download path scoped by source would
 be a second place the scan check has to be remembered. `/access` answers the question the runtime
-actually asks — *may this agent consult this source, and which of its files are usable* — and
+actually asks — _may this agent consult this source, and which of its files are usable_ — and
 returns file ids, never bytes.
 
 ---
 
 ## Support — `/tenants/:tenantId/support` (Prompt 36)
 
-| Route | Method | Grant | Returns |
-| --- | --- | --- | --- |
-| `/meta` | GET | `settings:View` | kinds, priorities, states, authorization modes, **and what a support session always involves** |
-| `/tickets` | GET | `settings:View` | this company's tickets |
-| `/tickets` | POST | `settings:View` | the raised ticket |
-| `/tickets/:id` | GET | `settings:View` | the ticket and **replies only** |
-| `/tickets/:id/reply` | POST | `settings:View` | the reply |
-| `/access-requests` | GET | `settings:Administer` | sessions awaiting this company's authorization |
-| `/access-requests/:requestId` | POST | `settings:Administer` | the recorded decision |
+| Route                         | Method | Grant                 | Returns                                                                                        |
+| ----------------------------- | ------ | --------------------- | ---------------------------------------------------------------------------------------------- |
+| `/meta`                       | GET    | `settings:View`       | kinds, priorities, states, authorization modes, **and what a support session always involves** |
+| `/tickets`                    | GET    | `settings:View`       | this company's tickets                                                                         |
+| `/tickets`                    | POST   | `settings:View`       | the raised ticket                                                                              |
+| `/tickets/:id`                | GET    | `settings:View`       | the ticket and **replies only**                                                                |
+| `/tickets/:id/reply`          | POST   | `settings:View`       | the reply                                                                                      |
+| `/access-requests`            | GET    | `settings:Administer` | sessions awaiting this company's authorization                                                 |
+| `/access-requests/:requestId` | POST   | `settings:Administer` | the recorded decision                                                                          |
 
 **Raising a ticket is `settings:View` on purpose** — the lowest company grant there is. A product
 where only an administrator can report a problem is one where problems go unreported (S-259).
@@ -3688,14 +3686,14 @@ the session can never be activated afterwards.
 
 ## Master Console — `/platform/support`
 
-| Route | Method | Grant |
-| --- | --- | --- |
-| `/meta`, `/queue`, `/tickets`, `/tickets/:id` | GET | `support:View` |
-| `/tickets/:id/assign`, `/state`, `/incident` | POST | `support:EditDraft` |
-| `/tickets/:id/notes` | POST | `support:Comment` |
-| `/incidents/:alertId/declare`, `/mitigate`, `/publish` | POST | `support:Administer` |
-| `/incidents/:alertId/tickets` | GET | `support:View` |
-| `/health` | GET | `system-health:View` |
+| Route                                                  | Method | Grant                |
+| ------------------------------------------------------ | ------ | -------------------- |
+| `/meta`, `/queue`, `/tickets`, `/tickets/:id`          | GET    | `support:View`       |
+| `/tickets/:id/assign`, `/state`, `/incident`           | POST   | `support:EditDraft`  |
+| `/tickets/:id/notes`                                   | POST   | `support:Comment`    |
+| `/incidents/:alertId/declare`, `/mitigate`, `/publish` | POST   | `support:Administer` |
+| `/incidents/:alertId/tickets`                          | GET    | `support:View`       |
+| `/health`                                              | GET    | `system-health:View` |
 
 `PlatformSupport` holds `support: Administer` and `system-health: View` — and **nothing on any
 company module**, which is what keeps these routes from being a way into tenant data (S-254).
@@ -3719,10 +3717,10 @@ An outage nobody published reads as `ok`, deliberately (ADR-206).
 
 ## The Company Workspace Dashboard — Prompt 37
 
-| Route | Method | Grant | Returns |
-| --- | --- | --- | --- |
-| `/tenants/:tenantId/dashboard` | GET | `dashboard:View` | **`{ agents, pendingJobs, scope }` and nothing else** |
-| `/tenants/:tenantId/dashboard/meta` | GET | `dashboard:View` | the two slice labels, their destinations, and the contract |
+| Route                               | Method | Grant            | Returns                                                    |
+| ----------------------------------- | ------ | ---------------- | ---------------------------------------------------------- |
+| `/tenants/:tenantId/dashboard`      | GET    | `dashboard:View` | **`{ agents, pendingJobs, scope }` and nothing else**      |
+| `/tenants/:tenantId/dashboard/meta` | GET    | `dashboard:View` | the two slice labels, their destinations, and the contract |
 
 **Three keys, asserted as the whole set.** `agents` and `pendingJobs` are counted in the signed-in
 person's backend-authorized scope; `scope` is the server's sentence describing what they cover, so
@@ -3737,11 +3735,11 @@ ask with.
 
 ## Reports — `/tenants/:tenantId/reports`
 
-| Route | Method | Grant | Returns |
-| --- | --- | --- | --- |
-| `` | GET | `reports:View` | only the reports this person may open, the ranges, `mayExport`, their scope, and the stance |
-| `/:reportKey` | GET | `reports:View` **+ the report's own permission** | `{ report, scope, window, columns, rows, summary, truncated }` |
-| `/:reportKey/export` | GET | the above **+ `reports:Export`** | `text/csv` |
+| Route                | Method | Grant                                            | Returns                                                                                     |
+| -------------------- | ------ | ------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| ``                   | GET    | `reports:View`                                   | only the reports this person may open, the ranges, `mayExport`, their scope, and the stance |
+| `/:reportKey`        | GET    | `reports:View` **+ the report's own permission** | `{ report, scope, window, columns, rows, summary, truncated }`                              |
+| `/:reportKey/export` | GET    | the above **+ `reports:Export`**                 | `text/csv`                                                                                  |
 
 The ten keys: `ObjectiveProgress`, `HumanVsAiWorkMix`, `EmployeeWorkload`, `EngineAgentHealth`,
 `SkillUsageAndQuality`, `ExecutorExceptions`, `ApprovalAging`, `AiUsageAndCost`, `AuditActivity`,
@@ -3765,12 +3763,12 @@ read is not audited. Every cell is escaped against formula injection and only th
 
 ## Portable UBoss Profile Search — `/tenants/:tenantId/profile-search` (Prompt 37A)
 
-| Route | Method | Grant | Returns |
-| --- | --- | --- | --- |
-| `/meta` | GET | `profile-search:View` | the input stance, the profile stance, the sharing modes, and **whether the feature is enabled here** |
-| `` | GET | `profile-search:View` at the route **+ `users:Administer` in the service** | the portable profile |
+| Route   | Method | Grant                                                                      | Returns                                                                                              |
+| ------- | ------ | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `/meta` | GET    | `profile-search:View`                                                      | the input stance, the profile stance, the sharing modes, and **whether the feature is enabled here** |
+| ``      | GET    | `profile-search:View` at the route **+ `users:Administer` in the service** | the portable profile                                                                                 |
 
-**Tenant-scoped, though the answer is not.** The lookup crosses companies; the *authority* to
+**Tenant-scoped, though the answer is not.** The lookup crosses companies; the _authority_ to
 perform it does not. `@TenantScoped` puts the caller in their own company's context, which is where
 their permission and their company's policy are evaluated and where the audit row is written.
 
@@ -3800,25 +3798,25 @@ company's trail only, **before** the read — so a lookup that found nobody is s
 **Two company settings**, both in the `security` category:
 `security.portable_profile_search_enabled` (default **false**) and
 `security.portable_performance_sharing` (`Nothing` / `BadgeOnly` / `BadgeAndScore`, default
-**`Nothing`**) — the second read from the *source* company, not the searcher's.
+**`Nothing`**) — the second read from the _source_ company, not the searcher's.
 
 ---
 
 ## Company exit — `/platform/company-exits` (Prompt 38)
 
-| Route | Method | Grant |
-| --- | --- | --- |
-| `/meta` | GET | `companies:View` — the states, the windows, **and what exit does to each kind of record, with table counts** |
-| `/awaiting-deletion` | GET | `companies:View` |
-| `/companies/:tenantId` | GET | `companies:View` |
-| `/:exitId` | GET | `companies:View` |
-| `/companies/:tenantId` | POST | `companies:EditDraft` — a request changes nothing |
-| `/:exitId/approve` | POST | `companies:Administer` — refused if you raised it |
-| `/:exitId/export` | GET | `companies:Export` |
-| `/:exitId/read-only` | POST | `companies:Administer` |
-| `/:exitId/retention-hold` | POST | `companies:Administer` |
-| `/:exitId/delete-content` | POST | `companies:Administer` **+ three more gates** |
-| `/:exitId/cancel` | POST | `companies:Administer` |
+| Route                     | Method | Grant                                                                                                        |
+| ------------------------- | ------ | ------------------------------------------------------------------------------------------------------------ |
+| `/meta`                   | GET    | `companies:View` — the states, the windows, **and what exit does to each kind of record, with table counts** |
+| `/awaiting-deletion`      | GET    | `companies:View`                                                                                             |
+| `/companies/:tenantId`    | GET    | `companies:View`                                                                                             |
+| `/:exitId`                | GET    | `companies:View`                                                                                             |
+| `/companies/:tenantId`    | POST   | `companies:EditDraft` — a request changes nothing                                                            |
+| `/:exitId/approve`        | POST   | `companies:Administer` — refused if you raised it                                                            |
+| `/:exitId/export`         | GET    | `companies:Export`                                                                                           |
+| `/:exitId/read-only`      | POST   | `companies:Administer`                                                                                       |
+| `/:exitId/retention-hold` | POST   | `companies:Administer`                                                                                       |
+| `/:exitId/delete-content` | POST   | `companies:Administer` **+ three more gates**                                                                |
+| `/:exitId/cancel`         | POST   | `companies:Administer`                                                                                       |
 
 **Every route is platform-only, including the customer's own request.** A company cannot end its
 own contract through the product: contract end is a commercial act with notice periods on both
@@ -3849,21 +3847,21 @@ summary says which happened.
 
 ## Observability — `/platform/observability` (Prompt 39)
 
-| Route | Method | Grant |
-| --- | --- | --- |
-| `/meta` | GET | `system-health:View` — the metrics, the alert rules, the correlation chain, and four stances served verbatim |
-| `/metrics` | GET | **none** — see below |
-| `/metrics/snapshot` | GET | `system-health:View` |
-| `/alert-rules` | GET | `system-health:View` — every rule with its current value |
-| `/alert-rules/evaluate` | POST | `dev-ops:EditDraft` — writes rows |
-| `/traces` | GET | `system-health:View` — `?correlationId=` for one trace |
-| `/incidents/:alertId/timeline` | GET | `system-health:View` — timeline, actions, postmortem readiness |
-| `/incidents/:alertId/timeline` | POST | `support:Comment` |
-| `/incidents/:alertId/postmortem` | POST | `support:Administer` |
-| `/incidents/:alertId/resolve` | POST | `support:Administer` |
-| `/incidents/:alertId/actions` | POST | `support:Administer` |
-| `/actions/:actionId/close` | POST | `support:Administer` |
-| `/actions/open` | GET | `system-health:View` |
+| Route                            | Method | Grant                                                                                                        |
+| -------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------ |
+| `/meta`                          | GET    | `system-health:View` — the metrics, the alert rules, the correlation chain, and four stances served verbatim |
+| `/metrics`                       | GET    | **none** — see below                                                                                         |
+| `/metrics/snapshot`              | GET    | `system-health:View`                                                                                         |
+| `/alert-rules`                   | GET    | `system-health:View` — every rule with its current value                                                     |
+| `/alert-rules/evaluate`          | POST   | `dev-ops:EditDraft` — writes rows                                                                            |
+| `/traces`                        | GET    | `system-health:View` — `?correlationId=` for one trace                                                       |
+| `/incidents/:alertId/timeline`   | GET    | `system-health:View` — timeline, actions, postmortem readiness                                               |
+| `/incidents/:alertId/timeline`   | POST   | `support:Comment`                                                                                            |
+| `/incidents/:alertId/postmortem` | POST   | `support:Administer`                                                                                         |
+| `/incidents/:alertId/resolve`    | POST   | `support:Administer`                                                                                         |
+| `/incidents/:alertId/actions`    | POST   | `support:Administer`                                                                                         |
+| `/actions/:actionId/close`       | POST   | `support:Administer`                                                                                         |
+| `/actions/open`                  | GET    | `system-health:View`                                                                                         |
 
 **`/metrics` carries no permission decorator**, because a Prometheus scraper holds no session. That
 is only acceptable because the payload carries **no tenant, user, run or provider label anywhere**
@@ -3874,7 +3872,7 @@ restriction is deployment's job and the runbook says so.
 recording a disallowed label; the observation was dropped rather than the request failed.
 
 **`/incidents/:alertId/resolve` takes an optional `postmortem` and applies both changes in one
-transaction.** A P0 or P1 cannot resolve without one *and* without at least one timeline entry; a P2
+transaction.** A P0 or P1 cannot resolve without one _and_ without at least one timeline entry; a P2
 resolves on its mitigation note alone (ADR-227). It also appends a `Resolved` timeline entry, so the
 narrative ends where the record does.
 
@@ -3895,7 +3893,7 @@ operator catching up after an outage backfills (ADR-228).
 Two global interceptors, the limiter outside the idempotency layer (S-307).
 
 **`RateLimit-Limit` and `RateLimit-Remaining` on every response**, allowed or refused. A client that
-can see it is running out of allowance can slow down *before* being refused, which is the difference
+can see it is running out of allowance can slow down _before_ being refused, which is the difference
 between a rate limit that shapes traffic and one that only punishes it.
 
 **A refusal is `429` with a business-readable body:**
@@ -3922,26 +3920,26 @@ Never limited: `/health`, the metrics scrape, `/auth/logout`. **Not** sign-in �
 
 Optional, on `POST` only. Up to 200 characters; a UUID is the usual choice.
 
-| Situation | Response |
-| --- | --- |
-| First request with this key | the work is done, the response remembered for 24h |
-| Retry, same key, same body | the **same status and body**, plus `Idempotent-Replay: true` |
-| Retry while the first is still running | `409` — retry with the same key in a moment |
-| Same key, **different** body | `409`, and neither request applied (S-304) |
-| The first attempt failed | the claim is released, so the retry really retries |
-| Key reused after 24 hours | a new request (S-308) |
+| Situation                              | Response                                                     |
+| -------------------------------------- | ------------------------------------------------------------ |
+| First request with this key            | the work is done, the response remembered for 24h            |
+| Retry, same key, same body             | the **same status and body**, plus `Idempotent-Replay: true` |
+| Retry while the first is still running | `409` — retry with the same key in a moment                  |
+| Same key, **different** body           | `409`, and neither request applied (S-304)                   |
+| The first attempt failed               | the claim is released, so the retry really retries           |
+| Key reused after 24 hours              | a new request (S-308)                                        |
 
 A key longer than 200 characters is refused rather than truncated: a truncated key would be written
 short and never match on read, so every retry would do the work again — silently.
 
 ### `/platform/limits` — `@PlatformOnly`
 
-| Route | Permission |
-| --- | --- |
-| `GET /platform/limits` | `system-health:View` |
-| `GET /platform/limits/fairness` | `system-health:View` |
-| `GET /platform/limits/providers` | `system-health:View` |
-| `POST /platform/limits/idempotency/sweep` | `dev-ops:EditDraft` |
+| Route                                     | Permission           |
+| ----------------------------------------- | -------------------- |
+| `GET /platform/limits`                    | `system-health:View` |
+| `GET /platform/limits/fairness`           | `system-health:View` |
+| `GET /platform/limits/providers`          | `system-health:View` |
+| `POST /platform/limits/idempotency/sweep` | `dev-ops:EditDraft`  |
 
 `GET /platform/limits` serves the configured values, the code defaults, which store is in use, and
 **the caveat** — with a per-process store the effective limit is the configured limit multiplied by
@@ -3954,7 +3952,7 @@ my run not starting" is answerable only from the sequence.
 `GET /platform/limits/providers` reports provider **model ids** and failure reasons, never a vendor
 name (S-309).
 
-Platform-only throughout: a company cannot read another company's queue position. Its *own* limits
+Platform-only throughout: a company cannot read another company's queue position. Its _own_ limits
 reach it in the 429, which carries everything a screen needs.
 
 ### Changed elsewhere
@@ -3970,10 +3968,10 @@ changed shape — a new value in an existing closed set.
 
 ### `/access/capabilities` — the Access & Permissions step
 
-| Route | Permission |
-| --- | --- |
-| `GET /tenants/:tenantId/access/capabilities/:userId` | `users:ManageAccess` |
-| `POST /tenants/:tenantId/access/capabilities/:userId` | `users:ManageAccess` |
+| Route                                                               | Permission           |
+| ------------------------------------------------------------------- | -------------------- |
+| `GET /tenants/:tenantId/access/capabilities/:userId`                | `users:ManageAccess` |
+| `POST /tenants/:tenantId/access/capabilities/:userId`               | `users:ManageAccess` |
 | `DELETE /tenants/:tenantId/access/capabilities/:userId/:capability` | `users:ManageAccess` |
 
 Reading is gated as tightly as writing, deliberately: the response says which capabilities the
@@ -3987,13 +3985,13 @@ visible.**
 
 ### `/agents` — the operator's half
 
-| Route | Permission |
-| --- | --- |
-| `GET /tenants/:tenantId/agents/operator-meta` | `agents:View` |
-| `GET /tenants/:tenantId/agents/mine` | `agents:View` |
-| `GET /tenants/:tenantId/agents/:id/operator-view` | `agents:View` |
-| `GET /tenants/:tenantId/agents/:id/operators` | `agents:View` |
-| `POST /tenants/:tenantId/agents/:id/operators/:userId` | `todo:Assign` + `agents:View` |
+| Route                                                    | Permission                    |
+| -------------------------------------------------------- | ----------------------------- |
+| `GET /tenants/:tenantId/agents/operator-meta`            | `agents:View`                 |
+| `GET /tenants/:tenantId/agents/mine`                     | `agents:View`                 |
+| `GET /tenants/:tenantId/agents/:id/operator-view`        | `agents:View`                 |
+| `GET /tenants/:tenantId/agents/:id/operators`            | `agents:View`                 |
+| `POST /tenants/:tenantId/agents/:id/operators/:userId`   | `todo:Assign` + `agents:View` |
 | `DELETE /tenants/:tenantId/agents/:id/operators/:userId` | `todo:Assign` + `agents:View` |
 
 **Two grants on the share routes, because `agents:Assign` is granted to no role template at all.**
@@ -4007,11 +4005,11 @@ connections or budget.
 
 ### `/job-methods` — download, offline fill, upload
 
-| Route | Permission |
-| --- | --- |
-| `GET /tenants/:tenantId/job-methods/meta` | any member |
-| `GET /tenants/:tenantId/job-methods/:assignmentId/form` | `todo:View` |
-| `GET /tenants/:tenantId/job-methods/:assignmentId` | `todo:View` |
+| Route                                                      | Permission                |
+| ---------------------------------------------------------- | ------------------------- |
+| `GET /tenants/:tenantId/job-methods/meta`                  | any member                |
+| `GET /tenants/:tenantId/job-methods/:assignmentId/form`    | `todo:View`               |
+| `GET /tenants/:tenantId/job-methods/:assignmentId`         | `todo:View`               |
 | `POST /tenants/:tenantId/job-methods/:assignmentId/import` | `agent-builder:EditDraft` |
 
 **The split is the feature**: download needs no builder permission and upload does. The form carries
@@ -4025,12 +4023,12 @@ and **never tests or activates**.
 
 ### `/photos` — the optional employee photo
 
-| Route | Permission |
-| --- | --- |
-| `GET /tenants/:tenantId/photos/meta` | any member |
-| `GET /tenants/:tenantId/photos/:userId` | any member |
-| `GET /tenants/:tenantId/photos?userIds=…` | any member |
-| `POST /tenants/:tenantId/photos/:userId` | yourself, or `users:EditDraft` |
+| Route                                      | Permission                     |
+| ------------------------------------------ | ------------------------------ |
+| `GET /tenants/:tenantId/photos/meta`       | any member                     |
+| `GET /tenants/:tenantId/photos/:userId`    | any member                     |
+| `GET /tenants/:tenantId/photos?userIds=…`  | any member                     |
+| `POST /tenants/:tenantId/photos/:userId`   | yourself, or `users:EditDraft` |
 | `DELETE /tenants/:tenantId/photos/:userId` | yourself, or `users:EditDraft` |
 
 No route-level decorator: a route-level `users:EditDraft` would refuse an employee their own
@@ -4042,17 +4040,17 @@ cleared comes back `viewable: false`, which looks exactly like "no photo yet".
 
 ### `/chat` — Workspace Chat
 
-| Route | Gate |
-| --- | --- |
-| `GET /tenants/:tenantId/chat/meta` | any member |
-| `GET /tenants/:tenantId/chat/conversations` | participant |
-| `POST /tenants/:tenantId/chat/conversations` | must include yourself |
-| `GET /tenants/:tenantId/chat/conversations/:id` | participant |
-| `POST /tenants/:tenantId/chat/conversations/:id/messages` | participant |
-| `DELETE …/messages/:messageId` | the author |
-| `POST …/:id/read` | participant |
-| `POST …/:id/context` | participant **and** able to see the thing |
-| `GET /tenants/:tenantId/chat/search?q=` | participant |
+| Route                                                     | Gate                                      |
+| --------------------------------------------------------- | ----------------------------------------- |
+| `GET /tenants/:tenantId/chat/meta`                        | any member                                |
+| `GET /tenants/:tenantId/chat/conversations`               | participant                               |
+| `POST /tenants/:tenantId/chat/conversations`              | must include yourself                     |
+| `GET /tenants/:tenantId/chat/conversations/:id`           | participant                               |
+| `POST /tenants/:tenantId/chat/conversations/:id/messages` | participant                               |
+| `DELETE …/messages/:messageId`                            | the author                                |
+| `POST …/:id/read`                                         | participant                               |
+| `POST …/:id/context`                                      | participant **and** able to see the thing |
+| `GET /tenants/:tenantId/chat/search?q=`                   | participant                               |
 
 **No `@RequirePermission` anywhere, and no `chat` module in the permission set.** A conversation is
 correspondence between specific people, not company data a role grants access to. A non-participant
@@ -4073,9 +4071,9 @@ both claims somebody would otherwise make.
 
 ### Added in the second pass — what the screens needed
 
-| Route | Permission |
-| --- | --- |
-| `GET /tenants/:tenantId/my-access` | none |
+| Route                                                  | Permission                   |
+| ------------------------------------------------------ | ---------------------------- |
+| `GET /tenants/:tenantId/my-access`                     | none                         |
 | `GET /tenants/:tenantId/agents/:engineAgentId/my-runs` | `agents:View` + a live share |
 
 **`/my-access` has no permission of its own, deliberately.** Gating "what am I allowed to do" behind
@@ -4101,16 +4099,16 @@ Its projection is total (ADR-252). `engineAgentVersionId`, `correlationId`, `pro
 ### `POST /tenants/:tenantId/agents/:agentId/runs` — changed
 
 The Prompt 26 route, unchanged in shape, now reachable by an operator. It consulted only ownership
-before, which meant the person a manager built an agent *for* was answered 404 — the one path CR-03
+before, which meant the person a manager built an agent _for_ was answered 404 — the one path CR-03
 exists to create. A live `EngineAgentOperator` row is now a second way to reach the agent; `mayRun`
 still asks the same `AuthorizationService` for `agents:Run` and for scope. `Pause` is unchanged and
 a share does not confer it. See ADR-251 and S-329.
 
 ## Prompt 41 — Backups, restore and disaster recovery
 
-| Route | Permission |
-| --- | --- |
-| `GET /platform/recovery` | `system-health:View`, platform-only |
+| Route                                 | Permission                          |
+| ------------------------------------- | ----------------------------------- |
+| `GET /platform/recovery`              | `system-health:View`, platform-only |
 | `GET /platform/recovery/schema-state` | `system-health:View`, platform-only |
 
 **There is no route that takes a backup, and no route that restores one.** That is the contract, not
@@ -4118,7 +4116,7 @@ an omission. The application connects as `uboss_app`, which is `NOBYPASSRLS`; an
 `pg_dump` would need owner credentials the application deliberately does not hold, and would be a
 route through which a compromised session could dump the database (S-336).
 
-`GET /platform/recovery` answers *when did a restore last succeed*, and returns the targets in
+`GET /platform/recovery` answers _when did a restore last succeed_, and returns the targets in
 force by tier, the drill's state and whether it is overdue, the verification checks, the decision
 tree, and `RECOVERY_CLAIM_STANCE` verbatim.
 

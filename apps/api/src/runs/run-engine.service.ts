@@ -33,10 +33,7 @@ import {
   tenantScopeForPlatformOperation,
   type TenantScope,
 } from '../persistence/tenant-context.js';
-import {
-  createRequestContext,
-  runWithRequestContext,
-} from '../request-context/request-context.js';
+import { createRequestContext, runWithRequestContext } from '../request-context/request-context.js';
 import { RunFairnessService } from '../rate-limits/run-fairness.service.js';
 import { RunProgressGateway } from './run-progress.gateway.js';
 import { RunQueue, type RunJob } from './run-queue.js';
@@ -174,9 +171,7 @@ export class RunEngineService implements OnModuleInit {
    */
   private async deferOrLeaveQueued(job: RunJob, reason: string): Promise<void> {
     if (!this.queue.isDurableTransport) {
-      this.logger.debug(
-        `Run ${job.runId} is held back for fairness and stays queued: ${reason}`,
-      );
+      this.logger.debug(`Run ${job.runId} is held back for fairness and stays queued: ${reason}`);
       return;
     }
 
@@ -551,10 +546,10 @@ export class RunEngineService implements OnModuleInit {
             // approval threshold clears when a person decides — neither is a transient fault.
             new RunFailure(caught.message, 'Terminal', 'BlockedByBudget')
           : new RunFailure(
-            caught instanceof Error ? caught.message : String(caught),
-            // An unclassified throw is treated as retryable: a bug that always throws burns its
-            // bounded attempts and then dead-letters, which is visible. Treating it as terminal
-            // would turn a transient fault into a permanent failure on the first blip.
+              caught instanceof Error ? caught.message : String(caught),
+              // An unclassified throw is treated as retryable: a bug that always throws burns its
+              // bounded attempts and then dead-letters, which is visible. Treating it as terminal
+              // would turn a transient fault into a permanent failure on the first blip.
               'Retryable',
             );
 

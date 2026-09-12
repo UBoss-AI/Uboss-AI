@@ -119,7 +119,9 @@ describe('EmployeePhoto', () => {
     unmount();
 
     view.mockResolvedValue(WITH_PHOTO);
-    render(<EmployeePhoto tenantId="tenant-1" userId="user-1" displayName="Anita Prasad" editable />);
+    render(
+      <EmployeePhoto tenantId="tenant-1" userId="user-1" displayName="Anita Prasad" editable />,
+    );
     expect(await screen.findByRole('button', { name: 'Replace' })).toBeInTheDocument();
   });
 
@@ -132,7 +134,9 @@ describe('EmployeePhoto', () => {
     unmount();
 
     view.mockResolvedValue(WITH_PHOTO);
-    render(<EmployeePhoto tenantId="tenant-1" userId="user-1" displayName="Anita Prasad" editable />);
+    render(
+      <EmployeePhoto tenantId="tenant-1" userId="user-1" displayName="Anita Prasad" editable />,
+    );
     expect(await screen.findByRole('button', { name: 'Remove' })).toBeInTheDocument();
   });
 
@@ -162,7 +166,9 @@ describe('EmployeePhoto', () => {
 
   it('removes a photo', async () => {
     view.mockResolvedValue(WITH_PHOTO);
-    render(<EmployeePhoto tenantId="tenant-1" userId="user-1" displayName="Anita Prasad" editable />);
+    render(
+      <EmployeePhoto tenantId="tenant-1" userId="user-1" displayName="Anita Prasad" editable />,
+    );
 
     await userEvent.click(await screen.findByRole('button', { name: 'Remove' }));
 
@@ -173,7 +179,9 @@ describe('EmployeePhoto', () => {
     const { ApiError } = await import('../lib/api-client');
     upload.mockRejectedValue(new ApiError('That file is larger than 2 MB.', 413));
 
-    render(<EmployeePhoto tenantId="tenant-1" userId="user-1" displayName="Anita Prasad" editable />);
+    render(
+      <EmployeePhoto tenantId="tenant-1" userId="user-1" displayName="Anita Prasad" editable />,
+    );
     await screen.findByRole('button', { name: 'Upload' });
 
     await userEvent.upload(

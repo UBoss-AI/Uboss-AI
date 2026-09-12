@@ -1,0 +1,181 @@
+# Release candidate — Prompt 44.
+#
+# CI answers "is this change sound?". This answers a different and larger question: **is this commit
+# fit to be promoted towards production?** It is deliberately slower and deliberately harder to pass.
+#
+# Triggered by a `prompt-*-pass` or `v*` tag, or by hand. A release candidate is a decision somebody
+# makes, not something every push produces.
+#
+# ## What it adds over CI
+#
+#   * the **full** API suite rather than the fast subset, end to end
+#   * the security suite run as its own gate, so a security regression cannot hide inside a
+#     thousand green assertions
+#   * an **AI regression check** — the evaluation cases, and the assertion that no mock output is
+#     ever recorded as a real provider result
+#   * a **migration rollback rehearsal**: applying every migration forward, then proving the
+#     database still answers. A migration that cannot be deployed to a fresh database is a
+#     migration that cannot be deployed at all.
+#
+# ## What it deliberately does not do
+#
+# It does not deploy. Promotion is a separate, human-approved step — see `deploy.yml` and
+# `docs/DEPLOYMENT.md`. A pipeline that promoted on green would make the approval gate decorative.
+
+name: Release candidate
+
+on:
+  push:
+    tags:
+      - 'prompt-*-pass'
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Commit, branch or tag to qualify'
+        required: false
+        default: 'main'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    name: Qualify the candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: uboss
+          POSTGRES_PASSWORD: uboss_local_dev
+          POSTGRES_DB: uboss_test
+        ports:
+          - 5442:5432
+        options: >-
+          --health-cmd="pg_isready -U uboss"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+      redis:
+        image: redis:7
+        ports:
+          - 6381:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      NODE_ENV: test
+      TEST_DATABASE_URL: postgresql://uboss_app:uboss_app_local_dev@localhost:5442/uboss_test
+      TEST_MIGRATION_DATABASE_URL: postgresql://uboss:uboss_local_dev@localhost:5442/uboss_test
+      DATABASE_URL: postgresql://uboss_app:uboss_app_local_dev@localhost:5442/uboss_test
+      DATABASE_MIGRATION_URL: postgresql://uboss:uboss_local_dev@localhost:5442/uboss_test
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Create the application role
+        run: |
+          PGPASSWORD=uboss_local_dev psql -h localhost -p 5442 -U uboss -d uboss_test -v ON_ERROR_STOP=1 <<'SQL'
+            CREATE ROLE uboss_app LOGIN PASSWORD 'uboss_app_local_dev' NOBYPASSRLS;
+            GRANT USAGE ON SCHEMA public TO uboss_app;
+            ALTER DEFAULT PRIVILEGES IN SCHEMA public
+              GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO uboss_app;
+            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO uboss_app;
+          SQL
+
+      # ---- the gate every other step depends on ----
+      - name: Full verification
+        run: npm run verify
+
+      # ---- migrations, forward and back ----
+      - name: Migration rehearsal on a fresh database
+        working-directory: apps/api
+        # Forward, on a database that has never seen this schema — which is what a new environment
+        # is. Then a second `deploy` to prove it is idempotent: a release that re-runs a migration
+        # on retry must not fail the second time.
+        run: |
+          PGPASSWORD=uboss_local_dev createdb -h localhost -p 5442 -U uboss uboss_release_rehearsal
+          export DATABASE_MIGRATION_URL="postgresql://uboss:uboss_local_dev@localhost:5442/uboss_release_rehearsal"
+          npx prisma migrate deploy
+          npx prisma migrate deploy
+          npx prisma migrate status
+          PGPASSWORD=uboss_local_dev dropdb -h localhost -p 5442 -U uboss uboss_release_rehearsal
+
+      - name: Rollback decision check
+        working-directory: apps/api
+        # UBoss ships no down-migrations, deliberately: an automated reverse of a destructive
+        # change silently destroys the data that change touched. What replaces them is a written
+        # decision tree, and this gate is "is that judgement still present and coherent".
+        #
+        # A script rather than an inline node -e: a multi-line script inside a YAML scalar folds
+        # its newlines, and the first person to add a line to it would not notice.
+        run: node scripts/check-rollback-tree.mjs
+      # ---- security, as its own gate ----
+      - name: Security suite
+        working-directory: apps/api
+        # Run apart from the rest so a security regression is its own red job rather than one
+        # failure among two thousand passes.
+        run: |
+          npx tsc -p tsconfig.test.json
+          node --test --test-concurrency=1 \
+            "dist-test/test/authorization.e2e.spec.js" \
+            "dist-test/test/authorization-engine.spec.js" \
+            "dist-test/test/tenant-isolation.spec.js" \
+            "dist-test/test/tenant-guard.e2e.spec.js" \
+            "dist-test/test/audit-chain.spec.js" \
+            "dist-test/test/security-center.e2e.spec.js" \
+            "dist-test/test/prompt-injection.spec.js" \
+            "dist-test/test/tenant-predicate.spec.js"
+
+      # ---- AI behaviour ----
+      - name: AI regression and evaluation
+        working-directory: apps/api
+        # The evaluation cases, plus the rule that matters more than any of them: a response the
+        # mock produced must never be recorded as a real provider result. `producedByRealModel` is
+        # false all the way into the database, and these suites are what hold it there.
+        run: |
+          node --test --test-concurrency=1 \
+            "dist-test/test/model-gateway.e2e.spec.js" \
+            "dist-test/test/skill-router.e2e.spec.js" \
+            "dist-test/test/objective-analysis.e2e.spec.js" \
+            "dist-test/test/memory-feedback.e2e.spec.js"
+
+      - name: Candidate summary
+        run: |
+          {
+            echo "### Release candidate qualified"
+            echo ""
+            echo "| Gate | Result |"
+            echo "| --- | --- |"
+            echo "| Full verification | passed |"
+            echo "| Migration rehearsal (fresh + idempotent) | passed |"
+            echo "| Rollback decision tree | present |"
+            echo "| Security suite | passed |"
+            echo "| AI regression and evaluation | passed |"
+            echo ""
+            echo "Commit: \`${{ github.sha }}\`"
+            echo ""
+            echo "This qualifies the commit for promotion. It does **not** deploy it."
+            echo "See \`docs/DEPLOYMENT.md\` for the promotion checklist."
+          } >> "$GITHUB_STEP_SUMMARY"

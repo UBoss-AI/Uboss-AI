@@ -95,10 +95,7 @@ class PermissionProbeController {
   }
 
   @Get('both-agents')
-  @RequirePermission(
-    { module: 'agents', action: 'View' },
-    { module: 'agents', action: 'Approve' },
-  )
+  @RequirePermission({ module: 'agents', action: 'View' }, { module: 'agents', action: 'Approve' })
   bothAgents() {
     return { reached: true };
   }
@@ -335,10 +332,9 @@ describe('authorization (e2e)', () => {
 
       // `agents` since CR-03: an Employee is operations-only, so the module they demonstrably
       // hold is the one their work lives in.
-      const response = await asPerson(
-        agent().get('/test-authz/view-agents'),
-        employeeUboss,
-      ).expect(200);
+      const response = await asPerson(agent().get('/test-authz/view-agents'), employeeUboss).expect(
+        200,
+      );
 
       assert.equal((response.body as { reached: boolean }).reached, true);
     });
@@ -421,10 +417,9 @@ describe('authorization (e2e)', () => {
         data: { expiresAt: new Date(Date.now() - 1000) },
       });
 
-      const response = await asPerson(
-        agent().get('/test-authz/view-agents'),
-        employeeUboss,
-      ).expect(403);
+      const response = await asPerson(agent().get('/test-authz/view-agents'), employeeUboss).expect(
+        403,
+      );
       assert.match((response.body as { message: string }).message, /no role in this company/i);
     });
 
@@ -667,10 +662,9 @@ describe('authorization (e2e)', () => {
         })
         .expect(201);
 
-      const response = await asPerson(
-        agent().get('/test-authz/view-agents'),
-        employeeUboss,
-      ).expect(403);
+      const response = await asPerson(agent().get('/test-authz/view-agents'), employeeUboss).expect(
+        403,
+      );
 
       assert.equal(
         (response.body as { message: string }).message,

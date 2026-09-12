@@ -1,0 +1,226 @@
+# Continuous integration — Prompt 44.
+#
+# Runs on every pull request and on every push to main. This is the gate a change has to pass
+# before anyone looks at it, and it runs the same commands a developer runs locally: there is no
+# CI-only script, so a green pipeline cannot mean something different from a green machine.
+#
+# ## Why the jobs are split the way they are
+#
+# `static` needs nothing but the source, so it fails in under a minute on the mistakes that are most
+# common. `integration` needs PostgreSQL and takes far longer. Splitting them means a formatting slip
+# is reported in a minute rather than twenty, and the expensive job still runs in parallel rather
+# than behind it.
+#
+# ## Secrets
+#
+# There are none, deliberately. Every job runs against a service container created here with
+# throwaway credentials. A CI run that needed a real secret would be a CI run that could leak one.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A new push to the same branch cancels the previous run: the old answer is about code nobody has.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Keeps the API's Nest logger quiet enough to read a failure in the log.
+  NODE_ENV: test
+
+jobs:
+  static:
+    name: Lint, format, typecheck, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the `engines` field in the root package.json. Pinned to a major rather than a
+          # patch so a security release is picked up without a commit here.
+          node-version: '24'
+          cache: npm
+
+      - name: Install
+        # `npm ci` rather than `npm install`: it installs exactly the lockfile and fails if the
+        # lockfile and package.json disagree, which is the whole point of committing a lockfile.
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Formatting
+        run: npm run format:check
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+  unit:
+    name: Unit tests (no database)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Shared types
+        # Pure domain rules — no database, no clock, no network.
+        run: npm run test --workspace @uboss/types
+
+      - name: Design system
+        run: npm run test --workspace @uboss/ui
+
+      - name: Web
+        run: npm run test --workspace @uboss/web
+
+  integration:
+    name: Integration tests (PostgreSQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    services:
+      postgres:
+        # Matches the version in infra/docker-compose.yml. Row-Level Security behaviour is
+        # version-sensitive, so testing against a different major would test a different product.
+        image: postgres:17
+        env:
+          POSTGRES_USER: uboss
+          POSTGRES_PASSWORD: uboss_local_dev
+          POSTGRES_DB: uboss_test
+        ports:
+          - 5442:5432
+        options: >-
+          --health-cmd="pg_isready -U uboss"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      TEST_DATABASE_URL: postgresql://uboss_app:uboss_app_local_dev@localhost:5442/uboss_test
+      TEST_MIGRATION_DATABASE_URL: postgresql://uboss:uboss_local_dev@localhost:5442/uboss_test
+      DATABASE_URL: postgresql://uboss_app:uboss_app_local_dev@localhost:5442/uboss_test
+      DATABASE_MIGRATION_URL: postgresql://uboss:uboss_local_dev@localhost:5442/uboss_test
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Create the application role
+        # `uboss_app` is NOBYPASSRLS on purpose — it is the role the application connects as, and
+        # Row-Level Security only means anything because this role cannot escape it. Creating it
+        # here rather than in a migration keeps the migration portable across deployments that
+        # manage roles their own way.
+        run: |
+          PGPASSWORD=uboss_local_dev psql -h localhost -p 5442 -U uboss -d uboss_test -v ON_ERROR_STOP=1 <<'SQL'
+            CREATE ROLE uboss_app LOGIN PASSWORD 'uboss_app_local_dev' NOBYPASSRLS;
+            GRANT USAGE ON SCHEMA public TO uboss_app;
+            ALTER DEFAULT PRIVILEGES IN SCHEMA public
+              GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO uboss_app;
+            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO uboss_app;
+          SQL
+
+      - name: Build shared packages
+        run: npm run build:packages
+
+      - name: Migration validation
+        # Two separate questions, and both matter.
+        #
+        # `migrate deploy` proves every migration applies to an empty database in order — the thing
+        # a production deploy will do.
+        #
+        # `migrate diff` proves the migrations and the schema agree: an empty diff means nothing was
+        # changed in schema.prisma without a migration to carry it. This repository has hand-written
+        # SQL that Prisma cannot see, which is exactly why the check is run rather than assumed.
+        working-directory: apps/api
+        run: |
+          npx prisma migrate deploy
+          npx prisma generate
+          DIFF=$(npx prisma migrate diff \
+            --from-migrations ./prisma/migrations \
+            --to-schema-datamodel ./prisma/schema.prisma \
+            --shadow-database-url "$DATABASE_MIGRATION_URL" \
+            --script)
+          if [ -n "$(echo "$DIFF" | grep -v '^--' | tr -d '[:space:]')" ]; then
+            echo "::error::schema.prisma and the migrations disagree. Generate a migration."
+            echo "$DIFF"
+            exit 1
+          fi
+          echo "migrations and schema agree"
+
+      - name: API tests
+        working-directory: apps/api
+        # `--test-concurrency=1` is not a performance choice. The suite shares one database and
+        # resets it between tests; two workers would reset each other's rows mid-assertion.
+        run: npm test
+
+  security:
+    name: Dependency and secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Gitleaks needs history to scan commits, not just the working tree — a secret removed in
+          # a later commit is still published if it was ever pushed.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Dependency audit
+        # Fails on high and critical only. Moderate advisories in dev-only transitive dependencies
+        # would block every PR without making the product safer, and a gate that is always red is a
+        # gate people learn to ignore.
+        run: npm audit --audit-level=high
+
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Static analysis (CodeQL) — initialise
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          # Security rules plus the quality rules that catch real defects, rather than the default
+          # set alone.
+          queries: security-and-quality
+
+      - name: Static analysis (CodeQL) — analyse
+        uses: github/codeql-action/analyze@v3

@@ -471,9 +471,7 @@ export class ChatService {
       ref: input.ref,
     });
     if (!preview.accessible) {
-      throw new ForbiddenException(
-        'You cannot link something you do not have access to yourself.',
-      );
+      throw new ForbiddenException('You cannot link something you do not have access to yourself.');
     }
 
     return this.prisma.runInTenantTransaction(input.scope, async () => {
@@ -656,9 +654,7 @@ export class ChatService {
     );
 
     if (count !== new Set(userIds).size) {
-      throw new BadRequestException(
-        'One of those people is not an active member of this company.',
-      );
+      throw new BadRequestException('One of those people is not an active member of this company.');
     }
   }
 }

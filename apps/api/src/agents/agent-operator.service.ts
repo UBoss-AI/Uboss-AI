@@ -651,7 +651,11 @@ export class AgentOperatorService {
   private async budgetIsAvailable(scope: TenantScope): Promise<boolean> {
     if (this.cost === undefined) return true;
     try {
-      const estimate = await this.cost.estimate({ scope, logicalProfile: 'AGENT_STANDARD', maxTokens: 1 });
+      const estimate = await this.cost.estimate({
+        scope,
+        logicalProfile: 'AGENT_STANDARD',
+        maxTokens: 1,
+      });
       return estimate.estimateMinor >= 0;
     } catch (error) {
       // A failure to *estimate* is not a failure of budget. Reporting "no budget" because a

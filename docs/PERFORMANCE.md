@@ -1,7 +1,7 @@
 # Performance and scale — what was measured, and what it is worth
 
 Prompt 43. The harness is `apps/api/scripts/perf/`, the evidence is in `infra/perf/evidence/`, and the
-budgets are declared in `packages/types/src/scale-validation.ts` — written down *before* the
+budgets are declared in `packages/types/src/scale-validation.ts` — written down _before_ the
 measuring, so the measuring could not quietly become the target.
 
 ## The honest frame, first
@@ -40,13 +40,13 @@ Figures from `infra/perf/evidence/scale-20260912T080226.json`, which is the run 
 repository. Re-running replaces it; the numbers move by a few milliseconds between runs on the same
 machine, which is why the **verdict** and the **plan** are what this table is for.
 
-| Scenario | p50 | p95 | p99 | Budget (p95) | Verdict |
-| --- | --- | --- | --- | --- | --- |
-| Large tenant hierarchy list | 59.7 | 79.0 | 99.6 | 400 | Pass |
-| Reporting subtree query | 12.2 | 23.1 | 27.3 | 50 | Pass |
-| Audit page, as the application queries it | 2.8 | 3.5 | 3.8 | 400 | Pass |
-| Concurrent logins and sessions | 5.8 | 7.9 | 8.7 | 200 | Pass |
-| *Control* — audit page relying on RLS alone | 349.4 | 437.6 | 457.3 | 400 | **OverBudget** |
+| Scenario                                    | p50   | p95   | p99   | Budget (p95) | Verdict        |
+| ------------------------------------------- | ----- | ----- | ----- | ------------ | -------------- |
+| Large tenant hierarchy list                 | 59.7  | 79.0  | 99.6  | 400          | Pass           |
+| Reporting subtree query                     | 12.2  | 23.1  | 27.3  | 50           | Pass           |
+| Audit page, as the application queries it   | 2.8   | 3.5   | 3.8   | 400          | Pass           |
+| Concurrent logins and sessions              | 5.8   | 7.9   | 8.7   | 200          | Pass           |
+| _Control_ — audit page relying on RLS alone | 349.4 | 437.6 | 457.3 | 400          | **OverBudget** |
 
 Milliseconds. The last row is **a control, not the product**: it omits the tenant predicate to
 measure what the convention is worth, and it fails the budget — which is the finding, not a defect.
@@ -100,19 +100,19 @@ affected suites pass 249/249 unchanged.
 `test/tenant-predicate.spec.ts` now holds the rule, with an explicit list of permitted exceptions —
 primary-key lookups, hash-chain reads and deliberate platform-plane sweeps — each carrying its reason.
 
-### What was *not* changed
+### What was _not_ changed
 
 **No index was added.** The schema's 187 indexes turned out to be right; the problem was queries that
 could not reach them. Adding an index would have been the obvious move and the wrong one.
 
 ## How the harness lied three times
 
-Worth recording, because each failure produced a *confident false finding* that would have led to
+Worth recording, because each failure produced a _confident false finding_ that would have led to
 real damage.
 
 **1. One tenant.** The first run reported sequential scans on `employment_records` and
 `audit_events`. Neither was a finding: with a single company, `tenant_id = X` matches every row, so a
-tenant-prefixed index would mean reading the whole index *and* the whole heap. The planner chose the
+tenant-prefixed index would mean reading the whole index _and_ the whole heap. The planner chose the
 scan because the planner was right, and `audit_events_tenant_id_occurred_at_idx` — the exact index
 that query wants — already existed and was correctly ignored. Acting on it would have added a
 duplicate index production never uses.
@@ -143,4 +143,5 @@ benchmark.** The harness now copies the repository's SQL, and says so in a comme
   WebSocket fan-out is deliberately **not** among them: it is in `NOT_MEASURED_HERE` rather than
   `SCALE_SCENARIOS`, because the gateway is in-process here and measuring it would be measuring an
   event emitter.
+
 - **No connection-pool saturation test.** The pool is 10 here and production is not.

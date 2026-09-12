@@ -381,7 +381,11 @@ describe('support, support sessions and system health (e2e)', () => {
       actorUserId: operatorId,
       body: 'Checking their logs.',
     });
-    assert.equal(note.isInternal, true, 'the safe default, because the two mistakes differ in cost');
+    assert.equal(
+      note.isInternal,
+      true,
+      'the safe default, because the two mistakes differ in cost',
+    );
   });
 
   it('refuses to resolve a ticket with no explanation', async () => {

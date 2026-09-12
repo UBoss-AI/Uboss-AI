@@ -96,9 +96,7 @@ export class CapabilityService {
         help: capability.help,
         held: held.includes(capability.key),
         canGrant: !refusals.has(capability.key),
-        ...(refusals.has(capability.key)
-          ? { whyNot: refusals.get(capability.key) }
-          : {}),
+        ...(refusals.has(capability.key) ? { whyNot: refusals.get(capability.key) } : {}),
         // What it really does, so an administrator can see it rather than trust the label.
         grants: capability.grants,
       })),

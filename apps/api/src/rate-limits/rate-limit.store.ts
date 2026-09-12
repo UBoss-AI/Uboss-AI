@@ -1,7 +1,13 @@
 import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
 import { Redis } from 'ioredis';
 
-import { consumeToken, freshBucket, type BucketState, type LimitDecision, type RateLimit } from '@uboss/types';
+import {
+  consumeToken,
+  freshBucket,
+  type BucketState,
+  type LimitDecision,
+  type RateLimit,
+} from '@uboss/types';
 
 /**
  * Where a token bucket lives.

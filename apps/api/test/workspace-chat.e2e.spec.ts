@@ -760,9 +760,7 @@ describe('workspace chat (e2e)', () => {
     });
 
     it('refuses a search term too short to mean anything', async () => {
-      await assert.rejects(
-        chat().search({ scope: scope(), actorUserId: employeeId, term: 'a' }),
-      );
+      await assert.rejects(chat().search({ scope: scope(), actorUserId: employeeId, term: 'a' }));
     });
   });
 

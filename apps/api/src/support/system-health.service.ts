@@ -243,8 +243,11 @@ export class SystemHealthService {
     try {
       const queue = await this.queue.health();
 
-      const status: HealthStatus =
-        !queue.measured ? 'ok' : (queue.failed ?? 0) > 0 ? 'degraded' : 'ok';
+      const status: HealthStatus = !queue.measured
+        ? 'ok'
+        : (queue.failed ?? 0) > 0
+          ? 'degraded'
+          : 'ok';
 
       const counts = queue.measured
         ? `${queue.waiting ?? 0} waiting, ${queue.active ?? 0} running, ${queue.failed ?? 0} failed.`

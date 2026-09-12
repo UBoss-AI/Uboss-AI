@@ -174,10 +174,7 @@ describe('report windows', () => {
   it('resolves each fixed range from the caller’s clock', () => {
     const week = resolveWindow({ range: 'Last7Days', now });
     assert.equal(week.ok, true);
-    assert.equal(
-      week.ok && week.window.to.getTime() - week.window.from.getTime(),
-      7 * 86_400_000,
-    );
+    assert.equal(week.ok && week.window.to.getTime() - week.window.from.getTime(), 7 * 86_400_000);
   });
 
   it('refuses a custom range that is missing an end, or is backwards', () => {

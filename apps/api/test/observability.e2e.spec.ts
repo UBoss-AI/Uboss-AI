@@ -199,9 +199,7 @@ describe('observability and the incident workflow (e2e)', () => {
       // Written inside the same ambient context a request or a run worker establishes — which is
       // exactly how the two production write sites obtain it.
       await runWithRequestContext(createRequestContext(correlationId), async () => {
-        const { getCorrelationId } = await import(
-          '../src/request-context/request-context.js'
-        );
+        const { getCorrelationId } = await import('../src/request-context/request-context.js');
 
         await ctx.prisma.client.modelGatewayCall.create({
           data: {
@@ -293,7 +291,11 @@ describe('observability and the incident workflow (e2e)', () => {
 
   it('redacts a secret out of a span attribute', async () => {
     await runWithRequestContext(createRequestContext('corr-secret-0004'), () =>
-      tracer().span('test.secretive', { route: '/x', apiKey: 'sk-live-abc' }, async () => undefined),
+      tracer().span(
+        'test.secretive',
+        { route: '/x', apiKey: 'sk-live-abc' },
+        async () => undefined,
+      ),
     );
 
     const span = tracer().trace('corr-secret-0004')[0];
@@ -321,7 +323,10 @@ describe('observability and the incident workflow (e2e)', () => {
     metrics().observe('request_latency_ms', 30, { route: '/a', method: 'GET' });
     metrics().observe('request_latency_ms', 3_000, { route: '/a', method: 'GET' });
 
-    assert.equal(metrics().valueOf('request_errors', { route: '/a', method: 'GET', status: '500' }), 2);
+    assert.equal(
+      metrics().valueOf('request_errors', { route: '/a', method: 'GET', status: '500' }),
+      2,
+    );
     assert.equal(metrics().valueOf('queue_depth', { queue: 'runs' }), 42);
 
     const rendered = metrics().render();
@@ -350,7 +355,12 @@ describe('observability and the incident workflow (e2e)', () => {
     metrics().increment('request_errors', { route: '/a', method: 'GET' });
     metrics().increment('request_errors', { method: 'GET', route: '/a' });
     assert.equal(metrics().totalOf('request_errors'), 2);
-    assert.equal(metrics().snapshot().find((entry) => entry.metric === 'request_errors')?.series.length, 1);
+    assert.equal(
+      metrics()
+        .snapshot()
+        .find((entry) => entry.metric === 'request_errors')?.series.length,
+      1,
+    );
   });
 
   it('reports a mean for a histogram series', () => {
@@ -546,7 +556,10 @@ describe('observability and the incident workflow (e2e)', () => {
 
     // And a `Resolved` entry lands on the timeline, so the narrative ends where the record does.
     const timeline = await incidents().timelineFor(alert.id);
-    assert.equal(timeline.some((entry) => entry.kind === 'Resolved'), true);
+    assert.equal(
+      timeline.some((entry) => entry.kind === 'Resolved'),
+      true,
+    );
   });
 
   it('refuses a postmortem on an alert nobody declared an incident', async () => {

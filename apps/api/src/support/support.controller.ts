@@ -1,12 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Post,
-  Query,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UnauthorizedException } from '@nestjs/common';
 import {
   IsBoolean,
   IsIn,
@@ -386,10 +378,7 @@ export class PlatformSupportController {
 
   @Post('tickets/:ticketId/notes')
   @RequirePermission({ module: 'support', action: 'Comment' })
-  async note(
-    @Param('ticketId') ticketId: string,
-    @Body() body: OperatorNoteDto,
-  ): Promise<unknown> {
+  async note(@Param('ticketId') ticketId: string, @Body() body: OperatorNoteDto): Promise<unknown> {
     return this.tickets.addOperatorNote({
       ticketId,
       actorUserId: this.currentUserId(),
@@ -400,10 +389,7 @@ export class PlatformSupportController {
 
   @Post('tickets/:ticketId/incident')
   @RequirePermission({ module: 'support', action: 'EditDraft' })
-  async link(
-    @Param('ticketId') ticketId: string,
-    @Body() body: LinkIncidentDto,
-  ): Promise<unknown> {
+  async link(@Param('ticketId') ticketId: string, @Body() body: LinkIncidentDto): Promise<unknown> {
     return this.tickets.linkToIncident({
       ticketId,
       serviceAlertId: body.serviceAlertId ?? null,
@@ -429,10 +415,7 @@ export class PlatformSupportController {
 
   @Post('incidents/:alertId/mitigate')
   @RequirePermission({ module: 'support', action: 'Administer' })
-  async mitigate(
-    @Param('alertId') alertId: string,
-    @Body() body: MitigateDto,
-  ): Promise<unknown> {
+  async mitigate(@Param('alertId') alertId: string, @Body() body: MitigateDto): Promise<unknown> {
     return this.administration.mitigateIncident({
       actorUserId: this.currentUserId(),
       alertId,
