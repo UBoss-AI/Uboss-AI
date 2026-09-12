@@ -3211,10 +3211,12 @@ first run; omitting the gate would have been dropping a requirement. So the repo
 
 ### Real limitations at Prompt 44
 
-- **No workflow has ever executed.** The YAML is valid and each step is a real command that has been
-  run by hand locally, but no GitHub Actions run exists yet. The first push is the first execution,
-  and things that only appear on a runner — a missing system package, a service-container timing
-  difference — will appear then.
+- **`ci.yml` has executed and is green.** It failed three of its four jobs the first time, and
+  every one of those was a real defect rather than a runner quirk — see "What the first real run
+  caught" below. The prediction that "things which only appear on a runner will appear then" was
+  correct, and that is the whole argument for running it rather than reasoning about it.
+- **`release.yml` and `deploy.yml` have not executed.** Green CI is not a qualified release
+  candidate, and neither is a promotion.
 - **No host, so nothing deploys.** `UBOSS_DEPLOY_COMMAND` is unset on every environment and every
   step that would use it says so in the log rather than claiming success (ADR-277). UBoss has a
   promotion _process_; it does not have a _deployment_.
@@ -3223,7 +3225,39 @@ first run; omitting the gate would have been dropping a requirement. So the repo
 - **No smoke test against a deployed environment.** The health check proves the process answers, not
   that a journey works. The staging checklist asks for that by hand until there is an environment to
   automate against.
-- **The GitHub Environments themselves are not created.** Approvals, secrets and variables are
-  configured in repository settings, which is outside the repository. `docs/DEPLOYMENT.md` lists
-  exactly what to create; until then the `environment:` keys refer to environments that do not
-  exist and the jobs would run unapproved.
+- **The four GitHub Environments exist**, each restricted to `main`, with a required reviewer on
+  staging, UAT and production, and self-approval blocked on production. None holds a secret or a
+  variable, deliberately — see `docs/DEPLOYMENT.md`.
+- **Production cannot require two approvals.** GitHub Environments release a job when any one
+  listed reviewer approves; there is no approval-count setting. The documented two-reviewer rule
+  is therefore a process control, not a platform-enforced one, and only `prevent_self_review` is
+  mechanical (S-346). Only one account has repository access today, so there is not yet a second
+  reviewer to name.
+
+### What the first real run caught — Prompt 44
+
+Three of four jobs failed, on commit `265ca5f`. Each was reproduced before being fixed: the two
+Linux-only failures inside a container running a fresh clone of the pushed commit, so the fix was
+answering the actual failure rather than a plausible story about it.
+
+| Job                        | What failed                                            | Why it could not be seen locally                                                        |
+| -------------------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| Dependency and secret scan | `npm audit --audit-level=high` — eight high advisories | Nothing ran the audit until CI did                                                      |
+| Unit tests                 | `npm ci` could not find rolldown's native binding      | The lockfile held only the Windows binary, and Windows is where it was written          |
+| Integration tests          | `prisma migrate diff` rejected its own flags           | The flags were Prisma 6's; nobody had run that exact command since the Prisma 7 upgrade |
+
+The migration one was the worst of the three, and not for the reason it failed. Its
+`--shadow-database-url` pointed at the database under test. A shadow database is replayed into and
+reset — had the flag still existed, the check would have wiped the schema the next job tests
+against, and it would have looked like a flaky suite rather than a broken workflow.
+
+Two further gaps surfaced while fixing those, both of the same shape: **CI was running different
+code from a developer machine.** `release.yml` declared a Redis service and never set
+`REDIS_URL`, so the shared rate-limit test skipped itself and the run queue silently used the
+in-process implementation; `ci.yml` had no Redis at all. Since `REDIS_URL` is in
+`.env.example`, every developer runs the BullMQ path and CI was qualifying the other one. Both are
+now connected — which is the principle the pipeline claims for itself (ADR-275) finally being true.
+
+Fixing the audit cost an `overrides` block rather than the downgrade `npm audit fix --force`
+proposed (S-345), and fixing the lockfile cost 23 incidental version moves inside the declared
+ranges (ADR-279). The full suite was re-run after both.

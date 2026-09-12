@@ -36,6 +36,37 @@ Approvals are enforced by **GitHub Environments**, not by the workflow YAML. An 
 required reviewers pauses the job until a named person approves. That cannot be bypassed by editing
 a workflow in a pull request, which is exactly why it is configured there and not here.
 
+### What GitHub actually enforces, and what it does not
+
+The four environments exist and are configured. Each is restricted to the `main` branch, so a
+commit nobody merged cannot be promoted even by a hand-run workflow.
+
+| Environment  | Reviewer required | Self-approval | Branches    | Secrets / variables |
+| ------------ | ----------------- | ------------- | ----------- | ------------------- |
+| `dev`        | none              | —             | `main` only | none                |
+| `staging`    | yes               | allowed       | `main` only | none                |
+| `uat`        | yes               | allowed       | `main` only | none                |
+| `production` | yes               | **blocked**   | `main` only | none                |
+
+**The two-reviewer rule for production is policy, not enforcement, and the difference matters.**
+GitHub Environments take a list of reviewers and release the job when **any one** of them
+approves. There is no approval-count setting, so "two reviewers" cannot be configured — adding
+more names widens who _may_ approve, it does not require more approvals. Believing otherwise
+would be worse than knowing the gate is partial.
+
+What the platform does enforce on production is `prevent_self_review`: the person who started
+the deployment cannot be the one who approves it. That is the half of _"one of whom did not write
+the change"_ that is mechanical. The other half — that a second person actually reviews — is a
+checklist item below and is only as real as the people following it.
+
+Separately, only one account currently has access to the repository, so there is no second
+reviewer to name even as policy. Add one before the first production promotion.
+
+**No environment holds a secret or a variable**, and that is correct rather than unfinished.
+There is no host, so `UBOSS_DEPLOY_COMMAND` has no real value; setting a placeholder would make
+the promotion action believe it had something to run. Absent is the state every step is written
+to handle, and the state it reports in the log.
+
 ---
 
 ## The pipeline
@@ -180,7 +211,10 @@ Run top to bottom. Anything unchecked stops the promotion.
 
 ### Production
 
-- [ ] **Two reviewers**, one of whom did not write the change.
+- [ ] **Two reviewers**, one of whom did not write the change. GitHub enforces only that a named
+      reviewer approves and that it is not the person who started the promotion; the second pair of
+      eyes is this checkbox and nothing else (S-346). Tick it only if a second person actually read
+      the change.
 - [ ] A verified backup exists and `GET /platform/recovery` does not report `neverVerified`.
 - [ ] The DR drill is not overdue (`drillIsOverdue` is false).
 - [ ] Release flags for this change are in their intended state — check, do not assume.
@@ -210,6 +244,8 @@ Run top to bottom. Anything unchecked stops the promotion.
 - **No smoke-test suite against a deployed environment.** The health check proves the process
   answers; it does not prove a journey works. The staging checklist asks for that by hand until
   there is an environment to automate it against.
-- **Nothing has run.** The workflows are syntactically valid and their steps are the real commands,
-  but no GitHub Actions run has executed them. The first push of this branch is the first time they
-  will.
+- **Nothing has been deployed.** `ci.yml` now runs on GitHub and is green, so the pipeline is no
+  longer theoretical — but `deploy.yml` has never promoted anything anywhere, because there is
+  nothing to promote to. Every promotion step checks `UBOSS_DEPLOY_COMMAND` and says in the log
+  that it did nothing. Read any green tick on that workflow as "the process ran", never as "the
+  software is running somewhere".

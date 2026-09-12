@@ -3405,3 +3405,28 @@ recorded here rather than silenced, so the next person meets a decision instead 
 The gate stays at `high`. Lowering it to `critical` to make a run green would have been the
 other way to close this, and it is the reason the threshold is written down with its justification
 rather than just chosen.
+
+**S-346 — Production's two-reviewer rule is a process control; GitHub enforces only part of it.**
+Creating the environments showed that the mechanism S-343 named as the enforcer cannot do what was
+claimed of it. A GitHub Environment takes a list of required reviewers and releases the job when
+**any one** of them approves — there is no approval-count setting, so "two reviewers" is not
+configurable. Listing more names widens who may approve; it does not require a second approval.
+
+What is enforced on production is `prevent_self_review`: whoever started the promotion cannot
+approve it. That covers _"one of whom did not write the change"_ and nothing more. The second
+reviewer is a line on the promotion checklist, and is exactly as reliable as the people working
+through it.
+
+This is recorded rather than quietly downgraded because the failure mode is specific: someone reads
+S-343, believes two people must sign off on every production release, and designs a process on top
+of an assumption the platform never supported. A control that is documented as weaker than it looks
+can be compensated for. One that is documented as stronger than it is cannot.
+
+A compensating control exists and is already on: every environment is restricted to the `main`
+branch, and `deploy.yml` refuses any commit without a successful `Release candidate` run
+for that exact SHA — which was proven by running it against a merged-but-unqualified commit and
+watching it refuse. Neither of those depends on anybody's judgement.
+
+Also worth stating plainly: **only one account has access to this repository today**, so there is no
+second reviewer to name even as policy. That must change before the first production promotion, and
+it is a staffing fact rather than a configuration one.
