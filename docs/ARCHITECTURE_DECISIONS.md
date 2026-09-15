@@ -6024,3 +6024,67 @@ a throw there is a blank application.
 The sidebar and Master Console stay navy in both themes. They are the authority surfaces, the
 client's reference draws them that way, and a navy that went darker would lose the contrast that
 separates navigation from content.
+
+## ADR-283 — The seed grants its own administrators; provisioning already did
+
+A seeded development database produced companies whose administrator held a membership and no
+grants: an empty sidebar, and every screen refusing. Nobody could use a fresh `db:seed`.
+
+**The first instinct was wrong and is worth recording.** The obvious fix was to grant the role in
+`TenantProvisioningService.provision`, which is what the seed calls. Doing that broke eight tests
+that counted role assignments and audit rows — and the reason they broke was the finding: there are
+**two** provisioning services, and `CompanyProvisioningService`, which is what the Master Console
+actually calls, has always created "the bootstrap authority grant" with its own audit event and its
+own test. The production path was never broken. Adding a second grant would have introduced a real
+duplicate-grant bug, and updating those eight expectations would have hidden it.
+
+So the change belongs where the gap actually was: the **seed**, which uses the lower-level
+`TenantProvisioningService` — a primitive that grants nothing by design, because in the real
+product a role arrives with an invitation or from an administrator, and inventing one there would
+be inventing policy.
+
+The seeded grants carry `bootstrap: true`, which the schema's
+`grant_with_no_grantor_is_marked_bootstrap` CHECK requires of any grant with no grantor so it can
+never be mistaken for one an administrator delegated. They carry **no audit event**: `audit_events`
+is under Row-Level Security and a tenant-scoped row cannot be written from the platform operation
+the seed loop runs in. The real path writes `company.bootstrap_admin_granted` from the correct
+scope, and a seeded database's trail is not an accountability artefact.
+
+The seed also grants its demo members a spread of roles — Employee, Manager, Approver, Auditor —
+from the company's own administrator rather than from a platform actor, which is who would really
+do it and is what the audit trail would otherwise misreport. And the demo platform actor is given
+`PlatformAdmin`: the seed's comment had claimed it "keeps the role the migration backfilled", which
+on a fresh install is untrue, because migrations run before the seed and there is nobody to
+backfill. It is still deliberately not `PlatformOwner`, so the Owner-only guards stay exercisable.
+
+A fresh database now seeds to 18 memberships, 18 role assignments, nobody unpermitted, and seeding
+twice changes nothing.
+
+## ADR-284 — An SMTP transport, and what "delivered" is allowed to mean
+
+Prompt 15 asked for "in-app plus email adapter" with "queue-backed delivery, retry and tests". The
+queue, the backoff, the dead-lettering and the audit trail were all built; only the transport was a
+stub that logged and sent nothing. `SmtpEmailAdapter` is that transport, and the seam above it is
+untouched — which is what the `EmailAdapter` docblock predicted when it said "the work is the
+transport, not the plumbing".
+
+**Three claims are made carefully.** `describe()` returns `deliversRealMail: true` only for SMTP,
+and its note says that means _a provider accepted the message_ — not that it reached an inbox,
+which no sender can know. A recipient the provider refuses throws, so the outbox retries or
+dead-letters rather than marking delivered something nobody will receive. And the logging adapter
+remains the default, still reporting `deliversRealMail: false`.
+
+**A partial SMTP environment throws and takes the process with it.** A host with no password is
+somebody halfway through setting this up, and the alternative — booting into "silently sends
+nothing" while reporting notifications as dispatched — is the precise failure this seam exists to
+make impossible.
+
+**STARTTLS cannot be turned off from the environment.** `requireTls` lives in `SmtpConfig` rather
+than being derived in the constructor, and `readSmtpConfig` always sets it on a plain port. Only a
+config object built in a test can relax it, which is how the protocol is exercised against a
+loopback capture server without a certificate. A deployment that cannot offer STARTTLS has a broken
+mail server, not a preference.
+
+The tests run a minimal SMTP server on a loopback port and assert the real conversation — EHLO,
+AUTH, the envelope, the headers, the body, and a 550 becoming an exception. **No mail is sent to
+any real address and no provider credentials are used.**

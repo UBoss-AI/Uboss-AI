@@ -3453,3 +3453,72 @@ and pointing at what does exist: each screen's own filter, and UBoss Profile Sea
 omitting it is what produces the disabled state. So the day there is an endpoint, one prop wires it
 without touching twenty-six screens — and until then the control cannot quietly go back to
 pretending.
+
+## Pre-Prompt-45 audit — closing the remaining gaps
+
+### Every Settings section, exercised
+
+All nineteen walked in a browser as a Company Admin and again as a standard Employee.
+
+**Six have configurable settings, and all six save, persist and restore**: General, Organization,
+Objective & Approval Rules, Security, Notifications & Escalations, Appearance. Each was changed,
+saved, reloaded, confirmed still changed, and put back.
+
+**Validation is the server's, and the screen shows it.** A number field refused "AuditProbe 42"
+with _"Approval reminder after (hours) must be a whole number."_; a colour field refused it with
+_"Accent colour is limited to 7 characters."_ Both appear as a danger banner.
+
+**The governance gate holds.** A material setting keeps Save disabled until a reason of at least
+five characters is given, and says so by revealing a required "Why is this changing?" field. The
+unsaved-change guard fires on leaving a dirty panel.
+
+**Eleven sections have nothing to configure** and say where the thing actually lives instead —
+verified honest in the previous pass.
+
+**A standard Employee sees eighteen sections, every one read-only**, with the personal labels the
+reference specifies (My Profile, My Agent Preferences, My Connections, Login & Security). The three
+where they retain editable controls are their own preferences, which is correct.
+
+One defect found and fixed: **a failed save left the previous "Saved." on screen next to the
+error**, so a refused change read as though it had both saved and failed. And the Agent Policy
+panel offered an agent picker with nothing in it; it now says there are no Engine Agents yet and
+where they come from.
+
+### Modals, drawers and feedback
+
+Four overlays driven by hand — Add Employee, Access, Suspend, Offboard, Log Out All Devices. Every
+one: `role="dialog"`, `aria-modal`, labelled and titled, focus starts inside and **stays inside
+when tabbed past the end**, Escape dismisses, focus returns, and the background scroll lock is
+applied and released. Destructive actions carry an **Impact preview** with real numbers ("Sessions
+signed out 63", "Roles removed — None, they are kept"), and Suspend requires typed confirmation.
+
+There is **no toast system**, and that is a choice rather than a gap: feedback is an inline banner
+beside the thing that changed, which does not vanish before it is read. Success renders as
+`uboss-banner--ok`, failure as `uboss-banner--danger` carrying the server's own message. No stack
+trace or internal identifier reaches the screen.
+
+### A fresh database is usable
+
+`db:seed` on an empty database now produces **18 memberships and 18 role assignments, with nobody
+left unpermitted**, in a single run, and seeding twice changes nothing. Company administrators hold
+a bootstrap `CompanyAdmin` grant written by the seed (ADR-283 — the Master Console's own
+create-company path always wrote one, and the seed uses a lower-level primitive that deliberately
+does not); the demo members are spread across Employee, Manager, Approver and Auditor, granted by
+their own company's administrator rather than by a platform actor, which is who would really do it.
+
+The demo platform actor now holds `PlatformAdmin`. The seed's comment had claimed it "keeps the
+role the migration backfilled", and on a fresh install that was untrue — migrations run before the
+seed, so there is nobody to backfill — leaving a platform actor who could sign in and reach nothing.
+It is still deliberately **not** `PlatformOwner`, so the Owner-only guards stay exercisable.
+
+Seeding twice changes nothing: 18/18/1 either way.
+
+### Mail
+
+**A working SMTP transport exists** (ADR-284), selected when `UBOSS_SMTP_*` is complete and tested
+against a real SMTP conversation on a loopback capture server. Without that environment the logging
+adapter remains, reporting `deliversRealMail: false`.
+
+**No mail has been sent to any real address**, and no real provider credentials have been used.
+The credentials supplied for this work were pasted into a chat and must be rotated before they are
+configured anywhere. `apps/api/.env.example` documents the variables.

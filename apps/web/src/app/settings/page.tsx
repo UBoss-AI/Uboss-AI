@@ -193,6 +193,10 @@ export default function CompanySettingsPage() {
     }
     setSaving(true);
     setError(null);
+    // And the previous success. Without this a refused save showed the server's message *next to*
+    // a stale "Saved." from the attempt before it, which reads as though something was both saved
+    // and rejected. The stale notice is the more dangerous half: it is the one somebody believes.
+    setNotice(null);
 
     settingsApi
       .update(tenantId, {

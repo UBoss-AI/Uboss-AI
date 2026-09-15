@@ -107,6 +107,14 @@ export class AuthorizationRepository {
       expiresAt?: Date | undefined;
       grantedByUserId?: string | undefined;
       justification?: string | undefined;
+      /**
+       * A grant that nobody granted: the first administrator of a newly provisioned company.
+       *
+       * The schema requires it — `grant_with_no_grantor_is_marked_bootstrap` refuses a row with
+       * no `grantedByUserId` unless this is set — so that a grant with no accountable grantor
+       * cannot be written by accident and then mistaken for a delegated one in an audit.
+       */
+      bootstrap?: boolean | undefined;
     },
   ): Promise<RoleAssignment> {
     return this.prisma.runInTenantTransaction(scope, async () =>
@@ -124,6 +132,7 @@ export class AuthorizationRepository {
             ? {}
             : { grantedByUserId: input.grantedByUserId }),
           ...(input.justification === undefined ? {} : { justification: input.justification }),
+          ...(input.bootstrap === undefined ? {} : { bootstrap: input.bootstrap }),
         },
       }),
     );

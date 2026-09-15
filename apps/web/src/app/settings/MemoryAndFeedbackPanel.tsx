@@ -546,27 +546,40 @@ export function MemoryAndFeedbackPanel({
           <div className="uboss-section-label" style={{ marginTop: 12 }}>
             Rate an output
           </div>
-          <div className="uboss-row-2">
-            <label>
-              <span className="uboss-section-label">Agent</span>
-              <select
-                value={agentId ?? ''}
-                onChange={(event) => {
-                  const next = event.target.value === '' ? null : event.target.value;
-                  setAgentId(next);
-                  setRuns([]);
-                  if (next !== null) void loadRuns(next);
-                }}
-              >
-                <option value="">Choose an agent</option>
-                {agents.map((row) => (
-                  <option key={row.id} value={row.id}>
-                    {row.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+          {/*
+            A picker with nothing in it is not a control, it is a dead end. This company has no
+            Engine Agents yet, so offering "Choose an agent" above an empty list invites somebody
+            to open it, find nothing, and wonder what is broken. Say what is missing and where it
+            comes from instead.
+          */}
+          {agents.length === 0 ? (
+            <Banner tone="info">
+              There are no Engine Agents in this company yet, so there is nothing to rate. Agents
+              are built on Agent Builder and appear here once one has run.
+            </Banner>
+          ) : (
+            <div className="uboss-row-2">
+              <label>
+                <span className="uboss-section-label">Agent</span>
+                <select
+                  value={agentId ?? ''}
+                  onChange={(event) => {
+                    const next = event.target.value === '' ? null : event.target.value;
+                    setAgentId(next);
+                    setRuns([]);
+                    if (next !== null) void loadRuns(next);
+                  }}
+                >
+                  <option value="">Choose an agent</option>
+                  {agents.map((row) => (
+                    <option key={row.id} value={row.id}>
+                      {row.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
 
           {agentId === null ? null : (
             <DataTable

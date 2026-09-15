@@ -2,6 +2,8 @@ import { PrismaService } from '../src/persistence/prisma.service.js';
 import { AuditEventService } from '../src/audit/audit-event.service.js';
 import { AuditTrailRepository } from '../src/persistence/audit-trail.repository.js';
 import { TenantMembershipRepository } from '../src/persistence/tenant-membership.repository.js';
+import { AuthorizationRepository } from '../src/persistence/authorization.repository.js';
+import { tenantScopeForPlatformOperation } from '../src/persistence/tenant-context.js';
 import { TenantRepository } from '../src/persistence/tenant.repository.js';
 import { UserRepository } from '../src/persistence/user.repository.js';
 import { TenantProvisioningService } from '../src/provisioning/tenant-provisioning.service.js';
@@ -180,6 +182,7 @@ async function main(): Promise<void> {
   const tenants = new TenantRepository(prisma);
   const users = new UserRepository(prisma);
   const memberships = new TenantMembershipRepository(prisma);
+  const authorization = new AuthorizationRepository(prisma);
   // The chained writer, not the read-only repository: a seeded row that could not be verified
   // would show up as an unchained row forever (ADR-046).
   const auditTrail = new AuditTrailRepository(prisma);
@@ -237,6 +240,17 @@ async function main(): Promise<void> {
         actorUserId: platformAdmin.id,
       });
       demoTenantId = result.tenant.id;
+
+      // Same reason as the demo companies below: the low-level provisioning primitive grants
+      // nothing, so without this the Demo Company's administrator can administer nothing.
+      await authorization.createAssignment(tenantScopeForPlatformOperation(result.tenant.id), {
+        userId: result.user.id,
+        roleKind: 'CompanyAdmin',
+        scopeKind: 'WholeCompany',
+        bootstrap: true,
+        justification: 'First administrator of the seeded demo company.',
+      });
+
       console.log(
         `Provisioned ${result.tenant.name} (${result.tenant.slug}) ` +
           `with first member ${result.user.displayName} (${result.user.ubossUniqueId})`,
@@ -298,8 +312,49 @@ async function main(): Promise<void> {
           // Extra members, so the seats column is a real count rather than always 1. Provisioned
           // through the same service the application uses, which also means each one writes its
           // own audit row into the company's trail.
+          //
+          // Each one is then given a role. `addMember` deliberately grants nothing — in the real
+          // product a role arrives with an invitation or from an administrator — but a seeded
+          // person with no grant has an empty sidebar and is refused by every screen, so a
+          // development database full of those looks like a broken build rather than like data
+          // waiting to be configured. The grantor is the company's own administrator, which is
+          // who would really do it; a platform actor granting company roles would be a fiction,
+          // and would read as one in the audit trail.
+          // The first member is the company's administrator.
+          //
+          // `CompanyProvisioningService` — what the Master Console actually calls — already
+          // creates this grant, and a test holds it there. The seed uses the lower-level
+          // `TenantProvisioningService`, which grants nothing by design, so without this every
+          // seeded admin has a membership, no grants, an empty sidebar, and every screen refusing.
+          //
+          // `bootstrap: true` because nobody granted it, which is what the schema's
+          // `grant_with_no_grantor_is_marked_bootstrap` CHECK insists on so it can never be
+          // mistaken for a grant an administrator delegated.
+          //
+          // No audit event accompanies it. `audit_events` is under Row-Level Security and a
+          // tenant-scoped row cannot be written from the platform operation this loop runs in;
+          // the real create-company path (CompanyProvisioningService) writes
+          // `company.bootstrap_admin_granted` from the right scope and a test holds it there.
+          // The grant's own `bootstrap` flag and justification are the record here, and a
+          // seeded database's trail is not an accountability artefact.
+          await authorization.createAssignment(tenantScopeForPlatformOperation(tenantId), {
+            userId: result.user.id,
+            roleKind: 'CompanyAdmin',
+            scopeKind: 'WholeCompany',
+            bootstrap: true,
+            justification: 'First administrator of a seeded demo company.',
+          });
+
+          const memberRoles = [
+            { roleKind: 'Employee', scopeKind: 'OwnWork' },
+            { roleKind: 'Manager', scopeKind: 'TeamSubtree' },
+            { roleKind: 'Approver', scopeKind: 'WholeCompany' },
+            { roleKind: 'Auditor', scopeKind: 'WholeCompany' },
+          ] as const;
+
+          const companyScope = tenantScopeForPlatformOperation(tenantId);
           for (let index = 1; index < company.seatsToCreate; index += 1) {
-            await provisioning.addMember(
+            const added = await provisioning.addMember(
               tenantId,
               {
                 email: `member${index}@${company.slug}.example`,
@@ -307,6 +362,15 @@ async function main(): Promise<void> {
               },
               platformAdmin.id,
             );
+
+            const role = memberRoles[(index - 1) % memberRoles.length]!;
+            await authorization.createAssignment(companyScope, {
+              userId: added.user.id,
+              roleKind: role.roleKind,
+              scopeKind: role.scopeKind,
+              grantedByUserId: result.user.id,
+              justification: 'Seeded demo role so the development workspace is usable.',
+            });
           }
         }
 
@@ -425,10 +489,51 @@ async function main(): Promise<void> {
       }
     });
 
-    // The demo platform admin keeps the `PlatformAdmin` role the migration backfilled. It is NOT
-    // upgraded to `PlatformOwner` here, deliberately: a seed that hands out platform ownership
-    // would make the Owner-only guards untested in the one environment where they are easiest to
-    // exercise. Grant it by hand to try the Owner-only screens — the seed prints how.
+    /*
+     * The demo platform admin holds `PlatformAdmin`.
+     *
+     * This used to say it "keeps the role the migration backfilled", and on a fresh install that
+     * was not true: migrations run before the seed, so at backfill time this person does not
+     * exist yet and there is nothing to backfill. A fresh database therefore produced a platform
+     * actor with **no** platform role — signed in, told "Master Console unavailable", and unable
+     * to reach the console at all. The seed printed instructions to insert a row by hand.
+     *
+     * So the seed now ensures the role it always claimed was there. It is still deliberately NOT
+     * `PlatformOwner`: a seed that handed out ownership would leave the Owner-only guards
+     * (Platform Settings, Release & Feature Control, granting platform roles) unexercised in the
+     * one environment where they are easiest to try. Those still refuse, which is the point.
+     */
+    await prisma.runAsPlatformOperation(async () => {
+      const held = await prisma.client.platformRoleAssignment.findMany({
+        where: { userId: platformAdmin.id, revokedAt: null },
+        select: { role: true },
+      });
+      if (held.length > 0) return;
+
+      const granted = await prisma.client.platformRoleAssignment.create({
+        data: {
+          userId: platformAdmin.id,
+          role: 'PlatformAdmin',
+          justification: 'Seeded so the Master Console is reachable in a development workspace.',
+          updatedAt: new Date(),
+        },
+        select: { id: true },
+      });
+      await auditTrail.appendAuditEvent({
+        tenantId: null,
+        action: 'platform_role_assignment.created',
+        resourceType: 'platform_role_assignment',
+        resourceId: granted.id,
+        summary: 'Seeded PlatformAdmin for the demo platform actor.',
+        // No grantor: the seed is not a person. `platform_role_not_self_granted` permits a null
+        // grantor and forbids only somebody granting themselves.
+        reason:
+          'Seed bootstrap. Deliberately not PlatformOwner, so the Owner-only guards remain exercisable.',
+        metadata: { role: 'PlatformAdmin', seed: true },
+      });
+      console.log('Granted PlatformAdmin to the demo platform actor.');
+    });
+
     const platformRoles = await prisma.runAsPlatformOperation(() =>
       prisma.client.platformRoleAssignment.findMany({
         where: { userId: platformAdmin.id, revokedAt: null },
