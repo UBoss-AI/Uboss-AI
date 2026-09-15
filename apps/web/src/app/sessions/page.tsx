@@ -15,6 +15,7 @@ import {
   type DataTableColumn,
 } from '@uboss/ui';
 
+import { useAccountMenu } from '../../lib/use-account-menu';
 import { useSignedInUser } from '../../lib/use-signed-in-user';
 import { RoutedAppShell } from '../../components/RoutedAppShell';
 import {
@@ -48,6 +49,7 @@ export default function SessionsPage() {
     resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null,
   );
   const signedInUser = useSignedInUser(me);
+  const accountMenu = useAccountMenu(me);
   const [sessions, setSessions] = useState<SessionRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -175,9 +177,9 @@ export default function SessionsPage() {
     },
   ];
 
-  const activeWorkspace = me?.workspaces.find(
-    (workspace) => workspace.tenantId === me.activeWorkspaceId,
-  );
+  // Was matching on `me.activeWorkspaceId`, which is always null, and getting the right answer
+  // only from the fallback below it. The resolver honours the workspace actually chosen.
+  const activeWorkspace = resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace());
 
   return (
     <RoutedAppShell
@@ -187,6 +189,7 @@ export default function SessionsPage() {
       activeKey="settings"
       {...bell.shellProps}
       user={signedInUser}
+      accountMenu={accountMenu}
       onSignOut={() => {
         forgetWorkspace();
         void authApi.logout().finally(() => window.location.assign('/login'));

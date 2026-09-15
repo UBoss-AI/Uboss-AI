@@ -107,6 +107,8 @@ export type { OrgChartNode, OrgChartProps } from './primitives/OrgChart';
 export type { DonutDashboardProps } from './primitives/DonutDashboard';
 
 /* ---- Shells ---- */
+export { AccountMenu } from './shells/AccountMenu';
+export type { AccountMenuItem, AccountMenuProps } from './shells/AccountMenu';
 export { AppShell } from './shells/AppShell';
 export type { AppShellProps } from './shells/AppShell';
 

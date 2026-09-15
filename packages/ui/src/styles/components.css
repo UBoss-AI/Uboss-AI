@@ -579,7 +579,7 @@
 .uboss-btn {
   height: 38px;
   padding: 0 15px;
-  border-radius: 9px;
+  border-radius: var(--uboss-radius-button);
   border: 1px solid var(--uboss-border);
   background: var(--uboss-surface);
   color: var(--uboss-text);
@@ -652,7 +652,7 @@
   height: 32px;
   padding: 0 11px;
   font-size: 12.5px;
-  border-radius: var(--uboss-radius-input);
+  border-radius: var(--uboss-radius-button);
 }
 
 .uboss-btn--block {
@@ -2824,6 +2824,9 @@ table.uboss-wfg {
 .uboss-wfg thead th.uboss-wfg-stick {
   z-index: 4;
   background: var(--uboss-navy);
+  /* The cell is navy while the rest of the row is a light surface, so it has to state its own
+     text colour: it was inheriting --uboss-text-2 and landing at 2.40:1 against the navy. */
+  color: var(--uboss-navy-ink);
 }
 
 .uboss-wfg td.uboss-wfg-stepn {
@@ -4002,4 +4005,167 @@ table.uboss-wfg {
 .uboss-theme-note {
   font-size: var(--uboss-font-size-xs);
   color: var(--uboss-text-2);
+}
+
+/* --- Account menu ----------------------------------------------------------
+   The avatar is the trigger and the only route out of the session. It replaced
+   a key-icon button that sat beside the notification bell, one mis-click away
+   from it, and an avatar that was an inert aria-hidden div. */
+.uboss-account {
+  position: relative;
+  display: flex;
+}
+
+.uboss-account-trigger {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  line-height: 0;
+}
+
+.uboss-account-trigger:focus-visible {
+  outline: var(--uboss-focus-outline);
+  outline-offset: var(--uboss-focus-offset);
+}
+
+.uboss-account-trigger:hover .uboss-avatar,
+.uboss-account-trigger[aria-expanded='true'] .uboss-avatar {
+  box-shadow: var(--uboss-focus-ring);
+}
+
+.uboss-account-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  /* Anchored to the right edge: the trigger is the last thing in the bar, so a menu
+     growing rightwards would leave the viewport. */
+  right: 0;
+  min-width: 248px;
+  z-index: 70;
+  background: var(--uboss-surface);
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-card);
+  box-shadow: var(--uboss-shadow-3);
+  padding: var(--uboss-space-1);
+  /* A long menu on a short screen scrolls itself rather than being clipped by the bar. */
+  max-height: calc(100vh - var(--uboss-topbar-height) - 24px);
+  overflow-y: auto;
+}
+
+.uboss-account-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--uboss-space-3);
+  border-bottom: 1px solid var(--uboss-border-2);
+  margin-bottom: var(--uboss-space-1);
+}
+
+.uboss-account-head b {
+  color: var(--uboss-text);
+  font-size: var(--uboss-font-size-sm);
+}
+
+.uboss-account-head span {
+  color: var(--uboss-text-2);
+  font-size: var(--uboss-font-size-xs);
+}
+
+.uboss-account-workspace {
+  color: var(--uboss-cyan-ink) !important;
+  font-weight: 600;
+}
+
+.uboss-account-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--uboss-space-2);
+  padding: 9px var(--uboss-space-3);
+  border: 0;
+  border-radius: var(--uboss-radius-input);
+  background: transparent;
+  color: var(--uboss-text);
+  font: inherit;
+  font-size: var(--uboss-font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.uboss-account-item:hover {
+  background: var(--uboss-bg-2);
+}
+
+.uboss-account-item:focus-visible {
+  outline: var(--uboss-focus-outline);
+  outline-offset: -2px;
+}
+
+.uboss-account-item-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.uboss-account-item-text small {
+  color: var(--uboss-text-2);
+  font-size: var(--uboss-font-size-xs);
+}
+
+/* Sign out sits below a rule, so ending a session is never the item next to the one
+   somebody meant to click. */
+.uboss-account-separated {
+  border-top: 1px solid var(--uboss-border-2);
+  margin-top: var(--uboss-space-1);
+  padding-top: var(--uboss-space-1);
+}
+
+/* The master console's dark chrome. */
+.uboss-shell--master .uboss-account-menu {
+  background: var(--uboss-navy);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.uboss-shell--master .uboss-account-head b,
+.uboss-shell--master .uboss-account-item {
+  color: #fff;
+}
+
+.uboss-shell--master .uboss-account-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* --- Disclosure -----------------------------------------------------------
+   Used where a screen has something true and long to say that most people do
+   not need on arrival — chat's delivery and linked-work stances, for
+   instance. Collapsed rather than removed: the text is there because the
+   alternative is the product implying something it cannot do. */
+.chat-stances > summary,
+.uboss-disclosure > summary {
+  cursor: pointer;
+  font-size: var(--uboss-font-size-sm);
+  font-weight: 600;
+  color: var(--uboss-text-2);
+  padding: var(--uboss-space-1) 0;
+  list-style: revert;
+}
+
+.chat-stances > summary:hover,
+.uboss-disclosure > summary:hover {
+  color: var(--uboss-text);
+}
+
+.chat-stances > summary:focus-visible,
+.uboss-disclosure > summary:focus-visible {
+  outline: var(--uboss-focus-outline);
+  outline-offset: var(--uboss-focus-offset);
+  border-radius: var(--uboss-radius-input);
+}
+
+.chat-stances[open] > summary,
+.uboss-disclosure[open] > summary {
+  margin-bottom: var(--uboss-space-2);
 }

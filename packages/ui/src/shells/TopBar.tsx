@@ -1,9 +1,9 @@
 'use client';
 
 import { cn } from '../lib/class-names';
-import { initials } from '../lib/initials';
 import { Icon } from '../primitives/Icon';
 import { SearchField } from '../primitives/SearchField';
+import { AccountMenu, type AccountMenuItem } from './AccountMenu';
 import type { SidebarUser } from './Sidebar';
 
 /**
@@ -34,8 +34,17 @@ export type TopBarProps = (
   onOpenNotifications?: (() => void) | undefined;
   /** Signed-in identity, shown as the avatar at the end of the bar. */
   user?: SidebarUser | undefined;
-  /** Ends the session. The reference puts a sign-out control here as well as in the sidebar. */
+  /** Ends the session. Rendered as the separated last entry of the account menu. */
   onSignOut?: (() => void) | undefined;
+  /**
+   * Entries above the separator in the account menu — Profile, Settings, Appearance, and Switch
+   * workspace where the person actually holds more than one membership.
+   *
+   * The host supplies these because only the host knows which of them exist and where they go.
+   * Nothing is offered that does not work: that is the whole point of it being a parameter rather
+   * than a fixed list in here.
+   */
+  accountMenu?: readonly AccountMenuItem[] | undefined;
   /** Shown only on small screens, to open the off-canvas sidebar. */
   onToggleSidebar?: (() => void) | undefined;
   className?: string | undefined;
@@ -54,8 +63,25 @@ export function TopBar(props: TopBarProps) {
     onToggleSidebar,
     user,
     onSignOut,
+    accountMenu,
     className,
   } = props;
+
+  // Sign out is always last and always below the separator, whatever the host passes.
+  const accountMenuItems: AccountMenuItem[] = [
+    ...(accountMenu ?? []),
+    ...(onSignOut
+      ? [
+          {
+            key: 'sign-out',
+            label: 'Sign out',
+            icon: 'key' as const,
+            onSelect: onSignOut,
+            separated: true,
+          },
+        ]
+      : []),
+  ];
   const isMaster = props.variant === 'master';
 
   return (
@@ -127,23 +153,15 @@ export function TopBar(props: TopBarProps) {
           ) : null}
         </button>
 
-        {onSignOut ? (
-          <button
-            type="button"
-            className="uboss-icon-btn"
-            onClick={onSignOut}
-            title="Sign out"
-            aria-label="Sign out"
-          >
-            <Icon name="key" size={18} />
-          </button>
-        ) : null}
+        {/*
+          The avatar is the account control, and the only way out of the session.
 
-        {user ? (
-          <div className="uboss-avatar" title={user.name} aria-hidden="true">
-            {initials(user.name)}
-          </div>
-        ) : null}
+          It used to be a key-icon button sitting beside the notification bell, with the avatar next
+          to it as an inert aria-hidden div — so the control that ends your session looked like a
+          permissions glyph and was one mis-click from the bell, while the thing that looks like a
+          profile did nothing. Sign out now lives below a separator inside the menu.
+        */}
+        {user ? <AccountMenu user={user} scopeLabel={scopeLabel} items={accountMenuItems} /> : null}
       </div>
     </header>
   );

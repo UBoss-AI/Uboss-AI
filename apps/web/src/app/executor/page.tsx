@@ -32,6 +32,7 @@ import {
   type ExecutorMetaView,
   type MeResponse,
 } from '../../lib/api-client';
+import { useAccountMenu } from '../../lib/use-account-menu';
 import { useSignedInUser } from '../../lib/use-signed-in-user';
 import { RoutedAppShell } from '../../components/RoutedAppShell';
 import {
@@ -80,6 +81,8 @@ export default function ExecutorPage() {
     resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
 
   const signedInUser = useSignedInUser(me);
+
+  const accountMenu = useAccountMenu(me);
   const activeWorkspace = me?.workspaces.find((workspace) => workspace.tenantId === tenantId);
   const bell = useNotificationBell(tenantId);
 
@@ -170,6 +173,7 @@ export default function ExecutorPage() {
       groups={navGroups}
       activeKey="executor"
       user={signedInUser}
+      accountMenu={accountMenu}
       {...bell.shellProps}
       onSignOut={() => {
         forgetWorkspace();

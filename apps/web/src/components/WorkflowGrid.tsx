@@ -8,7 +8,7 @@ import {
   type WorkflowColumnDefinition,
 } from '@uboss/types';
 
-import { cn } from '@uboss/ui';
+import { cn, Icon } from '@uboss/ui';
 
 export interface WorkflowGridProps {
   steps: readonly Form2WorkflowStep[];
@@ -266,26 +266,29 @@ export function WorkflowGrid({ steps, onChange, readOnly = false, className }: W
                   <button
                     type="button"
                     title="Insert below"
+                    aria-label={`Insert a step below step ${step.position}`}
                     disabled={readOnly}
                     onClick={() => rowOp(step.position, 'insert')}
                   >
-                    +
+                    <Icon name="plus" size={14} />
                   </button>
                   <button
                     type="button"
                     title="Duplicate"
+                    aria-label={`Duplicate step ${step.position}`}
                     disabled={readOnly}
                     onClick={() => rowOp(step.position, 'duplicate')}
                   >
-                    ⧉
+                    <Icon name="file" size={14} />
                   </button>
                   <button
                     type="button"
                     title="Delete"
+                    aria-label={`Delete step ${step.position}`}
                     disabled={readOnly || steps.length === 1}
                     onClick={() => rowOp(step.position, 'delete')}
                   >
-                    ✕
+                    <Icon name="close" size={14} />
                   </button>
                 </div>
               </td>

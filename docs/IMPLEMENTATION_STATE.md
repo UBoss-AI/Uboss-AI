@@ -3373,3 +3373,70 @@ Six further defects, all found by driving the product rather than reading it.
   this audit; the seed is unchanged.
 - **Mail does not send.** The only `EmailAdapter` logs and reports `deliversRealMail: false`. SMTP
   credentials in a local `.env` have no effect, because no SMTP transport exists to read them.
+
+### Third pass — the remaining §43 boxes
+
+- **The top bar had no account control.** Sign out was a **key icon** sitting beside the
+  notification bell, one mis-click from it, and the avatar was a `<div aria-hidden="true">`: not
+  focusable, not clickable, invisible to a screen reader. There is now a real account menu behind
+  the avatar — My Profile, Settings, Appearance, and Switch workspace **only when the person holds
+  more than one membership** — with Sign out below a separator. Arrow keys walk it, Escape closes
+  it and returns focus to the avatar, a click outside dismisses it, and the trigger carries
+  `aria-haspopup="menu"`. Nothing is offered that does not exist: there is no `/profile` route, so
+  My Profile goes to Settings → General, which is where a profile actually is.
+- **Workspace Chat never loaded anything, for anybody.** Its loader had its own read of
+  `activeWorkspaceId` — always null — inside a `useCallback`, so it returned before calling the API
+  and every person in every company saw "No conversations yet." The list, the composer and the
+  message history were all unreachable. One further read on the Sessions page was right only by
+  accident, through the fallback beneath it.
+- **Chat showed people as the first eight characters of their UUID** (`01a084c0`) and titled every
+  direct conversation with the literal words "Direct message". The API returned ids and no names.
+  It now returns display names for participants and message authors, resolved once per page as a
+  platform operation — `users` is a person-level table — and a direct conversation is titled by
+  the person it is with. `/auth/me` also returns the caller's own `userId`, which the client needs
+  to tell itself apart from the other participants and which `/my-access` already exposed.
+- **`--uboss-text-3` failed WCAG AA**: 3.07:1 on white, 2.88:1 on the page ground, 2.72:1 on the
+  raised ground, against a 4.5:1 minimum. It is the token behind every muted line in the product —
+  empty states, helper text, table meta, step numbers — so the failure was everywhere at once.
+  Darkened to `#646f81` (5.08 / 4.77 / 4.51) and the dark-theme value lightened to `#7b8ca4`.
+  **This deviates from the transcribed reference and wants client sign-off**; it is applied rather
+  than only reported because unreadable text is not a preference.
+- **The Gold badge** was 3.84:1 against its own background — the only rung of the ladder that
+  failed; the other four already cleared 5:1. **The workflow grid's sticky header** is navy while
+  its row is a light surface, and was inheriting the light body text colour at 2.40:1; it now has
+  a named `--uboss-navy-ink` token at 9.9:1.
+- **Row operations in the workflow grid were text glyphs** — `+`, `⧉`, `✕` — not from the icon
+  family, dependent on the installed font (`⧉` is missing from many), and read aloud by a screen
+  reader as the character's Unicode name. They use the icon set now, with an `aria-label` that
+  names the row.
+- **Two paragraphs about in-process publishers and socket transports** stood permanently under
+  every conversation. Collapsed behind a disclosure rather than deleted: the text exists because
+  the alternative is the product implying realtime delivery it does not have.
+- **Buttons had two corner radii within one family** — a 9px literal on the default and the input
+  token (8px) on the small variant. Both use a named `--uboss-radius-button` at the reference's own
+  9px.
+
+### Measured clean in this pass
+
+Across sixteen signed-in routes: **no text below the WCAG AA contrast minimum** (counting the
+exemptions the standard actually grants — inactive controls, and anything `aria-hidden`), **no
+input, select or textarea without an accessible label**, **no required field unmarked in text**,
+**no positive `tabindex`**, **no standing prose block over 320 characters**, and every table has a
+header row. One icon stroke weight across 348 icons.
+
+**Settings saves for real.** Exercised end to end on General: Save disabled until something
+changes, still disabled for a governance setting until a reason of five characters is given — with
+the required "Why is this changing?" field appearing to say so — then saved, confirmed, persisted
+across a reload, restored, and the unsaved-change guard fired on leaving a dirty panel. No console
+errors.
+
+### Still outstanding
+
+- **The other eighteen Settings panels have not each been saved through.** General is proven; the
+  rest are established as present and honest but not exercised.
+- **No modal or drawer was driven by hand**, though the focus trap has unit coverage and the
+  scripted focus walk found every control reachable and visibly focused.
+- **Toast behaviour was not audited** beyond confirming Settings reports "Saved".
+- **The seeded development database still grants no roles**, so a fresh `db:seed` produces an
+  application where nothing is permitted.
+- **Mail still does not send**: the only `EmailAdapter` logs and reports `deliversRealMail: false`.

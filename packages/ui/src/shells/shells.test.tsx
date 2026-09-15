@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { COMPANY_NAV, MASTER_NAV, SETTINGS_SECTIONS } from '../navigation/navigation-model';
@@ -45,15 +45,114 @@ describe('TopBar — locked workspace header', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
-    expect(onSignOut).toHaveBeenCalledTimes(1);
+    // The avatar is the account control, announced as the person and as a menu.
+    const trigger = screen.getByRole('button', { name: /Priya Nair — account menu/ });
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByText('PN')).toBeInTheDocument();
+
+    // Sign out is not on the bar. It used to be a key icon next to the notification bell.
+    expect(screen.queryByRole('button', { name: 'Sign out' })).not.toBeInTheDocument();
+
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(screen.getByRole('menuitem', { name: /Sign out/ }));
+    expect(onSignOut).toHaveBeenCalledTimes(1);
   });
 
-  it('omits the sign-out control when no handler is supplied', () => {
+  it('omits the account menu entirely when there is nobody signed in', () => {
     render(<TopBar variant="company" workspaceName="SPM Medicare" />);
 
-    expect(screen.queryByRole('button', { name: 'Sign out' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /account menu/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: /Sign out/ })).not.toBeInTheDocument();
+  });
+
+  it('offers only what the host supplies, with sign out separated and last', () => {
+    render(
+      <TopBar
+        variant="company"
+        workspaceName="SPM Medicare"
+        user={{ name: 'Priya Nair', role: 'Company Admin' }}
+        scopeLabel="Company Admin · Whole company"
+        accountMenu={[
+          { key: 'settings', label: 'Settings', onSelect: () => {} },
+          { key: 'appearance', label: 'Appearance', onSelect: () => {} },
+        ]}
+        onSignOut={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /account menu/ }));
+
+    // Exactly what was passed, plus sign out — nothing invented in the component.
+    const labels = screen.getAllByRole('menuitem').map((item) => item.textContent?.trim());
+    expect(labels).toEqual(['Settings', 'Appearance', 'Sign out']);
+
+    // Sign out last, and below the rule that separates it.
+    const signOut = screen.getByRole('menuitem', { name: /Sign out/ });
+    expect(signOut.parentElement).toHaveClass('uboss-account-separated');
+
+    // The menu states who is about to act, in the menu itself. The scope also appears on the
+    // bar's pill, so the assertion is scoped rather than global — and the workspace is not
+    // repeated here at all, because the header beside it already reads 'UBOSS AI AMS | SPM
+    // Medicare'.
+    const menu = screen.getByRole('menu');
+    expect(within(menu).getByText('Priya Nair')).toBeInTheDocument();
+    expect(within(menu).getByText('Company Admin · Whole company')).toBeInTheDocument();
+    expect(within(menu).queryByText('SPM Medicare')).not.toBeInTheDocument();
+  });
+
+  it('closes on Escape and gives focus back to the avatar', () => {
+    render(
+      <TopBar
+        variant="company"
+        workspaceName="SPM Medicare"
+        user={{ name: 'Priya Nair', role: 'Company Admin' }}
+        onSignOut={() => {}}
+      />,
+    );
+
+    const trigger = screen.getByRole('button', { name: /account menu/ });
+    fireEvent.click(trigger);
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    // Returning focus is the half that is usually forgotten: without it the keyboard lands back
+    // at the top of the document.
+    expect(trigger).toHaveFocus();
+  });
+
+  it('walks the items with the arrow keys', () => {
+    render(
+      <TopBar
+        variant="company"
+        workspaceName="SPM Medicare"
+        user={{ name: 'Priya Nair', role: 'Company Admin' }}
+        accountMenu={[
+          { key: 'a', label: 'Settings', onSelect: () => {} },
+          { key: 'b', label: 'Appearance', onSelect: () => {} },
+        ]}
+        onSignOut={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /account menu/ }));
+
+    // Opening focuses the first item, as a menu is expected to.
+    const items = screen.getAllByRole('menuitem');
+    expect(items[0]).toHaveFocus();
+
+    fireEvent.keyDown(items[0]!, { key: 'ArrowDown' });
+    expect(items[1]).toHaveFocus();
+
+    fireEvent.keyDown(items[1]!, { key: 'End' });
+    expect(items[items.length - 1]).toHaveFocus();
+
+    fireEvent.keyDown(items[items.length - 1]!, { key: 'ArrowDown' });
+    expect(items[0]).toHaveFocus();
   });
 
   it('renders the role and scope pill when supplied', () => {
@@ -148,13 +247,13 @@ describe('AppShell', () => {
       </AppShell>,
     );
 
-    // The reference exposes sign-out in both places, so both must be wired.
-    const controls = screen.getAllByRole('button', { name: /^Sign out$/ });
-    expect(controls).toHaveLength(2);
+    // The reference exposes sign-out in both places, so both must be wired: the sidebar footer
+    // shows it directly, and the top bar carries it inside the account menu.
+    fireEvent.click(screen.getByRole('button', { name: /^Sign out$/ }));
+    expect(onSignOut).toHaveBeenCalledTimes(1);
 
-    for (const control of controls) {
-      fireEvent.click(control);
-    }
+    fireEvent.click(screen.getByRole('button', { name: /account menu/ }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /Sign out/ }));
     expect(onSignOut).toHaveBeenCalledTimes(2);
   });
 

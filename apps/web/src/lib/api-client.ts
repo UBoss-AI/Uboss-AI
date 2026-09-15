@@ -134,7 +134,12 @@ export interface InvitationPreviewResponse {
 }
 
 export interface MeResponse {
-  user: { ubossUniqueId: string; displayName: string; isPlatformActor: boolean };
+  user: {
+    userId: string;
+    ubossUniqueId: string;
+    displayName: string;
+    isPlatformActor: boolean;
+  };
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
 }
@@ -4924,6 +4929,8 @@ export interface ChatConversationSummary {
   kind: 'Direct' | 'Group';
   title: string | null;
   participantUserIds: string[];
+  /** The same people, named. A conversation listed by user id is not a conversation. */
+  participants: { userId: string; displayName: string }[];
   lastMessageAt: string | null;
   unread: number;
 }
@@ -4942,6 +4949,8 @@ export type ChatContextPreviewView =
 export interface ChatMessageView {
   id: string;
   authorUserId: string;
+  /** Who wrote it. The screen used to print the first eight characters of the id. */
+  authorName: string;
   /** Null when the author deleted it — the row stays so the conversation keeps its shape. */
   body: string | null;
   deleted: boolean;

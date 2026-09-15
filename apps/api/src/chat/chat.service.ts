@@ -31,6 +31,8 @@ export interface ConversationSummary {
   kind: ConversationKind;
   title: string | null;
   participantUserIds: string[];
+  /** The same people, with the names a screen can actually show. */
+  participants: { userId: string; displayName: string }[];
   lastMessageAt: string | null;
   unread: number;
 }
@@ -155,7 +157,7 @@ export class ChatService {
     scope: TenantScope;
     actorUserId: string;
   }): Promise<ConversationSummary[]> {
-    return this.prisma.runInTenantTransaction(input.scope, async () => {
+    const rows = await this.prisma.runInTenantTransaction(input.scope, async () => {
       const mine = await this.prisma.client.chatParticipant.findMany({
         where: { tenantId: input.scope.tenantId, userId: input.actorUserId, leftAt: null },
         select: { conversationId: true, lastReadAt: true },
@@ -197,6 +199,38 @@ export class ChatService {
         }),
       }));
     });
+
+    // Names, after the transaction rather than inside it. A conversation is about people, so the
+    // one thing it must not show is their primary key.
+    const names = await this.displayNames(rows.flatMap((row) => row.participantUserIds));
+    return rows.map((row) => ({
+      ...row,
+      participants: row.participantUserIds.map((userId) => ({
+        userId,
+        displayName: names.get(userId) ?? 'Unknown person',
+      })),
+    }));
+  }
+
+  /**
+   * Display names for a set of user ids.
+   *
+   * One query rather than one per row, and read as a platform operation because `users` is a
+   * person-level table: a row there is not owned by a company. Every id passed in came from a row
+   * this caller is already permitted to see, so nothing widens. The same shape as
+   * `security-center.service.ts`, which explains the reasoning at length.
+   */
+  private async displayNames(ids: readonly string[]): Promise<Map<string, string>> {
+    const wanted = [...new Set(ids)];
+    if (wanted.length === 0) return new Map();
+
+    const users = await this.prisma.runAsPlatformOperation(() =>
+      this.prisma.client.user.findMany({
+        where: { id: { in: wanted } },
+        select: { id: true, displayName: true },
+      }),
+    );
+    return new Map(users.map((user) => [user.id, user.displayName]));
   }
 
   /**
@@ -260,15 +294,27 @@ export class ChatService {
       refs,
     });
 
+    // Who wrote each line, and who is in the room. Every id below came from rows this person is
+    // already permitted to read.
+    const names = await this.displayNames([
+      ...loaded.conversation.participants.map((row) => row.userId),
+      ...loaded.messages.map((message) => message.authorUserId),
+    ]);
+
     return {
       id: loaded.conversation.id,
       kind: loaded.conversation.kind,
       title: loaded.conversation.title,
       participantUserIds: loaded.conversation.participants.map((row) => row.userId),
+      participants: loaded.conversation.participants.map((row) => ({
+        userId: row.userId,
+        displayName: names.get(row.userId) ?? 'Unknown person',
+      })),
       context: previews,
       messages: loaded.messages.map((message) => ({
         id: message.id,
         authorUserId: message.authorUserId,
+        authorName: names.get(message.authorUserId) ?? 'Unknown person',
         // A deleted message keeps its place so the reply below it still makes sense, and shows
         // that something was removed rather than silently closing the gap.
         body: message.deletedAt === null ? message.body : null,

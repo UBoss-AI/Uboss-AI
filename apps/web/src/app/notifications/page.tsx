@@ -6,6 +6,7 @@ import { Banner, Button, Card, CardBody, PageHeader, SkeletonText, Tabs } from '
 
 import { NOTIFICATION_KIND_DEFINITIONS } from '@uboss/types';
 
+import { useAccountMenu } from '../../lib/use-account-menu';
 import { useSignedInUser } from '../../lib/use-signed-in-user';
 import { RoutedAppShell } from '../../components/RoutedAppShell';
 import {
@@ -70,6 +71,8 @@ export default function NotificationCenterPage() {
     resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
 
   const signedInUser = useSignedInUser(me);
+
+  const accountMenu = useAccountMenu(me);
 
   useEffect(() => {
     authApi
@@ -163,6 +166,7 @@ export default function NotificationCenterPage() {
       groups={navGroups}
       activeKey="dashboard"
       user={signedInUser}
+      accountMenu={accountMenu}
       {...(counts === undefined
         ? {}
         : {

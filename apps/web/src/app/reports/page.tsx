@@ -24,6 +24,7 @@ import {
   type ReportCatalogue,
   type ReportRunView,
 } from '../../lib/api-client';
+import { useAccountMenu } from '../../lib/use-account-menu';
 import { useSignedInUser } from '../../lib/use-signed-in-user';
 import { RoutedAppShell } from '../../components/RoutedAppShell';
 import {
@@ -84,6 +85,8 @@ export default function ReportsPage(): React.JSX.Element {
     resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
 
   const signedInUser = useSignedInUser(me);
+
+  const accountMenu = useAccountMenu(me);
   const activeWorkspace = me?.workspaces.find((workspace) => workspace.tenantId === tenantId);
   const bell = useNotificationBell(tenantId);
 
@@ -142,6 +145,7 @@ export default function ReportsPage(): React.JSX.Element {
       groups={navGroups}
       activeKey="reports"
       user={signedInUser}
+      accountMenu={accountMenu}
       {...bell.shellProps}
       onSignOut={() => {
         forgetWorkspace();

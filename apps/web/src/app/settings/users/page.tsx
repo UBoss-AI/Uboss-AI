@@ -30,6 +30,7 @@ import {
   type MeResponse,
 } from '../../../lib/api-client';
 
+import { useAccountMenu } from '../../../lib/use-account-menu';
 import { useSignedInUser } from '../../../lib/use-signed-in-user';
 import { RoutedAppShell } from '../../../components/RoutedAppShell';
 import {
@@ -141,6 +142,8 @@ export default function UsersAccessPage() {
     resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
 
   const signedInUser = useSignedInUser(me);
+
+  const accountMenu = useAccountMenu(me);
   const bell = useNotificationBell(tenantId);
 
   useEffect(() => {
@@ -227,6 +230,7 @@ export default function UsersAccessPage() {
       activeKey="users"
       {...bell.shellProps}
       user={signedInUser}
+      accountMenu={accountMenu}
       onSignOut={() => {
         forgetWorkspace();
         void authApi.logout().finally(() => window.location.assign('/login'));

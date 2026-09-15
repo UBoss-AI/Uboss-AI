@@ -22,6 +22,7 @@ import {
   type ChatConversationView,
   type MeResponse,
 } from '../../lib/api-client';
+import { useAccountMenu } from '../../lib/use-account-menu';
 import { useSignedInUser } from '../../lib/use-signed-in-user';
 import { RoutedAppShell } from '../../components/RoutedAppShell';
 import {
@@ -78,6 +79,8 @@ function WorkspaceChatInner() {
     resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
 
   const signedInUser = useSignedInUser(me);
+
+  const accountMenu = useAccountMenu(me);
   const bell = useNotificationBell(tenantId ?? '');
 
   const activeWorkspace = useMemo(
@@ -89,8 +92,14 @@ function WorkspaceChatInner() {
     try {
       const identity = await authApi.me();
       setMe(identity);
-      const workspace = identity.activeWorkspaceId;
-      if (workspace === null) {
+      // Not `identity.activeWorkspaceId`: that field is structurally always null, so reading it
+      // here meant this loader returned before it ever called the API — Workspace Chat showed
+      // "No conversations yet." to every person in every company. See active-workspace.ts.
+      const workspace = resolveActiveWorkspace(
+        identity.workspaces,
+        readRememberedWorkspace(),
+      )?.tenantId;
+      if (workspace === undefined) {
         setLoading(false);
         return;
       }
@@ -193,6 +202,7 @@ function WorkspaceChatInner() {
       groups={navGroups}
       activeKey="chat"
       user={signedInUser}
+      accountMenu={accountMenu}
       {...bell.shellProps}
       onSignOut={() => {
         forgetWorkspace();
@@ -256,7 +266,7 @@ function WorkspaceChatInner() {
                       onClick={() => setOpenId(conversation.id)}
                     >
                       <span className="chat-item-name">
-                        {conversation.title ?? 'Direct message'}
+                        {conversationLabel(conversation, me?.user.userId ?? null)}
                       </span>
                       {conversation.unread > 0 ? (
                         // A badge, not a concatenated label — the locked rule for counts.
@@ -276,7 +286,7 @@ function WorkspaceChatInner() {
                 <p className="chat-muted">Choose a conversation.</p>
               ) : (
                 <>
-                  <h2 className="chat-title">{open.title ?? 'Direct message'}</h2>
+                  <h2 className="chat-title">{conversationLabel(open, me?.user.userId ?? null)}</h2>
 
                   {/* ---- what this conversation is about ---- */}
                   {open.context.length > 0 ? (
@@ -320,7 +330,7 @@ function WorkspaceChatInner() {
                     {open.messages.map((message) => (
                       <li key={message.id} className="chat-message">
                         <div className="chat-message-meta">
-                          <span>{message.authorUserId.slice(0, 8)}</span>
+                          <span>{message.authorName}</span>
                           <time dateTime={message.sentAt}>
                             {new Date(message.sentAt).toLocaleString()}
                           </time>
@@ -370,16 +380,25 @@ function WorkspaceChatInner() {
         <Card>
           <CardBody>
             {/*
-              Printed verbatim, at the foot, in the server's words. Both are claims somebody would
-              otherwise make on the product's behalf: that a linked Objective is readable because
-              it is linked, and that "live" means a socket.
+              Still printed verbatim, in the server's words, because both are claims somebody would
+              otherwise make on the product's behalf: that a linked Objective is readable because it
+              is linked, and that "live" means a socket.
+
+              Behind a disclosure rather than standing open. Two paragraphs about in-process
+              publishers and socket transports, permanently under every conversation, is the
+              "reading the software instead of using it" the audit brief opens on — and it was
+              pushing the composer up the screen on a phone. Collapsed, not deleted: the honesty
+              is the point of it, and `open` would defeat the change while `hidden` would hide it.
             */}
-            <p className="chat-muted" data-testid="chat-context-stance">
-              {stances.context}
-            </p>
-            <p className="chat-muted" data-testid="chat-realtime-stance">
-              {stances.realtime}
-            </p>
+            <details className="chat-stances">
+              <summary>How chat handles linked work and delivery</summary>
+              <p className="chat-muted" data-testid="chat-context-stance">
+                {stances.context}
+              </p>
+              <p className="chat-muted" data-testid="chat-realtime-stance">
+                {stances.realtime}
+              </p>
+            </details>
           </CardBody>
         </Card>
       ) : null}
@@ -393,6 +412,29 @@ function WorkspaceChatInner() {
  * The boundary exists because Discuss deep-links here: `/chat?conversation=<id>` is how a
  * conversation started from an Objective or an Exception opens on the one screen that owns chat.
  */
+/**
+ * What to call a conversation.
+ *
+ * A group uses its title. A direct message is titled by the other person, because "Direct
+ * message" is what it *is*, not what it is *about* — a list of six of them, all reading "Direct
+ * message", tells you nothing and was what this screen showed.
+ */
+function conversationLabel(
+  conversation: { title: string | null; participants?: { userId: string; displayName: string }[] },
+  viewerUserId: string | null,
+): string {
+  if (conversation.title !== null && conversation.title.trim() !== '') return conversation.title;
+
+  const others = (conversation.participants ?? []).filter(
+    (participant) => participant.userId !== viewerUserId,
+  );
+  if (others.length === 1) return others[0]!.displayName;
+  if (others.length > 1) return others.map((participant) => participant.displayName).join(', ');
+  // A conversation with only yourself in it is a note to self, and saying so is better than
+  // falling back to a label that describes the database.
+  return 'Just you';
+}
+
 export default function WorkspaceChatPage() {
   return (
     <Suspense fallback={null}>

@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 
 import { cn } from '../lib/class-names';
 import type { NavGroup } from '../navigation/navigation-model';
+import type { AccountMenuItem } from './AccountMenu';
 import { Sidebar, type SidebarUser } from './Sidebar';
 import { TopBar } from './TopBar';
 
@@ -31,6 +32,8 @@ interface AppShellCommonProps {
   /** How many need acknowledging — a state an unread count of zero cannot express. */
   awaitingAcknowledgement?: number;
   onOpenNotifications?: () => void;
+  /** Entries above the separator in the top bar account menu. See TopBarProps.accountMenu. */
+  accountMenu?: readonly AccountMenuItem[] | undefined;
   children: ReactNode;
   className?: string;
 }
@@ -58,6 +61,7 @@ export function AppShell(props: AppShellProps) {
     unreadNotifications,
     awaitingAcknowledgement,
     onOpenNotifications,
+    accountMenu,
     children,
     className,
   } = props;
@@ -130,6 +134,7 @@ export function AppShell(props: AppShellProps) {
             unreadNotifications={unreadNotifications}
             awaitingAcknowledgement={awaitingAcknowledgement}
             onOpenNotifications={onOpenNotifications}
+            accountMenu={accountMenu}
             onToggleSidebar={() => setMobileOpen((value) => !value)}
           />
         ) : (
@@ -143,6 +148,7 @@ export function AppShell(props: AppShellProps) {
             unreadNotifications={unreadNotifications}
             awaitingAcknowledgement={awaitingAcknowledgement}
             onOpenNotifications={onOpenNotifications}
+            accountMenu={accountMenu}
             onToggleSidebar={() => setMobileOpen((value) => !value)}
           />
         )}

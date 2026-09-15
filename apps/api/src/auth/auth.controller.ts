@@ -214,6 +214,9 @@ export class AuthController {
 
     return {
       user: {
+        // The caller's own id. Needed to tell yourself apart from the other participants in a
+        // conversation; `ubossUniqueId` is the cross-company handle, not the key rows use.
+        userId: actor.userId,
         ubossUniqueId: actor.ubossUniqueId,
         displayName: user?.displayName ?? actor.ubossUniqueId,
         isPlatformActor: actor.kind === 'platform',

@@ -74,6 +74,7 @@ const CONVERSATION: ChatConversationView = {
     {
       id: 'message-1',
       authorUserId: 'user-000001',
+      authorName: 'Priya Nair',
       body: 'Can you look at step three?',
       deleted: false,
       mentionedUserIds: [],

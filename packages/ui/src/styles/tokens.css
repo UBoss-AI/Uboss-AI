@@ -11,6 +11,9 @@
   --uboss-navy: #102a43;
   --uboss-navy-700: #1c4a73;
   --uboss-navy-900: #0a1e33;
+  /* Text on a navy surface. 9.9:1, so it holds for body copy as well as headings. The sidebar
+     and the Master Console already used values in this range as literals; this names it. */
+  --uboss-navy-ink: #c9d6e5;
 
   /* ---- Blue: primary action ---- */
   --uboss-blue: #2563eb;
@@ -44,7 +47,18 @@
   /* ---- Text ---- */
   --uboss-text: #0f1d2e;
   --uboss-text-2: #54637a;
-  --uboss-text-3: #8994a6;
+  /*
+   * Darkened from the reference's #8994a6, which fails WCAG AA.
+   *
+   * Measured: 3.07:1 on --uboss-surface, 2.88:1 on --uboss-bg, 2.72:1 on --uboss-bg-2, against a
+   * 4.5:1 minimum for body text. It is the token behind every muted line in the product — empty
+   * states, helper text, table meta, step numbers — so the failure was everywhere at once.
+   *
+   * #646f81 is the same hue, darkened until it clears the minimum on all three surfaces
+   * (5.08 / 4.77 / 4.51). THIS IS A DEVIATION FROM THE APPROVED REFERENCE and wants client
+   * sign-off; it is applied rather than reported because unreadable text is not a preference.
+   */
+  --uboss-text-3: #646f81;
 
   /* ---- Badge ladder (Bronze -> Silver -> Gold -> Platinum -> Diamond) ---- */
   --uboss-bronze-bg: #f6ece2;
@@ -52,7 +66,9 @@
   --uboss-silver-bg: #eceff3;
   --uboss-silver-fg: #5b6672;
   --uboss-gold-bg: #fbf1d6;
-  --uboss-gold-fg: #96751b;
+  /* Darkened from #96751b, which is 3.84:1 on its own background. The other four rungs of the
+     ladder already clear 4.5 (5.03 to 5.69); only Gold did not. */
+  --uboss-gold-fg: #8a690f;
   --uboss-platinum-bg: #e6f0f1;
   --uboss-platinum-fg: #2c6e72;
   --uboss-diamond-bg: #e8eeff;
@@ -60,6 +76,9 @@
 
   /* ---- Radii ---- */
   --uboss-radius-input: 8px;
+  /* Buttons. The reference draws them at 9px, one pixel softer than an input, and every size in
+     the family must use the same value — the small variant was reaching for the input radius. */
+  --uboss-radius-button: 9px;
   --uboss-radius-card: 12px;
   --uboss-radius-panel: 16px;
   --uboss-radius-pill: 20px;
@@ -174,7 +193,8 @@
 
     --uboss-text: #e6edf5;
     --uboss-text-2: #9fb0c4;
-    --uboss-text-3: #71829a;
+    /* 4.38:1 on surface and 3.95:1 on bg-2 as #71829a; lightened to clear 4.5 on all three. */
+    --uboss-text-3: #7b8ca4;
 
     --uboss-bronze-bg: #2a1e13;
     --uboss-bronze-fg: #d8a878;
@@ -227,7 +247,7 @@
 
   --uboss-text: #e6edf5;
   --uboss-text-2: #9fb0c4;
-  --uboss-text-3: #71829a;
+  --uboss-text-3: #7b8ca4;
 
   --uboss-bronze-bg: #2a1e13;
   --uboss-bronze-fg: #d8a878;
