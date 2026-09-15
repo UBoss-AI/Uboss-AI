@@ -572,3 +572,29 @@ describe('TopBar — the notification bell (Prompt 15)', () => {
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('TopBar — search', () => {
+  it('renders the search field disabled when no host runs a search', () => {
+    render(<TopBar variant="company" workspaceName="SPM Medicare" />);
+
+    // It used to accept text and discard it: a prominent box on every screen, on which typing a
+    // name and pressing Enter did nothing at all.
+    const field = screen.getByLabelText(/Search people, objectives, agents/);
+    expect(field).toBeDisabled();
+    expect(field).toHaveAttribute('title', expect.stringContaining('not built yet'));
+  });
+
+  it('runs the search on Enter when a host supplies one', () => {
+    const onSearch = vi.fn();
+    render(<TopBar variant="company" workspaceName="SPM Medicare" onSearch={onSearch} />);
+
+    const field = screen.getByLabelText(/Search people, objectives, agents/);
+    expect(field).toBeEnabled();
+
+    fireEvent.change(field, { target: { value: '  Priya  ' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    // Trimmed, because a trailing space is a typo rather than a query.
+    expect(onSearch).toHaveBeenCalledWith('Priya');
+  });
+});

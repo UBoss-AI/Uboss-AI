@@ -45,6 +45,15 @@ export type TopBarProps = (
    * than a fixed list in here.
    */
   accountMenu?: readonly AccountMenuItem[] | undefined;
+  /**
+   * Runs a workspace-wide search. **Absent means there is none**, and the field renders disabled
+   * with a reason rather than accepting text and discarding it.
+   *
+   * It had no handler at all: a prominent box on every screen, on which you could type "Priya" and
+   * press Enter, and nothing whatever happened. There is no cross-entity search endpoint to wire
+   * it to — only chat has one — so the field says so until there is.
+   */
+  onSearch?: ((query: string) => void) | undefined;
   /** Shown only on small screens, to open the off-canvas sidebar. */
   onToggleSidebar?: (() => void) | undefined;
   className?: string | undefined;
@@ -64,6 +73,7 @@ export function TopBar(props: TopBarProps) {
     user,
     onSignOut,
     accountMenu,
+    onSearch,
     className,
   } = props;
 
@@ -120,8 +130,25 @@ export function TopBar(props: TopBarProps) {
       <SearchField
         label={isMaster ? 'Search companies, users, invoices' : 'Search people, objectives, agents'}
         placeholder={
-          isMaster ? 'Search companies, users, invoices' : 'Search people, objectives, agents'
+          onSearch === undefined
+            ? 'Search is not available yet'
+            : isMaster
+              ? 'Search companies, users, invoices'
+              : 'Search people, objectives, agents'
         }
+        disabled={onSearch === undefined}
+        {...(onSearch === undefined
+          ? {
+              title:
+                'Workspace-wide search is not built yet. Each screen has its own filter, and people can be looked up on UBoss Profile Search.',
+            }
+          : {
+              onKeyDown: (event) => {
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+                onSearch(event.currentTarget.value.trim());
+              },
+            })}
       />
 
       <div className="uboss-top-actions">

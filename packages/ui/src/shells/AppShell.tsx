@@ -34,6 +34,8 @@ interface AppShellCommonProps {
   onOpenNotifications?: () => void;
   /** Entries above the separator in the top bar account menu. See TopBarProps.accountMenu. */
   accountMenu?: readonly AccountMenuItem[] | undefined;
+  /** Runs a workspace-wide search. Absent renders the field disabled. See TopBarProps.onSearch. */
+  onSearch?: ((query: string) => void) | undefined;
   children: ReactNode;
   className?: string;
 }
@@ -62,6 +64,7 @@ export function AppShell(props: AppShellProps) {
     awaitingAcknowledgement,
     onOpenNotifications,
     accountMenu,
+    onSearch,
     children,
     className,
   } = props;
@@ -135,6 +138,7 @@ export function AppShell(props: AppShellProps) {
             awaitingAcknowledgement={awaitingAcknowledgement}
             onOpenNotifications={onOpenNotifications}
             accountMenu={accountMenu}
+            onSearch={onSearch}
             onToggleSidebar={() => setMobileOpen((value) => !value)}
           />
         ) : (
@@ -149,6 +153,7 @@ export function AppShell(props: AppShellProps) {
             awaitingAcknowledgement={awaitingAcknowledgement}
             onOpenNotifications={onOpenNotifications}
             accountMenu={accountMenu}
+            onSearch={onSearch}
             onToggleSidebar={() => setMobileOpen((value) => !value)}
           />
         )}

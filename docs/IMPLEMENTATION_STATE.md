@@ -3440,3 +3440,16 @@ errors.
 - **The seeded development database still grants no roles**, so a fresh `db:seed` produces an
   application where nothing is permitted.
 - **Mail still does not send**: the only `EmailAdapter` logs and reports `deliversRealMail: false`.
+
+### The top bar search
+
+**It had no handler.** A prominent box on every screen, labelled "Search people, objectives,
+agents", on which somebody could type a colleague's name, press Enter, and have nothing whatever
+happen. There is no cross-entity search endpoint to wire it to — only chat has one — so it now
+renders **disabled**, with a placeholder and a tooltip saying workspace-wide search is not built
+and pointing at what does exist: each screen's own filter, and UBoss Profile Search for people.
+
+`TopBar` takes an `onSearch` prop. Supplying it enables the field and runs the search on Enter;
+omitting it is what produces the disabled state. So the day there is an endpoint, one prop wires it
+without touching twenty-six screens — and until then the control cannot quietly go back to
+pretending.
