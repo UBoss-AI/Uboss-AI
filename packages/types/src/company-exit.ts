@@ -67,8 +67,8 @@ export const EXIT_STATE_DESCRIPTIONS: Record<ExitState, string> = {
   ReadOnly:
     'People can still sign in and read everything, and export it. Nothing new can be created.',
   RetentionHold:
-    'Access has ended and the retention window is running. This is the **last point at which the ' +
-    'exit can be cancelled** — after it, the content is gone.',
+    'Access has ended and the retention window is running. This is the last point at which the ' +
+    'exit can be cancelled — after it, the content is gone.',
   Deleted:
     'Eligible content has been deleted. The audit trail, the financial record and each person’s ' +
     'employment history remain, under policy.',

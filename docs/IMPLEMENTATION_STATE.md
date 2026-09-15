@@ -3322,3 +3322,54 @@ half-dark surface in either scheme across the component gallery, both shells and
 - The seeded development database contains **no role assignments at all** — `role_assignments` is
   empty — so a fresh `db:seed` produces an application where every sidebar is empty and nothing is
   permitted. Roles were granted by hand for this audit; the seed itself is unchanged.
+
+### Second pass of the pre-Prompt-45 audit
+
+Six further defects, all found by driving the product rather than reading it.
+
+- **Appearance did nothing.** Implemented for Light, Dark and System (ADR-282). Verified in a
+  browser across sixteen signed-in routes and the whole component gallery: no light surface
+  survives in dark mode, and an explicit choice beats the device in both directions.
+- **Six Settings sections said a feature "arrives with" a prompt that had already shipped.** Skills
+  & AI said it directly above the finished Skill library, its governance tab and its custom skills
+  tab. Each note now says where the thing is configured, or says plainly that there is nothing to
+  set — and none refers to the build order, which is not a fact about the product.
+- **Markdown reached the screen as literal asterisks.** Seventeen occurrences in strings the API
+  hands to a UI that renders text, including two warnings where clarity matters most: "**No real
+  payment was made**" and "**last point at which the exit can be cancelled**". A test had been
+  asserting the asterisks, so it was holding the defect in place; it now asserts the rule.
+- **Platform staff could not enter the Master Console.** After signing in they were shown "no
+  company workspace is available to you yet — ask your administrator to activate your account":
+  the people who administer UBoss, told to request access they are not meant to have, with the
+  console reachable only by typing the URL. The signed-in screen now offers it.
+- **Four tooltips named a prompt number**, two of them wrong by now. The controls stay disabled —
+  Agent Builder opens from an assignment and a draft node has none; there is no tenant-side top-up
+  or reallocation endpoint — but each now gives a reason somebody can act on.
+- **The org chart kept a white background in dark mode**, the one surface the first sweep missed
+  because its `background` was a multi-line gradient.
+
+### Verified in this pass
+
+- **Settings: 19 of 19 sections, no empty shells.** Every section either renders controls or states
+  why there is nothing to configure.
+- **Master Console: no fake screens.** The six that are not built each carry a "Not built yet"
+  badge and say what they are waiting for — including Development & Operations, where the
+  reference's 22 subsections have no data source. A tenant user is refused with an explanation
+  rather than a broken shell, and the API refuses independently.
+- **The locked dashboard contract holds**: `/dashboard` returns `agents` and `pendingJobs` and
+  nothing else, and the slice metadata is exactly those two.
+- **Keyboard focus**: 240 focusable controls tabbed across ten screens, every one showing a visible
+  indicator.
+
+### Still outstanding after this pass
+
+- **The 19 Settings panels have not each been exercised for a real save**, validation failure and
+  permission refusal. Presence and honesty are established; write behaviour is not.
+- **No form, table or modal was audited field by field.** The objective checks that cover them —
+  overflow, accessible names, focus, console errors — are clean, which is not the same as a
+  considered review of each one.
+- **The seeded development database has no role assignments**, so a fresh `db:seed` produces an
+  application where nothing is permitted and every sidebar is empty. Roles were granted by hand for
+  this audit; the seed is unchanged.
+- **Mail does not send.** The only `EmailAdapter` logs and reports `deliversRealMail: false`. SMTP
+  credentials in a local `.env` have no effect, because no SMTP transport exists to read them.

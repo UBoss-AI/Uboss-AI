@@ -136,8 +136,14 @@ export default function InternalAuditPage() {
       key: 'position',
       header: '#',
       // The chain position, shown because it is the thing that makes the row verifiable. A row
-      // with no position predates Prompt 8 and is labelled rather than left blank.
-      render: (row) => row.chain.sequence ?? <span title="Written before Prompt 8">unchained</span>,
+      // with no position was written before the hash chain existed, and is labelled rather
+      // than left blank — an empty cell would read as a missing value.
+      render: (row) =>
+        row.chain.sequence ?? (
+          <span title="Written before this trail was hash-chained, so its position cannot be verified.">
+            unchained
+          </span>
+        ),
     },
     { key: 'action', header: 'Action', render: (row) => row.action },
     {

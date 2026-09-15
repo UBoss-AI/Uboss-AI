@@ -2532,7 +2532,8 @@
   border-radius: 14px;
   background:
     radial-gradient(720px 300px at 28% -12%, rgba(37, 99, 235, 0.05), transparent 60%),
-    radial-gradient(520px 260px at 100% -8%, rgba(11, 166, 228, 0.05), transparent 55%), #fff;
+    radial-gradient(520px 260px at 100% -8%, rgba(11, 166, 228, 0.05), transparent 55%),
+    var(--uboss-surface);
 }
 
 .uboss-org svg {

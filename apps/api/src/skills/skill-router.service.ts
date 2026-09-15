@@ -295,7 +295,7 @@ export class SkillRouterService {
           nextStatuses: [...ALLOWED_CANDIDATE_TRANSITIONS[row.status]],
         })),
         note:
-          'A Candidate is a request, not a capability. Accepting one creates a **draft** Skill ' +
+          'A Candidate is a request, not a capability. Accepting one creates a draft Skill ' +
           'that then goes through the normal lifecycle — there is no path from here to published, ' +
           'and nothing has been auto-used.',
       };

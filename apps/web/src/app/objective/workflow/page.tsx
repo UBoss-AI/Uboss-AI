@@ -171,8 +171,14 @@ function WorkflowEditorInner() {
               <Icon name="plus" size={16} />
               Add node
             </Button>
-            {/* The reference's "Assign AI node → Agent Builder". Agent Builder is Prompt 24. */}
-            <Button size="sm" disabled title="Agent Builder arrives at Prompt 24">
+            {/* The reference's "Assign AI node → Agent Builder". Agent Builder opens from an
+                assignment and reads nothing else, so there is nothing to open it with while
+                this workflow is still a draft. */}
+            <Button
+              size="sm"
+              disabled
+              title="Available once the objective is published and this node is assigned — Agent Builder opens from the assignment, not from a draft node."
+            >
               <Icon name="bot" size={16} />
               Assign AI node → Agent Builder
             </Button>

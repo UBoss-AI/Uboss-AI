@@ -282,7 +282,7 @@ export class RewardService {
       }),
       audit: 'reward.award_approved',
       summary:
-        'Approved this reward. **Nothing is paid by approving**: a cash award still needs a ' +
+        'Approved this reward. Nothing is paid by approving: a cash award still needs a ' +
         'separate settlement by a different person through an approved payroll connector.',
     });
   }
@@ -414,7 +414,7 @@ export class RewardService {
         summary: result.deliveredRealPayment
           ? `Settled through ${this.payout.kind}, reference ${result.reference}.`
           : `Recorded a settlement through ${this.payout.kind} (${result.reference}). ` +
-            '**No real payment was made** — the connector is not a live payroll provider.',
+            'No real payment was made — the connector is not a live payroll provider.',
         metadata: {
           connector: this.payout.kind,
           reference: result.reference,

@@ -1016,7 +1016,7 @@ export class ObjectiveAnalysisService {
         ? `Derived from what this analysis consumed across ${aiNodeCount} AI step(s). An ` +
           'estimate, not a quote: a run consumes what its inputs and retries require.'
         : `Derived from what this analysis consumed across ${aiNodeCount} AI step(s). **The ` +
-          'analysis ran against a mock model**, so treat this as a shape rather than a figure.',
+          'analysis ran against a mock model, so treat this as a shape rather than a figure.',
     };
   }
 
@@ -1069,7 +1069,7 @@ export class ObjectiveAnalysisService {
       promptTokens: run.promptTokens,
       completionTokens: run.completionTokens,
       note:
-        'The analysis output is always a **draft**. Nothing is live until a person approves and ' +
+        'The analysis output is always a draft. Nothing is live until a person approves and ' +
         'publishes it, and no work is assignable before that.',
     };
   }

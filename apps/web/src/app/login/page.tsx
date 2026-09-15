@@ -38,7 +38,18 @@ type Step =
   /** Enrolled mid-sign-in: the recovery codes are shown once, before continuing. */
   | { kind: 'recovery-codes'; codes: string[]; displayName: string; workspaces: Workspace[] }
   | { kind: 'sso-only'; tenantName: string; connections: SsoConnectionSummary[]; message: string }
-  | { kind: 'signed-in'; displayName: string; workspaces: Workspace[]; newDevice: boolean };
+  | {
+      kind: 'signed-in';
+      displayName: string;
+      workspaces: Workspace[];
+      newDevice: boolean;
+      /**
+       * Platform staff have no company workspace and are not supposed to. Without this the screen
+       * told them to ask an administrator for access they do not need, and offered no way into the
+       * Master Console they actually run.
+       */
+      isPlatformActor: boolean;
+    };
 
 /**
  * Sign in.
@@ -133,6 +144,7 @@ export default function LoginPage() {
           displayName: outcome.user.displayName,
           workspaces: outcome.workspaces,
           newDevice: outcome.newDevice,
+          isPlatformActor: outcome.user.isPlatformActor,
         });
         return;
       }
@@ -185,6 +197,7 @@ export default function LoginPage() {
         displayName: result.user.displayName,
         workspaces: result.workspaces,
         newDevice: result.newDevice,
+        isPlatformActor: result.user.isPlatformActor,
       });
     } catch (error) {
       const message = error instanceof ApiError ? error.message : 'That code could not be checked.';
@@ -296,13 +309,37 @@ export default function LoginPage() {
           </Link>
         </div>
 
-        <div className="uboss-section-label">Choose a workspace</div>
+        {/*
+          Platform staff have no company workspace and are not meant to. Before this they were
+          shown the "ask your administrator to activate your account" notice below — telling the
+          people who administer UBoss to request access they do not need, with no way through to
+          the Master Console they run. It was reachable only by typing the URL.
+        */}
+        {step.kind === 'signed-in' && step.isPlatformActor ? (
+          <>
+            <div className="uboss-section-label">UBoss Master Console</div>
+            <Button variant="primary" block onClick={() => router.push('/master/dashboard')}>
+              Open the Master Console
+            </Button>
+            {workspaces.length > 0 ? (
+              <p className="uboss-notice">
+                You also hold a company membership. Choose a workspace below to work inside it.
+              </p>
+            ) : null}
+          </>
+        ) : null}
+
+        {step.kind === 'signed-in' && step.isPlatformActor && workspaces.length === 0 ? null : (
+          <div className="uboss-section-label">Choose a workspace</div>
+        )}
 
         {workspaces.length === 0 ? (
-          <Banner tone="info">
-            You are signed in, but no company workspace is available to you yet. If you are
-            expecting access, ask your administrator to activate your account.
-          </Banner>
+          step.kind === 'signed-in' && step.isPlatformActor ? null : (
+            <Banner tone="info">
+              You are signed in, but no company workspace is available to you yet. If you are
+              expecting access, ask your administrator to activate your account.
+            </Banner>
+          )
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {workspaces.map((workspace) => (

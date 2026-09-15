@@ -184,11 +184,12 @@ export class SkillService {
 
       return {
         skills: views,
+        // One sentence, because it is a constraint somebody will hit rather than background
+        // reading. What a Verified Skill or an Industry Pack allows is already on each row.
         note:
-          'Skills are governed capabilities, not templates. Work references a **published ' +
-          'version**, that version cannot be edited, and an authorised change creates a new ' +
-          'draft that must be approved before anything uses it. A UBoss Verified Skill or an ' +
-          'Industry Pack can be used or cloned here, never edited.',
+          'Skills are governed capabilities, not templates: a published version cannot be ' +
+          'edited, and an authorised change creates a new draft that must be approved before any ' +
+          'work uses it.',
       };
     });
   }

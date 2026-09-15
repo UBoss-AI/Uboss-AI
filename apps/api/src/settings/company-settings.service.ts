@@ -80,18 +80,20 @@ const CATEGORY_NOTES: Partial<Record<SettingsCategory, string>> = {
     'Sign-in policy (password, MFA, SSO) is configured by the platform today, and each person ' +
     'manages their own sessions and second factors under Login & Security.',
   audit: 'The searchable trail is its own screen; there is nothing to configure about it.',
-  objective: 'Arrives with the Objective prompts, which define what there is to govern.',
+  objective:
+    'Approval gates are set per objective on Objective Optimization, where the workflow that needs them is built. What is here is the company-wide default applied when none is chosen.',
   agent:
-    'The company-wide AI mode and budget policy are set at provisioning; per-Agent policy arrives with the Engine Agent prompts.',
-  skills: 'Arrives with the Skill Catalog prompt.',
-  providers: 'Provider configuration is platform-side until the Model Gateway prompt.',
+    'The company-wide AI mode and budget are set at provisioning. Policy for an individual Agent belongs to that Agent and is set on Agent Builder.',
+  providers:
+    'Providers and model profiles are configured platform-side, on the Master Console. A company chooses how much it spends on AI, not which vendor serves it.',
   tokens:
-    'The AI budget guardrails are set at provisioning; per-department allocation arrives with metering.',
-  schedules: 'Arrives with the scheduling prompt, alongside the job runner.',
-  integrations: 'Arrives with the Integrations & Connections prompt.',
-  knowledge: 'Arrives with the Knowledge & Data prompt.',
-  uboss: 'Cross-company lookup policy arrives with UBoss Profile Search.',
-  performance: 'Arrives with the Performance & Reward prompt.',
+    'The AI budget guardrails are set at provisioning. Current spend, the budget and its per-department allocation are below.',
+  schedules:
+    'A recurring run is scheduled on the Agent that performs it, not company-wide — so there is nothing to set here. Engine Agents lists every Agent and its next run.',
+  uboss:
+    'Cross-company visibility is governed platform-side, so no company can widen its own reach. The search itself is on UBoss Profile Search.',
+  performance:
+    'The badge ladder and its thresholds are the same in every deployment and are deliberately not editable per company — a reward that can be redefined is not a reward. Results are on Performance.',
 };
 
 /**

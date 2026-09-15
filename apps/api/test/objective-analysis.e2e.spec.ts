@@ -863,7 +863,9 @@ describe('objective AI analysis (e2e)', () => {
       );
       assert.equal(response.body.nodeShapes.Human, 'rectangle');
       assert.equal(response.body.nodeShapes.Ai, 'diamond');
-      assert.match(response.body.note as string, /always a \*\*draft\*\*/);
+      // The rule, not its formatting. This asserted the markdown asterisks the API was sending
+      // into a UI that renders plain text, so the test was holding the defect in place.
+      assert.match(response.body.note as string, /always a draft/);
     });
   });
 

@@ -287,13 +287,23 @@ export function TokensAndCostPanel({ tenantId }: { tenantId: string | null }) {
 
         <CardBody>
           <div className="uboss-actions">
-            {/* Prompt 31 owns the request/purchase and reallocation flows. The buttons are not
-                rendered as working controls here, because a button that does nothing is worse
-                than one that is honestly absent. */}
-            <Button size="sm" disabled onClick={() => undefined} title="Arrives with Prompt 31.">
+            {/* Neither has an endpoint: cost.controller.ts exposes allowance, reconcile and
+                sweep-reservations, and credit is granted platform-side. Shown disabled with the
+                reason rather than hidden, so the absence is legible instead of mysterious — and
+                with no click handler at all, because a handler that does nothing is a lie the
+                next reader has to disprove. */}
+            <Button
+              size="sm"
+              disabled
+              title="Credit is added platform-side today. Ask UBoss support for a top-up; there is no request flow from a company yet."
+            >
               Request top-up
             </Button>
-            <Button size="sm" disabled onClick={() => undefined} title="Arrives with Prompt 31.">
+            <Button
+              size="sm"
+              disabled
+              title="The company budget is a single pool today. Splitting it per department is not supported yet."
+            >
               Reallocate budget
             </Button>
             <Button size="sm" disabled={busy} onClick={openLedger}>

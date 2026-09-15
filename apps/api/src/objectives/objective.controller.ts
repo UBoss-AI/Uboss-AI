@@ -686,7 +686,7 @@ export class ObjectiveController {
         usesRealModel: this.modelGateway.usesRealModel,
       },
       note:
-        'Analysis output is always a **draft**. Nothing is live until a person approves and ' +
+        'Analysis output is always a draft. Nothing is live until a person approves and ' +
         'publishes it, and no work is assignable before that. Human nodes are drawn as ' +
         'rectangles, AI nodes as diamonds, and the Goal is visually distinct.',
     };
