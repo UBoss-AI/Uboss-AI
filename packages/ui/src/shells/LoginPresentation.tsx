@@ -65,45 +65,45 @@ export function LoginPresentation({ children }: LoginPresentationProps) {
           >
             <path
               d="M50,50 C42,50 40,17 33,17"
-              stroke="#38bdf8"
+              stroke="var(--uboss-login-link)"
               strokeWidth={1.4}
               vectorEffect="non-scaling-stroke"
-              opacity={0.85}
+              opacity={0.75}
             />
             <path
               d="M50,50 C44,50 41,50 33,50"
-              stroke="#6366f1"
+              stroke="var(--uboss-login-link)"
               strokeWidth={1.4}
               vectorEffect="non-scaling-stroke"
-              opacity={0.85}
+              opacity={0.9}
             />
             <path
               d="M50,50 C42,50 40,83 33,83"
-              stroke="#f59e0b"
+              stroke="var(--uboss-login-link)"
               strokeWidth={1.4}
               vectorEffect="non-scaling-stroke"
-              opacity={0.85}
+              opacity={0.6}
             />
             <path
               d="M50,50 C58,50 60,17 67,17"
-              stroke="#2dd4bf"
+              stroke="var(--uboss-login-link)"
               strokeWidth={1.4}
               vectorEffect="non-scaling-stroke"
-              opacity={0.85}
+              opacity={0.75}
             />
             <path
               d="M50,50 C56,50 59,50 67,50"
-              stroke="#38bdf8"
+              stroke="var(--uboss-login-link)"
               strokeWidth={1.4}
               vectorEffect="non-scaling-stroke"
-              opacity={0.85}
+              opacity={0.9}
             />
             <path
               d="M50,50 C58,50 60,83 67,83"
-              stroke="#fb7185"
+              stroke="var(--uboss-login-link)"
               strokeWidth={1.4}
               vectorEffect="non-scaling-stroke"
-              opacity={0.85}
+              opacity={0.6}
             />
           </svg>
 

@@ -157,16 +157,10 @@ export default function TodoPage() {
         }
       />
 
-      {error === null ? null : (
-        <Banner tone="danger">
-          <Icon name="shield" size={16} />
-          {error}
-        </Banner>
-      )}
+      {error === null ? null : <Banner tone="danger">{error}</Banner>}
 
       {data !== null && data.counts.overdue > 0 ? (
         <Banner tone="warn">
-          <Icon name="clock" size={16} />
           {data.counts.overdue} {data.counts.overdue === 1 ? 'task is' : 'tasks are'} past the time
           the objective set for them.
         </Banner>

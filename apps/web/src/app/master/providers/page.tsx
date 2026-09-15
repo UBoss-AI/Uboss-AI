@@ -9,7 +9,6 @@ import {
   CardBody,
   DataTable,
   Drawer,
-  Icon,
   PageHeader,
   StatusBadge,
   type StatusTone,
@@ -111,16 +110,10 @@ export default function MasterProvidersPage() {
 
       {error !== null && <Banner tone="warn">{error}</Banner>}
 
-      {meta !== null && (
-        <Banner tone="info">
-          <Icon name="shield" size={16} />
-          {meta.note}
-        </Banner>
-      )}
+      {meta !== null && <Banner tone="info">{meta.note}</Banner>}
 
       {!anythingCanReachAProvider && (
         <Banner tone="warn">
-          <Icon name="alert" size={16} />
           No provider credential is configured, so every AI call is answered by the mock adapter and
           recorded as <span className="uboss-mono">producedByRealModel = false</span>. The Anthropic
           and OpenAI adapters are implemented and have never reached a provider.
@@ -387,7 +380,6 @@ export default function MasterProvidersPage() {
                     : 'warn'
                 }
               >
-                <Icon name="bolt" size={16} />
                 {testResult?.detail ?? selected.lastTest?.detail}
               </Banner>
             )}

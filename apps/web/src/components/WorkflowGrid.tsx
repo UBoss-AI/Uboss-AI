@@ -250,18 +250,20 @@ export function WorkflowGrid({ steps, onChange, readOnly = false, className }: W
                   <button
                     type="button"
                     title="Move up"
+                    aria-label={`Move step ${step.position} up`}
                     disabled={readOnly || step.position === 1}
                     onClick={() => rowOp(step.position, 'up')}
                   >
-                    ↑
+                    <Icon name="arrow-up" size={14} />
                   </button>
                   <button
                     type="button"
                     title="Move down"
+                    aria-label={`Move step ${step.position} down`}
                     disabled={readOnly || step.position === steps.length}
                     onClick={() => rowOp(step.position, 'down')}
                   >
-                    ↓
+                    <Icon name="arrow-down" size={14} />
                   </button>
                   <button
                     type="button"

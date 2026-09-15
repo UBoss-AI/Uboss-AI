@@ -267,18 +267,12 @@ function ObjectiveAnalyzeInner() {
         }
       />
 
-      {error === null ? null : (
-        <Banner tone="danger">
-          <Icon name="shield" size={16} />
-          {error}
-        </Banner>
-      )}
+      {error === null ? null : <Banner tone="danger">{error}</Banner>}
 
       {usesRealModel === false ? (
         // Stated prominently and unprompted. Presenting mock output as a model's judgement is
         // exactly the fabrication the client's rules forbid.
         <Banner tone="warn">
-          <Icon name="alert" size={16} />
           No AI provider is configured, so this analysis runs against a <b>mock model</b>. The draft
           it produces exercises the real pipeline, but nothing in it is a model’s judgement.
         </Banner>
@@ -360,24 +354,17 @@ function ObjectiveAnalyzeInner() {
                 <ProgressStep label="AI analysis stages" items={stages} />
 
                 {run.failureReason === null ? null : (
-                  <Banner tone="danger">
-                    <Icon name="alert" size={16} />
-                    {run.failureReason}
-                  </Banner>
+                  <Banner tone="danger">{run.failureReason}</Banner>
                 )}
 
                 {run.status === 'Cancelled' ? (
                   <Banner tone="info">
-                    <Icon name="shield" size={16} />
                     Cancelled. Nothing was published and the objective is unchanged.
                   </Banner>
                 ) : null}
 
                 {run.unreadableReason === null ? null : (
-                  <Banner tone="warn">
-                    <Icon name="alert" size={16} />
-                    {run.unreadableReason}
-                  </Banner>
+                  <Banner tone="warn">{run.unreadableReason}</Banner>
                 )}
 
                 {run.draft === null ? null : (
@@ -470,10 +457,7 @@ function ObjectiveAnalyzeInner() {
                       </>
                     )}
 
-                    <Banner tone="info">
-                      <Icon name="shield" size={16} />
-                      {run.note}
-                    </Banner>
+                    <Banner tone="info">{run.note}</Banner>
 
                     <div className="uboss-actions" style={{ marginTop: 12 }}>
                       <Link

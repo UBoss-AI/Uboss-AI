@@ -3522,3 +3522,106 @@ adapter remains, reporting `deliversRealMail: false`.
 **No mail has been sent to any real address**, and no real provider credentials have been used.
 The credentials supplied for this work were pasted into a chat and must be rotated before they are
 configured anywhere. `apps/api/.env.example` documents the variables.
+
+---
+
+## Prompt 45 — Premium enterprise UI / visual redesign
+
+A **presentation-only** pass. No route, permission, workflow, approved field name, Objective Form 2
+structure, Agent Builder structure, Dashboard slice rule, Settings section, Master Console
+behaviour or DevOps behaviour was changed. The work is the token layer, the component stylesheet,
+one new button variant, and a `loading` state on `Button`.
+
+### What was verified, and how
+
+**174 screen × theme × width combinations, in a real browser**: 17 application screens × 2 themes ×
+3 widths (1440/1024/768), plus all 19 Settings sections and 14 Master Console screens including
+DevOps in both themes, plus Login from a signed-out context at all three widths. Each is measured
+for text contrast against _what is actually painted behind it_, near-white surfaces while the theme
+is dark, horizontal scroll, mixed control heights, and more than one primary action per screen.
+
+**Final result: zero findings across all 174.** Every screen also proves it rendered before its
+result counts — see ADR-287 for why that check exists and for the two false clean results that
+preceded it.
+
+### Defects found by looking, that reading the CSS had not found
+
+1. **The whole page was light in dark mode.** `.uboss-main` painted a hardcoded
+   `linear-gradient(#f7fafe, #f3f6fb)` in both themes, so every heading and paragraph sitting
+   directly on the page was light text on near-white. Found by decoding a screenshot and reading
+   the pixel, after `getComputedStyle` and two greps each said the page was fine.
+2. **The Master Console failed contrast in Light**, on every screen — its navy surface with
+   light-theme text tokens (ADR-286).
+3. **Navy used as a text colour** in four places, invisible on a dark page at 1.06:1.
+4. **The dark-theme primary and danger buttons** were 3.23:1 and 2.77:1 behind white text (ADR-285).
+5. **`--uboss-radius` was never defined**, so every Notification Center row had square corners.
+6. **`.uboss-notice` was `display: flex`**, which turned the inline `<b>` inside 35 of its 39
+   usages into a separate layout column — visibly mangled on Users & Access.
+7. **44 banners rendered two icons**, 19 of them the same glyph twice, because `Banner` supplies an
+   icon from its tone and pages were adding their own.
+8. **Settings → Security scrolled sideways** at every width: `repeat(4, 1fr)` computed four 381px
+   tracks inside an 844px panel, because a `1fr` track's automatic minimum is its item's
+   min-content. Fixed once, on `.uboss-grid > *`.
+9. **The Appearance theme swatches previewed the old palette** — they are literal colour samples,
+   so they do not follow tokens and had to be updated by hand.
+
+### Deliberately preserved
+
+Dashboard's locked two-slice contract is untouched and still enforced structurally — `DonutDashboard`
+takes two named numeric props rather than a slice array, so a third category cannot be passed — with
+its test passing. Objective workflow keeps Goal / Human rectangle / AI diamond / Approval. The
+Master Console still says "not built yet" where that is true (DevOps, Billing, Credits, Skill
+Catalog, Support, Testing) and still labels its figures Measured / Configured / Demo data.
+
+### Limits of what was seen
+
+The seeded data leaves **Dashboard and Agent Builder showing their empty states** for the audit
+user, so their populated layouts were verified as unchanged in source and by unit test, not by eye.
+`--uboss-border-control` does not meet WCAG 1.4.11's 3:1 for a control boundary; the reasoning and
+the compensating affordances are recorded in `tokens.css`.
+
+### Prompt 45 — final loop-engineering gate
+
+A second pass over the same work, driven by the client's zero-gap gate. It found things the first
+pass had missed and one thing the first pass had got wrong.
+
+**WCAG 1.4.11 was genuinely failing and is now fixed** (ADR-288). The earlier report recorded the
+1.61:1 control border as an accepted limitation; measuring the rendered control showed that
+reasoning was wrong, because an input's fill is _identical_ to the card behind it (1.00), leaving
+the border as the only thing identifying it. `--uboss-border-subtle` and `--uboss-border-control`
+now have different jobs and different obligations. **0 failures across 1226 interactive elements**,
+both themes, including the Master Console.
+
+**Dashboard and Agent Builder are now verified populated**, not in their empty states:
+
+- Dashboard: exactly 2 slices, labels and counts matching the backend (3 Agents / 1 Pending Job),
+  legend, drilldown, hover, keyboard focus, and nothing forbidden beside it. A real defect was
+  found here that the empty state had hidden for the whole redesign — **the donut was still drawn
+  in the pre-Prompt-45 cyan**, with four hardcoded hex values and two gradients. It now uses the
+  locked accents as tokens: teal for Agents (AI identity), blue for Pending Jobs (work awaiting a
+  person), separated by a gap, with the legend carrying the meaning so colour never carries it alone.
+- Agent Builder: A/B structure, Attached Skills, linked Objective, readiness with every blocker
+  named, Test Agent and Activate states, Download/Upload Job Method Form, no clipping, no forbidden
+  right sidebar — Light and Dark at 1440/1024/768. **All 13 approved Job Method columns verified in
+  the real downloaded workbook**, which is where that schema lives (CR-03 §4), with no secrets
+  exported and correct linkage metadata.
+
+Reaching that state took a chain of temporary fixtures, all removed and the removal proved
+(ADR-289).
+
+**Also found and fixed:** two Unicode arrow glyphs (`↑` `↓`) used as icons in the Form 2 row
+controls — the earlier icon sweep reported clean because its `grep -P` Unicode ranges silently
+matched nothing. `arrow-up` and `arrow-down` were added to the approved family in the same stroke
+idiom, with accessible names.
+
+**Verified, all in a real browser:** System theme alongside Light and Dark (204/204 combinations);
+keyboard navigation with real key presses including focus trap, Escape, focus return and menu arrow
+keys; **focus indicators measured by pixel** across 84 controls after three style-based checks gave
+three different answers; six identities with every prohibited API call refused and cross-tenant
+blocked; failure states 400/401/403/404/409/429 all honest, readable and leak-free.
+
+**Reported rather than fixed, because they are outside a visual pass:** the workflow editor cannot
+set a node owner though the API accepts one and Approve & Assign requires it; Form 2's Department
+and Objective Owner fields are plain text bound to UUID-typed API fields; `RateLimit-*` headers are
+sent but not listed in CORS `exposedHeaders`, so no browser client can read them; 13 seeded users
+have roles but no credential; Department and TeamSubtree scopes are seeded empty.

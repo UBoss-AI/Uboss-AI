@@ -194,24 +194,13 @@ export default function ExecutorPage() {
 
       {/* The client's own wording. It states the boundary the whole screen is arranged around. */}
       <Banner tone="warn">
-        <Icon name="shield" size={18} />
         The Executor monitors human and Engine Agent execution and routes exceptions. It does not do
         the work — it validates, escalates and resolves. It never closes its own findings, and it
         never stands in for a required human approval.
       </Banner>
 
-      {error === null ? null : (
-        <Banner tone="danger">
-          <Icon name="shield" size={16} />
-          {error}
-        </Banner>
-      )}
-      {notice === null ? null : (
-        <Banner tone="ok">
-          <Icon name="check" size={16} />
-          {notice}
-        </Banner>
-      )}
+      {error === null ? null : <Banner tone="danger">{error}</Banner>}
+      {notice === null ? null : <Banner tone="ok">{notice}</Banner>}
 
       <Card>
         <CardBody>
@@ -269,7 +258,7 @@ export default function ExecutorPage() {
                 key: 'type',
                 header: 'Type',
                 render: (row) => (
-                  <StatusBadge tone="cyan" status={EXCEPTION_KIND_LABELS[row.kind]} />
+                  <StatusBadge tone="teal" status={EXCEPTION_KIND_LABELS[row.kind]} />
                 ),
               },
               {

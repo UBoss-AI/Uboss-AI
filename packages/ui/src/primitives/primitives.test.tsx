@@ -68,7 +68,7 @@ describe('StatusBadge', () => {
 
     expect(container.querySelector('.uboss-badge--success')).toBeInTheDocument();
     expect(container.querySelector('.uboss-badge--danger')).toBeInTheDocument();
-    expect(container.querySelector('.uboss-badge--cyan')).toBeInTheDocument();
+    expect(container.querySelector('.uboss-badge--teal')).toBeInTheDocument();
     expect(container.querySelector('.uboss-badge--grey')).toBeInTheDocument();
   });
 

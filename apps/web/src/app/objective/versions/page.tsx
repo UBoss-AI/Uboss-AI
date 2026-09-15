@@ -242,18 +242,8 @@ function ObjectiveVersionsInner() {
         }
       />
 
-      {error === null ? null : (
-        <Banner tone="danger">
-          <Icon name="shield" size={16} />
-          {error}
-        </Banner>
-      )}
-      {notice === null ? null : (
-        <Banner tone="ok">
-          <Icon name="check" size={16} />
-          {notice}
-        </Banner>
-      )}
+      {error === null ? null : <Banner tone="danger">{error}</Banner>}
+      {notice === null ? null : <Banner tone="ok">{notice}</Banner>}
 
       <div className="uboss-grid" style={{ gridTemplateColumns: '280px 1fr' }}>
         <Card>
@@ -273,7 +263,6 @@ function ObjectiveVersionsInner() {
           <CardBody>
             {/* The reference's warn banner, in its words. */}
             <Banner tone="warn">
-              <Icon name="alert" size={16} />
               Editing a Live objective never changes it in place. Your changes are captured as a new
               Draft version; publishing it supersedes the one that is live.
             </Banner>
@@ -324,7 +313,6 @@ function ObjectiveVersionsInner() {
                   // Reachable, and it matters: a minor edit still creates a version, so a version
                   // identical to its parent is a real record rather than a bug to hide.
                   <Banner tone="info">
-                    <Icon name="file" size={16} />
                     {compare.diff.summary} The version still exists — a minor edit creates one too.
                   </Banner>
                 ) : (

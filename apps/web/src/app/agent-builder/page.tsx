@@ -267,18 +267,8 @@ function AgentBuilderInner() {
         breadcrumbs={[{ label: 'Engine Agent' }, { label: 'Builder' }]}
       />
 
-      {error === null ? null : (
-        <Banner tone="danger">
-          <Icon name="shield" size={16} />
-          {error}
-        </Banner>
-      )}
-      {notice === null ? null : (
-        <Banner tone="ok">
-          <Icon name="check" size={16} />
-          {notice}
-        </Banner>
-      )}
+      {error === null ? null : <Banner tone="danger">{error}</Banner>}
+      {notice === null ? null : <Banner tone="ok">{notice}</Banner>}
 
       {assignments.length === 0 ? (
         <Card>
@@ -346,20 +336,17 @@ function AgentBuilderInner() {
             <CardBody>
               {selected.engineAgent !== null ? (
                 <Banner tone="ok">
-                  <Icon name="check" size={16} />
                   Active as <b>{selected.engineAgent.name}</b> (version{' '}
                   {selected.engineAgent.versionNumber}). Recurring work creates Runs on this agent —
                   never another agent.
                 </Banner>
               ) : askingNothing ? (
                 <Banner tone="ok">
-                  <Icon name="check" size={16} />
                   Ready to test. Only missing execution setup is requested — the job method is
                   inherited from the objective.
                 </Banner>
               ) : (
                 <Banner tone="info">
-                  <Icon name="bolt" size={16} />
                   {selected.missing.length} question
                   {selected.missing.length === 1 ? '' : 's'} left. Everything else is inherited from
                   the objective and policy.

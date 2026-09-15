@@ -38,6 +38,16 @@ const ICON_PATHS = {
   // the rest of the set rather than a filled glyph borrowed from elsewhere.
   chat: 'M21 12a8 8 0 0 1-8 8H8l-5 3 1.5-4.5A8 8 0 1 1 21 12z',
   target: '',
+  /*
+   * Prompt 45: reordering a Form 2 row was drawn with the literal characters ↑ and ↓.
+   *
+   * A Unicode arrow is not part of this icon set: it renders in whatever the text font supplies,
+   * so its weight, size and baseline do not match the stroke icons beside it, and it changes shape
+   * between platforms. These are the same 24x24 stroke idiom as `arrow` and `back`, rotated to
+   * vertical, so a row control looks like every other control in the product.
+   */
+  'arrow-up': 'M12 19V5M6 11l6-6 6 6',
+  'arrow-down': 'M12 5v14M6 13l6 6 6-6',
 } as const;
 
 /** Extra shapes that cannot be expressed as a single path. */

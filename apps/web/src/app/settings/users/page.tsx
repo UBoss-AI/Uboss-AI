@@ -399,6 +399,7 @@ export default function UsersAccessPage() {
                           {mayManageAccess && person.accountState !== 'Offboarded' ? (
                             <Button
                               variant="ghost"
+                              size="sm"
                               disabled={busy}
                               onClick={() => setAccessFor(person)}
                               data-testid="open-access-step"
@@ -412,6 +413,7 @@ export default function UsersAccessPage() {
                           person.userType === 'InternalUser' ? (
                             <Button
                               variant="ghost"
+                              size="sm"
                               disabled={busy || !person.readiness.ready}
                               onClick={() => {
                                 setInviteFor(person);
@@ -425,6 +427,7 @@ export default function UsersAccessPage() {
                           {person.invitation ? (
                             <Button
                               variant="ghost"
+                              size="sm"
                               disabled={busy}
                               onClick={() =>
                                 void run(async () => {
@@ -443,6 +446,7 @@ export default function UsersAccessPage() {
                           {person.accountState === 'Active' ? (
                             <Button
                               variant="ghost"
+                              size="sm"
                               disabled={busy}
                               onClick={() => setSuspendFor(person)}
                             >
@@ -453,6 +457,7 @@ export default function UsersAccessPage() {
                           {person.accountState === 'Suspended' ? (
                             <Button
                               variant="ghost"
+                              size="sm"
                               disabled={busy}
                               onClick={() =>
                                 void run(async () => {
@@ -471,7 +476,8 @@ export default function UsersAccessPage() {
 
                           {person.accountState !== 'Offboarded' ? (
                             <Button
-                              variant="danger"
+                              variant="danger-ghost"
+                              size="sm"
                               disabled={busy}
                               onClick={() => openOffboard(person)}
                             >

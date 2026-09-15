@@ -1,89 +1,221 @@
 /*
  * UBoss design tokens.
  *
- * Transcribed from the client's approved UI reference (index.html `:root`). These values are the
- * agreed visual language — treat a change here as a design change needing client sign-off, not a
- * refactor. Components must consume the tokens, never hard-coded hex values.
+ * The visual language of the product. Components consume these tokens and never hard-code a hex
+ * value, so a colour decision is made once, here, and a theme is a matter of redefining a
+ * declaration list rather than of editing four thousand lines of component CSS.
+ *
+ * ## Where these values come from
+ *
+ * The core palette below — navy, teal, blue, the neutral surfaces, the text ramp, the borders and
+ * the five semantic colours — is the client's Prompt 45 palette, transcribed exactly. Treat a
+ * change to any of those as a design change needing sign-off, not a refactor.
+ *
+ * Everything hanging off that core — the -050 chip tints, every dark-theme value, the badge
+ * ladder, the sidebar inks — is *derived*, because the brief fixes the core and leaves the rest to
+ * follow from it. They were derived by measuring contrast against the exact surfaces they sit on
+ * rather than by eye, and the ratio is recorded next to any value whose job is to be legible. That
+ * is what stops the next palette change from quietly reintroducing unreadable text: the numbers
+ * are written down, so they can be rechecked.
+ *
+ * ## Two colours that are not interchangeable
+ *
+ * Teal is identity: selected navigation, active state, progress, AI. Blue is action: the one
+ * primary button on a screen. They are not decorative alternatives to each other, and mixing them
+ * at random is the single fastest way to make this look like a startup dashboard instead of
+ * enterprise operations software.
  */
 
 :root {
-  /* ---- Navy: navigation and authority surfaces ---- */
-  --uboss-navy: #102a43;
-  --uboss-navy-700: #1c4a73;
-  --uboss-navy-900: #0a1e33;
-  /* Text on a navy surface. 9.9:1, so it holds for body copy as well as headings. The sidebar
-     and the Master Console already used values in this range as literals; this names it. */
-  --uboss-navy-ink: #c9d6e5;
+  /* ==========================================================================
+     Navy: navigation and authority surfaces
+     ========================================================================== */
 
-  /* ---- Blue: primary action ---- */
-  --uboss-blue: #2563eb;
-  --uboss-blue-600: #1d4fd8;
+  /* The sidebar, the nav chrome, the strongest dark surfaces. Navy in BOTH themes — see the dark
+     section below for why it is deliberately not inverted. */
+  --uboss-navy: #0b1220;
+  --uboss-navy-2: #111827;
+  /* Deepest: the Master Console top bar and the start of the login gradient. */
+  --uboss-navy-900: #070b14;
+  /* Lightest rung. Carries white text (avatar initials), so it is held above 4.5:1 with white —
+     measured 12.69:1 — and also serves as a visible border against navy. */
+  --uboss-navy-700: #223449;
+
+  /* Text on a navy surface. 12.69:1 on --uboss-navy, so it holds for body copy, not just headings. */
+  --uboss-navy-ink: #c9d6e5;
+  /* Secondary text on navy: inactive nav labels, section captions. 7.03:1. */
+  --uboss-navy-ink-2: #8fa0b8;
+
+  /* ==========================================================================
+     Blue: primary action, and only primary action
+     ==========================================================================
+     Save, Continue, Analyze, Test Agent. One per screen. If a second blue button appears on a
+     screen, one of them is not the primary action and should be secondary. */
+
+  --uboss-blue: #2563eb; /* 5.17:1 with white, so white text on a blue button is safe */
+  --uboss-blue-600: #1d4ed8; /* hover / pressed */
   --uboss-blue-050: #eef3ff;
   --uboss-blue-100: #dbe7ff;
-
-  /* ---- Teal / cyan: the UBoss accent ---- */
-  --uboss-cyan: #0ba6e4;
-  --uboss-cyan-050: #e6f6fd;
-  --uboss-cyan-ink: #0876a8; /* accessible text on cyan-050 */
-
-  /* ---- Semantic statuses. Always paired with text or an icon, never colour alone. ---- */
-  --uboss-success: #15803d;
-  --uboss-success-050: #e7f6ec;
-  --uboss-warning: #b4610a;
-  --uboss-warning-050: #fbf1e3;
-  --uboss-warning-border: #e4b063;
-  --uboss-danger: #be1b1b;
-  --uboss-danger-050: #fcebeb;
-  --uboss-purple: #6d28d9;
-  --uboss-purple-050: #f1ebfc;
-
-  /* ---- Neutral surfaces ---- */
-  --uboss-surface: #ffffff;
-  --uboss-bg: #f5f8fc;
-  --uboss-bg-2: #edf2f8;
-  --uboss-border: #e4eaf2;
-  --uboss-border-2: #eef2f8;
-
-  /* ---- Text ---- */
-  --uboss-text: #0f1d2e;
-  --uboss-text-2: #54637a;
   /*
-   * Darkened from the reference's #8994a6, which fails WCAG AA.
+   * Blue as a FILL, with white text on it.
    *
-   * Measured: 3.07:1 on --uboss-surface, 2.88:1 on --uboss-bg, 2.72:1 on --uboss-bg-2, against a
-   * 4.5:1 minimum for body text. It is the token behind every muted line in the product — empty
-   * states, helper text, table meta, step numbers — so the failure was everywhere at once.
+   * Separate from --uboss-blue because the two have opposite requirements: the accent has to be
+   * light enough to read against a dark page, the fill dark enough for white to read against it.
+   * One value cannot satisfy both, and trying made the dark-theme primary button 3.23:1.
    *
-   * #646f81 is the same hue, darkened until it clears the minimum on all three surfaces
-   * (5.08 / 4.77 / 4.51). THIS IS A DEVIATION FROM THE APPROVED REFERENCE and wants client
-   * sign-off; it is applied rather than reported because unreadable text is not a preference.
+   * In light mode they happen to coincide. In dark mode they do not, which is the point.
+   */
+  --uboss-blue-solid: #2563eb; /* white on it: 5.17:1 */
+  --uboss-blue-solid-hover: #1d4ed8; /* 6.70:1 */
+
+  /* ==========================================================================
+     Teal: identity, selection, activity
+     ==========================================================================
+     Selected navigation, active state, progress, subtle highlight, AI identity. */
+
+  /* Brand teal. 5.47:1 on white and 5.47:1 behind white text, so this one is safe as text and as a
+     fill. Use it wherever teal has to be *read*. */
+  --uboss-teal: #0f766e;
+  /*
+   * Bright interaction teal. 3.74:1 — above the 3:1 floor for a non-text interface element, below
+   * the 4.5:1 floor for text.
+   *
+   * So: rails, indicators, progress fills, focus accents, the selected-item bar. NEVER as text,
+   * and never as a fill with white text on it. When teal has to carry words, it is --uboss-teal.
+   */
+  --uboss-teal-bright: #0d9488;
+  --uboss-teal-050: #eaf6f4;
+  --uboss-teal-ink: #0f766e; /* 4.95:1 on --uboss-teal-050 */
+  /* Teal as a FILL, white text on it. The brand teal already works here, in both themes. */
+  --uboss-teal-solid: #0f766e; /* white on it: 5.47:1 */
+
+  /* ==========================================================================
+     Semantic statuses
+     ==========================================================================
+     Always paired with text or an icon, never colour alone — a status that can only be perceived
+     as a hue is invisible to a colour-blind operator and to a printed report.
+
+     Each -050 tint was chosen as the lightest ground its own foreground still clears 4.5:1 on, so a
+     status chip is legible rather than merely tinted. */
+
+  --uboss-success: #15803d;
+  --uboss-success-050: #ecf7f0; /* 4.57:1 */
+  --uboss-warning: #b45309;
+  --uboss-warning-050: #fcf4e8; /* 4.60:1 */
+  --uboss-warning-border: #e4b063;
+  --uboss-danger: #b91c1c;
+  --uboss-danger-050: #fdecec; /* 5.66:1 */
+  /* Red as a FILL, white text on it. Same split as the blue above. */
+  --uboss-danger-solid: #b91c1c; /* white on it: 6.47:1 */
+  --uboss-danger-solid-hover: #9f1616;
+  --uboss-info: #0369a1;
+  --uboss-info-050: #eaf4fb; /* 5.32:1 */
+  --uboss-purple: #6d28d9;
+  --uboss-purple-050: #f1ecfc; /* 6.14:1 */
+
+  /* ==========================================================================
+     Neutral surfaces
+     ========================================================================== */
+
+  --uboss-surface: #ffffff;
+  --uboss-surface-raised: #fbfcfe;
+  --uboss-bg: #f6f8fb;
+  --uboss-bg-2: #eef2f7;
+
+  /*
+   * Dividers and panel edges. These GROUP rather than identify, so WCAG 1.4.11 does not apply and
+   * they stay quiet — which is what keeps a screen of panels calm.
+   */
+  --uboss-border: #d7dee8;
+  --uboss-border-2: #e7ebf0;
+  /* An explicit name for the same value, for call sites that mean "this only groups things". */
+  --uboss-border-subtle: #d7dee8;
+  /*
+   * The edge of an interactive control, and the reason it is a separate token.
+   *
+   * Measured on the rendered product: a text input, a select and a secondary button all have a
+   * background IDENTICAL to the card behind them — fill-versus-surround of exactly 1.00. So the
+   * border is the only thing that says a control is there, and WCAG 1.4.11 requires that visual
+   * information to reach 3:1.
+   *
+   * At the previous #c3cddb it was 1.61:1. This value is the lightest that clears 3:1 against
+   * every surface a control can sit on: 3.50 on white, 3.40 on raised, 3.29 on bg, and 3.11 on
+   * bg-2, the darkest of them and therefore the worst case.
+   *
+   * Hover deepens it to a measured 5.67 worst case, so pointing at a control is visible without
+   * relying on colour alone. Focus is the blue ring, measured at 5.17:1 against white.
+   */
+  --uboss-border-control: #7d8a9f;
+  --uboss-border-control-hover: #556070;
+  --uboss-border-control-focus: var(--uboss-blue);
+
+  /* ==========================================================================
+     Text
+     ========================================================================== */
+
+  --uboss-text: #0f172a; /* 17.85:1 on surface */
+  --uboss-text-2: #475569; /* 7.58:1 on surface, 6.74:1 on bg-2 */
+  /*
+   * Muted: empty states, helper text, table meta, step numbers.
+   *
+   * This is the accessibility-approved token and it must not be replaced by a lighter one. The
+   * reference value it replaced (#8994a6) measured 3.07:1 — a failure on every muted line in the
+   * product simultaneously. Re-measured against the Prompt 45 surfaces, which are lighter than the
+   * ones it was originally derived against: 5.08 on surface, 4.78 on bg, 4.52 on bg-2. Still
+   * clears the minimum on all three, so it carries over unchanged.
    */
   --uboss-text-3: #646f81;
+  /* Text on a filled dark control (primary button, navy chip). */
+  --uboss-text-on-dark: #ffffff;
 
-  /* ---- Badge ladder (Bronze -> Silver -> Gold -> Platinum -> Diamond) ---- */
+  /* ==========================================================================
+     Badge ladder (Bronze -> Silver -> Gold -> Platinum -> Diamond)
+     ==========================================================================
+     Each foreground clears 4.5:1 on its own background: 5.03 / 5.07 / 4.54 / 5.05 / 5.69. */
+
   --uboss-bronze-bg: #f6ece2;
   --uboss-bronze-fg: #8a5a2b;
   --uboss-silver-bg: #eceff3;
   --uboss-silver-fg: #5b6672;
   --uboss-gold-bg: #fbf1d6;
-  /* Darkened from #96751b, which is 3.84:1 on its own background. The other four rungs of the
-     ladder already clear 4.5 (5.03 to 5.69); only Gold did not. */
+  /* Darkened from #96751b, which measured 3.84:1 on its own background. Approved; do not revert. */
   --uboss-gold-fg: #8a690f;
   --uboss-platinum-bg: #e6f0f1;
   --uboss-platinum-fg: #2c6e72;
   --uboss-diamond-bg: #e8eeff;
   --uboss-diamond-fg: #3552c7;
 
-  /* ---- Radii ---- */
-  --uboss-radius-input: 8px;
-  /* Buttons. The reference draws them at 9px, one pixel softer than an input, and every size in
-     the family must use the same value — the small variant was reaching for the input radius. */
-  --uboss-radius-button: 9px;
-  --uboss-radius-card: 12px;
-  --uboss-radius-panel: 16px;
-  --uboss-radius-pill: 20px;
+  /* ==========================================================================
+     Radii
+     ==========================================================================
+     Tightened for Prompt 45. The reference drew an input at 8px and a button at 9px — a one-pixel
+     difference nobody can see and every component gets wrong. Controls now share a single value,
+     which is what makes a button and the input beside it line up.
 
-  /* ---- Spacing scale (8px base) ---- */
+     Enterprise software reads as precise. Rounding is what makes it read as consumer. */
+
+  --uboss-radius-control: 6px; /* inputs, buttons, selects, chips — one value, no exceptions */
+  --uboss-radius-input: var(--uboss-radius-control); /* kept as an alias: many call sites */
+  --uboss-radius-button: var(--uboss-radius-control);
+  --uboss-radius-card: 10px;
+  --uboss-radius-panel: 12px;
+  --uboss-radius-pill: 999px;
+
+  /* ==========================================================================
+     Control sizing
+     ==========================================================================
+     Named so a button, an input and a select on the same row are the same height without each
+     component restating a magic number. */
+
+  --uboss-control-h: 34px;
+  --uboss-control-h-sm: 28px;
+  --uboss-control-h-lg: 40px;
+  --uboss-row-h: 40px; /* a table row: compact enough to see many, tall enough to hit */
+
+  /* ==========================================================================
+     Spacing scale (4px base)
+     ========================================================================== */
+
   --uboss-space-1: 4px;
   --uboss-space-2: 8px;
   --uboss-space-3: 12px;
@@ -93,26 +225,59 @@
   --uboss-space-8: 32px;
   --uboss-space-10: 40px;
 
-  /* ---- Elevation ---- */
-  --uboss-shadow-1: 0 1px 2px rgba(15, 29, 46, 0.05), 0 1px 2px rgba(15, 29, 46, 0.04);
-  --uboss-shadow-2: 0 6px 18px rgba(15, 29, 46, 0.07);
-  --uboss-shadow-3: 0 18px 44px rgba(15, 29, 46, 0.16);
+  /* ==========================================================================
+     Elevation
+     ==========================================================================
+     Restrained. A card that floats is a card competing with the content in it; most grouping in
+     this product is done with a border, and shadow is reserved for things that genuinely sit above
+     the page — menus, dialogs, drawers. */
 
-  /* ---- Typography ---- */
+  --uboss-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --uboss-shadow-2: 0 4px 12px rgba(15, 23, 42, 0.06);
+  --uboss-shadow-3: 0 16px 40px rgba(15, 23, 42, 0.14);
+
+  /* ==========================================================================
+     Typography
+     ========================================================================== */
+
   --uboss-font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --uboss-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --uboss-font-size-body: 14px;
   --uboss-font-size-sm: 13px;
   --uboss-font-size-xs: 11.5px;
-  --uboss-font-size-h1: 22px;
+  --uboss-font-size-h1: 20px;
+  --uboss-font-size-h2: 16px;
   --uboss-line-height: 1.45;
+  /* Used on the small upper-case labels that caption a group. Letter-spacing is what keeps them
+     legible at 11.5px rather than merely small. */
+  --uboss-tracking-caps: 0.04em;
 
-  /* ---- Layout ---- */
+  /* ==========================================================================
+     Layout
+     ========================================================================== */
+
   --uboss-sidebar-width: 248px;
   --uboss-sidebar-width-collapsed: 74px;
-  --uboss-topbar-height: 64px;
+  --uboss-topbar-height: 56px;
   --uboss-content-max-width: 1440px;
 
-  /* ---- Focus: visible on every interactive element, never removed ---- */
+  /* ==========================================================================
+     Motion
+     ==========================================================================
+     Short and unobtrusive. A transition long enough to notice is a transition that makes the
+     software feel slow, and this is software people use for eight hours. */
+
+  --uboss-motion-fast: 120ms;
+  --uboss-motion: 150ms;
+  --uboss-motion-slow: 180ms;
+  --uboss-ease: cubic-bezier(0.2, 0, 0.2, 1);
+
+  /* ==========================================================================
+     Focus: visible on every interactive element, never removed
+     ==========================================================================
+     Both halves matter. The outline carries the 3:1 the standard asks for against the adjacent
+     surface; the soft ring gives it enough presence to find with your eye on a dense screen. */
+
   --uboss-focus-ring: 0 0 0 3px var(--uboss-blue-100);
   --uboss-focus-outline: 2px solid var(--uboss-blue);
   --uboss-focus-offset: 2px;
@@ -122,78 +287,89 @@
    Dark theme
    ============================================================================
 
-   Prompt 45 pre-audit. Before this, dark mode did not exist: there was no
-   `prefers-color-scheme` rule and no `data-theme` hook anywhere in the product,
-   so a viewer whose operating system is set to dark got the full light page.
-   Settings listed an "Appearance" section that changed nothing.
-
    ## How the three states resolve
 
-   `light` and `dark` stamp `data-theme` on <html>. "System" stamps nothing, so
-   only `prefers-color-scheme` separates the two — which is why the dark values
-   appear twice below:
+   Light and Dark stamp data-theme on the root element. "System" stamps nothing, so only
+   prefers-color-scheme separates the two — which is why the dark values appear twice below:
 
-     * inside the media query, guarded `:not([data-theme='light'])`, so an
-       explicit Light choice still wins on a dark machine;
-     * on `[data-theme='dark']`, so an explicit Dark choice wins on a light one.
+     * inside the media query, guarded :not([data-theme='light']), so an explicit Light choice
+       still wins on a dark machine;
+     * on [data-theme='dark'], so an explicit Dark choice wins on a light one.
 
-   **The two blocks must be edited together.** Plain CSS cannot share one
-   declaration list between a media query and a bare selector, and every
-   alternative — duplicating in JS, `@container style()`, a build step — costs
-   more than the duplication does.
+   **The two blocks must be edited together.** Plain CSS cannot share one declaration list between
+   a media query and a bare selector, and every alternative — duplicating in JS, container style
+   queries, a build step — costs more than the duplication does.
 
-   ## What is deliberately NOT inverted
+   ## This is a designed theme, not an inversion
 
-   The sidebar and the Master Console are navy in both themes. They are the
-   product's authority surfaces and the client's reference draws them that way;
-   a navy that went darker still would lose the contrast that separates
-   navigation from content. So the navy tokens hold their values, and the 24
-   `color: #fff` declarations sitting on them are correct in both themes.
+   Three rules hold it together, and each is visible in the values:
 
-   Accent colours are lifted rather than reused: #2563eb on a #0d141d page does
-   not carry enough contrast for text, so the dark blue is lighter than the
-   light-theme one, not the same value. The `-050` tints invert completely —
-   in dark they are the darkest surface in their hue, not the lightest. */
+   1. **The navy tokens do not change.** The sidebar and the Master Console are navy in both
+      themes. They are the product's authority surfaces, and a navy that went darker still would
+      lose the boundary that separates navigation from content. The white text sitting on them is
+      therefore correct in both themes.
 
-:root {
-  /* Named here so the light theme has one too: the metric card's gradient ends
-     on it, and a gradient cannot end on a colour that only exists in dark. */
-  --uboss-surface-raised: #fafcfe;
-}
+   2. **Surfaces get lighter as they get closer to the reader**, exactly as in light mode they get
+      whiter: page #0b1018, card #111923, raised #16202c. An inverted theme gets this backwards and
+      everything looks flat.
+
+   3. **Accents are lifted, not reused.** #2563eb on a #0b1018 page carries 3.0:1 and cannot be
+      read; the dark blue is a different, lighter colour measured at 5.09:1 at worst. The -050
+      tints invert completely: in dark they are the *darkest* surface in their hue, not the
+      lightest, and each was chosen so its own foreground still clears 4.5:1 on it. */
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     color-scheme: dark;
 
-    --uboss-blue: #4b83f0;
-    --uboss-blue-600: #6d9cf5;
-    --uboss-blue-050: #16233a;
+    --uboss-blue: #5b8def; /* 5.09:1 at worst (on the raised surface) */
+    --uboss-blue-600: #7aa7f5;
+    --uboss-blue-050: #152239;
     --uboss-blue-100: #1e3358;
+    /* Darker than --uboss-blue, because white sits on this one. White: 5.69:1; and 3.35:1
+       against the page, so the button still has an edge you can see. Hover goes lighter, as
+       it does everywhere on a dark ground. */
+    --uboss-blue-solid: #2b62c9;
+    --uboss-blue-solid-hover: #3568c4; /* white 5.35:1 */
 
-    --uboss-cyan: #22b8f0;
-    --uboss-cyan-050: #0e2a38;
-    --uboss-cyan-ink: #7ed4f5;
+    --uboss-teal: #2dd4bf; /* 8.83:1 at worst — safe as text on any dark surface */
+    --uboss-teal-bright: #14b8a6; /* 6.61:1 — the rail and the progress fill */
+    --uboss-teal-050: #0d2b29;
+    --uboss-teal-ink: #2dd4bf; /* 8.09:1 on --uboss-teal-050 */
+    --uboss-teal-solid: #0f766e; /* white on it: 5.47:1, and 3.48:1 against the page */
 
     --uboss-success: #4ade80;
-    --uboss-success-050: #10281a;
+    --uboss-success-050: #0f2a1b; /* 8.81:1 */
     --uboss-warning: #f0a552;
-    --uboss-warning-050: #2b1f10;
+    --uboss-warning-050: #2d2110; /* 7.64:1 */
     --uboss-warning-border: #6b4a1e;
     --uboss-danger: #f87171;
-    --uboss-danger-050: #2c1416;
+    --uboss-danger-050: #2e1618; /* 6.10:1 */
+    /* Much darker than --uboss-danger, because white sits on it: 5.92:1. The light red above
+       is for danger TEXT on a dark page, where it needs to be light. */
+    --uboss-danger-solid: #cc2f2f;
+    --uboss-danger-solid-hover: #d94444; /* white 5.23:1 */
+    --uboss-info: #5bb8e8;
+    --uboss-info-050: #0e2735; /* 6.96:1 */
     --uboss-purple: #a78bfa;
-    --uboss-purple-050: #1f1830;
+    --uboss-purple-050: #201a33; /* 6.14:1 */
 
-    --uboss-surface: #131c28;
-    --uboss-surface-raised: #18222f;
-    --uboss-bg: #0d141d;
-    --uboss-bg-2: #1b2532;
-    --uboss-border: #243244;
-    --uboss-border-2: #1e2a38;
+    --uboss-surface: #111923;
+    --uboss-surface-raised: #16202c;
+    --uboss-bg: #0b1018;
+    --uboss-bg-2: #16202c;
 
-    --uboss-text: #e6edf5;
-    --uboss-text-2: #9fb0c4;
-    /* 4.38:1 on surface and 3.95:1 on bg-2 as #71829a; lightened to clear 4.5 on all three. */
+    --uboss-border: #263343;
+    --uboss-border-2: #1d2733;
+    --uboss-border-subtle: #263343;
+    /* 3.72 on the page, 3.45 on surface, 3.21 on the raised surface -- the lightest surface a
+       control sits on and therefore the worst case. */
+    --uboss-border-control: #5d6f88;
+    --uboss-border-control-hover: #7a8ca6;
+
+    --uboss-text: #e8eef5; /* 14.08:1 at worst */
+    --uboss-text-2: #aab7c6; /* 8.06:1 at worst */
+    /* The approved dark muted token. 5.16 / 5.56 / 4.80 against surface, page and raised. */
     --uboss-text-3: #7b8ca4;
 
     --uboss-bronze-bg: #2a1e13;
@@ -207,11 +383,13 @@
     --uboss-diamond-bg: #171f3a;
     --uboss-diamond-fg: #9db0f5;
 
-    /* Elevation on a dark ground reads through shade, not through a tinted
-       shadow, so these are black and heavier than their light counterparts. */
-    --uboss-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
-    --uboss-shadow-2: 0 6px 18px rgba(0, 0, 0, 0.45);
-    --uboss-shadow-3: 0 18px 44px rgba(0, 0, 0, 0.6);
+    /* Elevation on a dark ground reads through shade, not through a tinted shadow, so these are
+       black and heavier than their light counterparts. */
+    --uboss-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --uboss-shadow-2: 0 4px 12px rgba(0, 0, 0, 0.45);
+    --uboss-shadow-3: 0 16px 40px rgba(0, 0, 0, 0.6);
+
+    --uboss-focus-ring: 0 0 0 3px rgba(91, 141, 239, 0.35);
   }
 }
 
@@ -219,34 +397,46 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --uboss-blue: #4b83f0;
-  --uboss-blue-600: #6d9cf5;
-  --uboss-blue-050: #16233a;
+  --uboss-blue: #5b8def;
+  --uboss-blue-600: #7aa7f5;
+  --uboss-blue-050: #152239;
   --uboss-blue-100: #1e3358;
+  --uboss-blue-solid: #2b62c9;
+  --uboss-blue-solid-hover: #3568c4;
 
-  --uboss-cyan: #22b8f0;
-  --uboss-cyan-050: #0e2a38;
-  --uboss-cyan-ink: #7ed4f5;
+  --uboss-teal: #2dd4bf;
+  --uboss-teal-bright: #14b8a6;
+  --uboss-teal-050: #0d2b29;
+  --uboss-teal-ink: #2dd4bf;
+  --uboss-teal-solid: #0f766e;
 
   --uboss-success: #4ade80;
-  --uboss-success-050: #10281a;
+  --uboss-success-050: #0f2a1b;
   --uboss-warning: #f0a552;
-  --uboss-warning-050: #2b1f10;
+  --uboss-warning-050: #2d2110;
   --uboss-warning-border: #6b4a1e;
   --uboss-danger: #f87171;
-  --uboss-danger-050: #2c1416;
+  --uboss-danger-050: #2e1618;
+  --uboss-danger-solid: #cc2f2f;
+  --uboss-danger-solid-hover: #d94444;
+  --uboss-info: #5bb8e8;
+  --uboss-info-050: #0e2735;
   --uboss-purple: #a78bfa;
-  --uboss-purple-050: #1f1830;
+  --uboss-purple-050: #201a33;
 
-  --uboss-surface: #131c28;
-  --uboss-surface-raised: #18222f;
-  --uboss-bg: #0d141d;
-  --uboss-bg-2: #1b2532;
-  --uboss-border: #243244;
-  --uboss-border-2: #1e2a38;
+  --uboss-surface: #111923;
+  --uboss-surface-raised: #16202c;
+  --uboss-bg: #0b1018;
+  --uboss-bg-2: #16202c;
 
-  --uboss-text: #e6edf5;
-  --uboss-text-2: #9fb0c4;
+  --uboss-border: #263343;
+  --uboss-border-2: #1d2733;
+  --uboss-border-subtle: #263343;
+  --uboss-border-control: #5d6f88;
+  --uboss-border-control-hover: #7a8ca6;
+
+  --uboss-text: #e8eef5;
+  --uboss-text-2: #aab7c6;
   --uboss-text-3: #7b8ca4;
 
   --uboss-bronze-bg: #2a1e13;
@@ -260,14 +450,16 @@
   --uboss-diamond-bg: #171f3a;
   --uboss-diamond-fg: #9db0f5;
 
-  --uboss-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
-  --uboss-shadow-2: 0 6px 18px rgba(0, 0, 0, 0.45);
-  --uboss-shadow-3: 0 18px 44px rgba(0, 0, 0, 0.6);
+  --uboss-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --uboss-shadow-2: 0 4px 12px rgba(0, 0, 0, 0.45);
+  --uboss-shadow-3: 0 16px 40px rgba(0, 0, 0, 0.6);
+
+  --uboss-focus-ring: 0 0 0 3px rgba(91, 141, 239, 0.35);
 }
 
-/* An explicit Light choice on a dark machine. Nothing to redefine — the bare
-   `:root` values are the light theme — but the native controls need telling,
-   or the select menus and scrollbars stay dark inside a light page. */
+/* An explicit Light choice on a dark machine. Nothing to redefine — the bare :root values are the
+   light theme — but the native controls need telling, or the select menus and scrollbars stay dark
+   inside a light page. */
 :root[data-theme='light'] {
   color-scheme: light;
 }

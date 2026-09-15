@@ -264,17 +264,11 @@ function ObjectiveClosureInner() {
         }
       />
 
-      {error === null ? null : (
-        <Banner tone="danger">
-          <Icon name="shield" size={16} />
-          {error}
-        </Banner>
-      )}
+      {error === null ? null : <Banner tone="danger">{error}</Banner>}
       {notice === null ? null : <Banner tone="info">{notice}</Banner>}
 
       {openPause === null ? null : (
         <Banner tone="warn">
-          <Icon name="clock" size={16} />
           Paused since {when(openPause.pausedAt)} — {openPause.reason}. {meta?.pauseEffect ?? ''}
         </Banner>
       )}

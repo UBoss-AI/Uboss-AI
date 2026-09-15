@@ -130,12 +130,7 @@ export default function ObjectivesPage() {
         }
       />
 
-      {error === null ? null : (
-        <Banner tone="danger">
-          <Icon name="shield" size={16} />
-          {error}
-        </Banner>
-      )}
+      {error === null ? null : <Banner tone="danger">{error}</Banner>}
 
       <Card>
         <div className="uboss-toolbar">

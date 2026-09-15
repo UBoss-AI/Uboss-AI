@@ -197,15 +197,9 @@ function WorkflowEditorInner() {
         }
       />
 
-      {error === null ? null : (
-        <Banner tone="danger">
-          <Icon name="shield" size={16} />
-          {error}
-        </Banner>
-      )}
+      {error === null ? null : <Banner tone="danger">{error}</Banner>}
       {draft !== null && !draft.editable ? (
         <Banner tone="warn">
-          <Icon name="alert" size={16} />
           This workflow has already been assigned, so it is read-only. Editing what people are
           already working to is what versioning exists to prevent — open a new objective version
           instead.
@@ -327,7 +321,7 @@ function WorkflowEditorInner() {
                             : edge.kind === 'Condition'
                               ? 'purple'
                               : edge.kind === 'Parallel'
-                                ? 'cyan'
+                                ? 'teal'
                                 : 'grey'
                         }
                         status={WORKFLOW_EDGE_KIND_LABELS[edge.kind]}

@@ -209,12 +209,7 @@ export default function ApprovalsPage() {
         </Banner>
       )}
 
-      {meta !== null && (
-        <Banner tone="info">
-          <Icon name="shield" size={16} />
-          {meta.note}
-        </Banner>
-      )}
+      {meta !== null && <Banner tone="info">{meta.note}</Banner>}
 
       <Card>
         <div className="uboss-toolbar">
@@ -397,7 +392,6 @@ export default function ApprovalsPage() {
 
             {selected.actingUnderDelegationFrom !== null && (
               <Banner tone="info">
-                <Icon name="users" size={16} />
                 You are deciding this as a delegate for{' '}
                 <span className="uboss-mono">{selected.actingUnderDelegationFrom.slice(0, 8)}</span>
                 . The record will say so.
@@ -406,7 +400,6 @@ export default function ApprovalsPage() {
 
             {selected.approverRoleKind === 'FourEyes' && (
               <Banner tone="warn">
-                <Icon name="shield" size={16} />
                 Four-eyes: this gate needs two distinct people. Whoever raised it cannot decide it.
               </Banner>
             )}

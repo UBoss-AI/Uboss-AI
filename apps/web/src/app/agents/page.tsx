@@ -175,7 +175,6 @@ export default function EngineAgentsPage() {
       />
 
       <Banner tone="info">
-        <Icon name="bot" size={18} />
         Engine Agents are reusable AI workers. Individual executions live under Runs. Oversight and
         exceptions are handled by the Executor.
       </Banner>
@@ -200,18 +199,8 @@ export default function EngineAgentsPage() {
         </section>
       )}
 
-      {error === null ? null : (
-        <Banner tone="danger">
-          <Icon name="shield" size={16} />
-          {error}
-        </Banner>
-      )}
-      {notice === null ? null : (
-        <Banner tone="ok">
-          <Icon name="check" size={16} />
-          {notice}
-        </Banner>
-      )}
+      {error === null ? null : <Banner tone="danger">{error}</Banner>}
+      {notice === null ? null : <Banner tone="ok">{notice}</Banner>}
 
       <Card>
         <CardBody>

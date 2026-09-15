@@ -315,21 +315,10 @@ function ObjectiveFormInner() {
         }
       />
 
-      {error === null ? null : (
-        <Banner tone="danger">
-          <Icon name="shield" size={16} />
-          {error}
-        </Banner>
-      )}
-      {notice === null ? null : (
-        <Banner tone="ok">
-          <Icon name="check" size={16} />
-          {notice}
-        </Banner>
-      )}
+      {error === null ? null : <Banner tone="danger">{error}</Banner>}
+      {notice === null ? null : <Banner tone="ok">{notice}</Banner>}
       {!readOnly ? null : (
         <Banner tone="info">
-          <Icon name="shield" size={16} />
           This version is {statusCrumb.toLowerCase()} and cannot be edited. An authorised change
           creates a new draft version; it never rewrites the version that is live.
         </Banner>
@@ -559,7 +548,6 @@ function ObjectiveFormInner() {
         }
       >
         <Banner tone="info">
-          <Icon name="medal" size={16} />
           This panel is separate from the canonical Form 2 fields and never edits them. Recording a
           reward does not pay it: eligibility and approval are decided by the reward workflow.
         </Banner>

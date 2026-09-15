@@ -159,12 +159,7 @@ function TaskDetailInner() {
         }
       />
 
-      {error === null ? null : (
-        <Banner tone="danger">
-          <Icon name="shield" size={16} />
-          {error}
-        </Banner>
-      )}
+      {error === null ? null : <Banner tone="danger">{error}</Banner>}
 
       {task === null ? (
         <p className="uboss-muted">Loading…</p>
@@ -205,10 +200,7 @@ function TaskDetailInner() {
               {task.evidenceRequirement.trim() === '' ? (
                 <p className="uboss-muted-3">This step requires no evidence.</p>
               ) : (
-                <Banner tone={needsEvidence ? 'warn' : 'ok'}>
-                  <Icon name="file" size={16} />
-                  {task.evidenceRequirement}
-                </Banner>
+                <Banner tone={needsEvidence ? 'warn' : 'ok'}>{task.evidenceRequirement}</Banner>
               )}
 
               {task.evidence.length === 0 ? null : (

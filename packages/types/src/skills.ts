@@ -82,10 +82,10 @@ export const SKILL_STATUS_LABELS: Record<SkillStatus, string> = {
 
 export const SKILL_STATUS_TONES: Record<
   SkillStatus,
-  'grey' | 'blue' | 'cyan' | 'purple' | 'success' | 'warn' | 'danger'
+  'grey' | 'blue' | 'teal' | 'purple' | 'success' | 'warn' | 'danger'
 > = {
   Draft: 'grey',
-  Test: 'cyan',
+  Test: 'teal',
   Review: 'purple',
   Approved: 'blue',
   Published: 'success',

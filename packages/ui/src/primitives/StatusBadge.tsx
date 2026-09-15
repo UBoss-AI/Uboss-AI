@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 
 import { cn } from '../lib/class-names';
 
-export type StatusTone = 'success' | 'blue' | 'cyan' | 'warn' | 'danger' | 'purple' | 'grey';
+export type StatusTone = 'success' | 'blue' | 'teal' | 'warn' | 'danger' | 'purple' | 'grey';
 
 /**
  * Canonical status vocabulary, transcribed from the client's UI reference so the same business
@@ -23,8 +23,8 @@ export const STATUS_TONES: Record<string, StatusTone> = {
   'In Review': 'blue',
   Review: 'blue',
   Queued: 'grey',
-  Running: 'cyan',
-  Analyzing: 'cyan',
+  Running: 'teal',
+  Analyzing: 'teal',
   Eligible: 'blue',
   // Needs a human
   'Needs input': 'warn',

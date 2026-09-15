@@ -156,7 +156,7 @@ export function ConnectionsPanel({ tenantId, mayAdminister }: ConnectionsPanelPr
         ) : (
           <StatusBadge
             status={row.environment}
-            tone={row.environment === 'Production' ? 'purple' : 'cyan'}
+            tone={row.environment === 'Production' ? 'purple' : 'teal'}
             dot={false}
           />
         ),

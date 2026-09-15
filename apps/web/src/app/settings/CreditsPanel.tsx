@@ -153,10 +153,7 @@ export function CreditsPanel({ tenantId }: { tenantId: string | null }) {
       {note !== null && <Banner tone="ok">{note}</Banner>}
 
       {blocked?.blocks === true && (
-        <Banner tone="danger">
-          <Icon name="alert" size={16} />
-          New AI work is blocked: {blocked.reason}
-        </Banner>
+        <Banner tone="danger">New AI work is blocked: {blocked.reason}</Banner>
       )}
 
       <Card>
@@ -377,7 +374,6 @@ export function CreditsPanel({ tenantId }: { tenantId: string | null }) {
       >
         <CardBody>
           <Banner tone="info">
-            <Icon name="shield" size={16} />
             This does not take a payment. UBoss Finance reviews the request, decides the amount, and
             records the invoice reference when the credits are added.
           </Banner>

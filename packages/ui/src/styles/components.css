@@ -18,18 +18,127 @@
   grid-template-columns: var(--uboss-sidebar-width-collapsed) 1fr;
 }
 
+/*
+ * The page itself.
+ *
+ * This painted `linear-gradient(180deg, #f7fafe, #f3f6fb)` — two hardcoded near-whites, in BOTH
+ * themes. It is the element covering the entire content area, so in dark mode the whole page was
+ * light while the cards on it were dark: every heading, breadcrumb and paragraph sitting directly
+ * on the page was light text on a near-white ground.
+ *
+ * It survived the earlier sweep for literals twice over. `getComputedStyle` reports `body` as
+ * correctly dark, because body *is* correctly dark — this element is painted on top of it. And a
+ * grep for `background: #...` misses it because the value sits on its own continuation lines.
+ * What caught it was decoding a screenshot and reading the pixel.
+ *
+ * Flat, and from the token. The gradient was never doing anything a solid colour could not: two
+ * whites four points apart, which is invisible on a light page and actively wrong on a dark one.
+ */
 .uboss-main {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background:
-    radial-gradient(120% 60% at 100% 0, rgba(37, 99, 235, 0.05), transparent 60%),
-    linear-gradient(180deg, #f7fafe, #f3f6fb);
+  background: var(--uboss-bg);
+}
+
+/*
+ * The Master Console is a dark surface in BOTH themes, so inside it the tokens take their dark
+ * values regardless of which theme is active.
+ *
+ * ## Why this block exists
+ *
+ * The shell is navy whether the viewer chose Light or Dark. In Light the text tokens resolve to
+ * their light-theme values — #475569 secondary, #646f81 muted — which are dark greys meant for a
+ * white card. On navy they measured 2.60:1 and 3.49:1: the section labels, the metric captions,
+ * the settings descriptions and the "what this module is waiting for" copy were all failing, on
+ * every Master Console screen, in the default theme.
+ *
+ * Twenty-nine `.uboss-shell--master .uboss-something` rules had grown up around this, each
+ * restating a colour for one component, and they still did not cover the muted text or the
+ * section labels — which is what chasing components instead of rebinding tokens gets you.
+ *
+ * Rebinding the tokens fixes every descendant at once, including components nobody has written
+ * yet, and is the reason the whole product goes through tokens in the first place.
+ */
+.uboss-shell--master {
+  color-scheme: dark;
+
+  /*
+   * Load-bearing, and not obvious: `color` inherits as a COMPUTED value.
+   *
+   * `body` resolves `color: var(--uboss-text)` once, against the root tokens, and every descendant
+   * inherits the resulting literal — #0f172a in the light theme. Rebinding --uboss-text further
+   * down the tree, as this block does, does not re-resolve it, so without this line every piece of
+   * text that simply inherits its colour arrives in the Master Console as near-black on navy:
+   * measured 1.02:1.
+   *
+   * Restating it here re-resolves the variable against THIS element, where the token is the dark
+   * value, and that result is what descendants inherit.
+   */
+  color: var(--uboss-text);
+
+  --uboss-surface: #111a26;
+  --uboss-surface-raised: #16212f;
+  --uboss-bg: var(--uboss-navy-900);
+  --uboss-bg-2: #16212f;
+
+  --uboss-border: #27374a;
+  --uboss-border-2: #1e2c3c;
+  --uboss-border-subtle: #27374a;
+  --uboss-border-control: #5f7189;
+  --uboss-border-control-hover: #7b8da7;
+
+  --uboss-text: #e8eef5;
+  --uboss-text-2: #aab7c6;
+  --uboss-text-3: #7b8ca4;
+
+  /* Accents lifted for a dark ground, exactly as in the dark theme. */
+  --uboss-blue: #5b8def;
+  --uboss-blue-600: #7aa7f5;
+  --uboss-blue-050: #152239;
+  --uboss-blue-100: #1e3358;
+  --uboss-blue-solid: #2b62c9;
+  --uboss-blue-solid-hover: #3568c4;
+
+  --uboss-teal: #2dd4bf;
+  --uboss-teal-bright: #14b8a6;
+  --uboss-teal-050: #0d2b29;
+  --uboss-teal-ink: #2dd4bf;
+  --uboss-teal-solid: #0f766e;
+
+  --uboss-success: #4ade80;
+  --uboss-success-050: #0f2a1b;
+  --uboss-warning: #f0a552;
+  --uboss-warning-050: #2d2110;
+  --uboss-danger: #f87171;
+  --uboss-danger-050: #2e1618;
+  --uboss-danger-solid: #cc2f2f;
+  --uboss-danger-solid-hover: #d94444;
+  --uboss-info: #5bb8e8;
+  --uboss-info-050: #0e2735;
+  --uboss-purple: #a78bfa;
+  --uboss-purple-050: #201a33;
+
+  --uboss-bronze-bg: #2a1e13;
+  --uboss-bronze-fg: #d8a878;
+  --uboss-silver-bg: #1f242b;
+  --uboss-silver-fg: #b6c0cc;
+  --uboss-gold-bg: #2a2412;
+  --uboss-gold-fg: #e0c266;
+  --uboss-platinum-bg: #12262a;
+  --uboss-platinum-fg: #7fc4c9;
+  --uboss-diamond-bg: #171f3a;
+  --uboss-diamond-fg: #9db0f5;
+
+  --uboss-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --uboss-shadow-2: 0 4px 12px rgba(0, 0, 0, 0.45);
+  --uboss-shadow-3: 0 16px 40px rgba(0, 0, 0, 0.6);
+
+  --uboss-focus-ring: 0 0 0 3px rgba(91, 141, 239, 0.35);
 }
 
 .uboss-shell--master .uboss-main {
-  background:
-    radial-gradient(1000px 460px at 14% -12%, rgba(37, 99, 235, 0.14), transparent 60%), #0a1b2b;
+  background: var(--uboss-bg);
 }
 
 .uboss-content {
@@ -39,47 +148,57 @@
   margin: 0 auto;
 }
 
-.uboss-shell--master .uboss-content {
-  color: #dce7f2;
-}
-
 /* ============================================================
    Sidebar
    ============================================================ */
+/*
+   Navy in both themes, and flat.
+
+   The gradient that used to run down this panel served no purpose: it made the bottom
+   of the navigation a different colour from the top, so the same nav item looked
+   different depending on how far down the list it was. A single flat surface is what
+   lets selection be the only thing on this panel that changes colour. */
+
 .uboss-sidebar {
-  background: linear-gradient(185deg, #173b5e 0%, #102a43 52%, #0b2036 100%);
-  color: #dce6f2;
+  background: var(--uboss-navy);
+  color: var(--uboss-navy-ink);
   position: sticky;
   top: 0;
   height: 100vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* Separates navigation from the page in dark mode, where the two are close in value. */
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .uboss-shell--master .uboss-sidebar {
-  background: linear-gradient(185deg, #112234 0%, #0a1626 100%);
+  background: var(--uboss-navy-900);
 }
 
 .uboss-side-brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 18px 18px 14px;
+  padding: 14px 14px 12px;
+  height: var(--uboss-topbar-height);
+  /* Lines the brand up with the top bar beside it, so the two pieces of chrome share
+     one horizontal edge instead of missing each other by a few pixels. */
+  box-sizing: border-box;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .uboss-side-logo {
-  width: 30px;
-  height: 30px;
-  border-radius: var(--uboss-radius-input);
-  background: linear-gradient(135deg, #22d3ee, #3b82f6);
+  width: 26px;
+  height: 26px;
+  border-radius: var(--uboss-radius-control);
+  background: var(--uboss-teal);
   display: grid;
   place-items: center;
   color: #fff;
-  font-weight: 800;
-  font-size: 15px;
+  font-weight: 700;
+  font-size: 13px;
   flex: none;
-  box-shadow: 0 6px 16px -4px rgba(11, 166, 228, 0.55);
 }
 
 .uboss-side-brand-text {
@@ -88,8 +207,9 @@
 
 .uboss-side-brand-text b {
   color: #fff;
-  font-size: 15px;
-  letter-spacing: 0.2px;
+  font-size: 13.5px;
+  font-weight: 650;
+  letter-spacing: 0.1px;
   display: block;
   white-space: nowrap;
   overflow: hidden;
@@ -98,8 +218,8 @@
 
 .uboss-side-brand-text span {
   display: block;
-  font-size: 11px;
-  color: #8fa6c0;
+  font-size: var(--uboss-font-size-xs);
+  color: var(--uboss-navy-ink-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -107,73 +227,94 @@
 
 .uboss-sidebar-toggle {
   margin-left: auto;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--uboss-radius-input);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
-  color: #b8cbdf;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--uboss-radius-control);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: var(--uboss-navy-ink-2);
   display: grid;
   place-items: center;
   cursor: pointer;
   flex: none;
-  transition: 0.15s;
+  transition:
+    background var(--uboss-motion) var(--uboss-ease),
+    color var(--uboss-motion) var(--uboss-ease);
 }
 
 .uboss-sidebar-toggle:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
   color: #fff;
 }
 
 .uboss-side-scroll {
   overflow-y: auto;
   flex: 1;
-  padding: 6px 10px 16px;
+  padding: 8px 8px 16px;
 }
 
 .uboss-nav-group {
-  margin: 12px 8px 4px;
-  font-size: 10.5px;
-  letter-spacing: 0.8px;
+  margin: 14px 10px 4px;
+  font-size: var(--uboss-font-size-xs);
+  letter-spacing: var(--uboss-tracking-caps);
   text-transform: uppercase;
-  color: #6e88a6;
+  color: var(--uboss-navy-ink-2);
   font-weight: 600;
 }
 
 .uboss-nav-item {
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 9px 12px;
-  border-radius: 9px;
-  color: #c4d4e6;
+  gap: 10px;
+  padding: 0 10px;
+  height: 32px;
+  border-radius: var(--uboss-radius-control);
+  color: var(--uboss-navy-ink);
   font-weight: 500;
   cursor: pointer;
   margin: 1px 0;
   width: 100%;
   border: 0;
   background: transparent;
-  font-size: var(--uboss-font-size-body);
+  font-size: var(--uboss-font-size-sm);
   text-align: left;
+  /* The item is an anchor on most screens and a button on the rest; both need this. */
+  text-decoration: none;
+  box-sizing: border-box;
   transition:
-    background 0.16s,
-    color 0.16s,
-    box-shadow 0.16s;
+    background var(--uboss-motion) var(--uboss-ease),
+    color var(--uboss-motion) var(--uboss-ease);
 }
 
 .uboss-nav-item:hover {
   background: rgba(255, 255, 255, 0.06);
-  color: #eaf1fa;
+  color: #fff;
 }
 
+/*
+   Selection is teal, and it is stated three times over: a solid rail on the leading
+   edge, a tint behind the row, and the icon picking up the accent. Three signals
+   because one of them survives every way of looking at this — the rail survives
+   greyscale and a colour-blind reading, the tint survives a glance from across the
+   room, the icon survives a narrow rail where the label is hidden.
+
+   Teal rather than blue because blue means "this is the button to press" everywhere
+   else in the product, and the page you are already on is not an action. */
+
 .uboss-nav-item--active {
-  background: linear-gradient(90deg, rgba(59, 130, 246, 0.26), rgba(59, 130, 246, 0.06));
+  background: rgba(13, 148, 136, 0.16);
   color: #fff;
-  box-shadow: inset 2px 0 0 var(--uboss-cyan);
+  font-weight: 550;
+  box-shadow: inset 2px 0 0 var(--uboss-teal-bright);
+}
+
+.uboss-nav-item--active:hover {
+  background: rgba(13, 148, 136, 0.22);
 }
 
 .uboss-nav-item--active .uboss-nav-icon {
-  color: var(--uboss-cyan);
+  color: var(--uboss-teal-bright);
+  opacity: 1;
 }
 
 .uboss-nav-icon {
@@ -222,7 +363,7 @@
 
 .uboss-side-foot-role {
   font-size: 11px;
-  color: #8fa6c0;
+  color: var(--uboss-navy-ink-2);
 }
 
 /* Same treatment as the role line it replaces, since the reference styles its footer sign-out
@@ -230,7 +371,7 @@
 .uboss-side-foot-signout {
   font: inherit;
   font-size: 11px;
-  color: #8fa6c0;
+  color: var(--uboss-navy-ink-2);
   background: none;
   border: 0;
   padding: 0;
@@ -302,15 +443,23 @@
 /* ============================================================
    Top bar
    ============================================================ */
+/*
+   Solid, not translucent.
+
+   This bar used to be 72% white over a backdrop blur. Content scrolling underneath a
+   sticky header showed through it as moving smears behind the workspace name, the
+   blur cost a compositor layer on every scroll frame, and in dark mode a white-based
+   translucency is the exact "accidental white surface" that makes a dark theme look
+   like an accident. A solid surface and a one-pixel rule do the same job. */
+
 .uboss-topbar {
   height: var(--uboss-topbar-height);
-  background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: saturate(1.15) blur(8px);
+  background: var(--uboss-surface);
   border-bottom: 1px solid var(--uboss-border);
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 0 24px;
+  gap: 12px;
+  padding: 0 20px;
   position: sticky;
   top: 0;
   z-index: 20;
@@ -318,18 +467,17 @@
 
 .uboss-shell--master .uboss-topbar {
   background: var(--uboss-navy-900);
-  border-bottom-color: #20374d;
-  backdrop-filter: none;
+  border-bottom-color: rgba(255, 255, 255, 0.08);
 }
 
 /* The locked workspace mark: UBOSS AI AMS | {Active Workspace Name} */
 .uboss-ws-mark {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-weight: 700;
-  font-size: 14.5px;
-  color: var(--uboss-navy);
+  gap: 9px;
+  font-weight: 650;
+  font-size: var(--uboss-font-size-body);
+  color: var(--uboss-text);
   min-width: 0;
 }
 
@@ -342,32 +490,37 @@
   font-weight: 400;
 }
 
+.uboss-shell--master .uboss-ws-mark-pipe {
+  color: rgba(255, 255, 255, 0.24);
+}
+
 .uboss-ws-mark-name {
-  color: var(--uboss-text);
+  color: var(--uboss-text-2);
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .uboss-shell--master .uboss-ws-mark-name {
-  color: #8fb4d8;
+  color: var(--uboss-navy-ink);
 }
 
 .uboss-scope-pill {
-  font-size: 11px;
+  font-size: var(--uboss-font-size-xs);
   font-weight: 600;
   color: var(--uboss-text-3);
   border: 1px solid var(--uboss-border);
   border-radius: var(--uboss-radius-pill);
-  padding: 2px 9px;
-  background: var(--uboss-bg);
+  padding: 2px 8px;
+  background: var(--uboss-bg-2);
   white-space: nowrap;
 }
 
 .uboss-shell--master .uboss-scope-pill {
-  color: #8fb4d8;
-  border-color: #20374d;
-  background: #12263a;
+  color: var(--uboss-navy-ink);
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .uboss-top-actions {
@@ -378,10 +531,10 @@
 }
 
 .uboss-icon-btn {
-  width: 38px;
-  height: 38px;
-  border-radius: 9px;
-  border: 1px solid var(--uboss-border);
+  width: var(--uboss-control-h);
+  height: var(--uboss-control-h);
+  border-radius: var(--uboss-radius-control);
+  border: 1px solid var(--uboss-border-control);
   background: var(--uboss-surface);
   display: grid;
   place-items: center;
@@ -392,13 +545,21 @@
 }
 
 .uboss-icon-btn:hover {
-  background: var(--uboss-bg);
+  background: var(--uboss-bg-2);
+  border-color: var(--uboss-border-control-hover);
+  color: var(--uboss-text);
 }
 
 .uboss-shell--master .uboss-icon-btn {
-  background: #12263a;
-  border-color: #20374d;
-  color: #b8cbdf;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: var(--uboss-navy-ink);
+}
+
+.uboss-shell--master .uboss-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: #fff;
 }
 
 .uboss-icon-btn-dot {
@@ -420,8 +581,8 @@
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #2e5a8a, #1c4a73);
-  color: #eaf2fb;
+  background: var(--uboss-navy-700);
+  color: var(--uboss-navy-ink);
   display: grid;
   place-items: center;
   font-weight: 700;
@@ -447,9 +608,9 @@
 
 .uboss-search input {
   width: 100%;
-  height: 38px;
-  border: 1px solid var(--uboss-border);
-  border-radius: 9px;
+  height: var(--uboss-control-h);
+  border: 1px solid var(--uboss-border-control);
+  border-radius: var(--uboss-radius-control);
   padding: 0 12px 0 34px;
   background: var(--uboss-bg);
   font-size: var(--uboss-font-size-sm);
@@ -474,8 +635,8 @@
 }
 
 .uboss-shell--master .uboss-search input {
-  background: #12263a;
-  border-color: #20374d;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.14);
   color: #fff;
 }
 
@@ -534,7 +695,7 @@
 .uboss-shell--master .uboss-crumb,
 .uboss-shell--master .uboss-crumb a,
 .uboss-shell--master .uboss-crumb button {
-  color: #7e9cbc;
+  color: var(--uboss-navy-ink-2);
 }
 
 .uboss-page-head {
@@ -558,14 +719,6 @@
   margin-top: 3px;
 }
 
-.uboss-shell--master .uboss-page-head h1 {
-  color: #fff;
-}
-
-.uboss-shell--master .uboss-page-head p {
-  color: #8fb4d8;
-}
-
 .uboss-page-actions {
   margin-left: auto;
   display: flex;
@@ -575,72 +728,145 @@
 
 /* ============================================================
    Buttons
-   ============================================================ */
+   ============================================================
+
+   Four roles, and the role is the whole design:
+
+     primary   solid blue. THE action on this screen. One per screen.
+     default   surface + border. Everything else you can do here.
+     ghost     text only. Tertiary — inline, in a toolbar, in a row.
+     danger    solid red. Destructive only. Never "submit", never "save".
+
+   navy is kept for the Master Console, where the chrome is navy and a blue
+   primary would be the only bright thing on an otherwise dark page.
+
+   The gradients, the lift on hover and the coloured drop shadow that used to be
+   here are gone. A button that rises off the page when you point at it is a
+   consumer button; enterprise software states the change with colour and lets
+   the geometry stay still, because a row of buttons that each jump on hover is
+   noise on a screen somebody reads all day. */
+
 .uboss-btn {
-  height: 38px;
-  padding: 0 15px;
+  height: var(--uboss-control-h);
+  padding: 0 14px;
   border-radius: var(--uboss-radius-button);
-  border: 1px solid var(--uboss-border);
+  border: 1px solid var(--uboss-border-control);
   background: var(--uboss-surface);
   color: var(--uboss-text);
-  font-weight: 600;
+  font-family: inherit;
+  font-weight: 550;
   font-size: var(--uboss-font-size-sm);
+  line-height: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 7px;
   cursor: pointer;
   white-space: nowrap;
+  /* Colour only. Nothing here moves. */
   transition:
-    transform 0.12s ease,
-    box-shadow 0.16s ease,
-    background 0.16s ease,
-    border-color 0.16s ease,
-    color 0.16s;
+    background var(--uboss-motion) var(--uboss-ease),
+    border-color var(--uboss-motion) var(--uboss-ease),
+    color var(--uboss-motion) var(--uboss-ease),
+    box-shadow var(--uboss-motion-fast) var(--uboss-ease);
 }
 
-.uboss-btn:hover:not([disabled]) {
-  background: var(--uboss-bg);
+.uboss-btn:hover:not([disabled]):not([aria-busy='true']) {
+  background: var(--uboss-bg-2);
+  border-color: var(--uboss-border-control-hover);
 }
 
-.uboss-btn:active:not([disabled]) {
-  transform: translateY(1px);
+.uboss-btn:active:not([disabled]):not([aria-busy='true']) {
+  background: var(--uboss-border-2);
 }
+
+/* ---- Primary: the one action ---- */
 
 .uboss-btn--primary {
-  background: linear-gradient(180deg, #3d7bf7, #2563eb);
-  border-color: #2158d8;
-  color: #fff;
-  box-shadow:
-    0 1px 2px rgba(31, 79, 216, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  background: var(--uboss-blue-solid);
+  border-color: var(--uboss-blue-solid);
+  color: var(--uboss-text-on-dark);
 }
 
-.uboss-btn--primary:hover:not([disabled]) {
-  background: linear-gradient(180deg, #3670f0, #1e56dc);
-  border-color: #1b4fce;
-  box-shadow:
-    0 5px 16px -3px rgba(31, 79, 216, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.22);
-  transform: translateY(-1px);
+.uboss-btn--primary:hover:not([disabled]):not([aria-busy='true']) {
+  background: var(--uboss-blue-solid-hover);
+  border-color: var(--uboss-blue-solid-hover);
 }
+
+.uboss-btn--primary:active:not([disabled]):not([aria-busy='true']) {
+  background: var(--uboss-blue-solid-hover);
+  border-color: var(--uboss-blue-solid-hover);
+  /* Pressed reads as a recess, not as a jump. */
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.18);
+}
+
+/* ---- Navy: the Master Console's primary ---- */
 
 .uboss-btn--navy {
-  background: linear-gradient(180deg, #1c4a73, #102a43);
-  border-color: #0b2036;
-  color: #fff;
+  background: var(--uboss-navy);
+  border-color: var(--uboss-navy);
+  color: var(--uboss-text-on-dark);
 }
+
+.uboss-btn--navy:hover:not([disabled]):not([aria-busy='true']) {
+  background: var(--uboss-navy-700);
+  border-color: var(--uboss-navy-700);
+}
+
+.uboss-btn--navy:active:not([disabled]):not([aria-busy='true']) {
+  background: var(--uboss-navy);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* ---- Danger: destructive, and only destructive ---- */
 
 .uboss-btn--danger {
-  background: var(--uboss-danger);
-  border-color: var(--uboss-danger);
-  color: #fff;
+  background: var(--uboss-danger-solid);
+  border-color: var(--uboss-danger-solid);
+  color: var(--uboss-text-on-dark);
 }
 
-.uboss-btn--danger:hover:not([disabled]) {
-  filter: brightness(1.05);
-  background: var(--uboss-danger);
+/* `filter: brightness()` was lightening red towards pink and pulling it below the
+   contrast it needs behind white text. A darker red is the correct hover for a
+   destructive control anyway: pressing on reads as commitment. */
+.uboss-btn--danger:hover:not([disabled]):not([aria-busy='true']) {
+  background: var(--uboss-danger-solid-hover);
+  border-color: var(--uboss-danger-solid-hover);
 }
+
+.uboss-btn--danger:active:not([disabled]):not([aria-busy='true']) {
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.25);
+}
+
+/* ---- Danger, offered rather than committed ----
+
+   The destructive action in a list. Red text, no fill: it reads as destructive without
+   being the loudest thing on a screen that shows it once per row. The filled variant
+   above stays where the decision is actually made — the confirm button in the dialog,
+   where there is exactly one of it and it is the thing you came to press. */
+
+.uboss-btn--danger-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--uboss-danger);
+}
+
+.uboss-btn--danger-ghost:hover:not([disabled]):not([aria-busy='true']) {
+  background: var(--uboss-danger-050);
+  border-color: transparent;
+  color: var(--uboss-danger);
+}
+
+.uboss-btn--danger-ghost:active:not([disabled]):not([aria-busy='true']) {
+  background: color-mix(in srgb, var(--uboss-danger-050) 80%, var(--uboss-danger));
+}
+
+.uboss-btn--danger-ghost[disabled] {
+  background: transparent;
+  border-color: transparent;
+}
+
+/* ---- Ghost: tertiary ---- */
 
 .uboss-btn--ghost {
   background: transparent;
@@ -648,77 +874,186 @@
   color: var(--uboss-text-2);
 }
 
+.uboss-btn--ghost:hover:not([disabled]):not([aria-busy='true']) {
+  background: var(--uboss-bg-2);
+  border-color: transparent;
+  color: var(--uboss-text);
+}
+
+.uboss-btn--ghost:active:not([disabled]):not([aria-busy='true']) {
+  background: var(--uboss-border-2);
+}
+
+/* ---- Sizes ---- */
+
 .uboss-btn--sm {
-  height: 32px;
-  padding: 0 11px;
-  font-size: 12.5px;
-  border-radius: var(--uboss-radius-button);
+  height: var(--uboss-control-h-sm);
+  padding: 0 10px;
+  font-size: var(--uboss-font-size-xs);
+  gap: 5px;
 }
 
 .uboss-btn--block {
   width: 100%;
-  height: 44px;
+  height: var(--uboss-control-h-lg);
   font-size: var(--uboss-font-size-body);
 }
 
+/* ---- Disabled ---- */
+
 .uboss-btn[disabled] {
-  opacity: 0.5;
   cursor: not-allowed;
+  background: var(--uboss-bg-2);
+  border-color: var(--uboss-border);
+  color: var(--uboss-text-3);
+  box-shadow: none;
+}
+
+/* A filled button keeps its identity when disabled rather than turning into a grey
+   slab — you can still see which one was the primary action, which matters when it
+   is disabled precisely because the form is incomplete. Opacity rather than a flat
+   grey, and 0.55 rather than 0.5, because the label still has to be readable: a
+   disabled control is exempt from the contrast minimum, but nobody can act on an
+   instruction they cannot read. */
+.uboss-btn--primary[disabled],
+.uboss-btn--navy[disabled],
+.uboss-btn--danger[disabled] {
+  opacity: 0.55;
+  color: var(--uboss-text-on-dark);
+}
+
+.uboss-btn--primary[disabled] {
+  background: var(--uboss-blue-solid);
+  border-color: var(--uboss-blue-solid);
+}
+
+.uboss-btn--navy[disabled] {
+  background: var(--uboss-navy);
+  border-color: var(--uboss-navy);
+}
+
+.uboss-btn--danger[disabled] {
+  background: var(--uboss-danger-solid);
+  border-color: var(--uboss-danger-solid);
+}
+
+.uboss-btn--ghost[disabled] {
+  background: transparent;
+  border-color: transparent;
+}
+
+/* ---- Loading ----
+
+   Driven by `aria-busy`, so the state a screen reader announces and the state you
+   can see are the same attribute and cannot drift apart. The button stays the same
+   width while it works — a button that resizes mid-submit moves the thing next to
+   it under the pointer. */
+
+.uboss-btn[aria-busy='true'] {
+  cursor: progress;
+  /* Not `disabled`: the control keeps its place in the tab order while it works, so
+     focus is not thrown to the top of the document mid-submit. The handler is what
+     refuses the second click. */
+  pointer-events: none;
+}
+
+.uboss-btn-spinner {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  /* The gap in the ring is what makes the rotation visible. */
+  border-top-color: transparent;
+  opacity: 0.85;
+  animation: uboss-spin 620ms linear infinite;
+}
+
+@keyframes uboss-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Somebody who has asked their system not to animate gets a static ring. The label
+   beside it still says what is happening, so no information is carried by the
+   motion alone. */
+@media (prefers-reduced-motion: reduce) {
+  .uboss-btn-spinner {
+    animation: none;
+  }
 }
 
 /* ============================================================
    Cards
    ============================================================ */
+/*
+   A card is a border, not a floating object.
+
+   Grouping is the entire job: these things belong together and those do not. A shadow
+   heavy enough to see is a shadow competing with the content, and a screen of eight
+   floating panels reads as eight separate applications. So: a hairline border, a flat
+   surface, and no shadow at all. Elevation is reserved for things that genuinely sit
+   above the page — menus, dialogs, drawers — where it means "this is temporary and in
+   front", which is information. */
+
 .uboss-card {
   background: var(--uboss-surface);
-  border: 1px solid #e6edf5;
+  border: 1px solid var(--uboss-border);
   border-radius: var(--uboss-radius-card);
-  box-shadow: var(--uboss-shadow-1);
-  transition:
-    box-shadow 0.18s,
-    border-color 0.18s;
-}
-
-.uboss-shell--master .uboss-card {
-  background: #10233a;
-  border-color: #20374d;
+  transition: border-color var(--uboss-motion) var(--uboss-ease);
 }
 
 .uboss-card-body {
-  padding: 18px;
+  padding: 16px;
 }
 
 .uboss-card-head {
-  padding: 14px 18px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--uboss-border-2);
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.uboss-shell--master .uboss-card-head {
-  border-color: #20374d;
-}
-
 .uboss-card-head h3 {
-  font-size: 14.5px;
-  font-weight: 700;
+  font-size: var(--uboss-font-size-h2);
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .uboss-section-label {
-  font-size: 11px;
-  letter-spacing: 0.5px;
+  font-size: var(--uboss-font-size-xs);
+  letter-spacing: var(--uboss-tracking-caps);
   text-transform: uppercase;
-  color: #5c6b82;
-  font-weight: 650;
-  margin: 18px 0 10px;
+  color: var(--uboss-text-3);
+  font-weight: 600;
+  margin: 20px 0 10px;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--uboss-border-2);
 }
 
 .uboss-grid {
   display: grid;
-  gap: 16px;
+  gap: 14px;
+}
+
+/*
+ * Grid items must be allowed to shrink.
+ *
+ * A `1fr` track does not size purely by share of free space: its automatic minimum is the
+ * min-content size of the item in it. So `repeat(4, 1fr)` — which sixteen pages set inline — will
+ * happily compute four 381px tracks inside an 844px panel and push the whole page sideways rather
+ * than let a metric card narrow. On Settings -> Security that made the document 2120px wide in a
+ * 1440px window, with the right-hand card cut off at the edge and no scrollbar of its own.
+ *
+ * `min-width: 0` on the items removes that floor, which lets the tracks share the space they
+ * actually have. One rule on the container's children, rather than `minmax(0, 1fr)` edited into
+ * sixteen pages — and unlike the `!important` breakpoint below it needs no specificity fight,
+ * because nothing sets a min-width on these items at all.
+ */
+.uboss-grid > * {
+  min-width: 0;
 }
 
 /*
@@ -746,16 +1081,27 @@
 /* ============================================================
    MetricCard
    ============================================================ */
+/*
+   The number is the design.
+
+   What was here: a vertical gradient fill, a teal-to-blue gradient stripe across the
+   top of every card, and a lift-plus-shadow on hover. Three decorations around a
+   number, and the stripe mixed the two accent colours in the one place where neither
+   of them meant anything — the card is not selected and it is not an action.
+
+   Now the card is flat and bordered like every other card, and the value carries the
+   weight. Tabular numerals so a column of metrics lines up digit under digit. */
+
 .uboss-metric {
-  background: linear-gradient(180deg, var(--uboss-surface), var(--uboss-surface-raised));
+  background: var(--uboss-surface);
   border: 1px solid var(--uboss-border);
   border-radius: var(--uboss-radius-card);
-  padding: 16px 18px;
+  padding: 14px 16px;
   position: relative;
   overflow: hidden;
   transition:
-    box-shadow 0.18s,
-    transform 0.18s;
+    border-color var(--uboss-motion) var(--uboss-ease),
+    background var(--uboss-motion) var(--uboss-ease);
   text-align: left;
   width: 100%;
   display: block;
@@ -763,53 +1109,43 @@
   color: inherit;
 }
 
-.uboss-metric::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  height: 3px;
-  width: 100%;
-  background: linear-gradient(90deg, var(--uboss-cyan), var(--uboss-blue));
-}
-
 .uboss-metric--clickable {
   cursor: pointer;
 }
 
+/* A metric that is a link changes its border and ground, and stays where it is. */
 .uboss-metric--clickable:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--uboss-shadow-2);
+  border-color: var(--uboss-border-control-hover);
+  background: var(--uboss-bg);
 }
 
-.uboss-shell--master .uboss-metric {
-  background: linear-gradient(180deg, #12263a, #0f2030);
-  border-color: #20374d;
+.uboss-metric--clickable:focus-visible {
+  outline: var(--uboss-focus-outline);
+  outline-offset: var(--uboss-focus-offset);
+}
+
+.uboss-shell--master .uboss-metric--clickable:hover {
+  background: var(--uboss-surface-raised);
+  border-color: var(--uboss-border-control);
 }
 
 .uboss-metric-label {
-  font-size: 12px;
-  color: var(--uboss-text-3);
-}
-
-.uboss-shell--master .uboss-metric-label {
-  color: #7e9cbc;
+  font-size: var(--uboss-font-size-sm);
+  color: var(--uboss-text-2);
+  font-weight: 500;
 }
 
 .uboss-metric-value {
-  font-size: 26px;
-  font-weight: 800;
-  margin: 6px 0 2px;
-  letter-spacing: -0.5px;
+  font-size: 24px;
+  font-weight: 650;
+  margin: 8px 0 2px;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
-}
-
-.uboss-shell--master .uboss-metric-value {
-  color: #fff;
+  line-height: 1.1;
 }
 
 .uboss-metric-delta {
-  font-size: 12px;
+  font-size: var(--uboss-font-size-sm);
   font-weight: 600;
   display: flex;
   align-items: center;
@@ -863,9 +1199,9 @@
   color: var(--uboss-blue);
 }
 
-.uboss-badge--cyan {
-  background: var(--uboss-cyan-050);
-  color: var(--uboss-cyan-ink);
+.uboss-badge--teal {
+  background: var(--uboss-teal-050);
+  color: var(--uboss-teal-ink);
 }
 
 .uboss-badge--warn {
@@ -928,14 +1264,34 @@
 /* ============================================================
    DataTable + FilterBar
    ============================================================ */
+/*
+   Tables are where this product actually gets used, so density is the feature.
+
+   Two things were wrong. The header was painted with a hardcoded white gradient
+   (#fbfcfe to #f4f7fb) — a literal white band across the top of every table in dark
+   mode, which is exactly the accidental white surface a designed dark theme must not
+   have. And the header scrolled away, so by row forty nobody could tell which column
+   was which.
+
+   Now: a tokened header that sticks, hairline dividers, and rows sized from
+   --uboss-row-h so every table in the product is the same height per row. */
+
 .uboss-table-wrap {
   overflow-x: auto;
+  /* The header can only stick to something that scrolls. Capped rather than fixed so
+     a four-row table stays four rows tall instead of reserving a screenful. */
+  overflow-y: auto;
+  max-height: 70vh;
   border-radius: var(--uboss-radius-card);
 }
 
 .uboss-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  /* `separate` rather than `collapse`: a collapsed border belongs to the table, not to
+     the cell, so it scrolls out from under a sticky header and leaves the header
+     edgeless. Zero spacing keeps it looking collapsed. */
+  border-spacing: 0;
   font-size: var(--uboss-font-size-sm);
 }
 
@@ -944,33 +1300,54 @@
   font-weight: 600;
   color: var(--uboss-text-2);
   font-size: var(--uboss-font-size-xs);
-  letter-spacing: 0.3px;
-  padding: 11px 14px;
+  letter-spacing: var(--uboss-tracking-caps);
+  text-transform: uppercase;
+  padding: 0 14px;
+  height: 34px;
+  background: var(--uboss-bg-2);
   border-bottom: 1px solid var(--uboss-border);
-  background: linear-gradient(180deg, #fbfcfe, #f4f7fb);
+  position: sticky;
+  top: 0;
+  /* Above the row content it scrolls over, below any menu or dialog. */
+  z-index: 2;
+  white-space: nowrap;
 }
 
 .uboss-table td {
-  padding: 12px 14px;
+  padding: 0 14px;
+  height: var(--uboss-row-h);
   border-bottom: 1px solid var(--uboss-border-2);
   vertical-align: middle;
 }
 
-.uboss-table tr:last-child td {
+/* A cell holding stacked lines (a name over an email) cannot be a fixed height. */
+.uboss-table td.uboss-table-cell--stacked {
+  height: auto;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.uboss-table tbody tr:last-child td {
   border-bottom: 0;
 }
 
 .uboss-table tbody tr[data-clickable='true'] {
   cursor: pointer;
-  transition:
-    box-shadow 0.16s,
-    background 0.16s;
+  transition: background var(--uboss-motion-fast) var(--uboss-ease);
 }
 
+/* Teal, not blue: pointing at a row is not an action, and a blue row inside a table
+   that also contains blue buttons makes the row look like the thing you pressed. */
 .uboss-table tbody tr[data-clickable='true']:hover,
 .uboss-table tbody tr[data-clickable='true']:focus-visible {
-  background: var(--uboss-blue-050);
-  box-shadow: inset 3px 0 0 var(--uboss-blue);
+  background: var(--uboss-bg-2);
+  box-shadow: inset 2px 0 0 var(--uboss-teal-bright);
+  outline: none;
+}
+
+.uboss-table tbody tr[aria-selected='true'] {
+  background: var(--uboss-teal-050);
+  box-shadow: inset 2px 0 0 var(--uboss-teal-bright);
 }
 
 .uboss-table-numeric {
@@ -978,19 +1355,8 @@
   font-variant-numeric: tabular-nums;
 }
 
-.uboss-shell--master .uboss-table th {
-  background: #0d1f33;
-  color: #7e9cbc;
-  border-color: #20374d;
-}
-
-.uboss-shell--master .uboss-table td {
-  border-color: #1a3049;
-  color: #cbd9e8;
-}
-
 .uboss-shell--master .uboss-table tbody tr[data-clickable='true']:hover {
-  background: #15304b;
+  background: var(--uboss-surface-raised);
 }
 
 .uboss-toolbar {
@@ -1003,13 +1369,19 @@
 }
 
 .uboss-filter {
-  height: 34px;
-  border: 1px solid var(--uboss-border);
-  border-radius: var(--uboss-radius-input);
+  height: var(--uboss-control-h);
+  border: 1px solid var(--uboss-border-control);
+  border-radius: var(--uboss-radius-control);
   padding: 0 10px;
   background: var(--uboss-surface);
+  font-family: inherit;
   font-size: var(--uboss-font-size-sm);
-  color: var(--uboss-text-2);
+  color: var(--uboss-text);
+  transition: border-color var(--uboss-motion-fast) var(--uboss-ease);
+}
+
+.uboss-filter:hover:not(:disabled) {
+  border-color: var(--uboss-border-control-hover);
 }
 
 .uboss-filter:focus {
@@ -1059,15 +1431,26 @@
 /* ============================================================
    FormField
    ============================================================ */
+/*
+   One control, wherever it appears.
+
+   There were two input systems here: `.uboss-field input` at 40px with 12px padding,
+   and a bare `.uboss-input` at whatever 8px of padding produced — used by eight
+   screens. Two fields of different heights next to each other is the thing that makes
+   a form look assembled rather than designed, so both now resolve to the same tokens.
+
+   Presentation only. Nothing below changes what a field accepts, what it is called,
+   or when it validates. */
+
 .uboss-field {
   margin-bottom: 14px;
 }
 
 .uboss-field label {
   display: block;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--uboss-text-2);
+  font-size: var(--uboss-font-size-sm);
+  font-weight: 550;
+  color: var(--uboss-text);
   margin-bottom: 6px;
 }
 
@@ -1078,33 +1461,83 @@
 
 .uboss-field input,
 .uboss-field select,
-.uboss-field textarea {
+.uboss-field textarea,
+.uboss-input,
+.operator-field select,
+.operator-field textarea {
   width: 100%;
-  height: 40px;
-  border: 1px solid var(--uboss-border);
-  border-radius: var(--uboss-radius-input);
-  padding: 0 12px;
-  font-size: 13.5px;
+  height: var(--uboss-control-h);
+  border: 1px solid var(--uboss-border-control);
+  border-radius: var(--uboss-radius-control);
+  padding: 0 10px;
+  font-family: inherit;
+  font-size: var(--uboss-font-size-sm);
   background: var(--uboss-surface);
   color: var(--uboss-text);
-  font-family: inherit;
-  transition: 0.12s;
+  transition:
+    border-color var(--uboss-motion-fast) var(--uboss-ease),
+    box-shadow var(--uboss-motion-fast) var(--uboss-ease),
+    background var(--uboss-motion-fast) var(--uboss-ease);
 }
 
-.uboss-field textarea {
+.uboss-field textarea,
+textarea.uboss-input,
+.operator-field textarea {
   height: auto;
-  padding: 10px 12px;
-  min-height: 80px;
+  padding: 8px 10px;
+  min-height: 76px;
   resize: vertical;
   line-height: 1.5;
 }
 
+.uboss-field input::placeholder,
+.uboss-field textarea::placeholder,
+.uboss-input::placeholder {
+  color: var(--uboss-text-3);
+}
+
+.uboss-field input:hover:not(:disabled):not([readonly]),
+.uboss-field select:hover:not(:disabled),
+.uboss-field textarea:hover:not(:disabled):not([readonly]),
+.uboss-input:hover:not(:disabled):not([readonly]) {
+  border-color: var(--uboss-border-control-hover);
+}
+
 .uboss-field input:focus,
 .uboss-field select:focus,
-.uboss-field textarea:focus {
+.uboss-field textarea:focus,
+.uboss-input:focus {
   outline: none;
   border-color: var(--uboss-blue);
   box-shadow: var(--uboss-focus-ring);
+}
+
+/* ---- Disabled: you cannot change this ---- */
+
+.uboss-field input:disabled,
+.uboss-field select:disabled,
+.uboss-field textarea:disabled,
+.uboss-input:disabled {
+  background: var(--uboss-bg-2);
+  border-color: var(--uboss-border);
+  color: var(--uboss-text-3);
+  cursor: not-allowed;
+}
+
+/* ---- Read-only: this is a real value, you just cannot edit it ----
+
+   Deliberately different from disabled. A disabled field looks like something
+   switched off; a read-only field is showing you a fact — a generated ID, a figure
+   from another system — and it keeps the full-strength text colour because the value
+   is the point. The border softens to say it is not a place to type. */
+
+.uboss-field input[readonly],
+.uboss-field textarea[readonly],
+.uboss-input[readonly] {
+  background: var(--uboss-bg);
+  border-color: var(--uboss-border);
+  color: var(--uboss-text);
+  cursor: default;
 }
 
 .uboss-field-hint {
@@ -1113,9 +1546,23 @@
   margin-top: 5px;
 }
 
+/* ---- Invalid ----
+
+   The red border is the second signal, never the only one: `.uboss-field-error`
+   below carries the sentence that says what is wrong, because a colour cannot state
+   a reason. */
+
 .uboss-field--invalid input,
 .uboss-field--invalid select,
-.uboss-field--invalid textarea {
+.uboss-field--invalid textarea,
+.uboss-input[aria-invalid='true'] {
+  border-color: var(--uboss-danger);
+}
+
+.uboss-field--invalid input:focus,
+.uboss-field--invalid select:focus,
+.uboss-field--invalid textarea:focus,
+.uboss-input[aria-invalid='true']:focus {
   border-color: var(--uboss-danger);
   box-shadow: 0 0 0 3px var(--uboss-danger-050);
 }
@@ -1429,7 +1876,7 @@
 }
 
 .uboss-credit-seg--reserved {
-  background: var(--uboss-cyan);
+  background: var(--uboss-teal);
 }
 
 .uboss-credit-seg--estimated {
@@ -1528,14 +1975,22 @@
 /* ============================================================
    Overlays: Modal, Drawer, ConfirmDialog
    ============================================================ */
+/*
+   The one place elevation is allowed, because here it carries meaning: this is
+   temporary, it is in front, and the page behind it is not accepting input.
+
+   The scrim lost its backdrop blur. Blurring the whole page behind a dialog costs a
+   full-viewport compositor pass on a screen that may be showing a thousand-row table,
+   and a plain dim does the same job — the scrim is there to say "not this", not to be
+   looked at. */
+
 .uboss-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(12, 35, 55, 0.46);
-  backdrop-filter: blur(2px);
+  background: rgba(11, 18, 32, 0.5);
   display: flex;
   z-index: 50;
-  animation: uboss-fade 0.15s;
+  animation: uboss-fade var(--uboss-motion) var(--uboss-ease);
 }
 
 @keyframes uboss-fade {
@@ -1547,12 +2002,13 @@
 .uboss-modal {
   margin: auto;
   background: var(--uboss-surface);
+  border: 1px solid var(--uboss-border);
   border-radius: var(--uboss-radius-panel);
   box-shadow: var(--uboss-shadow-3);
   width: min(560px, 92vw);
   max-height: 88vh;
   overflow: auto;
-  animation: uboss-pop 0.16s;
+  animation: uboss-pop var(--uboss-motion-slow) var(--uboss-ease);
 }
 
 .uboss-modal--wide {
@@ -1561,27 +2017,38 @@
 
 @keyframes uboss-pop {
   from {
-    transform: translateY(8px) scale(0.99);
-    opacity: 0.6;
+    transform: translateY(6px);
+    opacity: 0;
   }
 }
 
 .uboss-drawer {
   margin-left: auto;
   background: var(--uboss-surface);
+  border-left: 1px solid var(--uboss-border);
   height: 100vh;
   width: min(680px, 94vw);
   box-shadow: var(--uboss-shadow-3);
   overflow: auto;
-  animation: uboss-slide 0.2s;
+  animation: uboss-slide var(--uboss-motion-slow) var(--uboss-ease);
   display: flex;
   flex-direction: column;
 }
 
 @keyframes uboss-slide {
   from {
-    transform: translateX(24px);
-    opacity: 0.7;
+    transform: translateX(20px);
+    opacity: 0;
+  }
+}
+
+/* An overlay that arrives without motion still arrives. Nothing here is the only way
+   to know the dialog opened — focus moves into it and the scrim covers the page. */
+@media (prefers-reduced-motion: reduce) {
+  .uboss-overlay,
+  .uboss-modal,
+  .uboss-drawer {
+    animation: none;
   }
 }
 
@@ -1589,7 +2056,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 18px 22px;
+  padding: 14px 18px;
   border-bottom: 1px solid var(--uboss-border-2);
   position: sticky;
   top: 0;
@@ -1598,34 +2065,43 @@
 }
 
 .uboss-overlay-head h3 {
-  font-size: 16px;
-  font-weight: 700;
+  font-size: var(--uboss-font-size-h2);
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .uboss-overlay-close {
   margin-left: auto;
-  width: 34px;
-  height: 34px;
-  border-radius: var(--uboss-radius-input);
-  border: 1px solid var(--uboss-border);
-  background: var(--uboss-surface);
+  width: var(--uboss-control-h-sm);
+  height: var(--uboss-control-h-sm);
+  border-radius: var(--uboss-radius-control);
+  border: 1px solid transparent;
+  background: transparent;
   cursor: pointer;
   display: grid;
   place-items: center;
   color: var(--uboss-text-2);
   flex: none;
+  transition:
+    background var(--uboss-motion) var(--uboss-ease),
+    color var(--uboss-motion) var(--uboss-ease);
+}
+
+.uboss-overlay-close:hover {
+  background: var(--uboss-bg-2);
+  color: var(--uboss-text);
 }
 
 .uboss-overlay-body {
-  padding: 22px;
+  padding: 18px;
   flex: 1;
 }
 
 .uboss-overlay-foot {
-  padding: 16px 22px;
+  padding: 14px 18px;
   border-top: 1px solid var(--uboss-border-2);
   display: flex;
-  gap: 10px;
+  gap: 8px;
   justify-content: flex-end;
   position: sticky;
   bottom: 0;
@@ -1641,17 +2117,17 @@
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: 56px 24px;
-  gap: 8px;
+  padding: 44px 24px;
+  gap: 6px;
 }
 
 .uboss-state-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 14px;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--uboss-radius-card);
   display: grid;
   place-items: center;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   background: var(--uboss-bg-2);
   color: var(--uboss-text-2);
 }
@@ -1672,8 +2148,8 @@
 }
 
 .uboss-state h3 {
-  font-size: 16px;
-  font-weight: 700;
+  font-size: var(--uboss-font-size-h2);
+  font-weight: 600;
 }
 
 .uboss-state p {
@@ -1689,11 +2165,19 @@
   justify-content: center;
 }
 
+/* The shimmer highlight used to be a hardcoded #e9eef4 — a pale band sweeping across
+   a dark page. `color-mix` keeps it one step off whatever the surface currently is,
+   so the placeholder is a lighter grey in light mode and a lighter charcoal in dark. */
 .uboss-skeleton {
-  background: linear-gradient(90deg, var(--uboss-bg-2) 25%, #e9eef4 37%, var(--uboss-bg-2) 63%);
+  background: linear-gradient(
+    90deg,
+    var(--uboss-bg-2) 25%,
+    color-mix(in srgb, var(--uboss-bg-2) 70%, var(--uboss-text-3)) 37%,
+    var(--uboss-bg-2) 63%
+  );
   background-size: 400% 100%;
   animation: uboss-shimmer 1.3s infinite;
-  border-radius: 7px;
+  border-radius: var(--uboss-radius-control);
 }
 
 @keyframes uboss-shimmer {
@@ -1705,47 +2189,81 @@
   }
 }
 
+/* A still placeholder is still a placeholder. */
+@media (prefers-reduced-motion: reduce) {
+  .uboss-skeleton {
+    animation: none;
+  }
+}
+
+/*
+   Banners.
+
+   Every one of these carried a hardcoded foreground and border — #7a3d08 on the
+   warning, #1b3e8f on the info, and so on. Those are dark inks chosen for a light
+   tint, and the tints invert in dark mode, so each banner became dark text on a dark
+   ground: legible in light, unreadable in dark, with nothing in the stylesheet to say
+   so. They now use the same semantic token as every other status in the product, and
+   the border is mixed from that token so it tracks the theme too. */
+
 .uboss-banner {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 13px 16px;
-  border-radius: 11px;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--uboss-radius-card);
   font-size: var(--uboss-font-size-sm);
   font-weight: 500;
+  border: 1px solid transparent;
 }
 
 .uboss-banner--warn {
   background: var(--uboss-warning-050);
-  color: #7a3d08;
-  border: 1px solid #ead3ae;
+  color: var(--uboss-warning);
+  border-color: color-mix(in srgb, var(--uboss-warning) 30%, transparent);
 }
 
 .uboss-banner--danger {
   background: var(--uboss-danger-050);
-  color: #7f1616;
-  border: 1px solid #ebc3c3;
+  color: var(--uboss-danger);
+  border-color: color-mix(in srgb, var(--uboss-danger) 30%, transparent);
 }
 
 .uboss-banner--info {
-  background: var(--uboss-blue-050);
-  color: #1b3e8f;
-  border: 1px solid #c6d8fa;
+  background: var(--uboss-info-050);
+  color: var(--uboss-info);
+  border-color: color-mix(in srgb, var(--uboss-info) 30%, transparent);
 }
 
 .uboss-banner--ok {
   background: var(--uboss-success-050);
-  color: #155e2e;
-  border: 1px solid #bfe3cb;
+  color: var(--uboss-success);
+  border-color: color-mix(in srgb, var(--uboss-success) 30%, transparent);
 }
 
+/*
+ * The small print under a panel.
+ *
+ * This was `display: flex`, which is right for the four notices that lead with an icon and wrong
+ * for the thirty-five that do not: a flex container makes every child a flex ITEM, so an inline
+ * `<b>` inside the sentence was pulled out and laid out as its own column. On Users & Access that
+ * turned "Suspending and offboarding delete nothing: the membership…" into two ragged columns with
+ * the bold phrase stranded between them.
+ *
+ * Normal inline flow instead, and the leading icon is aligned with `vertical-align` — which is
+ * what that property is for, and which leaves the rest of the sentence as a sentence.
+ */
 .uboss-notice {
   font-size: var(--uboss-font-size-xs);
   color: var(--uboss-text-3);
-  display: flex;
-  gap: 6px;
-  align-items: flex-start;
+  line-height: 1.5;
   margin-top: 6px;
+}
+
+.uboss-notice > svg {
+  vertical-align: -2px;
+  margin-right: 6px;
+  flex: none;
 }
 
 /* ============================================================
@@ -1753,7 +2271,18 @@
    ============================================================ */
 .uboss-settings {
   display: grid;
-  grid-template-columns: 250px 1fr;
+  /*
+   * `minmax(0, 1fr)`, not `1fr`.
+   *
+   * A `1fr` track carries an implicit `min-width: auto`, so it refuses to shrink below the widest
+   * unbreakable thing inside it. The Security section holds a row of metric cards and some long
+   * select fields, which pushed the right-hand panel past the viewport and made the whole page
+   * scroll sideways — the panel's last card was cut off at the window edge with no scrollbar of
+   * its own to reach it.
+   *
+   * The same fix, for the same reason, is already on `.uboss-grid`.
+   */
+  grid-template-columns: 250px minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
@@ -1787,9 +2316,11 @@
   background: var(--uboss-bg);
 }
 
+/* Teal, matching the sidebar: the section you are looking at is a selection, not an action.
+   Filled with the solid token because white text sits on it. */
 .uboss-settings-nav-item[aria-current='page'] {
-  background: var(--uboss-blue);
-  color: #fff;
+  background: var(--uboss-teal-solid);
+  color: var(--uboss-text-on-dark);
   font-weight: 600;
 }
 
@@ -1802,14 +2333,29 @@
   min-height: 100vh;
 }
 
+/*
+ * The signed-out panel.
+ *
+ * Navy in both themes, like the sidebar, and for the same reason: it is the product's own surface
+ * rather than a page the viewer's theme owns. The gradient ended on #14446b, a mid blue, which
+ * lit the bottom corner brightly enough to read as a third colour; it now settles into navy.
+ *
+ * --uboss-login-link is the one accent the illustration uses. The six connectors were six
+ * different hues — sky, indigo, amber, teal, sky, rose — and every one of them means the same
+ * thing, so they are one colour now, separated by opacity. Stated here rather than inline on each
+ * path so the decision is in one place and can be changed in one place.
+ */
 .uboss-login-left {
-  background: linear-gradient(160deg, var(--uboss-navy-900), var(--uboss-navy) 55%, #14446b);
+  background: linear-gradient(165deg, var(--uboss-navy-900), var(--uboss-navy) 60%, #12283f);
   color: #fff;
   padding: 46px 52px;
   display: flex;
   flex-direction: column;
   position: relative;
   overflow: hidden;
+
+  /* 10.06:1 on the navy behind it; decorative, but it should still read as deliberate. */
+  --uboss-login-link: #2dd4bf;
 }
 
 /* Transcribed from the reference stylesheet, which keeps .glow1/.glow2 even though its
@@ -1857,7 +2403,7 @@
 
 .uboss-login-brand span {
   font-size: 12px;
-  color: #9db6d0;
+  color: var(--uboss-navy-ink-2);
   display: block;
 }
 
@@ -1866,7 +2412,7 @@
   align-items: center;
   gap: 9px;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  color: #cfe0f5;
+  color: var(--uboss-navy-ink-2);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 1.6px;
@@ -1882,8 +2428,8 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--uboss-cyan);
-  box-shadow: 0 0 10px var(--uboss-cyan);
+  background: var(--uboss-teal);
+  box-shadow: 0 0 10px var(--uboss-teal);
 }
 
 .uboss-login-caps {
@@ -1895,7 +2441,7 @@
 
 .uboss-login-caps h2 {
   font-size: 15px;
-  color: #a9c1da;
+  color: var(--uboss-navy-ink-2);
   font-weight: 600;
   margin-bottom: 20px;
   letter-spacing: 0.3px;
@@ -1936,7 +2482,7 @@
 }
 
 .uboss-cap small {
-  color: #9db6d0;
+  color: var(--uboss-navy-ink-2);
   font-size: 12px;
 }
 
@@ -2019,10 +2565,24 @@
 /* ============================================================
    Shared small helpers used by shell composition
    ============================================================ */
+/*
+ * A label on the left, something small on the right.
+ *
+ * Wraps, because at 768px the Security Center puts a section label and a "Worth a look" badge on
+ * one line and neither could shrink: the badge finished 6px past the window and the whole page
+ * scrolled sideways to reach it. A flex row that cannot wrap is a horizontal scrollbar waiting for
+ * a long enough label.
+ */
 .uboss-spread {
   display: flex;
   align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+/* The text half gives up its space first; the badge beside it is already as small as it gets. */
+.uboss-spread > :first-child {
+  min-width: 0;
 }
 
 .uboss-stack {
@@ -2211,7 +2771,7 @@
   place-items: center;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #8fd3f5;
+  color: var(--uboss-teal-bright);
   flex: 0 0 34px;
 }
 
@@ -2223,7 +2783,7 @@
 }
 
 .uboss-mmc small {
-  color: #9db4cf;
+  color: var(--uboss-navy-ink-2);
   font-size: 11.5px;
   display: block;
   margin-top: 3px;
@@ -2255,13 +2815,13 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #9db4cf;
+  color: var(--uboss-navy-ink-2);
   font-size: 12.5px;
   font-weight: 600;
 }
 
 .uboss-mm-foot-item svg {
-  color: var(--uboss-cyan);
+  color: var(--uboss-teal);
 }
 
 /* Below the responsive breakpoint the whole left panel is hidden, so the mind-map goes with it. */
@@ -2427,14 +2987,14 @@
 }
 
 .uboss-vm--mission {
-  background: linear-gradient(120deg, #0e3550, #0a2a41);
+  background: var(--uboss-navy-2);
 }
 
 .uboss-vm-label {
   font-size: 11px;
   letter-spacing: 1px;
   text-transform: uppercase;
-  color: #93b0cc;
+  color: var(--uboss-navy-ink-2);
   font-weight: 700;
   margin-bottom: 6px;
 }
@@ -2449,7 +3009,7 @@
 /* The unset state. The reference always has copy here; a company that has not
    written one yet must not render an empty panel that reads as a broken one. */
 .uboss-vm--empty p {
-  color: #93b0cc;
+  color: var(--uboss-navy-ink-2);
   font-style: italic;
   font-weight: 500;
 }
@@ -2479,7 +3039,9 @@
 .uboss-seg {
   display: inline-flex;
   background: var(--uboss-bg);
-  border: 1px solid var(--uboss-border);
+  /* The container is this control's only boundary -- the buttons inside are borderless -- so it
+     carries the 1.4.11 obligation rather than the subtle grouping border it used to use. */
+  border: 1px solid var(--uboss-border-control);
   border-radius: 9px;
   padding: 3px;
 
@@ -2511,7 +3073,7 @@
 
 .uboss-seg button.is-on {
   background: var(--uboss-surface);
-  color: var(--uboss-navy);
+  color: var(--uboss-text);
   box-shadow: var(--uboss-shadow-1);
 }
 
@@ -2695,7 +3257,7 @@
   width: 100%;
   padding: 13px 14px;
   border: 1px solid var(--uboss-border);
-  border-radius: var(--uboss-radius);
+  border-radius: var(--uboss-radius-card);
   background: var(--uboss-surface);
   text-align: left;
   cursor: pointer;
@@ -2879,7 +3441,7 @@ table.uboss-wfg {
 .uboss-wfg .uboss-wfg-rowops button {
   width: 24px;
   height: 24px;
-  border: 1px solid var(--uboss-border);
+  border: 1px solid var(--uboss-border-control);
   background: var(--uboss-surface);
   border-radius: 6px;
   cursor: pointer;
@@ -2891,7 +3453,7 @@ table.uboss-wfg {
 
 .uboss-wfg .uboss-wfg-rowops button:hover {
   background: var(--uboss-bg);
-  color: var(--uboss-navy);
+  color: var(--uboss-text);
 }
 
 .uboss-wfg .uboss-wfg-rowops button:disabled {
@@ -2923,7 +3485,7 @@ table.uboss-wfg {
    source field. The tint *is* the separation, so it is a class rather than an inline style. */
 .uboss-card--routing {
   background: var(--uboss-blue-050);
-  border-color: #c6d8fa;
+  border-color: color-mix(in srgb, var(--uboss-blue) 35%, transparent);
 }
 
 /* The reference's `hr.sep` — a light rule inside a card, used between a card's sections. */
@@ -2979,11 +3541,11 @@ table.uboss-wfg {
 }
 
 .uboss-wf-node--human {
-  border-color: #c9d6e5;
+  border-color: var(--uboss-border-control);
 }
 
 .uboss-wf-node--human .uboss-wf-node-head {
-  color: var(--uboss-navy);
+  color: var(--uboss-text);
 }
 
 .uboss-wf-node-tag {
@@ -3006,8 +3568,8 @@ table.uboss-wfg {
 .uboss-wf-ai-diamond {
   position: absolute;
   inset: 14px;
-  background: var(--uboss-cyan-050);
-  border: 1.5px solid var(--uboss-cyan);
+  background: var(--uboss-teal-050);
+  border: 1.5px solid var(--uboss-teal);
   transform: rotate(45deg);
   border-radius: 14px;
 }
@@ -3025,7 +3587,7 @@ table.uboss-wfg {
 
 .uboss-wf-ai-label b {
   font-size: 12.5px;
-  color: var(--uboss-cyan-ink);
+  color: var(--uboss-teal-ink);
 }
 
 .uboss-wf-ai-label small {
@@ -3099,8 +3661,8 @@ table.uboss-wfg {
 .uboss-swatch-diamond {
   width: 14px;
   height: 14px;
-  background: var(--uboss-cyan-050);
-  border: 1.5px solid var(--uboss-cyan);
+  background: var(--uboss-teal-050);
+  border: 1.5px solid var(--uboss-teal);
   transform: rotate(45deg);
   border-radius: 3px;
 }
@@ -3151,12 +3713,12 @@ table.uboss-wfg {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 26px;
+  height: var(--uboss-control-h-sm);
   padding: 0 10px;
-  border-radius: 8px;
+  border-radius: var(--uboss-radius-control);
   background: var(--uboss-bg);
-  border: 1px solid var(--uboss-border);
-  font-size: 12.5px;
+  border: 1px solid var(--uboss-border-control);
+  font-size: var(--uboss-font-size-xs);
   font-weight: 500;
   color: var(--uboss-text-2);
   cursor: pointer;
@@ -3165,14 +3727,19 @@ table.uboss-wfg {
 
 .uboss-chip:hover {
   border-color: var(--uboss-navy-700);
-  color: var(--uboss-navy);
+  color: var(--uboss-text);
 }
 
-/* Driven by `aria-pressed`, so the accessible state and the visible state cannot disagree. */
+/* Driven by `aria-pressed`, so the accessible state and the visible state cannot disagree.
+
+   Teal, because a pressed filter chip is a selection, and selection is teal everywhere else in the
+   product — the sidebar, the Settings section list, a selected table row. It was navy, which is
+   the chrome colour: a filled navy chip on a white page read as a piece of navigation that had
+   escaped the sidebar. */
 .uboss-chip[aria-pressed='true'] {
-  background: var(--uboss-navy);
-  border-color: var(--uboss-navy);
-  color: #fff;
+  background: var(--uboss-teal-solid);
+  border-color: var(--uboss-teal-solid);
+  color: var(--uboss-text-on-dark);
 }
 
 /* =========================================================================
@@ -3191,23 +3758,12 @@ table.uboss-wfg {
  * `.uboss-input` and `.uboss-actions` were used by eight screens with no rule behind them, so every
  * text field fell back to the browser default and every row of actions ran together. Found while
  * visually verifying Users & Access, which is one of the screens CR-03 asks for.
+ *
+ * Prompt 45: `.uboss-input` is no longer styled here. It is declared alongside
+ * `.uboss-field input` in the FormField section, so the eight screens using the bare class get
+ * the same height, radius, border and full state set as every other field in the product rather
+ * than a second, nearly-identical definition that drifts from it.
  */
-.uboss-input {
-  width: 100%;
-  padding: 8px 11px;
-  font: inherit;
-  color: var(--uboss-text);
-  background: var(--uboss-surface);
-  border: 1px solid var(--uboss-border);
-  border-radius: var(--uboss-radius-input);
-}
-
-.uboss-input:focus-visible {
-  outline: var(--uboss-focus-outline);
-  outline-offset: var(--uboss-focus-offset);
-  border-color: var(--uboss-blue);
-}
-
 .uboss-actions {
   display: inline-flex;
   flex-wrap: wrap;
@@ -3653,16 +4209,8 @@ table.uboss-wfg {
   font-weight: 600;
 }
 
-.operator-field select,
-.operator-field textarea {
-  width: 100%;
-  padding: 8px 11px;
-  font: inherit;
-  color: var(--uboss-text);
-  background: var(--uboss-surface);
-  border: 1px solid var(--uboss-border);
-  border-radius: var(--uboss-radius-input);
-}
+/* Styled with every other control, in the FormField block above. Kept only as a marker so the
+   next person does not reintroduce a fourth definition here. */
 
 .operator-field small {
   display: block;
@@ -3728,8 +4276,12 @@ table.uboss-wfg {
   outline-offset: var(--uboss-focus-offset);
 }
 
+/* The conversation you are reading. Teal and a leading rail, the same way the sidebar, the
+   Settings section list and a selected table row all say "this is the one you are on" — it was
+   tinted blue, which in this product means "this is the button to press". */
 .chat-item-open {
-  background: var(--uboss-blue-050);
+  background: var(--uboss-teal-050);
+  box-shadow: inset 2px 0 0 var(--uboss-teal-bright);
 }
 
 .chat-item-name {
@@ -3848,9 +4400,14 @@ table.uboss-wfg {
   font: inherit;
   color: var(--uboss-text);
   background: var(--uboss-surface);
-  border: 1px solid var(--uboss-border);
-  border-radius: var(--uboss-radius-input);
+  border: 1px solid var(--uboss-border-control);
+  border-radius: var(--uboss-radius-control);
   resize: vertical;
+  transition: border-color var(--uboss-motion-fast) var(--uboss-ease);
+}
+
+.chat-compose textarea:hover {
+  border-color: var(--uboss-border-control-hover);
 }
 
 .chat-muted {
@@ -3924,7 +4481,7 @@ table.uboss-wfg {
   margin: 0;
   font-size: 20px;
   font-weight: 700;
-  color: var(--uboss-navy);
+  color: var(--uboss-text);
   /* A long value — a name, a connection string — must wrap rather than widen
      the grid column and push the page sideways. */
   overflow-wrap: anywhere;
@@ -3946,7 +4503,7 @@ table.uboss-wfg {
   align-items: flex-start;
   gap: var(--uboss-space-2);
   padding: var(--uboss-space-3);
-  border: 1px solid var(--uboss-border);
+  border: 1px solid var(--uboss-border-control);
   border-radius: var(--uboss-radius-card);
   background: var(--uboss-surface);
   color: var(--uboss-text);
@@ -3989,13 +4546,13 @@ table.uboss-wfg {
 /* Fixed colours on purpose: a swatch has to show the theme it offers, not the
    theme currently applied, so these must not follow the tokens. */
 .uboss-theme-swatch[data-variant='light'] {
-  background: linear-gradient(135deg, #ffffff 0 50%, #f5f8fc 50% 100%);
-  border-color: #e4eaf2;
+  background: linear-gradient(135deg, #ffffff 0 50%, #f6f8fb 50% 100%);
+  border-color: #d7dee8;
 }
 
 .uboss-theme-swatch[data-variant='dark'] {
-  background: linear-gradient(135deg, #131c28 0 50%, #0d141d 50% 100%);
-  border-color: #243244;
+  background: linear-gradient(135deg, #111923 0 50%, #0b1018 50% 100%);
+  border-color: #263343;
 }
 
 .uboss-theme-swatch[data-variant='system'] {
@@ -4075,7 +4632,7 @@ table.uboss-wfg {
 }
 
 .uboss-account-workspace {
-  color: var(--uboss-cyan-ink) !important;
+  color: var(--uboss-teal-ink) !important;
   font-weight: 600;
 }
 

@@ -265,19 +265,13 @@ function PrePublishInner() {
 
       {assigned === null ? null : (
         <Banner tone="ok">
-          <Icon name="check" size={16} />V{assigned.versionNumber} is live.{' '}
-          {assigned.humanTaskIds.length} human task(s) assigned, {assigned.aiAssignmentIds.length}{' '}
-          AI step(s) awaiting Agent Builder setup, {assigned.approvalRequestIds.length} approval(s)
-          queued. {assigned.note}
+          V{assigned.versionNumber} is live. {assigned.humanTaskIds.length} human task(s) assigned,{' '}
+          {assigned.aiAssignmentIds.length} AI step(s) awaiting Agent Builder setup,{' '}
+          {assigned.approvalRequestIds.length} approval(s) queued. {assigned.note}
         </Banner>
       )}
 
-      {error === null ? null : (
-        <Banner tone="danger">
-          <Icon name="shield" size={16} />
-          {error}
-        </Banner>
-      )}
+      {error === null ? null : <Banner tone="danger">{error}</Banner>}
 
       {summary === null ? (
         <p className="uboss-muted">Loading the readiness summary…</p>

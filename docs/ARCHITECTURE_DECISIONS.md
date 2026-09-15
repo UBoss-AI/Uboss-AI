@@ -6088,3 +6088,144 @@ mail server, not a preference.
 The tests run a minimal SMTP server on a loopback port and assert the real conversation — EHLO,
 AUTH, the envelope, the headers, the body, and a 550 becoming an exception. **No mail is sent to
 any real address and no provider credentials are used.**
+
+## ADR-285 — Prompt 45: two accents, and a token that says which job it has
+
+The Prompt 45 palette gives one blue and one teal. They are not interchangeable: **teal is
+identity** (selected navigation, active state, progress, AI) and **blue is action** (the one
+primary button on a screen). Mixing them at random is what makes an operations tool look like a
+consumer dashboard, so the rule is written at the top of `tokens.css` where the values are.
+
+The palette also forced a distinction the old token set did not have. A colour used as **text on a
+dark page** must be light; the same colour used as a **fill behind white text** must be dark. One
+token cannot do both, and trying produced a dark-theme primary button measured at 3.23:1 and a
+danger button at 2.77:1. So `--uboss-blue-solid`, `--uboss-danger-solid` and `--uboss-teal-solid`
+name the fill, separately from the accent. In light mode the two happen to coincide; in dark they
+do not, which is the point.
+
+Every derived value — the `-050` chip tints, all the dark-theme accents, the badge ladder, the
+sidebar inks — was chosen by measuring contrast against the exact surface it sits on, and the ratio
+is recorded beside it. The accessibility-approved muted tokens (`--uboss-text-3`, `--uboss-gold-fg`)
+were re-measured against the new, lighter surfaces rather than assumed to carry over: light muted
+clears 4.52:1 at worst, dark 4.80:1, so both stand unchanged.
+
+`--uboss-border-control` is separate from `--uboss-border` because a divider only has to separate
+two surfaces, while the edge of an input is what tells somebody there is a field there. It does not
+reach WCAG 1.4.11's 3:1 — see the comment in `tokens.css` for why, and what compensates.
+
+## ADR-286 — Rebinding tokens inside the Master Console, and the `color` trap
+
+The Master Console is navy in **both** themes. In Light its text was resolving to the light-theme
+tokens — `#475569` secondary, `#646f81` muted — which are dark greys meant for a white card;
+against navy they measured 2.60:1 and 3.49:1. Every section label, metric caption and settings
+description on every Master Console screen was failing, in the default theme.
+
+Twenty-nine `.uboss-shell--master .uboss-something` rules had accumulated around this, each
+restating a colour for one component, and they still missed the muted text and the section labels.
+`.uboss-shell--master` now rebinds the tokens once, for every descendant including components not
+yet written, and ten of those per-component rules were deleted.
+
+**One line in that block is load-bearing and not obvious: `color: var(--uboss-text)`.** CSS `color`
+inherits as a _computed_ value — `body` resolves `var(--uboss-text)` once against the root tokens
+and descendants inherit the resulting literal. Rebinding the token further down the tree does not
+re-resolve it. Without that line every piece of text that simply inherits its colour arrived in the
+Master Console as near-black on navy, measured at 1.02:1. Restating `color` re-resolves the
+variable against the element where the token is dark, and that result is what inherits.
+
+The same trap explains four other defects fixed in this pass: `--uboss-navy` was being used as a
+_text_ colour in the segmented control, the chip hover, the Human workflow node and the definition
+list. Navy is deliberately identical in both themes, so navy text only ever worked because the
+surface underneath happened to be white; on a dark page it measured 1.06:1.
+
+## ADR-287 — The visual QA harness, and why a clean result had to be earned twice
+
+§21 makes the browser pass mandatory, and this pass produced two false clean results before it
+produced a true one. Both are worth recording, because the fix in each case was to the _check_.
+
+**A page that did not render is not a page that passed.** The API allows 300 requests per user per
+minute; a fast sweep of 102 screens tripped it, and the refused screens reported zero contrast
+failures because they were showing no text. The harness now proves each screen rendered — no
+refusal banner, no skeletons — and re-measures after waiting out the window, reporting anything it
+still could not verify rather than counting it as clean.
+
+**A gradient is a background.** `.uboss-main` painted `linear-gradient(180deg, #f7fafe, #f3f6fb)`
+in both themes, so the entire content area was near-white in dark mode with light text on it. It
+survived three separate searches: `getComputedStyle` reports `body` as correctly dark, because
+`body` _is_ dark and this element is painted on top of it; a grep for `background: #...` misses a
+value on continuation lines; and the probe skipped the element because the first stop of its other
+gradient was 5% alpha. What found it was decoding a screenshot and reading the pixel. The probe now
+considers every colour stop, hex as well as `rgb()`, and includes `html` and `body` — which its
+`body *` selector could not see. **It was then re-run against the reinstated bug and shown to fail
+before the fix went back in**, because a check that has never failed is not a check.
+
+A third correction went the other way: the rate-limit detector matched the phrase "rate limit"
+anywhere on the page, so Settings → Security — which legitimately displays the configured request
+limits — was reported as unmeasurable six times while rendering perfectly. It is now anchored to
+the refusal banner's exact wording.
+
+## ADR-288 — WCAG 1.4.11: the border that groups and the border that identifies
+
+The earlier pass recorded `--uboss-border-control` at 1.61:1 as an accepted limitation, arguing that
+a visible label and a focus ring compensated. **That reasoning was wrong, and measuring the rendered
+control is what showed it.**
+
+A text input, a select and a secondary button all have a background _identical_ to the card behind
+them — measured fill-versus-surround of exactly **1.00**. Nothing except the border says a control
+is there, so the border is "visual information required to identify a user interface component" and
+must carry 3:1 itself. A label tells somebody what a field is _for_; it does not tell them where its
+edge is.
+
+So the token was split by job:
+
+| token                          | job                                | 1.4.11 duty                |
+| ------------------------------ | ---------------------------------- | -------------------------- |
+| `--uboss-border-subtle`        | dividers, card edges, table rules  | none — it only groups      |
+| `--uboss-border-control`       | the edge of an interactive control | yes, held at ≥3:1          |
+| `--uboss-border-control-hover` | pointing at one                    | ≥3:1, and visibly stronger |
+| `--uboss-border-control-focus` | the focus ring                     | the blue, measured 5.17:1  |
+
+Values are the **lightest** that clear 3:1 in the worst case, so compliance costs the least possible
+visual weight: light `#7d8a9f` (3.50 white / 3.40 raised / 3.29 bg / **3.11 bg-2**, the worst), dark
+`#5d6f88` (3.72 page / 3.45 surface / **3.21 raised**), Master Console `#5f7189` (**3.26** worst).
+Grouping borders were left exactly as they were, which is what keeps a screen of panels calm.
+
+**Finding them needed a sweep by behaviour, not by selector.** Checking a hand-written list of
+selectors found `.uboss-input`, then `.operator-field select`, then `.uboss-filter` — three more
+control definitions, each discovered only after fixing the previous one. Enumerating every focusable
+element instead converged immediately: 1226 examined across both themes including the Master
+Console, and the remaining offenders were the search field, the Form 2 row controls, the filter
+chip, the chat composer and the Appearance option cards.
+
+Native checkboxes and radios are painted by the user agent, so `getComputedStyle` reports nothing
+useful for them. They were measured **by pixel** instead: 4.54:1 light, 4.79:1 dark. Disabled
+controls are exempt by the criterion's own wording and are reported as exempt rather than omitted,
+because "exempt" and "missed" look identical in a report that simply leaves them out.
+
+## ADR-289 — What it takes to reach a populated Agent Builder, and why fixtures went through the flow
+
+Agent Builder could not be verified populated because nothing in the seed can reach it. The chain is
+long and every link is enforced:
+
+1. an **approved published Skill** — 0 Skills and 0 Skill versions are seeded;
+2. an **AI node**, which only the analysis creates, and only for a step Form 2 declares as `Engine`
+   work — Human→AI conversion is refused unless the node _already_ carries a `skillVersionId`;
+3. a **live Connection** granting every tool category the plan needs;
+4. **Approve & Assign**, which is itself gated on execution-team confirmation, a completed
+   Definition of Done, a node owner, and a recorded approval by somebody whose scope covers it.
+
+An earlier attempt to skip that chain by inserting an `ai_work_assignments` row directly produced a
+**500** from the view layer, because the row lacked the shape the real flow gives it. That is the
+argument for fixtures that create _prerequisites_ and let the application produce the artefact:
+the 500 disappeared the moment the hand-written row was removed.
+
+Two identity fixtures were also needed, and both are findings in their own right: **13 seeded users
+hold roles but have no sign-in credential**, and every `Department`/`TeamSubtree` role assignment is
+seeded with an **empty scope list** — and an empty scope means _nobody_, by design. So no seeded user
+whose scope covered the objective could approve it. Both were patched in the database only, never in
+source, and both are reverted by the cleanup script, which proves the revert rather than asserting
+it.
+
+The cleanup also met the strict-versioning guard: a trigger refuses to delete the workflow grid of an
+Active version — "an authorised edit creates a new draft version; it never rewrites the plan that is
+live". The steps belong to the version, so deleting the version removes them. Working with that rule
+is correct; disabling a protection to tidy up after a test would not be.
