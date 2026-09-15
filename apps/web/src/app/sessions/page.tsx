@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import {
-  AppShell,
   Banner,
   Button,
   Card,
@@ -16,6 +15,13 @@ import {
   type DataTableColumn,
 } from '@uboss/ui';
 
+import { useSignedInUser } from '../../lib/use-signed-in-user';
+import { RoutedAppShell } from '../../components/RoutedAppShell';
+import {
+  forgetWorkspace,
+  readRememberedWorkspace,
+  resolveActiveWorkspace,
+} from '../../lib/active-workspace';
 import { TwoStepSignInCard } from '../../components/TwoStepSignInCard';
 import { ApiError, authApi, type MeResponse, type SessionRow } from '../../lib/api-client';
 import { useNotificationBell } from '../../lib/use-notification-bell';
@@ -38,7 +44,10 @@ export default function SessionsPage() {
   const [me, setMe] = useState<MeResponse | null>(null);
   // Above the signed-out early return: a hook after one runs in a different order on the render
   // that takes it, which React forbids.
-  const bell = useNotificationBell(me?.activeWorkspaceId ?? me?.workspaces[0]?.tenantId ?? null);
+  const bell = useNotificationBell(
+    resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null,
+  );
+  const signedInUser = useSignedInUser(me);
   const [sessions, setSessions] = useState<SessionRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -171,15 +180,15 @@ export default function SessionsPage() {
   );
 
   return (
-    <AppShell
+    <RoutedAppShell
       variant="company"
       workspaceName={activeWorkspace?.tenantName ?? me?.workspaces[0]?.tenantName ?? '—'}
       groups={navGroups}
       activeKey="settings"
-      onNavigate={() => undefined}
       {...bell.shellProps}
-      user={{ name: me?.user.ubossUniqueId ?? 'Signed in', role: 'Login & Security' }}
+      user={signedInUser}
       onSignOut={() => {
+        forgetWorkspace();
         void authApi.logout().finally(() => window.location.assign('/login'));
       }}
     >
@@ -251,7 +260,7 @@ export default function SessionsPage() {
         confirmLabel="Log out all devices"
         destructive
       />
-    </AppShell>
+    </RoutedAppShell>
   );
 }
 

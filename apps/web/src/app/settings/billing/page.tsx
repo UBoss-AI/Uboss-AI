@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import {
-  AppShell,
   Banner,
   Button,
   Card,
@@ -30,6 +29,13 @@ import {
   type MeResponse,
 } from '../../../lib/api-client';
 
+import { useSignedInUser } from '../../../lib/use-signed-in-user';
+import { RoutedAppShell } from '../../../components/RoutedAppShell';
+import {
+  forgetWorkspace,
+  readRememberedWorkspace,
+  resolveActiveWorkspace,
+} from '../../../lib/active-workspace';
 import { useNotificationBell } from '../../../lib/use-notification-bell';
 import { useCompanyNavigation } from '../../../lib/use-company-navigation';
 
@@ -93,7 +99,10 @@ export default function CompanyBillingSettingsPage() {
   const [justification, setJustification] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const tenantId = me?.activeWorkspaceId ?? me?.workspaces[0]?.tenantId ?? null;
+  const tenantId =
+    resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
+
+  const signedInUser = useSignedInUser(me);
   const bell = useNotificationBell(tenantId);
 
   useEffect(() => {
@@ -185,15 +194,15 @@ export default function CompanyBillingSettingsPage() {
   const activeWorkspace = me?.workspaces.find((workspace) => workspace.tenantId === tenantId);
 
   return (
-    <AppShell
+    <RoutedAppShell
       variant="company"
       workspaceName={activeWorkspace?.tenantName ?? '—'}
       groups={navGroups}
       activeKey="settings"
-      onNavigate={() => undefined}
       {...bell.shellProps}
-      user={{ name: me?.user.ubossUniqueId ?? 'Signed in', role: 'Billing' }}
+      user={signedInUser}
       onSignOut={() => {
+        forgetWorkspace();
         void authApi.logout().finally(() => window.location.assign('/login'));
       }}
     >
@@ -564,6 +573,6 @@ export default function CompanyBillingSettingsPage() {
           </Card>
         </>
       )}
-    </AppShell>
+    </RoutedAppShell>
   );
 }

@@ -5,7 +5,6 @@ import { useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useState } from 'react';
 
 import {
-  AppShell,
   BadgeProgression,
   Banner,
   Card,
@@ -25,6 +24,13 @@ import {
   type PerformanceView,
 } from '../../lib/api-client';
 
+import { useSignedInUser } from '../../lib/use-signed-in-user';
+import { RoutedAppShell } from '../../components/RoutedAppShell';
+import {
+  forgetWorkspace,
+  readRememberedWorkspace,
+  resolveActiveWorkspace,
+} from '../../lib/active-workspace';
 import { useNotificationBell } from '../../lib/use-notification-bell';
 import { useCompanyNavigation } from '../../lib/use-company-navigation';
 
@@ -87,7 +93,10 @@ function PerformancePageBody() {
   const [policy, setPolicy] = useState<PerformancePolicyView | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const tenantId = me?.activeWorkspaceId ?? me?.workspaces[0]?.tenantId ?? null;
+  const tenantId =
+    resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
+
+  const signedInUser = useSignedInUser(me);
   const bell = useNotificationBell(tenantId);
 
   useEffect(() => {
@@ -130,15 +139,15 @@ function PerformancePageBody() {
   const neutralised = view?.counts['BlockerNeutralised'] ?? 0;
 
   return (
-    <AppShell
+    <RoutedAppShell
       variant="company"
       workspaceName={activeWorkspace?.tenantName ?? '—'}
       groups={navGroups}
       activeKey="performance"
-      onNavigate={() => undefined}
       {...bell.shellProps}
-      user={{ name: me?.user.ubossUniqueId ?? 'Signed in', role: 'Performance' }}
+      user={signedInUser}
       onSignOut={() => {
+        forgetWorkspace();
         void authApi.logout().finally(() => window.location.assign('/login'));
       }}
     >
@@ -291,7 +300,7 @@ function PerformancePageBody() {
           </Card>
         </div>
       )}
-    </AppShell>
+    </RoutedAppShell>
   );
 }
 

@@ -11,7 +11,14 @@ import { COMPANY_NAV, filterNavigation } from './navigation-model';
  * `if (role === 'Employee')`.
  */
 
-/** What `/my-access` returns for a standard Employee after CR-03. Grants, not a role name. */
+/**
+ * What `/my-access` returns for a standard Employee after CR-03. Grants, not a role name.
+ *
+ * There is deliberately no `chat` here, and there never can be: `visibleModules` is typed
+ * `readonly ModuleKey[]`, and `chat` is not a module in either COMPANY_MODULES or
+ * PLATFORM_MODULES. An earlier version of this fixture listed it, which made the chat assertions
+ * below test an input the server cannot send.
+ */
 const STANDARD_EMPLOYEE = [
   'dashboard',
   'hierarchy',
@@ -23,7 +30,6 @@ const STANDARD_EMPLOYEE = [
   'reports',
   'profile-search',
   'settings',
-  'chat',
 ];
 
 describe('filterNavigation', () => {
@@ -53,7 +59,7 @@ describe('filterNavigation', () => {
     expect(keys).toContain('agent-builder');
   });
 
-  it('puts Workspace Chat under Operations when the grant is there', () => {
+  it('puts Workspace Chat under Operations for a standard Employee', () => {
     const operations = filterNavigation(COMPANY_NAV, STANDARD_EMPLOYEE).find(
       (group) => group.group === 'Operations',
     );
@@ -61,34 +67,54 @@ describe('filterNavigation', () => {
     expect(operations?.items.map((item) => item.key)).toContain('chat');
   });
 
-  it('hides Workspace Chat when it is not granted', () => {
-    const keys = filterNavigation(
-      COMPANY_NAV,
-      STANDARD_EMPLOYEE.filter((key) => key !== 'chat'),
-    )
+  it('shows Workspace Chat even though no grant mentions it', () => {
+    // The regression this pins. Chat declares `module: null` because access to a conversation is
+    // being a participant in it, not holding a company-wide grant — so filtering it against the
+    // module list removed it for every user of every role. It must survive the emptiest grant
+    // list there is.
+    const keys = filterNavigation(COMPANY_NAV, [])
       .flatMap((group) => group.items)
       .map((item) => item.key);
 
-    expect(keys).not.toContain('chat');
+    expect(keys).toContain('chat');
+  });
+
+  it('still hides a module-gated item that is not granted', () => {
+    // The other half: making chat exempt must not make everything exempt.
+    const keys = filterNavigation(COMPANY_NAV, [])
+      .flatMap((group) => group.items)
+      .map((item) => item.key);
+
+    expect(keys).not.toContain('agent-builder');
+    expect(keys).not.toContain('settings');
+    expect(keys).not.toContain('dashboard');
   });
 
   it('drops a group once nothing in it is permitted', () => {
-    // An empty "Builders" heading with no items under it reads as a broken menu.
+    // An empty "Builders" heading with no items under it reads as a broken menu. Operations still
+    // appears because Workspace Chat is not module-gated and so is always offered.
     const groups = filterNavigation(COMPANY_NAV, ['dashboard']);
 
-    expect(groups.map((group) => group.group)).toEqual(['Home']);
+    expect(groups.map((group) => group.group)).toEqual(['Home', 'Operations']);
+    expect(groups.find((group) => group.group === 'Operations')?.items.map((i) => i.key)).toEqual([
+      'chat',
+    ]);
   });
 
   it('keeps the source order rather than the order of the grants', () => {
-    const operations = filterNavigation(COMPANY_NAV, ['agents', 'todo', 'chat']).find(
+    const operations = filterNavigation(COMPANY_NAV, ['agents', 'todo']).find(
       (group) => group.group === 'Operations',
     );
 
+    // Source order, and chat sits where COMPANY_NAV puts it rather than being appended.
     expect(operations?.items.map((item) => item.key)).toEqual(['todo', 'agents', 'chat']);
   });
 
-  it('returns nothing at all when nothing is granted', () => {
-    expect(filterNavigation(COMPANY_NAV, [])).toEqual([]);
+  it('returns nothing module-gated when nothing is granted', () => {
+    const groups = filterNavigation(COMPANY_NAV, []);
+
+    expect(groups.map((group) => group.group)).toEqual(['Operations']);
+    expect(groups.flatMap((group) => group.items).map((item) => item.key)).toEqual(['chat']);
   });
 
   it('never mutates the source navigation', () => {
@@ -100,6 +126,9 @@ describe('filterNavigation', () => {
   it('ignores a granted module that has no navigation item', () => {
     // `skills` is a platform module: a grant on it must not conjure a sidebar entry.
     const groups = filterNavigation(COMPANY_NAV, ['dashboard', 'skills']);
-    expect(groups.flatMap((group) => group.items).map((item) => item.key)).toEqual(['dashboard']);
+    expect(groups.flatMap((group) => group.items).map((item) => item.key)).toEqual([
+      'dashboard',
+      'chat',
+    ]);
   });
 });

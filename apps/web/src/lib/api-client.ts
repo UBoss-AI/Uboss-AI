@@ -134,7 +134,7 @@ export interface InvitationPreviewResponse {
 }
 
 export interface MeResponse {
-  user: { ubossUniqueId: string; isPlatformActor: boolean };
+  user: { ubossUniqueId: string; displayName: string; isPlatformActor: boolean };
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
 }

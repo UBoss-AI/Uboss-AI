@@ -4,7 +4,6 @@ import { useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
-  AppShell,
   Banner,
   Button,
   Card,
@@ -23,6 +22,13 @@ import {
   type ChatConversationView,
   type MeResponse,
 } from '../../lib/api-client';
+import { useSignedInUser } from '../../lib/use-signed-in-user';
+import { RoutedAppShell } from '../../components/RoutedAppShell';
+import {
+  forgetWorkspace,
+  readRememberedWorkspace,
+  resolveActiveWorkspace,
+} from '../../lib/active-workspace';
 import { useNotificationBell } from '../../lib/use-notification-bell';
 import { useCompanyNavigation } from '../../lib/use-company-navigation';
 
@@ -68,7 +74,10 @@ function WorkspaceChatInner() {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const tenantId = me?.activeWorkspaceId ?? null;
+  const tenantId =
+    resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
+
+  const signedInUser = useSignedInUser(me);
   const bell = useNotificationBell(tenantId ?? '');
 
   const activeWorkspace = useMemo(
@@ -178,15 +187,15 @@ function WorkspaceChatInner() {
   };
 
   return (
-    <AppShell
+    <RoutedAppShell
       variant="company"
       workspaceName={activeWorkspace?.tenantName ?? '—'}
       groups={navGroups}
       activeKey="chat"
-      onNavigate={() => undefined}
-      user={{ name: me?.user.ubossUniqueId ?? 'Signed in', role: 'Workspace Chat' }}
+      user={signedInUser}
       {...bell.shellProps}
       onSignOut={() => {
+        forgetWorkspace();
         void authApi.logout().finally(() => window.location.assign('/login'));
       }}
     >
@@ -374,7 +383,7 @@ function WorkspaceChatInner() {
           </CardBody>
         </Card>
       ) : null}
-    </AppShell>
+    </RoutedAppShell>
   );
 }
 

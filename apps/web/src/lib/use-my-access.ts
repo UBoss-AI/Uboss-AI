@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
+import { readRememberedWorkspace, resolveActiveWorkspace } from './active-workspace';
 import { authApi, myAccessApi } from './api-client';
 
 /** What `/my-access` answers about the signed-in person, once it has answered. */
@@ -45,10 +46,13 @@ export function useMyAccess(): MyAccess | null {
     void (async () => {
       try {
         const identity = await authApi.me();
-        const tenantId = identity.activeWorkspaceId;
-        if (tenantId === null) return;
+        // `activeWorkspaceId` is always null on this endpoint — see `active-workspace.ts`. Reading
+        // it alone is why this hook never resolved, and why module visibility and every `can()`
+        // check were silently inert in the running application.
+        const workspace = resolveActiveWorkspace(identity.workspaces, readRememberedWorkspace());
+        if (workspace === null) return;
 
-        const mine = await myAccessApi.mine(tenantId);
+        const mine = await myAccessApi.mine(workspace.tenantId);
         if (!cancelled) setAccess(mine);
       } catch {
         // Left null. Every caller has to handle "not yet" anyway, and a failure is the same

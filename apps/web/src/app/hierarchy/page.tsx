@@ -4,7 +4,6 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
-  AppShell,
   Banner,
   Button,
   Card,
@@ -37,6 +36,13 @@ import {
   type PhotoView,
 } from '../../lib/api-client';
 
+import { useSignedInUser } from '../../lib/use-signed-in-user';
+import { RoutedAppShell } from '../../components/RoutedAppShell';
+import {
+  forgetWorkspace,
+  readRememberedWorkspace,
+  resolveActiveWorkspace,
+} from '../../lib/active-workspace';
 import { useNotificationBell } from '../../lib/use-notification-bell';
 import { EmployeePhoto } from '../../components/EmployeePhoto';
 import { AccessPermissionsStep } from '../../components/AccessPermissionsStep';
@@ -142,7 +148,10 @@ export default function HierarchyPage() {
   const [departmentName, setDepartmentName] = useState('');
   const [departmentCode, setDepartmentCode] = useState('');
 
-  const tenantId = me?.activeWorkspaceId ?? me?.workspaces[0]?.tenantId ?? null;
+  const tenantId =
+    resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
+
+  const signedInUser = useSignedInUser(me);
   const bell = useNotificationBell(tenantId);
 
   useEffect(() => {
@@ -316,15 +325,15 @@ export default function HierarchyPage() {
   const activeWorkspace = me?.workspaces.find((workspace) => workspace.tenantId === tenantId);
 
   return (
-    <AppShell
+    <RoutedAppShell
       variant="company"
       workspaceName={activeWorkspace?.tenantName ?? '—'}
       groups={navGroups}
       activeKey="hierarchy"
-      onNavigate={() => undefined}
       {...bell.shellProps}
-      user={{ name: me?.user.ubossUniqueId ?? 'Signed in', role: 'Hierarchy' }}
+      user={signedInUser}
       onSignOut={() => {
+        forgetWorkspace();
         void authApi.logout().finally(() => window.location.assign('/login'));
       }}
     >
@@ -595,7 +604,7 @@ export default function HierarchyPage() {
                 textAlign: 'center',
                 padding: 18,
                 background: 'var(--uboss-blue-050)',
-                border: '1px dashed #B9CFF6',
+                border: '1px dashed var(--uboss-blue-100)',
                 borderRadius: 14,
                 marginTop: 18,
               }}
@@ -854,6 +863,6 @@ export default function HierarchyPage() {
           </>
         )}
       </Modal>
-    </AppShell>
+    </RoutedAppShell>
   );
 }

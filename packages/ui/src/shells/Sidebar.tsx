@@ -1,5 +1,7 @@
 'use client';
 
+import type { MouseEvent } from 'react';
+
 import { cn } from '../lib/class-names';
 import { initials } from '../lib/initials';
 import type { NavGroup } from '../navigation/navigation-model';
@@ -19,7 +21,16 @@ export interface SidebarProps {
   groups: readonly NavGroup[];
   /** Key of the active nav item. */
   activeKey: string;
-  onNavigate: (key: string) => void;
+  /**
+   * Told which item was chosen, with the event so a host can take the navigation over — a router
+   * calls `preventDefault()` and pushes, turning the link into a client-side transition.
+   *
+   * Optional, and deliberately **not** how navigation happens: an item with an `href` is a real
+   * link and still works if this is absent, missing, or throws. The worst case is a full page load
+   * instead of a soft one, rather than a control that silently does nothing.
+   */
+  onNavigate?:
+    ((key: string, href: string | undefined, event: MouseEvent<HTMLElement>) => void) | undefined;
   user: SidebarUser;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
@@ -85,17 +96,8 @@ export function Sidebar({
             {group.items.map((item) => {
               const active = item.key === activeKey;
 
-              return (
-                <button
-                  key={item.key}
-                  type="button"
-                  className={cn('uboss-nav-item', active && 'uboss-nav-item--active')}
-                  aria-current={active ? 'page' : undefined}
-                  // The label is hidden when collapsed, so keep it as the accessible name.
-                  title={item.label}
-                  aria-label={collapsed ? item.label : undefined}
-                  onClick={() => onNavigate(item.key)}
-                >
+              const inner = (
+                <>
                   <span className="uboss-nav-icon">
                     <Icon name={item.icon} size={18} />
                   </span>
@@ -106,6 +108,41 @@ export function Sidebar({
                       <span className="uboss-sr-only"> pending</span>
                     </span>
                   ) : null}
+                </>
+              );
+
+              const shared = {
+                className: cn('uboss-nav-item', active && 'uboss-nav-item--active'),
+                'aria-current': active ? ('page' as const) : undefined,
+                // The label is hidden when collapsed, so keep it as the accessible name.
+                title: item.label,
+                'aria-label': collapsed ? item.label : undefined,
+              };
+
+              // An item that knows where it goes is a link, and has to be a real one. A <button>
+              // cannot be opened in a new tab, middle-clicked, copied, or reached by a screen
+              // reader's link list, and — as this product demonstrated — it silently does nothing
+              // at all if the host forgets to wire `onNavigate`. A missing href on an <a> is a
+              // visible defect; a no-op click handler is an invisible one.
+              return item.href !== undefined ? (
+                <a
+                  key={item.key}
+                  href={item.href}
+                  {...shared}
+                  // Still announced, so a host that needs to react — closing the mobile drawer —
+                  // can, without the navigation itself depending on it.
+                  onClick={(event) => onNavigate?.(item.key, item.href, event)}
+                >
+                  {inner}
+                </a>
+              ) : (
+                <button
+                  key={item.key}
+                  type="button"
+                  {...shared}
+                  onClick={(event) => onNavigate?.(item.key, item.href, event)}
+                >
+                  {inner}
                 </button>
               );
             })}

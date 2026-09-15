@@ -21,6 +21,11 @@ export const ignores = [
   '**/*.tsbuildinfo',
   // Client-supplied static UI reference prototype — kept verbatim, never linted or edited.
   'index.html',
+  // Gitignored scratch. Throwaway diagnostics live here — the browser probes written during the
+  // pre-Prompt-45 audit, for instance. They are never committed and never shipped, so linting
+  // them only produces failures that CI cannot reproduce, on a machine where the author is
+  // mid-investigation.
+  '**/tmp/**',
 ];
 
 /** Rules applied to every TypeScript file in the repository. */

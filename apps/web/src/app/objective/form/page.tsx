@@ -17,8 +17,15 @@ import {
   type RewardType,
   type TimeUnit,
 } from '@uboss/types';
-import { AppShell, Banner, Button, Card, CardBody, Drawer, Icon, PageHeader } from '@uboss/ui';
+import { Banner, Button, Card, CardBody, Drawer, Icon, PageHeader } from '@uboss/ui';
 
+import { useSignedInUser } from '../../../lib/use-signed-in-user';
+import { RoutedAppShell } from '../../../components/RoutedAppShell';
+import {
+  forgetWorkspace,
+  readRememberedWorkspace,
+  resolveActiveWorkspace,
+} from '../../../lib/active-workspace';
 import { blankWorkflowStep, WorkflowGrid } from '../../../components/WorkflowGrid';
 import {
   ApiError,
@@ -112,7 +119,10 @@ function ObjectiveFormInner() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const tenantId = me?.activeWorkspaceId ?? me?.workspaces[0]?.tenantId ?? null;
+  const tenantId =
+    resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
+
+  const signedInUser = useSignedInUser(me);
   const activeWorkspace = me?.workspaces.find((workspace) => workspace.tenantId === tenantId);
   const bell = useNotificationBell(tenantId);
 
@@ -235,15 +245,15 @@ function ObjectiveFormInner() {
       : ((draft ?? objective.activeVersion ?? objective.versions[0])?.statusLabel ?? 'Draft');
 
   return (
-    <AppShell
+    <RoutedAppShell
       variant="company"
       workspaceName={activeWorkspace?.tenantName ?? '—'}
       groups={navGroups}
       activeKey="objective"
-      onNavigate={() => undefined}
-      user={{ name: me?.user.ubossUniqueId ?? 'Signed in', role: 'Objective Builder' }}
+      user={signedInUser}
       {...bell.shellProps}
       onSignOut={() => {
+        forgetWorkspace();
         void authApi.logout().finally(() => window.location.assign('/login'));
       }}
     >
@@ -658,7 +668,7 @@ function ObjectiveFormInner() {
 
         {rewardNote === null ? null : <p className="uboss-notice-min">{rewardNote}</p>}
       </Drawer>
-    </AppShell>
+    </RoutedAppShell>
   );
 }
 

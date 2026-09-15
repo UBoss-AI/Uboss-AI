@@ -9,7 +9,6 @@ import {
   type ApprovalRequestType,
 } from '@uboss/types';
 import {
-  AppShell,
   Banner,
   Button,
   Card,
@@ -31,6 +30,13 @@ import {
   type ApprovalsMetaView,
   type MeResponse,
 } from '../../lib/api-client';
+import { useSignedInUser } from '../../lib/use-signed-in-user';
+import { RoutedAppShell } from '../../components/RoutedAppShell';
+import {
+  forgetWorkspace,
+  readRememberedWorkspace,
+  resolveActiveWorkspace,
+} from '../../lib/active-workspace';
 import { useNotificationBell } from '../../lib/use-notification-bell';
 import { DiscussButton } from '../../components/DiscussButton';
 import { useCompanyNavigation } from '../../lib/use-company-navigation';
@@ -74,7 +80,10 @@ export default function ApprovalsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const tenantId = me?.activeWorkspaceId ?? me?.workspaces[0]?.tenantId ?? null;
+  const tenantId =
+    resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
+
+  const signedInUser = useSignedInUser(me);
   const activeWorkspace = me?.workspaces.find((workspace) => workspace.tenantId === tenantId);
   const bell = useNotificationBell(tenantId);
 
@@ -166,15 +175,15 @@ export default function ApprovalsPage() {
   };
 
   return (
-    <AppShell
+    <RoutedAppShell
       variant="company"
       workspaceName={activeWorkspace?.tenantName ?? '—'}
       groups={navGroups}
       activeKey="approvals"
-      onNavigate={() => undefined}
-      user={{ name: me?.user.ubossUniqueId ?? 'Signed in', role: 'Approvals' }}
+      user={signedInUser}
       {...bell.shellProps}
       onSignOut={() => {
+        forgetWorkspace();
         void authApi.logout().finally(() => window.location.assign('/login'));
       }}
     >
@@ -519,6 +528,6 @@ export default function ApprovalsPage() {
           </CardBody>
         )}
       </Drawer>
-    </AppShell>
+    </RoutedAppShell>
   );
 }

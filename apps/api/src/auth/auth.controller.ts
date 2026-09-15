@@ -39,6 +39,8 @@ import {
   StartSsoDto,
   VerifyMfaDto,
 } from './enterprise-identity.dto.js';
+import { UserRepository } from '../persistence/user.repository.js';
+
 import { AuthenticationPolicyService } from './authentication-policy.service.js';
 import { InvitationService } from './invitation.service.js';
 import { LoginService } from './login.service.js';
@@ -98,6 +100,7 @@ export class AuthController {
     private readonly mfaLogins: MfaLoginService,
     private readonly policies: AuthenticationPolicyService,
     private readonly sso: SsoService,
+    private readonly users: UserRepository,
   ) {}
 
   @Post('login')
@@ -205,8 +208,16 @@ export class AuthController {
 
     const workspaces = await this.tenantContext.listMemberships(actor.userId);
 
+    // The person's own name. Every screen showed the UBoss unique ID where a name belongs —
+    // 'UB-6MYH-E62C' in the sidebar footer — because this endpoint never returned one.
+    const user = await this.users.findByIdForPlatform(actor.userId);
+
     return {
-      user: { ubossUniqueId: actor.ubossUniqueId, isPlatformActor: actor.kind === 'platform' },
+      user: {
+        ubossUniqueId: actor.ubossUniqueId,
+        displayName: user?.displayName ?? actor.ubossUniqueId,
+        isPlatformActor: actor.kind === 'platform',
+      },
       workspaces,
       activeWorkspaceId: isTenantActor(actor) ? actor.tenantId : null,
     };

@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
-  AppShell,
   Banner,
   Button,
   Card,
@@ -31,6 +30,13 @@ import {
   type MeResponse,
 } from '../../../lib/api-client';
 
+import { useSignedInUser } from '../../../lib/use-signed-in-user';
+import { RoutedAppShell } from '../../../components/RoutedAppShell';
+import {
+  forgetWorkspace,
+  readRememberedWorkspace,
+  resolveActiveWorkspace,
+} from '../../../lib/active-workspace';
 import { useNotificationBell } from '../../../lib/use-notification-bell';
 import { AccessPermissionsStep } from '../../../components/AccessPermissionsStep';
 import { useCompanyNavigation } from '../../../lib/use-company-navigation';
@@ -131,7 +137,10 @@ export default function UsersAccessPage() {
   const [bulkFileName, setBulkFileName] = useState('');
   const [preview, setPreview] = useState<BulkPreview | null>(null);
 
-  const tenantId = me?.activeWorkspaceId ?? me?.workspaces[0]?.tenantId ?? null;
+  const tenantId =
+    resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
+
+  const signedInUser = useSignedInUser(me);
   const bell = useNotificationBell(tenantId);
 
   useEffect(() => {
@@ -211,15 +220,15 @@ export default function UsersAccessPage() {
   );
 
   return (
-    <AppShell
+    <RoutedAppShell
       variant="company"
       workspaceName={activeWorkspace?.tenantName ?? '—'}
       groups={navGroups}
       activeKey="users"
-      onNavigate={() => undefined}
       {...bell.shellProps}
-      user={{ name: me?.user.ubossUniqueId ?? 'Signed in', role: 'Users & Access' }}
+      user={signedInUser}
       onSignOut={() => {
+        forgetWorkspace();
         void authApi.logout().finally(() => window.location.assign('/login'));
       }}
     >
@@ -980,6 +989,6 @@ export default function UsersAccessPage() {
           </>
         )}
       </Modal>
-    </AppShell>
+    </RoutedAppShell>
   );
 }

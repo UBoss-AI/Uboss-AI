@@ -57,6 +57,13 @@ import { TenancyModule } from './tenancy/tenancy.module.js';
     AuditModule,
     // AuthModule before TenancyModule: the tenancy factory injects SessionActorResolver.
     AuthModule,
+    // TenancyModule before AuthorizationModule, and this ordering is load-bearing.
+    //
+    // Both register a global guard, and Nest runs global guards in registration order.
+    // PermissionGuard reads the verified actor that TenantGuard attaches to the request, so
+    // registering it first means it always sees nothing and refuses every permission-checked
+    // route with "Authentication is required." — which is exactly what the product did.
+    TenancyModule,
     AuthorizationModule,
     // RateLimitsModule after AuthorizationModule and before every feature module: its two
     // global interceptors must be the outermost pair, so a throttled request is refused
@@ -123,7 +130,6 @@ import { TenancyModule } from './tenancy/tenancy.module.js';
     // SettingsModule last of the company modules: its catalogue names permissions the
     // authorization engine owns, and its notes point at the screens the others build.
     SettingsModule,
-    TenancyModule,
     ProvisioningModule,
     PlatformModule,
     HealthModule,

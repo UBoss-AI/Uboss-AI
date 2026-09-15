@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import {
@@ -12,6 +13,7 @@ import {
   SkeletonText,
 } from '@uboss/ui';
 
+import { rememberWorkspace } from '../../lib/active-workspace';
 import {
   ApiError,
   authApi,
@@ -62,6 +64,7 @@ type Step =
  * There is **no public company signup** anywhere.
  */
 export default function LoginPage() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
@@ -303,14 +306,21 @@ export default function LoginPage() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {workspaces.map((workspace) => (
-              <Button key={workspace.tenantId} variant="primary" block>
+              <Button
+                key={workspace.tenantId}
+                variant="primary"
+                block
+                onClick={() => {
+                  // Until this was wired, signing in led nowhere: the button had no handler and
+                  // the only way into the product was to type a URL. Recording the choice here is
+                  // what makes every later screen agree on which company it is showing.
+                  rememberWorkspace(workspace.tenantId);
+                  router.push('/dashboard');
+                }}
+              >
                 {workspace.tenantName}
               </Button>
             ))}
-            <p className="uboss-notice">
-              The workspace shells are built and previewable in the design system; wiring a chosen
-              workspace into them arrives with the dashboard prompts.
-            </p>
           </div>
         )}
       </LoginPresentation>

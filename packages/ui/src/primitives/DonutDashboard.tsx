@@ -91,7 +91,14 @@ export function DonutDashboard({
             </linearGradient>
           </defs>
 
-          <circle cx="110" cy="110" r={RADIUS} fill="none" stroke="#EAEFF6" strokeWidth={30} />
+          <circle
+            cx="110"
+            cy="110"
+            r={RADIUS}
+            fill="none"
+            stroke="var(--uboss-bg-2)"
+            strokeWidth={30}
+          />
 
           {agentsLength > 0 ? (
             <circle

@@ -11,7 +11,7 @@ export default function HomePage() {
   return (
     <main style={{ maxWidth: 560, margin: '48px auto', padding: 24 }}>
       <h1 style={{ fontSize: 20, fontWeight: 800 }}>UBOSS AI AMS</h1>
-      <p style={{ color: '#54637a', marginTop: 6 }}>
+      <p style={{ color: 'var(--uboss-text-2)', marginTop: 6 }}>
         Repository foundation is in place. Product screens are added one prompt at a time.
       </p>
       <p style={{ marginTop: 20 }}>

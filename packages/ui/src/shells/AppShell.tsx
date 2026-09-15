@@ -1,17 +1,25 @@
 'use client';
 
-import type { ReactNode } from 'react';
-import { useState } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 
 import { cn } from '../lib/class-names';
 import type { NavGroup } from '../navigation/navigation-model';
 import { Sidebar, type SidebarUser } from './Sidebar';
 import { TopBar } from './TopBar';
 
+/** Where the collapsed preference lives. One key for both shells: it is the same person. */
+const COLLAPSE_KEY = 'uboss.sidebar.collapsed';
+
 interface AppShellCommonProps {
   groups: readonly NavGroup[];
   activeKey: string;
-  onNavigate: (key: string) => void;
+  /**
+   * Optional. Navigation happens through each item's `href`; this reports the choice and hands
+   * over the event, so a router can take the transition over. See `SidebarProps.onNavigate`.
+   */
+  onNavigate?:
+    ((key: string, href: string | undefined, event: MouseEvent<HTMLElement>) => void) | undefined;
   user: SidebarUser;
   /** Role and scope pill, e.g. "Company Admin · Whole company". */
   scopeLabel?: string;
@@ -57,6 +65,29 @@ export function AppShell(props: AppShellProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  // Remember whether the sidebar was collapsed. Read after mount rather than in the initial state,
+  // because this component server-renders: seeding from localStorage there would hydrate a
+  // different tree than the server sent. A blocked or empty store simply leaves it expanded.
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem(COLLAPSE_KEY) === '1') setCollapsed(true);
+    } catch {
+      // Private window, or site data blocked. The preference is a convenience, not state.
+    }
+  }, []);
+
+  const toggleCollapse = () => {
+    setCollapsed((value) => {
+      const next = !value;
+      try {
+        window.localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0');
+      } catch {
+        // As above — the sidebar still collapses, it just will not be remembered.
+      }
+      return next;
+    });
+  };
+
   const isMaster = props.variant === 'master';
   // The sidebar footer gives its second line to Sign out, so the role falls back to the scope
   // pill rather than disappearing from the shell.
@@ -76,14 +107,14 @@ export function AppShell(props: AppShellProps) {
         brandSub={isMaster ? 'Master Console' : props.workspaceName}
         groups={groups}
         activeKey={activeKey}
-        onNavigate={(key) => {
+        onNavigate={(key, href, event) => {
           // Selecting an item on a small screen should also dismiss the off-canvas drawer.
           setMobileOpen(false);
-          onNavigate(key);
+          onNavigate?.(key, href, event);
         }}
         user={user}
         collapsed={collapsed}
-        onToggleCollapse={() => setCollapsed((value) => !value)}
+        onToggleCollapse={toggleCollapse}
         onSignOut={onSignOut}
         open={mobileOpen}
       />

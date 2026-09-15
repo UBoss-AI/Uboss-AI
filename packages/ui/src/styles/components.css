@@ -735,7 +735,11 @@
  */
 @media (max-width: 720px) {
   .uboss-grid {
-    grid-template-columns: 1fr !important;
+    /* `minmax(0, 1fr)` rather than `1fr`. A `1fr` track has an implicit minimum of `auto`, so it
+       refuses to shrink below the widest unbreakable thing inside it — on Performance that left a
+       single column computing to 375.6px inside a 358px grid and pushed the page 2px sideways.
+       Two pixels is not a visual problem; a page that scrolls horizontally on a phone is. */
+    grid-template-columns: minmax(0, 1fr) !important;
   }
 }
 
@@ -743,7 +747,7 @@
    MetricCard
    ============================================================ */
 .uboss-metric {
-  background: linear-gradient(180deg, #fff, #fafcfe);
+  background: linear-gradient(180deg, var(--uboss-surface), var(--uboss-surface-raised));
   border: 1px solid var(--uboss-border);
   border-radius: var(--uboss-radius-card);
   padding: 16px 18px;
@@ -1260,7 +1264,7 @@
   font-weight: 700;
   border: 2px solid var(--uboss-border);
   color: var(--uboss-text-3);
-  background: #fff;
+  background: var(--uboss-surface);
   position: relative;
   z-index: 1;
 }
@@ -1542,7 +1546,7 @@
 
 .uboss-modal {
   margin: auto;
-  background: #fff;
+  background: var(--uboss-surface);
   border-radius: var(--uboss-radius-panel);
   box-shadow: var(--uboss-shadow-3);
   width: min(560px, 92vw);
@@ -1564,7 +1568,7 @@
 
 .uboss-drawer {
   margin-left: auto;
-  background: #fff;
+  background: var(--uboss-surface);
   height: 100vh;
   width: min(680px, 94vw);
   box-shadow: var(--uboss-shadow-3);
@@ -1589,7 +1593,7 @@
   border-bottom: 1px solid var(--uboss-border-2);
   position: sticky;
   top: 0;
-  background: #fff;
+  background: var(--uboss-surface);
   z-index: 2;
 }
 
@@ -1604,7 +1608,7 @@
   height: 34px;
   border-radius: var(--uboss-radius-input);
   border: 1px solid var(--uboss-border);
-  background: #fff;
+  background: var(--uboss-surface);
   cursor: pointer;
   display: grid;
   place-items: center;
@@ -1625,7 +1629,7 @@
   justify-content: flex-end;
   position: sticky;
   bottom: 0;
-  background: #fff;
+  background: var(--uboss-surface);
   flex-wrap: wrap;
 }
 
@@ -2478,6 +2482,17 @@
   border: 1px solid var(--uboss-border);
   border-radius: 9px;
   padding: 3px;
+
+  /* Reports offers eleven of these. At 1440px they fit; at 390px the row measured 812px and
+     pushed the whole page into a horizontal scroll, which is the one thing a layout must never
+     do. The control scrolls inside itself instead — the tabs stay reachable and the page does
+     not move sideways. `max-width` rather than `width` so it still shrink-wraps when it fits. */
+  max-width: 100%;
+  overflow-x: auto;
+  /* Momentum scrolling on touch, and no scrollbar gutter stealing height on platforms that
+     reserve one. */
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
 }
 
 .uboss-seg button {
@@ -2489,6 +2504,9 @@
   font-size: 12.5px;
   color: var(--uboss-text-2);
   cursor: pointer;
+  /* Without this a flex child shrinks below its text and the labels wrap to three lines each. */
+  flex: none;
+  white-space: nowrap;
 }
 
 .uboss-seg button.is-on {
@@ -2677,7 +2695,7 @@
   padding: 13px 14px;
   border: 1px solid var(--uboss-border);
   border-radius: var(--uboss-radius);
-  background: #fff;
+  background: var(--uboss-surface);
   text-align: left;
   cursor: pointer;
   margin-bottom: 8px;
@@ -3863,4 +3881,124 @@ table.uboss-wfg {
 
 .discuss-person:hover {
   background: var(--uboss-bg-2);
+}
+
+/* --- Definition lists ------------------------------------------------------
+   `.uboss-definitions` was referenced by four screens — Reports, Profile
+   Search and two Settings panels — and had no rule anywhere in this file. Each
+   one therefore rendered as the browser's default <dl>: the term on one line,
+   the value indented 40px below it, no alignment and no density. On Reports
+   that produced a summary reading "objectives / 0 / reviewed / 0" down the
+   left edge of an otherwise finished page.
+
+   A label above its value, in a grid that wraps — enterprise density, and the
+   numbers line up so they can be compared at a glance, which is the only
+   reason to put them next to each other. */
+.uboss-definitions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--uboss-space-3) var(--uboss-space-4);
+  margin: var(--uboss-space-3) 0 0;
+}
+
+.uboss-definitions > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.uboss-definitions dt {
+  font-size: var(--uboss-font-size-xs);
+  font-weight: 600;
+  color: var(--uboss-text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.uboss-definitions dd {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--uboss-navy);
+  /* A long value — a name, a connection string — must wrap rather than widen
+     the grid column and push the page sideways. */
+  overflow-wrap: anywhere;
+}
+
+/* --- Appearance chooser ----------------------------------------------------
+   Three cards rather than a <select>: the choice is visual, so it should be
+   shown rather than named. Each swatch is drawn from the theme it represents,
+   so Dark looks dark even while the page around it is light. */
+.uboss-theme-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--uboss-space-3);
+}
+
+.uboss-theme-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--uboss-space-2);
+  padding: var(--uboss-space-3);
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-card);
+  background: var(--uboss-surface);
+  color: var(--uboss-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.uboss-theme-choice:hover {
+  border-color: var(--uboss-blue);
+}
+
+.uboss-theme-choice:focus-visible {
+  outline: var(--uboss-focus-outline);
+  outline-offset: var(--uboss-focus-offset);
+}
+
+/* Selected state carries a ring and a label change, never colour alone. */
+.uboss-theme-choice.is-on {
+  border-color: var(--uboss-blue);
+  box-shadow: var(--uboss-focus-ring);
+}
+
+.uboss-theme-choice.is-on b::after {
+  content: ' · selected';
+  font-weight: 600;
+  color: var(--uboss-blue);
+}
+
+.uboss-theme-swatch {
+  width: 100%;
+  height: 46px;
+  border-radius: var(--uboss-radius-input);
+  border: 1px solid var(--uboss-border);
+}
+
+/* Fixed colours on purpose: a swatch has to show the theme it offers, not the
+   theme currently applied, so these must not follow the tokens. */
+.uboss-theme-swatch[data-variant='light'] {
+  background: linear-gradient(135deg, #ffffff 0 50%, #f5f8fc 50% 100%);
+  border-color: #e4eaf2;
+}
+
+.uboss-theme-swatch[data-variant='dark'] {
+  background: linear-gradient(135deg, #131c28 0 50%, #0d141d 50% 100%);
+  border-color: #243244;
+}
+
+.uboss-theme-swatch[data-variant='system'] {
+  background: linear-gradient(135deg, #ffffff 0 50%, #0d141d 50% 100%);
+}
+
+.uboss-theme-note {
+  font-size: var(--uboss-font-size-xs);
+  color: var(--uboss-text-2);
 }

@@ -5960,3 +5960,67 @@ Had the flag still existed, the check would have wiped the schema it was validat
 So the shadow gets its own empty database, created next to the application role. It was never
 possible to notice this locally, where `uboss_shadow` has existed since Prompt 7 and the
 environment variable was simply never set in CI.
+
+## ADR-281 — Navigation is links, and the verified actor has to exist before permissions are checked
+
+Two defects found by opening the application rather than reading it, both of which made UBoss
+unusable, and neither of which any of the 2052 passing tests could see.
+
+**The data API refused every request.** `TenantGuard` verifies the session and the membership and
+attaches the verified actor to the request; `PermissionGuard` reads that actor, because the
+AsyncLocalStorage scope an interceptor opens does not reach a guard. Both are registered with
+`APP_GUARD`, and Nest runs global guards in **registration order** — which for global providers is
+the order their modules appear in the root module's `imports`. `AuthorizationModule` was third
+and `TenancyModule` twenty-fourth, so `PermissionGuard` ran first, found nothing, and threw
+_"Authentication is required."_ on every route carrying `@RequirePermission`. Dashboard, reports,
+to-do, objectives, hierarchy, settings: 403, for everybody, in a browser.
+
+Nothing caught it because **every e2e suite builds its own testing module** — `controllers: [X]`
+with a hand-picked provider list — rather than importing `AppModule`. That is fast and focused, and
+it means the global guard stack was never assembled by a test. `test/global-guard-order.spec.ts`
+now asserts the ordering against the real module graph, and was confirmed to fail on the original
+order before the fix was kept.
+
+**The sidebar did nothing.** Its items were `<button>` elements whose only action was an
+`onNavigate` callback, and all twenty-six company screens passed
+`onNavigate={() => undefined}`. An item with an `href` is now a real `<a>`: it survives a
+host that never wires the callback, and it can be middle-clicked, opened in a new tab and reached
+from a screen reader's link list. `RoutedAppShell` turns a plain left click into a client-side
+transition and leaves every modified click to the browser.
+
+The shape of the lesson is the same in both: **a no-op is invisible and a missing link is not.** A
+handler that does nothing looks exactly like a handler that works.
+
+## ADR-282 — Appearance: Light, Dark and System, with the choice in the browser
+
+Dark mode did not exist. There was no `prefers-color-scheme` rule and no theme attribute anywhere
+in the product, and Settings had listed an "Appearance" section since Prompt 14 that changed
+nothing — so a viewer whose machine is dark got the full light application.
+
+The theme lives entirely in the token layer: `tokens.css` redefines surfaces, text, borders and
+the `-050` tints under both `@media (prefers-color-scheme: dark)` (guarded
+`not([data-theme='light'])`) and `[data-theme='dark']`. Components were already consuming
+tokens almost everywhere, so the work was mostly finding the places that were not: eight white
+backgrounds in `components.css`, nineteen colours in page code, and the neutral fills in the org
+chart and the dashboard donut. `var()` resolves inside SVG presentation attributes, which is what
+let the chart follow the theme without restructuring it.
+
+Three decisions worth keeping:
+
+**System removes the attribute rather than setting `data-theme="system"`.** That value matches
+neither rule and silently yields the light theme — the obvious way to ship a dark mode that does not
+work. A test pins the absence.
+
+**The choice is per-browser and never sent to the server.** Appearance is a property of the person
+and the device, not of the company; the same person wants dark at night and light on a bright
+monitor. It therefore needs no permission and cannot fail — a blocked store falls back to System,
+which is the right default anyway.
+
+**A synchronous inline script applies it before first paint.** React cannot: the browser paints
+before any effect runs, so somebody who chose Dark would see a white flash on every navigation. It
+is the smallest possible script and wrapped in try/catch, because it runs before everything else and
+a throw there is a blank application.
+
+The sidebar and Master Console stay navy in both themes. They are the authority surfaces, the
+client's reference draws them that way, and a navy that went darker would lose the contrast that
+separates navigation from content.

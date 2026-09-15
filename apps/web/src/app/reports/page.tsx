@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
 import {
-  AppShell,
   Banner,
   Button,
   Card,
@@ -25,6 +24,13 @@ import {
   type ReportCatalogue,
   type ReportRunView,
 } from '../../lib/api-client';
+import { useSignedInUser } from '../../lib/use-signed-in-user';
+import { RoutedAppShell } from '../../components/RoutedAppShell';
+import {
+  forgetWorkspace,
+  readRememberedWorkspace,
+  resolveActiveWorkspace,
+} from '../../lib/active-workspace';
 import { useNotificationBell } from '../../lib/use-notification-bell';
 import { useCompanyNavigation } from '../../lib/use-company-navigation';
 
@@ -49,6 +55,19 @@ import { useCompanyNavigation } from '../../lib/use-company-navigation';
  * gets no Export button, and the route would refuse them anyway — the button's absence is
  * presentation, the 403 is the control.
  */
+/**
+ * A report's summary keys arrive as the server's own field names — `objectives`, `onTime`,
+ * `slaBreaches` — and were being printed exactly like that. "onTime" is a variable name, not a
+ * label, and putting one in front of a customer is the difference between a product and a console.
+ *
+ * Splitting on the case change and capitalising the first word covers every key these reports
+ * actually return, and leaves an already-readable key alone.
+ */
+function humanLabel(key: string): string {
+  const spaced = key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ');
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase();
+}
+
 export default function ReportsPage(): React.JSX.Element {
   // Prompt 40A (CR-03): the sidebar follows this person's real grants, never a role label.
   const navGroups = useCompanyNavigation();
@@ -61,7 +80,10 @@ export default function ReportsPage(): React.JSX.Element {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const tenantId = me?.activeWorkspaceId ?? me?.workspaces[0]?.tenantId ?? null;
+  const tenantId =
+    resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
+
+  const signedInUser = useSignedInUser(me);
   const activeWorkspace = me?.workspaces.find((workspace) => workspace.tenantId === tenantId);
   const bell = useNotificationBell(tenantId);
 
@@ -114,15 +136,15 @@ export default function ReportsPage(): React.JSX.Element {
   );
 
   return (
-    <AppShell
+    <RoutedAppShell
       variant="company"
       workspaceName={activeWorkspace?.tenantName ?? '—'}
       groups={navGroups}
       activeKey="reports"
-      onNavigate={() => undefined}
-      user={{ name: me?.user.ubossUniqueId ?? 'Signed in', role: 'Reports' }}
+      user={signedInUser}
       {...bell.shellProps}
       onSignOut={() => {
+        forgetWorkspace();
         void authApi.logout().finally(() => window.location.assign('/login'));
       }}
     >
@@ -215,7 +237,7 @@ export default function ReportsPage(): React.JSX.Element {
                     <dl className="uboss-definitions">
                       {Object.entries(run.summary).map(([label, value]) => (
                         <div key={label}>
-                          <dt>{label}</dt>
+                          <dt>{humanLabel(label)}</dt>
                           <dd>{String(value)}</dd>
                         </div>
                       ))}
@@ -250,6 +272,6 @@ export default function ReportsPage(): React.JSX.Element {
           </Card>
         </div>
       )}
-    </AppShell>
+    </RoutedAppShell>
   );
 }

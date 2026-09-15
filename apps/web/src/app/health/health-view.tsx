@@ -22,10 +22,10 @@ export interface HealthViewProps {
 
 /** Status colours are paired with text, never colour-only (locked UI rule). */
 const TONE = {
-  ok: { fg: '#15803d', bg: '#e7f6ec', label: 'Healthy' },
-  warn: { fg: '#b4610a', bg: '#fbf1e3', label: 'Degraded' },
-  bad: { fg: '#be1b1b', bg: '#fcebeb', label: 'Unreachable' },
-  idle: { fg: '#54637a', bg: '#edf2f8', label: 'Checking' },
+  ok: { fg: 'var(--uboss-success)', bg: 'var(--uboss-success-050)', label: 'Healthy' },
+  warn: { fg: 'var(--uboss-warning)', bg: 'var(--uboss-warning-050)', label: 'Degraded' },
+  bad: { fg: 'var(--uboss-danger)', bg: 'var(--uboss-danger-050)', label: 'Unreachable' },
+  idle: { fg: 'var(--uboss-text-2)', bg: 'var(--uboss-bg-2)', label: 'Checking' },
 } as const;
 
 function toneFor(probe: ApiProbe): (typeof TONE)[keyof typeof TONE] {
@@ -49,10 +49,10 @@ function Row({ label, value }: { label: string; value: string }) {
         justifyContent: 'space-between',
         gap: 16,
         padding: '8px 0',
-        borderBottom: '1px solid #eef2f8',
+        borderBottom: '1px solid var(--uboss-border-2)',
       }}
     >
-      <span style={{ color: '#54637a' }}>{label}</span>
+      <span style={{ color: 'var(--uboss-text-2)' }}>{label}</span>
       <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{value}</span>
     </div>
   );
@@ -73,7 +73,7 @@ export function HealthView({ webVersion, apiBaseUrl, probe }: HealthViewProps) {
       <h1 style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.2px' }}>
         UBoss platform health
       </h1>
-      <p style={{ color: '#54637a', marginTop: 6 }}>
+      <p style={{ color: 'var(--uboss-text-2)', marginTop: 6 }}>
         Bootstrap verification for the web and API workspaces.
       </p>
 
@@ -81,8 +81,8 @@ export function HealthView({ webVersion, apiBaseUrl, probe }: HealthViewProps) {
         aria-label="API status"
         style={{
           marginTop: 24,
-          background: '#ffffff',
-          border: '1px solid #e4eaf2',
+          background: 'var(--uboss-surface)',
+          border: '1px solid var(--uboss-border)',
           borderRadius: 12,
           padding: 20,
         }}
@@ -117,7 +117,7 @@ export function HealthView({ webVersion, apiBaseUrl, probe }: HealthViewProps) {
         )}
 
         {probe.kind === 'loading' && (
-          <p style={{ color: '#54637a', marginTop: 12 }}>Contacting the API…</p>
+          <p style={{ color: 'var(--uboss-text-2)', marginTop: 12 }}>Contacting the API…</p>
         )}
 
         {probe.kind === 'unreachable' && (

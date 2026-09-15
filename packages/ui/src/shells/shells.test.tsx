@@ -104,8 +104,12 @@ describe('AppShell', () => {
       </AppShell>,
     );
 
-    const active = screen.getByRole('button', { name: /Objective Optimization/ });
+    // A navigation item is a link, not a button: it must be openable in a new tab, and it must
+    // keep working when no host wires a click handler — which is how the whole sidebar came to do
+    // nothing at all.
+    const active = screen.getByRole('link', { name: /Objective Optimization/ });
     expect(active).toHaveAttribute('aria-current', 'page');
+    expect(active).toHaveAttribute('href', '/objective');
   });
 
   it('reports the selected navigation key', () => {
@@ -123,8 +127,9 @@ describe('AppShell', () => {
       </AppShell>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /Engine Agents/ }));
-    expect(onNavigate).toHaveBeenCalledWith('agents');
+    fireEvent.click(screen.getByRole('link', { name: /Engine Agents/ }));
+    // The href travels with the key so a router host can take the transition over.
+    expect(onNavigate).toHaveBeenCalledWith('agents', '/agents', expect.anything());
   });
 
   it('signs out from the sidebar footer and the top bar', () => {

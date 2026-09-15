@@ -98,3 +98,156 @@
   --uboss-focus-outline: 2px solid var(--uboss-blue);
   --uboss-focus-offset: 2px;
 }
+
+/* ============================================================================
+   Dark theme
+   ============================================================================
+
+   Prompt 45 pre-audit. Before this, dark mode did not exist: there was no
+   `prefers-color-scheme` rule and no `data-theme` hook anywhere in the product,
+   so a viewer whose operating system is set to dark got the full light page.
+   Settings listed an "Appearance" section that changed nothing.
+
+   ## How the three states resolve
+
+   `light` and `dark` stamp `data-theme` on <html>. "System" stamps nothing, so
+   only `prefers-color-scheme` separates the two — which is why the dark values
+   appear twice below:
+
+     * inside the media query, guarded `:not([data-theme='light'])`, so an
+       explicit Light choice still wins on a dark machine;
+     * on `[data-theme='dark']`, so an explicit Dark choice wins on a light one.
+
+   **The two blocks must be edited together.** Plain CSS cannot share one
+   declaration list between a media query and a bare selector, and every
+   alternative — duplicating in JS, `@container style()`, a build step — costs
+   more than the duplication does.
+
+   ## What is deliberately NOT inverted
+
+   The sidebar and the Master Console are navy in both themes. They are the
+   product's authority surfaces and the client's reference draws them that way;
+   a navy that went darker still would lose the contrast that separates
+   navigation from content. So the navy tokens hold their values, and the 24
+   `color: #fff` declarations sitting on them are correct in both themes.
+
+   Accent colours are lifted rather than reused: #2563eb on a #0d141d page does
+   not carry enough contrast for text, so the dark blue is lighter than the
+   light-theme one, not the same value. The `-050` tints invert completely —
+   in dark they are the darkest surface in their hue, not the lightest. */
+
+:root {
+  /* Named here so the light theme has one too: the metric card's gradient ends
+     on it, and a gradient cannot end on a colour that only exists in dark. */
+  --uboss-surface-raised: #fafcfe;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+
+    --uboss-blue: #4b83f0;
+    --uboss-blue-600: #6d9cf5;
+    --uboss-blue-050: #16233a;
+    --uboss-blue-100: #1e3358;
+
+    --uboss-cyan: #22b8f0;
+    --uboss-cyan-050: #0e2a38;
+    --uboss-cyan-ink: #7ed4f5;
+
+    --uboss-success: #4ade80;
+    --uboss-success-050: #10281a;
+    --uboss-warning: #f0a552;
+    --uboss-warning-050: #2b1f10;
+    --uboss-warning-border: #6b4a1e;
+    --uboss-danger: #f87171;
+    --uboss-danger-050: #2c1416;
+    --uboss-purple: #a78bfa;
+    --uboss-purple-050: #1f1830;
+
+    --uboss-surface: #131c28;
+    --uboss-surface-raised: #18222f;
+    --uboss-bg: #0d141d;
+    --uboss-bg-2: #1b2532;
+    --uboss-border: #243244;
+    --uboss-border-2: #1e2a38;
+
+    --uboss-text: #e6edf5;
+    --uboss-text-2: #9fb0c4;
+    --uboss-text-3: #71829a;
+
+    --uboss-bronze-bg: #2a1e13;
+    --uboss-bronze-fg: #d8a878;
+    --uboss-silver-bg: #1f242b;
+    --uboss-silver-fg: #b6c0cc;
+    --uboss-gold-bg: #2a2412;
+    --uboss-gold-fg: #e0c266;
+    --uboss-platinum-bg: #12262a;
+    --uboss-platinum-fg: #7fc4c9;
+    --uboss-diamond-bg: #171f3a;
+    --uboss-diamond-fg: #9db0f5;
+
+    /* Elevation on a dark ground reads through shade, not through a tinted
+       shadow, so these are black and heavier than their light counterparts. */
+    --uboss-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+    --uboss-shadow-2: 0 6px 18px rgba(0, 0, 0, 0.45);
+    --uboss-shadow-3: 0 18px 44px rgba(0, 0, 0, 0.6);
+  }
+}
+
+/* The explicit Dark choice. Same values as the block above — change both. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --uboss-blue: #4b83f0;
+  --uboss-blue-600: #6d9cf5;
+  --uboss-blue-050: #16233a;
+  --uboss-blue-100: #1e3358;
+
+  --uboss-cyan: #22b8f0;
+  --uboss-cyan-050: #0e2a38;
+  --uboss-cyan-ink: #7ed4f5;
+
+  --uboss-success: #4ade80;
+  --uboss-success-050: #10281a;
+  --uboss-warning: #f0a552;
+  --uboss-warning-050: #2b1f10;
+  --uboss-warning-border: #6b4a1e;
+  --uboss-danger: #f87171;
+  --uboss-danger-050: #2c1416;
+  --uboss-purple: #a78bfa;
+  --uboss-purple-050: #1f1830;
+
+  --uboss-surface: #131c28;
+  --uboss-surface-raised: #18222f;
+  --uboss-bg: #0d141d;
+  --uboss-bg-2: #1b2532;
+  --uboss-border: #243244;
+  --uboss-border-2: #1e2a38;
+
+  --uboss-text: #e6edf5;
+  --uboss-text-2: #9fb0c4;
+  --uboss-text-3: #71829a;
+
+  --uboss-bronze-bg: #2a1e13;
+  --uboss-bronze-fg: #d8a878;
+  --uboss-silver-bg: #1f242b;
+  --uboss-silver-fg: #b6c0cc;
+  --uboss-gold-bg: #2a2412;
+  --uboss-gold-fg: #e0c266;
+  --uboss-platinum-bg: #12262a;
+  --uboss-platinum-fg: #7fc4c9;
+  --uboss-diamond-bg: #171f3a;
+  --uboss-diamond-fg: #9db0f5;
+
+  --uboss-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --uboss-shadow-2: 0 6px 18px rgba(0, 0, 0, 0.45);
+  --uboss-shadow-3: 0 18px 44px rgba(0, 0, 0, 0.6);
+}
+
+/* An explicit Light choice on a dark machine. Nothing to redefine — the bare
+   `:root` values are the light theme — but the native controls need telling,
+   or the select menus and scrollbars stay dark inside a light page. */
+:root[data-theme='light'] {
+  color-scheme: light;
+}

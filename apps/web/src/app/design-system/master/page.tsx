@@ -16,6 +16,7 @@ import {
   StatusBadge,
 } from '@uboss/ui';
 
+import { forgetWorkspace } from '../../../lib/active-workspace';
 import { authApi } from '../../../lib/api-client';
 
 interface CompanyRow {
@@ -65,6 +66,7 @@ export default function MasterShellPreview() {
       // The reference's top bar and sidebar footer both carry a sign-out control, so the
       // preview shows them. It performs a real sign-out and returns to the login screen.
       onSignOut={() => {
+        forgetWorkspace();
         void authApi.logout().finally(() => window.location.assign('/login'));
       }}
       scopeLabel="Platform Admin · All companies & platform"

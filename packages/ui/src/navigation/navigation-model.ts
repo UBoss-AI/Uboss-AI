@@ -5,9 +5,20 @@ export interface NavItem {
   key: string;
   label: string;
   icon: IconName;
-  /** Target route. Mock at Prompt 2 — no navigation is wired to real data yet. */
+  /** Target route. Rendered as a real link, so it must be a route that exists. */
   href?: string;
-  /** Count shown as a pill, e.g. pending approvals. */
+  /**
+   * The permission module that decides whether this item is shown. Defaults to `key`, which is
+   * true of every module-backed screen.
+   *
+   * `null` means the item is **not module-gated at all**. Workspace Chat is the case: access there
+   * is being a participant in a conversation, and `chat.controller.ts` argues at length why no
+   * `chat` module should exist — a `chat:View` grant would mean somebody could be given everybody's
+   * correspondence. Filtering such an item against the module list hides a working feature from
+   * every single user, which is exactly what happened.
+   */
+  module?: string | null;
+  /** Count shown as a pill, e.g. pending approvals. Only ever a real, computed number. */
   badge?: number;
 }
 
@@ -48,8 +59,10 @@ export const COMPANY_NAV: readonly NavGroup[] = [
       { key: 'agents', label: 'Engine Agents', icon: 'bot', href: '/agents' },
       { key: 'executor', label: 'Executor Agent', icon: 'shield', href: '/executor' },
       // Prompt 40A (CR-03). Under OPERATIONS, where the client put it.
-      { key: 'chat', label: 'Workspace Chat', icon: 'chat', href: '/chat' },
-      { key: 'approvals', label: 'Approvals', icon: 'govern', href: '/approvals', badge: 5 },
+      // No module: a conversation is correspondence between participants, not company data a
+      // role grants. See the design note at the top of apps/api/src/chat/chat.controller.ts.
+      { key: 'chat', label: 'Workspace Chat', icon: 'chat', href: '/chat', module: null },
+      { key: 'approvals', label: 'Approvals', icon: 'govern', href: '/approvals' },
       { key: 'performance', label: 'Performance', icon: 'medal', href: '/performance' },
       { key: 'reports', label: 'Reports', icon: 'chart', href: '/reports' },
     ],
@@ -57,8 +70,8 @@ export const COMPANY_NAV: readonly NavGroup[] = [
   {
     group: 'Administration',
     items: [
-      { key: 'users', label: 'Users & Access', icon: 'users', href: '/users' },
-      { key: 'roles', label: 'Roles & Permissions', icon: 'key', href: '/roles' },
+      { key: 'users', label: 'Users & Access', icon: 'users', href: '/settings/users' },
+      { key: 'roles', label: 'Roles & Permissions', icon: 'key', href: '/settings?section=roles' },
       {
         key: 'profile-search',
         label: 'UBoss Profile Search',
@@ -75,40 +88,45 @@ export const MASTER_NAV: readonly NavGroup[] = [
   {
     group: 'Platform',
     items: [
-      { key: 'dashboard', label: 'Dashboard', icon: 'grid', href: '/dashboard' },
-      { key: 'companies', label: 'Companies', icon: 'build', href: '/companies' },
-      { key: 'create-company', label: 'Create Company', icon: 'plus', href: '/create-company' },
+      { key: 'dashboard', label: 'Dashboard', icon: 'grid', href: '/master/dashboard' },
+      { key: 'companies', label: 'Companies', icon: 'build', href: '/master/companies' },
+      {
+        key: 'create-company',
+        label: 'Create Company',
+        icon: 'plus',
+        href: '/master/create-company',
+      },
     ],
   },
   {
     group: 'Commercial',
     items: [
-      { key: 'plans', label: 'Plans & Entitlements', icon: 'card', href: '/plans' },
-      { key: 'billing', label: 'Billing & Payments', icon: 'card', href: '/billing' },
-      { key: 'credits', label: 'AI Usage & Credits', icon: 'bolt', href: '/credits' },
+      { key: 'plans', label: 'Plans & Entitlements', icon: 'card', href: '/master/plans' },
+      { key: 'billing', label: 'Billing & Payments', icon: 'card', href: '/master/billing' },
+      { key: 'credits', label: 'AI Usage & Credits', icon: 'bolt', href: '/master/credits' },
     ],
   },
   {
     group: 'AI Platform',
     items: [
-      { key: 'providers', label: 'Providers & Models', icon: 'bot', href: '/providers' },
-      { key: 'skills', label: 'Skill Catalog', icon: 'file', href: '/skills' },
-      { key: 'testing', label: 'Testing & Evaluation', icon: 'check', href: '/testing' },
-      { key: 'release', label: 'Release & Features', icon: 'bolt', href: '/release' },
+      { key: 'providers', label: 'Providers & Models', icon: 'bot', href: '/master/providers' },
+      { key: 'skills', label: 'Skill Catalog', icon: 'file', href: '/master/skills' },
+      { key: 'testing', label: 'Testing & Evaluation', icon: 'check', href: '/master/testing' },
+      { key: 'release', label: 'Release & Features', icon: 'bolt', href: '/master/release' },
     ],
   },
   {
     group: 'Operate',
     items: [
-      { key: 'dev-ops', label: 'Development & Operations', icon: 'build', href: '/dev-ops' },
-      { key: 'support', label: 'Support & Ops', icon: 'bell', href: '/support' },
-      { key: 'security', label: 'Security & Audit', icon: 'shield', href: '/security' },
-      { key: 'health', label: 'System Health', icon: 'ops', href: '/health' },
+      { key: 'dev-ops', label: 'Development & Operations', icon: 'build', href: '/master/dev-ops' },
+      { key: 'support', label: 'Support & Ops', icon: 'bell', href: '/master/support' },
+      { key: 'security', label: 'Security & Audit', icon: 'shield', href: '/master/security' },
+      { key: 'health', label: 'System Health', icon: 'ops', href: '/master/health' },
       {
         key: 'platform-settings',
         label: 'Platform Settings',
         icon: 'gear',
-        href: '/platform-settings',
+        href: '/master/platform-settings',
       },
     ],
   },
@@ -305,10 +323,17 @@ export function filterNavigation(
   return groups
     .map((group) => ({
       group: group.group,
-      // `users` and `roles` are the two nav keys that are also module keys, so a plain lookup
-      // covers every item. An item whose key is not a module — none today — would be kept, which
-      // is the same fail-open direction as above.
-      items: group.items.filter((item) => visible.has(item.key)),
+      items: group.items.filter((item) => {
+        // An item says which module governs it; by default that is its own key. An item that
+        // declares `module: null` is not module-gated and is always offered — the route still
+        // refuses if the person does not belong there.
+        //
+        // This used to be a plain `visible.has(item.key)`, with a comment claiming an item that
+        // was not a module "would be kept". It was not: Workspace Chat, which deliberately has no
+        // module, was filtered out for every role in the product.
+        const moduleKey = item.module === undefined ? item.key : item.module;
+        return moduleKey === null || visible.has(moduleKey);
+      }),
     }))
     .filter((group) => group.items.length > 0);
 }

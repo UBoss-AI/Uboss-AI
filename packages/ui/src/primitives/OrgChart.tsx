@@ -38,7 +38,7 @@ const PAD_Y = 22;
  * so a company with different departments gets a coherent chart rather than a missing colour.
  */
 const DEPARTMENT_COLOURS: Record<string, string> = {
-  Executive: '#12314B',
+  Executive: 'var(--uboss-text)',
   'Regulatory Affairs': '#2E86C7',
   'Exports & Tenders': '#E8833A',
   'Quality Assurance': '#4B9C2E',
@@ -231,7 +231,7 @@ export function OrgChart({
         </defs>
 
         {paths.map((path) => (
-          <path key={path} d={path} fill="none" stroke="#CDDAEA" strokeWidth={1.6} />
+          <path key={path} d={path} fill="none" stroke="var(--uboss-border)" strokeWidth={1.6} />
         ))}
 
         {nodes.map((node) => (
@@ -271,17 +271,24 @@ function OrgNode({
           width={BOX_WIDTH}
           height={BOX_HEIGHT}
           rx={13}
-          fill="#0F2740"
-          stroke="#0A1E33"
+          fill="var(--uboss-navy)"
+          stroke="var(--uboss-navy-900)"
         />
         <rect x={x + 12} y={y + 13} width={36} height={36} rx={9} fill="url(#uboss-org-logo)" />
-        <text x={x + 30} y={y + 37} fill="#fff" fontSize={17} fontWeight={800} textAnchor="middle">
+        <text
+          x={x + 30}
+          y={y + 37}
+          fill="var(--uboss-surface)"
+          fontSize={17}
+          fontWeight={800}
+          textAnchor="middle"
+        >
           U
         </text>
-        <text x={x + 58} y={y + 27} fill="#fff" fontSize={15} fontWeight={800}>
+        <text x={x + 58} y={y + 27} fill="var(--uboss-surface)" fontSize={15} fontWeight={800}>
           {truncate(node.name, 18)}
         </text>
-        <text x={x + 58} y={y + 45} fill="#9DB4CF" fontSize={11}>
+        <text x={x + 58} y={y + 45} fill="var(--uboss-text-3)" fontSize={11}>
           {node.subtitle}
         </text>
       </g>
@@ -298,17 +305,24 @@ function OrgNode({
           width={BOX_WIDTH}
           height={BOX_HEIGHT}
           rx={13}
-          fill="#F4F8FD"
-          stroke="#D6E2F0"
+          fill="var(--uboss-bg-2)"
+          stroke="var(--uboss-border)"
         />
         <rect x={x + 12} y={y + 13} width={36} height={36} rx={9} fill={colour} />
-        <text x={x + 30} y={y + 37} fill="#fff" fontSize={13} fontWeight={800} textAnchor="middle">
+        <text
+          x={x + 30}
+          y={y + 37}
+          fill="var(--uboss-surface)"
+          fontSize={13}
+          fontWeight={800}
+          textAnchor="middle"
+        >
           {departmentInitials(node.name)}
         </text>
-        <text x={x + 58} y={y + 26} fill="#12314B" fontSize={13.5} fontWeight={750}>
+        <text x={x + 58} y={y + 26} fill="var(--uboss-text)" fontSize={13.5} fontWeight={750}>
           {truncate(node.name, 22)}
         </text>
-        <text x={x + 58} y={y + 44} fill="#5C6B82" fontSize={11}>
+        <text x={x + 58} y={y + 44} fill="var(--uboss-text-2)" fontSize={11}>
           {node.subtitle}
         </text>
       </g>
@@ -345,17 +359,24 @@ function OrgNode({
         width={BOX_WIDTH}
         height={BOX_HEIGHT}
         rx={13}
-        fill="#ffffff"
-        stroke="#E2EAF4"
+        fill="var(--uboss-surface)"
+        stroke="var(--uboss-border)"
       />
       <rect x={x + 12} y={y + 13} width={36} height={36} rx={9} fill={colour} />
-      <text x={x + 30} y={y + 37} fill="#fff" fontSize={12.5} fontWeight={800} textAnchor="middle">
+      <text
+        x={x + 30}
+        y={y + 37}
+        fill="var(--uboss-surface)"
+        fontSize={12.5}
+        fontWeight={800}
+        textAnchor="middle"
+      >
         {initials(node.name)}
       </text>
-      <text x={x + 58} y={y + 26} fill="#12314B" fontSize={13} fontWeight={700}>
+      <text x={x + 58} y={y + 26} fill="var(--uboss-text)" fontSize={13} fontWeight={700}>
         {truncate(node.name, 18)}
       </text>
-      <text x={x + 58} y={y + 43} fill="#5C6B82" fontSize={10.5}>
+      <text x={x + 58} y={y + 43} fill="var(--uboss-text-2)" fontSize={10.5}>
         {truncate(node.subtitle, 24)}
       </text>
 
@@ -379,7 +400,13 @@ function OrgNode({
           }}
         >
           <title>Add report</title>
-          <circle cx={right - 40} cy={y + 17} r={10.5} fill="#EEF3FF" stroke="#DBE7FF" />
+          <circle
+            cx={right - 40}
+            cy={y + 17}
+            r={10.5}
+            fill="var(--uboss-blue-050)"
+            stroke="var(--uboss-blue-100)"
+          />
           <path
             d={`M${right - 40} ${y + 12.5} v9 M${right - 44.5} ${y + 17} h9`}
             stroke="#2563EB"
@@ -409,11 +436,17 @@ function OrgNode({
           }}
         >
           <title>Edit</title>
-          <circle cx={right - 15} cy={y + 17} r={10.5} fill="#F1F5FA" stroke="#E2EAF4" />
+          <circle
+            cx={right - 15}
+            cy={y + 17}
+            r={10.5}
+            fill="var(--uboss-bg-2)"
+            stroke="var(--uboss-border)"
+          />
           <path
             d={`M${right - 19} ${y + 21} l5.5 -5.5 2 2 -5.5 5.5 -2.6 .6 z`}
             fill="none"
-            stroke="#54637A"
+            stroke="var(--uboss-text-2)"
             strokeWidth={1.3}
             strokeLinejoin="round"
           />

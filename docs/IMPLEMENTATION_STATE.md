@@ -3261,3 +3261,64 @@ now connected — which is the principle the pipeline claims for itself (ADR-275
 Fixing the audit cost an `overrides` block rather than the downgrade `npm audit fix --force`
 proposed (S-345), and fixing the lockfile cost 23 incidental version moves inside the declared
 ranges (ADR-279). The full suite was re-run after both.
+
+## Pre-Prompt-45 enterprise audit — what was found by running the product
+
+The audit was done against the running application in a real browser at three viewport widths and
+in both colour schemes, not from code review. Nine defects, in rough order of severity:
+
+1. **Every `@RequirePermission` route returned 403** for a real browser session — the whole data
+   API — because the two global guards were registered in the wrong order (ADR-281). Fixed, and
+   pinned by a test that was proven to fail on the original order.
+2. **Signing in led nowhere.** The workspace button on the login screen had no click handler at all,
+   so the application could not be entered through its own front door. A stale Prompt-2 note under
+   it still said wiring it up "arrives with the dashboard prompts".
+3. **The sidebar did nothing** on all twenty-six company screens (ADR-281).
+4. **Module visibility was inert.** `useMyAccess` keyed off `/auth/me`'s `activeWorkspaceId`,
+   which is structurally always null — the server derives it from `isTenantActor`, and an actor
+   only becomes one inside a `/tenants/:tenantId/…` route. So `/my-access` was never called,
+   every `can()` check was false, and the CR-03 rule that a standard Employee must not see
+   Objective Optimization or Agent Builder **was not in effect**: everybody saw everything. Now
+   resolved through a shared `active-workspace` helper, and verified per role in a browser.
+5. **Workspace Chat was invisible to every role.** `filterNavigation` dropped any item whose key
+   was not a granted module, and `chat` deliberately is not a module — `chat.controller.ts`
+   argues at length that a `chat:View` grant would mean somebody could be handed everybody's
+   correspondence. A nav item now declares which module governs it, and `null` means none.
+   The test that had claimed to cover this used a fixture containing `chat` in `visibleModules`,
+   which the server cannot return: `visibleModules` is typed `readonly ModuleKey[]`.
+6. **Dark mode did not exist** (ADR-282).
+7. **Two dead sidebar links.** "Users & Access" pointed at `/users` and "Roles & Permissions" at
+   `/roles`; neither route has ever existed. They now point at `/settings/users` and
+   `/settings?section=roles`, and Settings accepts a `?section=` parameter so a section is a
+   real destination that survives a reload and a Back.
+8. **A fabricated count.** The Approvals item carried `badge: 5` as a literal. Every person in
+   every company saw "5 pending", forever, whatever their queue held.
+9. **The signed-in person was shown as a machine ID.** All twenty-six screens passed
+   `name: me?.user.ubossUniqueId` and `role: '<the current page title>'`, so the sidebar
+   footer read `UB-6MYH-E62C` for somebody called Priya Nair, and their "role" changed as they
+   navigated. `/auth/me` now returns a display name, and one shared hook supplies the name and
+   the real scope.
+
+Two mobile layout faults were found and fixed at 390px: the Reports tab row measured 812px and
+scrolled the page sideways (it scrolls inside itself now), and a `1fr` grid track refused to
+shrink below its content on Performance (`minmax(0, 1fr)`).
+
+`.uboss-definitions` was referenced by four screens and had no rule anywhere in the stylesheet,
+so each rendered as the browser's default `<dl>`. Reports additionally printed the server's own
+field names as labels — "onTime" rather than "On time".
+
+### What the audit found to be sound
+
+No horizontal overflow on any of twenty-two routes at desktop, tablet and phone widths beyond the
+two faults above. No control anywhere without an accessible name. No runtime console errors. No
+half-dark surface in either scheme across the component gallery, both shells and the login screen.
+
+### Still outstanding
+
+- **The 19 Settings sections have not each been exercised for real load, save, validation and
+  permission behaviour.** The section list and shell are right; whether every panel writes is
+  unverified.
+- **Master Console and the Development & Operations panel** were not audited screen by screen.
+- The seeded development database contains **no role assignments at all** — `role_assignments` is
+  empty — so a fresh `db:seed` produces an application where every sidebar is empty and nothing is
+  permitted. Roles were granted by hand for this audit; the seed itself is unchanged.

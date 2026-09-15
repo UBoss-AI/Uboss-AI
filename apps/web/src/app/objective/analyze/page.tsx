@@ -6,7 +6,6 @@ import { Suspense, useCallback, useEffect, useState } from 'react';
 
 import { ANALYSIS_RUN_STATUS_TONES, TIME_UNIT_LABELS, type AnalysisNode } from '@uboss/types';
 import {
-  AppShell,
   Banner,
   Button,
   Card,
@@ -27,6 +26,13 @@ import {
   type MeResponse,
   type ObjectiveView,
 } from '../../../lib/api-client';
+import { useSignedInUser } from '../../../lib/use-signed-in-user';
+import { RoutedAppShell } from '../../../components/RoutedAppShell';
+import {
+  forgetWorkspace,
+  readRememberedWorkspace,
+  resolveActiveWorkspace,
+} from '../../../lib/active-workspace';
 import { useNotificationBell } from '../../../lib/use-notification-bell';
 import { useCompanyNavigation } from '../../../lib/use-company-navigation';
 
@@ -120,7 +126,10 @@ function ObjectiveAnalyzeInner() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const tenantId = me?.activeWorkspaceId ?? me?.workspaces[0]?.tenantId ?? null;
+  const tenantId =
+    resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
+
+  const signedInUser = useSignedInUser(me);
   const activeWorkspace = me?.workspaces.find((workspace) => workspace.tenantId === tenantId);
   const bell = useNotificationBell(tenantId);
 
@@ -219,15 +228,15 @@ function ObjectiveAnalyzeInner() {
         }));
 
   return (
-    <AppShell
+    <RoutedAppShell
       variant="company"
       workspaceName={activeWorkspace?.tenantName ?? '—'}
       groups={navGroups}
       activeKey="objective"
-      onNavigate={() => undefined}
-      user={{ name: me?.user.ubossUniqueId ?? 'Signed in', role: 'Objective analysis' }}
+      user={signedInUser}
       {...bell.shellProps}
       onSignOut={() => {
+        forgetWorkspace();
         void authApi.logout().finally(() => window.location.assign('/login'));
       }}
     >
@@ -478,7 +487,7 @@ function ObjectiveAnalyzeInner() {
           </CardBody>
         </Card>
       </div>
-    </AppShell>
+    </RoutedAppShell>
   );
 }
 

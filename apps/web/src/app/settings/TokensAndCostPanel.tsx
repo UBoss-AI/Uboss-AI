@@ -182,7 +182,7 @@ export function TokensAndCostPanel({ tenantId }: { tenantId: string | null }) {
               <div
                 style={{
                   height: 12,
-                  background: 'var(--uboss-bg-2, #eef1f5)',
+                  background: 'var(--uboss-bg-2)',
                   borderRadius: 8,
                   margin: '14px 0',
                   overflow: 'hidden',
@@ -196,8 +196,8 @@ export function TokensAndCostPanel({ tenantId }: { tenantId: string | null }) {
                     height: '100%',
                     background:
                       company.threshold === 'HardStop' || company.threshold === 'Critical'
-                        ? 'var(--uboss-danger, #c0392b)'
-                        : 'var(--uboss-blue, #2f6fed)',
+                        ? 'var(--uboss-danger)'
+                        : 'var(--uboss-blue)',
                   }}
                 />
               </div>

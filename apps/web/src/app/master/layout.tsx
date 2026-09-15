@@ -1,11 +1,13 @@
 'use client';
 
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 
-import { AppShell, Banner, Card, CardBody, CardHeader, MASTER_NAV, SkeletonText } from '@uboss/ui';
+import { Banner, Card, CardBody, CardHeader, MASTER_NAV, SkeletonText } from '@uboss/ui';
 
+import { RoutedAppShell } from '../../components/RoutedAppShell';
+import { forgetWorkspace } from '../../lib/active-workspace';
 import { ApiError, authApi, platformApi, type PlatformMe } from '../../lib/api-client';
 
 /**
@@ -62,7 +64,6 @@ export function useMasterConsole(): MasterContextValue {
  * the empty case and says what is wrong and who can fix it.
  */
 export default function MasterLayout({ children }: { children: ReactNode }) {
-  const router = useRouter();
   const pathname = usePathname();
 
   const [me, setMe] = useState<PlatformMe | null>(null);
@@ -137,11 +138,10 @@ export default function MasterLayout({ children }: { children: ReactNode }) {
 
   return (
     <MasterContext.Provider value={contextValue}>
-      <AppShell
+      <RoutedAppShell
         variant="master"
         groups={groups}
         activeKey={activeKey}
-        onNavigate={(key) => router.push(`/master/${key}`)}
         user={{
           name: me?.userId ? 'Platform staff' : 'Signing in…',
           role: roleLabels || 'No platform role',
@@ -150,6 +150,7 @@ export default function MasterLayout({ children }: { children: ReactNode }) {
           roleLabels ? `${roleLabels} · All companies & platform` : 'No platform role assigned'
         }
         onSignOut={() => {
+          forgetWorkspace();
           void authApi.logout().finally(() => window.location.assign('/login'));
         }}
         hasNotifications={false}
@@ -195,7 +196,7 @@ export default function MasterLayout({ children }: { children: ReactNode }) {
         ) : (
           children
         )}
-      </AppShell>
+      </RoutedAppShell>
     </MasterContext.Provider>
   );
 }

@@ -4,7 +4,6 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
-  AppShell,
   Banner,
   Button,
   Card,
@@ -20,6 +19,13 @@ import {
   type StatusTone,
 } from '@uboss/ui';
 
+import { useSignedInUser } from '../../lib/use-signed-in-user';
+import { RoutedAppShell } from '../../components/RoutedAppShell';
+import {
+  forgetWorkspace,
+  readRememberedWorkspace,
+  resolveActiveWorkspace,
+} from '../../lib/active-workspace';
 import { ConnectionsPanel } from '../../components/ConnectionsPanel';
 import { NotificationPreferences } from '../../components/NotificationPreferences';
 import { SkillsPanel } from '../../components/SkillsPanel';
@@ -35,6 +41,7 @@ import { CreditsPanel } from './CreditsPanel';
 import { KnowledgeAndDataPanel } from './KnowledgeAndDataPanel';
 import { MemoryAndFeedbackPanel } from './MemoryAndFeedbackPanel';
 import { SecurityCenterPanel } from './SecurityCenterPanel';
+import { AppearancePanel } from './AppearancePanel';
 import { SupportPanel } from './SupportPanel';
 import { TokensAndCostPanel } from './TokensAndCostPanel';
 
@@ -108,7 +115,10 @@ export default function CompanySettingsPage() {
     }[];
   } | null>(null);
 
-  const tenantId = me?.activeWorkspaceId ?? me?.workspaces[0]?.tenantId ?? null;
+  const tenantId =
+    resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
+
+  const signedInUser = useSignedInUser(me);
   const bell = useNotificationBell(tenantId);
 
   useEffect(() => {
@@ -211,9 +221,22 @@ export default function CompanySettingsPage() {
       setReason('');
       setHistory(null);
       setActive(key);
+      // Put the section in the address bar so it can be linked to, reloaded and gone Back from.
+      // The sidebar's "Roles & Permissions" item depends on this: it is a section here, not a
+      // route of its own, and before this it had nowhere to point.
+      window.history.replaceState(null, '', `?section=${encodeURIComponent(key)}`);
     },
     [dirty],
   );
+
+  // Honour ?section= on arrival. Read after mount rather than during render: this page
+  // server-renders, and the query string is not part of the server's idea of the tree.
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get('section');
+    if (requested !== null && SETTINGS_SECTIONS.some((section) => section.key === requested)) {
+      setActive(requested);
+    }
+  }, []);
 
   const control = (setting: ResolvedSetting) => {
     const current = draft[setting.key] ?? setting.value;
@@ -276,15 +299,15 @@ export default function CompanySettingsPage() {
   const activeSection = SETTINGS_SECTIONS.find((section) => section.key === active);
 
   return (
-    <AppShell
+    <RoutedAppShell
       variant="company"
       workspaceName={activeWorkspace?.tenantName ?? '—'}
       groups={navGroups}
       activeKey="settings"
-      onNavigate={() => undefined}
       {...bell.shellProps}
-      user={{ name: me?.user.ubossUniqueId ?? 'Signed in', role: 'Settings' }}
+      user={signedInUser}
       onSignOut={() => {
+        forgetWorkspace();
         void authApi.logout().finally(() => window.location.assign('/login'));
       }}
     >
@@ -526,6 +549,7 @@ export default function CompanySettingsPage() {
                 ) : null}
                 {active === 'agent' ? <MemoryAndFeedbackPanel tenantId={tenantId} /> : null}
                 {active === 'knowledge' ? <KnowledgeAndDataPanel tenantId={tenantId} /> : null}
+                {active === 'appearance' ? <AppearancePanel /> : null}
                 {active === 'organization' ? (
                   <div className="uboss-actions">
                     <Button variant="navy" onClick={() => router.push('/hierarchy')}>
@@ -563,6 +587,6 @@ export default function CompanySettingsPage() {
           </SettingsShell>
         </>
       )}
-    </AppShell>
+    </RoutedAppShell>
   );
 }

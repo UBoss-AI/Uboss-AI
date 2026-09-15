@@ -4,7 +4,6 @@ import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 
 import {
-  AppShell,
   Banner,
   Button,
   Card,
@@ -30,6 +29,13 @@ import {
   type PerformanceView,
 } from '../../../lib/api-client';
 
+import { useSignedInUser } from '../../../lib/use-signed-in-user';
+import { RoutedAppShell } from '../../../components/RoutedAppShell';
+import {
+  forgetWorkspace,
+  readRememberedWorkspace,
+  resolveActiveWorkspace,
+} from '../../../lib/active-workspace';
 import { useNotificationBell } from '../../../lib/use-notification-bell';
 import { EmployeePhoto } from '../../../components/EmployeePhoto';
 import { useCompanyNavigation } from '../../../lib/use-company-navigation';
@@ -99,7 +105,10 @@ export default function EmployeeProfilePage() {
   const [moveReason, setMoveReason] = useState('');
   const [moving, setMoving] = useState(false);
 
-  const tenantId = me?.activeWorkspaceId ?? me?.workspaces[0]?.tenantId ?? null;
+  const tenantId =
+    resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
+
+  const signedInUser = useSignedInUser(me);
   const bell = useNotificationBell(tenantId);
   const userId = params.userId;
   const access = useMyAccess();
@@ -203,15 +212,15 @@ export default function EmployeeProfilePage() {
   const activeWorkspace = me?.workspaces.find((workspace) => workspace.tenantId === tenantId);
 
   return (
-    <AppShell
+    <RoutedAppShell
       variant="company"
       workspaceName={activeWorkspace?.tenantName ?? '—'}
       groups={navGroups}
       activeKey="hierarchy"
-      onNavigate={() => undefined}
       {...bell.shellProps}
-      user={{ name: me?.user.ubossUniqueId ?? 'Signed in', role: 'Hierarchy' }}
+      user={signedInUser}
       onSignOut={() => {
+        forgetWorkspace();
         void authApi.logout().finally(() => window.location.assign('/login'));
       }}
     >
@@ -511,6 +520,6 @@ export default function EmployeeProfilePage() {
           audited.
         </p>
       </Modal>
-    </AppShell>
+    </RoutedAppShell>
   );
 }

@@ -2,19 +2,17 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import {
-  AppShell,
-  Banner,
-  Button,
-  Card,
-  CardBody,
-  PageHeader,
-  SkeletonText,
-  Tabs,
-} from '@uboss/ui';
+import { Banner, Button, Card, CardBody, PageHeader, SkeletonText, Tabs } from '@uboss/ui';
 
 import { NOTIFICATION_KIND_DEFINITIONS } from '@uboss/types';
 
+import { useSignedInUser } from '../../lib/use-signed-in-user';
+import { RoutedAppShell } from '../../components/RoutedAppShell';
+import {
+  forgetWorkspace,
+  readRememberedWorkspace,
+  resolveActiveWorkspace,
+} from '../../lib/active-workspace';
 import { NotificationList } from '../../components/NotificationList';
 import { useCompanyNavigation } from '../../lib/use-company-navigation';
 import {
@@ -68,7 +66,10 @@ export default function NotificationCenterPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const tenantId = me?.activeWorkspaceId ?? me?.workspaces[0]?.tenantId ?? null;
+  const tenantId =
+    resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
+
+  const signedInUser = useSignedInUser(me);
 
   useEffect(() => {
     authApi
@@ -156,13 +157,12 @@ export default function NotificationCenterPage() {
   );
 
   return (
-    <AppShell
+    <RoutedAppShell
       variant="company"
       workspaceName={activeWorkspace?.tenantName ?? '—'}
       groups={navGroups}
       activeKey="dashboard"
-      onNavigate={() => undefined}
-      user={{ name: me?.user.ubossUniqueId ?? 'Signed in', role: 'Notifications' }}
+      user={signedInUser}
       {...(counts === undefined
         ? {}
         : {
@@ -170,6 +170,7 @@ export default function NotificationCenterPage() {
             awaitingAcknowledgement: counts.awaitingAcknowledgement,
           })}
       onSignOut={() => {
+        forgetWorkspace();
         void authApi.logout().finally(() => window.location.assign('/login'));
       }}
     >
@@ -249,6 +250,6 @@ export default function NotificationCenterPage() {
           </CardBody>
         </Card>
       ) : null}
-    </AppShell>
+    </RoutedAppShell>
   );
 }
