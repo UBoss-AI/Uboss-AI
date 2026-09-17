@@ -564,24 +564,31 @@ describe('separation of duties', () => {
     assert.equal(outcome.satisfied, true);
   });
 
-  it('four eyes needs a second person, not just a different one', () => {
-    const alone = checkSeparationOfDuties({
+  // ADR-296. This gate answers "may this person be one of the two eyes", not "have two eyes been
+  // given". It used to answer both, and refusing anybody who was not preceded by another actor
+  // made four eyes unsatisfiable: every decision that would have created a prior actor also
+  // settled the request, so the first eye was always refused and there was never a second.
+  //
+  // How many eyes have been given is counted where the decisions live — `ApprovalService.decide`,
+  // proved end to end in `approvals.e2e.spec.ts`.
+  it('lets a qualified person give the first of the two approvals', () => {
+    const first = checkSeparationOfDuties({
       policies: [fourEyes],
       action: 'Approve',
       module: 'objective',
       actorUserId: 'reviewer',
       resource: { id: 'r', createdByUserId: 'author', priorActorUserIds: [] },
     });
-    assert.equal(alone.satisfied, false);
+    assert.equal(first.satisfied, true, 'being first is not a reason to refuse');
 
-    const withSecond = checkSeparationOfDuties({
+    const second = checkSeparationOfDuties({
       policies: [fourEyes],
       action: 'Approve',
       module: 'objective',
       actorUserId: 'reviewer-2',
       resource: { id: 'r', createdByUserId: 'author', priorActorUserIds: ['reviewer-1'] },
     });
-    assert.equal(withSecond.satisfied, true);
+    assert.equal(second.satisfied, true, 'and a distinct second person may follow');
   });
 
   it('does not count the actor as their own second pair of eyes', () => {
@@ -692,14 +699,30 @@ describe('role templates', () => {
     assert.ok(!agents.includes('Schedule'));
   });
 
-  it('keeps Approve out of Manager, preserving the Approve & Assign boundary', () => {
-    // The client's locked boundary: handing work to a person and approving the plan are separate
-    // decisions. A manager who should also approve gets the Approver role as well, which makes
-    // the second decision visible in the assignment record.
-    for (const [, actions] of Object.entries(ROLE_TEMPLATES.Manager.permissions)) {
-      assert.ok(!(actions ?? []).includes('Approve'), 'Manager must not carry Approve');
+  it('gives Manager Approve on approvals and on nothing else (ADR-293)', () => {
+    // The client's decision: `Manager` stays a valid Form 2 Approval option and the role carries
+    // `approvals:Approve`, because a request routed there was otherwise undecidable by anybody.
+    //
+    // This used to assert Manager carried no Approve at all. That is now wrong in one place and
+    // still right everywhere else, so the invariant tightens rather than disappears: the grant is
+    // confined to the approvals queue and must not spread into authoring a plan, changing settings
+    // or releasing an agent. What bounds the grant itself — addressed-to, TeamSubtree, the
+    // NoSelfApproval control and four eyes — is proved against the running engine in
+    // `approvals.e2e.spec.ts`, not here.
+    const approvals = ROLE_TEMPLATES.Manager.permissions.approvals ?? [];
+    assert.ok(approvals.includes('Approve'), 'Manager decides requests addressed to Manager');
+
+    for (const [module, actions] of Object.entries(ROLE_TEMPLATES.Manager.permissions)) {
+      if (module === 'approvals') continue;
+      assert.ok(
+        !(actions ?? []).includes('Approve'),
+        `Manager must not carry Approve on ${module}`,
+      );
     }
+
+    // And the boundary that did survive: assigning work is still a different act from approving it.
     assert.ok((ROLE_TEMPLATES.Manager.permissions.objective ?? []).includes('Assign'));
+    assert.ok(!(ROLE_TEMPLATES.Manager.permissions.objective ?? []).includes('Approve'));
   });
 
   it('keeps Approve out of Company Admin', () => {

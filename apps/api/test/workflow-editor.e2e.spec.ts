@@ -1135,6 +1135,58 @@ describe('workflow graph editor and pre-publish readiness (e2e)', () => {
       assert.ok(Array.isArray(summary.incompleteNodes), 'incomplete fields');
     });
 
+    // This check used to read `connection_tool_grants`, whose `agent_id` is NOT NULL — and no
+    // Engine Agent exists until Approve & Assign has run. So it demanded a row that could only be
+    // created after the step it blocked, and every plan with an AI node was refused forever. It now
+    // asks the question that can be answered at plan time: does a usable connection's connector
+    // support the category. The per-agent grant still governs execution, untouched.
+    it('is satisfied by a usable connection whose connector supports the category', async () => {
+      const { objective } = await analysedObjective();
+      await open(objective.id);
+
+      // mock-erp supports Read and Write, per CONNECTOR_DEFINITIONS.
+      const connection = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.connection.create({
+          data: {
+            tenantId,
+            scope: 'Company',
+            connectorKind: 'mock-erp',
+            label: 'Pre-publish capability probe',
+            ownerUserId: ownerUserId,
+            createdByUserId: ownerUserId,
+          },
+          select: { id: true },
+        }),
+      );
+
+      const withConnection = await summaryFor(objective.id);
+      assert.deepEqual(
+        withConnection.missingConnections.filter((c: string) => c === 'Read' || c === 'Write'),
+        [],
+        'a live mock-erp connection covers Read and Write',
+      );
+
+      // Disabled, so it is no longer usable — and the category goes back to missing if the plan
+      // needs it. Proves the check can still fail, rather than always answering "fine".
+      await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.connection.update({
+          where: { id: connection.id },
+          data: { disabledAt: new Date(), disabledReason: 'Probe: prove the check can fail.' },
+        }),
+      );
+
+      const disabled = await summaryFor(objective.id);
+      const needed: string[] = disabled.missingConnections;
+      assert.ok(
+        needed.length >= withConnection.missingConnections.length,
+        'disabling the only connection cannot reduce what is missing',
+      );
+
+      await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.connection.delete({ where: { id: connection.id } }),
+      );
+    });
+
     it('counts human and AI work separately, and names the people affected', async () => {
       const { objective } = await analysedObjective();
       const draft = await open(objective.id);

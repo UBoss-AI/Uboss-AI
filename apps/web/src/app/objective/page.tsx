@@ -34,6 +34,7 @@ import {
 } from '../../lib/active-workspace';
 import { useNotificationBell } from '../../lib/use-notification-bell';
 import { useCompanyNavigation } from '../../lib/use-company-navigation';
+import { can, useMyAccess } from '../../lib/use-my-access';
 
 /** The target, as the reference shows it: a number and its unit, or nothing. */
 function targetOf(row: ObjectiveListRow): string {
@@ -60,6 +61,8 @@ function targetOf(row: ObjectiveListRow): string {
 export default function ObjectivesPage() {
   // Prompt 40A (CR-03): the sidebar follows this person's real grants, never a role label.
   const navGroups = useCompanyNavigation();
+  // What this person may actually do here, so the toolbar offers nothing the server will refuse.
+  const access = useMyAccess();
   const [me, setMe] = useState<MeResponse | null>(null);
   const [rows, setRows] = useState<ObjectiveListRow[] | null>(null);
   const [status, setStatus] = useState('');
@@ -121,12 +124,25 @@ export default function ObjectivesPage() {
         description="Find and manage objectives before AI decomposition."
         breadcrumbs={[{ label: 'Objective' }]}
         actions={
-          <Link href="/objective/form">
-            <Button variant="primary" size="sm">
-              <Icon name="plus" size={16} />
-              Create Objective
-            </Button>
-          </Link>
+          /*
+           * Only offered to somebody who may actually create one.
+           *
+           * A standard Employee has no `objective` grant at all -- CR-03 removed it deliberately --
+           * so this button used to send them to Form 2 and let the server refuse the save with a
+           * 403. `use-my-access` exists for exactly this: "a screen that offers an action the
+           * route will refuse is a screen that teaches people their software is broken".
+           *
+           * `can()` leans shut while access is still loading, which is the right way round here:
+           * a button that appears a moment late is better than one that fails when pressed.
+           */
+          can(access, 'objective', 'Create') ? (
+            <Link href="/objective/form">
+              <Button variant="primary" size="sm">
+                <Icon name="plus" size={16} />
+                Create Objective
+              </Button>
+            </Link>
+          ) : null
         }
       />
 
@@ -160,7 +176,19 @@ export default function ObjectivesPage() {
           rows={rows ?? []}
           {...(rows === null ? { loading: true } : {})}
           emptyTitle="No objectives yet"
-          emptyDescription="Create an objective to record its business intent on the approved Form 2."
+          /*
+           * The empty state told everybody to "create an objective", including the roles that
+           * hold no `objective:Create` — a Company Admin, for one, whose grants here are View,
+           * Comment and Export by deliberate separation of duties (role-templates.ts). Since the
+           * Create button is correctly hidden from them, that copy instructed an action with no
+           * control to perform it and no route that would accept it. It now says what each reader
+           * can actually do next.
+           */
+          emptyDescription={
+            can(access, 'objective', 'Create')
+              ? 'Create an objective to record its business intent on the approved Form 2.'
+              : 'Objectives appear here once someone who authors them records one on the approved Form 2. Your role reads and comments on objectives rather than creating them.'
+          }
           columns={[
             {
               key: 'objective',
@@ -176,9 +204,10 @@ export default function ObjectivesPage() {
             {
               key: 'department',
               header: 'Department',
-              render: (row: ObjectiveListRow) => (
-                <span className="uboss-mono uboss-muted-3">{row.departmentId.slice(0, 8)}</span>
-              ),
+              // Both of these columns used to print the first eight characters of a UUID, which
+              // reads as "01a084c1" — noise a person cannot scan a list by, and identical-looking
+              // across departments that share a prefix. The API now returns the names.
+              render: (row: ObjectiveListRow) => <span>{row.departmentName}</span>,
             },
             {
               key: 'responsible',
@@ -188,9 +217,7 @@ export default function ObjectivesPage() {
                   // Not yet routed. Said plainly rather than shown as a blank cell.
                   <span className="uboss-muted-3">Not yet sent to anyone</span>
                 ) : (
-                  <span className="uboss-mono uboss-muted-3">
-                    {row.responsibleOwnerUserId.slice(0, 8)}
-                  </span>
+                  <span>{row.responsibleOwnerName ?? 'No longer in this company'}</span>
                 ),
             },
             {

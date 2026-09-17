@@ -37,6 +37,7 @@ import { MyEngineAgents } from '../../components/MyEngineAgents';
 import { useNotificationBell } from '../../lib/use-notification-bell';
 import { DiscussButton } from '../../components/DiscussButton';
 import { useCompanyNavigation } from '../../lib/use-company-navigation';
+import { can, useMyAccess } from '../../lib/use-my-access';
 
 /**
  * Engine Agents — the reference's `SCR.agents`.
@@ -59,6 +60,8 @@ import { useCompanyNavigation } from '../../lib/use-company-navigation';
 export default function EngineAgentsPage() {
   // Prompt 40A (CR-03): the sidebar follows this person's real grants, never a role label.
   const navGroups = useCompanyNavigation();
+  // Building an agent is a separate grant from running one; the toolbar has to know the difference.
+  const access = useMyAccess();
   const [me, setMe] = useState<MeResponse | null>(null);
   const [agents, setAgents] = useState<EngineAgentView[]>([]);
   const [selected, setSelected] = useState<EngineAgentView | null>(null);
@@ -164,12 +167,22 @@ export default function EngineAgentsPage() {
                 resourceId={selected.id}
               />
             )}
-            <Link href="/agent-builder">
-              <Button variant="primary" size="sm">
-                <Icon name="plus" size={16} />
-                Build agent
-              </Button>
-            </Link>
+            {/*
+              Offered only to somebody who may build.
+
+              CR-03 made Build and Operate separate capabilities on purpose: a standard Employee
+              holds `agents: [View, Comment, Run]` and no `agent-builder` grant at all, so this
+              button used to send them to a screen their role cannot use. Running a released agent
+              and deciding what gets released are different acts, and the toolbar should say so.
+            */}
+            {can(access, 'agent-builder', 'Create') ? (
+              <Link href="/agent-builder">
+                <Button variant="primary" size="sm">
+                  <Icon name="plus" size={16} />
+                  Build agent
+                </Button>
+              </Link>
+            ) : null}
           </>
         }
       />

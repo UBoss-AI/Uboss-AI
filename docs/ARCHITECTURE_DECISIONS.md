@@ -6229,3 +6229,452 @@ The cleanup also met the strict-versioning guard: a trigger refuses to delete th
 Active version — "an authorised edit creates a new draft version; it never rewrites the plan that is
 live". The steps belong to the version, so deleting the version removes them. Working with that rule
 is correct; disabling a protection to tidy up after a test would not be.
+
+## ADR-290 — One destination, one entry: the Administration group stops repeating Settings
+
+**Status:** Accepted (client amendment, 2026-09-16)
+
+### What changed
+
+`COMPANY_NAV`'s `Administration` group no longer carries `Users & Access` or
+`Roles & Permissions`. It keeps `UBoss Profile Search` and `Settings`.
+
+### Why the earlier decision was right and stopped being right
+
+Prompt 2 added both items deliberately (UX_MAP §7.1, §7.2). The prototype's navigation mutation
+targeted group names that did not exist, so neither item was ever inserted into its sidebar and
+both screens were reachable only by typing a URL. Adding them fixed a genuine orphan.
+
+What changed since is that Settings grew both as sections of its own. The sidebar's
+`Roles & Permissions` pointed at `/settings?section=roles` — not a screen of its own at all, but a
+deep link into the Settings section of the same name. The sidebar's `Users & Access` pointed at
+`/settings/users`, which Settings → Users & Access already opens with an explicit
+"Open Users & Access" button. So an admin was shown each destination twice, in two different
+places, and the second copy taught nothing. The client asked for the duplicates to go.
+
+The orphan risk the original decision guarded against is gone, and the tests say so directly:
+they now assert `users` and `roles` are still present in `SETTINGS_SECTIONS`. That is what "not
+orphaned" always meant; asserting their presence in the *sidebar* was only ever a proxy for it.
+
+### Why UBoss Profile Search stayed
+
+It looks like the same case and is not. Settings does hold a section with a near-identical name,
+but that one is `uboss` — "UBoss Profile Search Policy", the cross-company lookup *policy*. The
+search screen itself lives at `/profile-search`, and a search of the whole web app found nothing
+that links to it except this sidebar item. Removing it would have created exactly the orphan
+Prompt 2 was fixing. Kept, with a test asserting `profile-search` is in the sidebar and *not* in
+`SETTINGS_SECTIONS`, so the distinction cannot be flattened by accident later.
+
+### The consequence worth knowing
+
+Those two items were the *only* thing that made the Company Admin, Manager and Approver sidebars
+differ from one another: 15 / 14 / 13 items became 13 / 13 / 13. Role still governs everything
+that matters — data scope, what each screen allows, and which Settings sections the server
+returns — but the sidebar no longer distinguishes the three senior roles at a glance. The Employee
+remains visibly narrower at 11.
+
+### A defect this surfaced
+
+Verifying the change exposed a separate fault of the class already fixed twice in this audit: the
+"Open Users & Access" button was ungated, so an Approver or Employee — who hold no `users` grant
+at all — were offered it and then met "You do not have access to that part of UBoss." The button
+is now gated on `can(myAccess, 'users', 'View')`, the grant `access.controller.ts` actually
+checks. Verified from all four roles: Company Admin (full grants) and Manager (exactly `["View"]`)
+keep it; Approver and Employee (`null`) do not.
+
+Note that the *section* remains visible to all four roles, because the server returns the `users`
+category to them. That is left alone: the category is settings copy about how accounts are
+governed, which is legitimately readable, and the server's view model is the authority on it. Only
+the link into the admin screen was making a promise the product could not keep.
+
+### Rule this leaves behind
+
+A sidebar item whose `href` points into `/settings` is a duplicate by construction, and should be
+a Settings section instead. An item pointing at its own route is not a duplicate however similar
+its label reads — check the destination, not the name.
+
+## ADR-291 — The objective list printed UUIDs, and what it took to make one objective go live
+
+**Status:** Accepted (2026-09-16)
+
+### The list showed identifiers where it owed names
+
+`ObjectiveListRow` carried `departmentId` and `responsibleOwnerUserId` and nothing else, so the
+Objectives screen rendered `row.departmentId.slice(0, 8)` — literally `01a084c1`. Two departments
+whose ids share a prefix looked identical, and no one could scan the list.
+
+Both names are now resolved server-side and returned as `departmentName` and
+`responsibleOwnerName`, following the shape the method already used for versions: collect the ids,
+one query each, join in memory. Per-row lookups would have been a query per objective.
+
+Owner names go through `tenantMembership`, not `users`. `users` is global and carries no RLS
+(`relrowsecurity = f`), so querying it directly would happily name somebody from another company.
+`responsibleOwnerName` is null when the objective has not been routed yet, and the screen already
+says "Not yet sent to anyone" for that case.
+
+### What a real objective actually needs
+
+Driving one objective from Form 2 to Live, through the real endpoints, surfaced the sequence the
+product enforces — worth writing down because it is not guessable from the routes:
+
+```
+Draft --analysis--> WorkflowDraft --confirm team--> --complete review--> ReadyForApproval
+      --approve (Approver)--> --assign (Manager)--> Published / Active
+```
+
+Three things are easy to get wrong:
+
+1. **Analysis runs on a Draft.** `WorkflowDraft` cannot be submitted for review; the transition map
+   sends it straight to `ReadyForApproval` instead.
+2. **The workflow draft does not exist until the editor is opened.** Analysis completing all seven
+   stages leaves `objective_workflow_drafts` empty; `GET .../workflow` creates it on first read.
+3. **Only the Responsible Owner may confirm the team or complete the review** — holding the
+   permission is not enough. This is the rule that bites: Form 2's "Responsible Owner / Send To"
+   had been set to an Employee, who holds no `objective` grant at all, so the one person allowed to
+   advance it was also the one person unable to. The objective was stuck with no message saying
+   why. Re-routing it to the Manager cleared it.
+
+### Gaps this confirmed, precisely
+
+- **The workflow editor cannot set a node owner**, yet Approve & Assign refuses without one
+  ("No owner. Publishing would put work in front of nobody."). The API *does* accept `ownerUserId`
+  on `PUT .../workflow/nodes/:nodeId` — so this is a missing control, not a missing capability.
+- **Definition of Done fields are not all reachable either**: the goal's failure condition and the
+  step's criteria both had to be set through the same endpoint.
+- **Seeded role assignments carry empty scopes.** The Approver held `objective:Approve` and was
+  still refused with "That is outside what your role covers", because their assignment was
+  `MultipleDepartments` with zero departments attached. Scope emptiness reads exactly like a
+  missing permission, which is the worst way for it to fail.
+
+### The demo company
+
+SPM Medicare now holds 13 people across 5 departments with a real reporting line, a Vision and a
+Mission, three objectives spanning Draft / Under Review / Live, one assigned human task and one
+approval on record. Everything except the five login accounts' employment rows went in through the
+real endpoints, including the Aadhaar check — which correctly rejected six of eight invented
+numbers on the Verhoeff digit, so the valid ones were generated with the product's own
+`verhoeffCheckDigit`. The five login accounts had to be placed with SQL because `addEmployee`
+matches on Aadhaar and otherwise creates a *new* user, and `users.email` is unique.
+
+### Why the Dashboard looked broken and was not
+
+`DonutDashboard` swaps the pie for "Nothing in your scope yet" when `agents + pendingJobs === 0`.
+With an empty workspace that is every role, so the whole product read as broken when it was
+accurately reporting that nothing existed. One assigned human task was enough to make the pie draw
+for all four roles. Objectives never appear there: the two slices are locked to Agents and Pending
+Jobs.
+
+## ADR-292 — A provisioned company nobody could enter, and three more links in the same chain
+
+**Status:** Accepted (2026-09-16, single-company acceptance run)
+
+Provisioning a company through the Master Console produced a workspace that could never be used.
+Four separate guards, each defensible alone, closed a loop around the one person who was supposed
+to open it. Each was found by trying to do the thing, and each is recorded with the refusal that
+named it.
+
+### 1. The initial administrator could not activate
+
+`activationReadiness` requires an internal employee to hold an employment record — a department,
+and a manager unless they are the first person. Provisioning creates the company, the admin and a
+bootstrap role assignment, and nothing else; `COMPANY_SETUP_TASKS` puts "Build departments and
+reporting hierarchy" *after* the admin has access, which is the right order. So at the moment the
+admin clicked their activation link there was no department to belong to, and the only person who
+could create one was the admin being refused. The platform plane could not help either:
+
+> A platform account cannot act inside a company workspace without an explicit membership.
+
+That refusal is correct and worth keeping — it is company isolation working. The fix is narrow: the
+holder of the provisioning-issued `bootstrap` grant, in a company with no reporting root yet, is
+exempt from the employment requirement. It is the same structural exception the reporting-manager
+rule already makes for the first person, applied to the same person, and it closes the moment a
+root exists. Every later admin gets the full gate.
+
+### 2. A role could not be granted to anybody new
+
+`RoleAdministrationService.assign` accepted only `Active` and `InvitePending`. A person added
+through Add Employee is `NotInvited`, and `inviteExistingPerson` refuses to send an invitation
+until they hold a role. So:
+
+```
+invite -> needs a role -> needs InvitePending -> needs an invite
+```
+
+Nobody added through Add Employee could ever be onboarded. The proof was already in the repository:
+`users-access.e2e.spec.ts` creates its role assignments with a direct `roleAssignment.create` under
+`runAsPlatformOperation`, commented "A role, so the readiness gate is satisfied" — the test could
+not use the service either. `NotInvited` is now assignable, which is the order the setup checklist
+prescribes (roles at step 3, invitations at step 5). Suspended and offboarded stay refused, which is
+what the rule was actually for. A role on an account with no credential grants nothing: authorization
+runs off a live session.
+
+### 3. The reporting root disqualified themselves
+
+`companyHasReportingRoot` counted employment records with no manager — including the subject. The
+root *is* such a record, so the answer was always "yes" the moment they existed, and the person the
+manager-waiver exists for was the only person it never reached. Aarohan's Head of Operations was
+placed at the top of the chart and then refused activation for lacking a manager, which being the
+root means not having. `hasReportingRoot` now takes `exceptUserId` and asks the question the rule
+means: is somebody *else* already up there.
+
+### 4. Approve & Assign required an agent that only Approve & Assign could create
+
+The pre-publish readiness check asked whether a live *tool grant* existed for each category the plan
+needs. `connection_tool_grants.agent_id` is `NOT NULL`, and an Engine Agent does not exist until
+Approve & Assign has run:
+
+```
+Approve & Assign -> needs a tool grant -> needs an agent -> needs Approve & Assign
+```
+
+So every plan containing an AI node was refused forever. The service's own comment had flagged the
+grant read as a workaround "because … an Engine Agent does not exist yet at this point in the plan"
+— the note was right and the consequence had not been followed through.
+
+At plan time the answerable question is capability: does this company have a connection, not
+disabled and not expired, whose connector supports the category. That is also what a manager can
+act on. **The per-agent grant is not weakened**: execution still goes through
+`ConnectionService.mayAgentUse`, which requires an explicit unrevoked grant naming that agent and
+that connection, and high-risk categories still require a reason. A check moved to the moment it can
+be answered; none was removed. Expiry and disablement are now accounted for, which the grant-based
+version explicitly could not do.
+
+### What this unblocked
+
+Aarohan Healthcare went from Form 2 to a live assigned workflow entirely through the product: an
+objective created on the real form, analysed into 2 human and 2 AI steps with 4 approval gates, a
+company Skill authored and taken Draft → Review → Approved → Published by three different roles, a
+mock-erp connection tested to `Connected`, and Approve & Assign producing 2 human tasks, 2 AI work
+assignments, 5 approval requests and 10 executor expectations.
+
+## ADR-293 — An approval addressed to a role that cannot approve
+
+**Status:** Resolved by client decision, 2026-09-16 — `Manager` keeps its place in Form 2 and the role gains `approvals:Approve`, bounded as below.
+
+Objective Form 2's "Approval" column offers `NotRequired | Manager | Head | FourEyes`. Choosing
+**Manager** makes the analysis emit approval nodes addressed to the Manager role, and Approve &
+Assign raises real `approval_requests` routed there. Those requests cannot be decided by anybody:
+
+| Role | `approvals` grant |
+|---|---|
+| Employee | `View` |
+| **Manager** | **`View`, `Comment`** |
+| Head | `View`, `Comment`, `Approve` |
+| CompanyAdmin | `View` |
+| Approver | `View`, `Comment`, `Approve` |
+
+Observed on Aarohan's live workflow, from both directions:
+
+* as the Head (who holds `approvals:Approve` but not the Manager role) —
+  *"This request is addressed to a Manager, which you do not hold."*
+* as the Manager (who holds the role but not the grant) —
+  *"Your role does not include \"Approve\" on this."*
+
+Both refusals are correct for their own rule. Together they leave four of Aarohan's five pending
+approvals undecidable, and the objective's human step sits at `WaitingApproval` with nobody able to
+clear it.
+
+**Not fixed here, deliberately.** The two ways out are both governance decisions, not defects to
+patch during an acceptance run:
+
+1. grant `approvals:Approve` to `Manager` — which makes a manager an approver of their own team's
+   work, exactly the concentration the separation-of-duties model is built to avoid; or
+2. stop offering `Manager` in Form 2's Approval column, so the form cannot express a routing the
+   permission model refuses.
+
+(2) is the smaller change and keeps the model intact, but Form 2's field list is client-approved and
+its vocabulary is not ours to narrow. Raised for a decision. Related: the memory note on role
+template Approve gaps, which recorded that only four modules carry an `Approve` grant at all.
+
+## ADR-293A — The Manager approval grant, and what still bounds it
+
+**Status:** Accepted (client decision, 2026-09-16)
+
+ADR-293 reported that an approval addressed to `Manager` could not be decided by anybody. The
+client's decision: keep `Manager` as a valid Form 2 Approval option and grant the role
+`approvals: ['View', 'Comment', 'Approve']`, with authority still scope- and policy-bound.
+
+The change is one line in `role-templates.ts`. **Every bound the decision named was already
+enforced elsewhere, and none of it was touched** — which is the reason the grant is safe, and the
+reason the old absence of the grant was not buying the separation it appeared to:
+
+| Bound | Enforced by | Proved by |
+|---|---|---|
+| Only requests addressed to Manager | `isAddressedTo` / `routingFor` | *"does not let a Manager decide a request addressed to another role"* |
+| Only inside the effective TeamSubtree | `maxScope` + the authorization engine's scope check against the resource owner | *"does not let a Manager approve work outside their TeamSubtree"* — refused with *"That is outside what your role covers."* |
+| Never their own work | the platform-wide `NoSelfApproval` control, on `createdByUserId` | two tests; refused with *"You cannot approve something you created. UBoss requires a different person to approve it."* |
+| Never four eyes alone | `requiredSodRule` + `priorActorUserIds` | *"does not let one Manager satisfy a four-eyes gate alone"* — refused with *"This needs a second person: nobody else has acted on it yet."* |
+| Cross-tenant | row-level security, before authorization is consulted | *"does not let a Manager decide a request in another company"* |
+| Employee unchanged | `Employee.approvals` is still `View` | *"still refuses an Employee, who holds no Approve at all"* |
+| Head / Approver / Company Admin unchanged | untouched templates | *"leaves Head and Approver able to decide exactly what they always could"*; Company Admin remains `View` only |
+
+Eight tests in `approvals.e2e.spec.ts` under *"the Manager approval grant (ADR-293)"*. Each was
+written so it would fail if its bound were dropped — the scope test was re-run with a deliberately
+impossible pattern to confirm it refuses for scope rather than for addressing or self-approval.
+
+### What the grant did **not** unblock, and why that is correct
+
+Aarohan's four stuck `Manager sign-off` gates are **still** refused — because Neha raised them
+herself when she ran Approve & Assign, and `NoSelfApproval` keys on exactly that. The grant moved
+the obstacle from "nobody holds this authority" to "this particular person may not decide this
+particular request", which is the separation working rather than failing. Clearing them needs a
+second Manager in the subtree, or those steps routed to `Head`. The one approval raised by somebody
+else — Aman's output approval — was decided by the Manager immediately.
+
+## ADR-294 — An approved task never leaves `WaitingApproval`
+
+**Status:** Resolved by client decision, 2026-09-16 — the loop is closed by `HumanTaskService.reconcileApprovalOutcome`, called from inside the approval decision. See ADR-294A.
+
+Submitting a human task that needs approval sets it to `WaitingApproval` and raises an
+`OutputApproval` carrying `subjectType: 'HumanTask'` and `subjectId`, so the approval knows exactly
+which task it governs (`human-task.service.ts`). Nothing ever reads that back:
+
+* `WaitingApproval` is **written in one place and read nowhere** in `apps/api/src`.
+* The approvals module contains no reference to `humanTask` at all, so deciding an approval does
+  not touch the task.
+* The Executor does not sweep for it either.
+
+Observed on Aarohan: Aman submitted with evidence, Neha approved the output approval (`201`, and
+the approval row reads `Approved`, decided by Neha, still pointing at the task) — and the task is
+`WaitingApproval`, exactly as before.
+
+It cannot be finished by hand either. `ALLOWED_TASK_TRANSITIONS` gives
+`WaitingApproval: ['InProgress', 'Submitted', 'Cancelled']` — no `Completed` — and `Submitted` is
+the state that reaches `Completed`. So an approved task would have to travel
+`WaitingApproval → Submitted → Completed`, and no code performs either leg.
+
+**Not fixed here.** Which transition an approval should trigger, and what performs the second leg,
+is product behaviour that is declared in the lifecycle but never implemented — choosing it is a
+design decision, not a patch, and inventing it during an acceptance run is exactly the silent
+redesign the brief forbids. Raised for a decision alongside ADR-293's resolution.
+
+## ADR-294A — Closing the human task approval loop
+
+**Status:** Accepted (client decision, 2026-09-16)
+
+`HumanTaskService.reconcileApprovalOutcome` walks a task from `WaitingApproval` to `Completed`
+along the declared route (`WaitingApproval → Submitted → Completed`, both legs checked against
+`ALLOWED_HUMAN_TASK_TRANSITIONS`). `ApprovalService.decide` calls it after settling a request whose
+`subjectType` is `HumanTask`.
+
+**It asks about every approval governing the task, not the one just decided.** "One row turned
+Approved" is not "the requirement is satisfied": the method reads all requests against the task and
+finishes it only when none is `Pending` and every one is `Approved`. A task parked with no approval
+at all is left alone rather than completed on the strength of an absence.
+
+**The separation-of-duties rules are not re-implemented, and that is the design.** A request cannot
+reach `Approved` unless `decide` already got past `assertCan` with the `NoSelfApproval` control and
+any `FourEyes` policy applied. A four-eyes gate whose first decision was refused leaves the row
+`Pending`, so the reconciliation sees an unsatisfied requirement and does nothing — the behaviour
+arrived at by not duplicating the rule.
+
+* **Transactional** — no transaction is opened; `runInTenantTransaction` is re-entrant for the same
+  tenant, so this joins the decision's write transaction. The decision and the task state commit
+  together.
+* **Tenant-scoped** — the same helper *refuses* to nest under a different tenant, which is what
+  makes a cross-tenant reconciliation impossible rather than unlikely.
+* **Idempotent and retry-safe** — the first check is that the task is still `WaitingApproval`. A
+  second call finds `Completed`, changes nothing, and writes no second audit event.
+* **Audited** — one `todo.task_completed` event naming the approvals that satisfied it.
+* **Evidence preserved** — `submittedAt` and the evidence rows are kept, never rewritten.
+
+Eleven tests in `approvals.e2e.spec.ts` under "the human task approval loop (ADR-294)". The only
+Prisma writes in them stand a task up; no status is ever nudged to make an assertion pass.
+
+## ADR-295 — Reject and SendBack have no defined task transition
+
+**Status:** Open — reported, not implemented (2026-09-16)
+
+ADR-294A completes a task when its approvals are all `Approved`. It does **nothing** for `Rejected`
+or `SentBack`, because the product does not say what should happen:
+
+* `HumanTaskStatus` has no `Rejected`. The approval's `Rejected` is a state of the *request*.
+* From `WaitingApproval` the lifecycle permits `InProgress`, `Submitted` and `Cancelled` only.
+  `SendBack → InProgress` is plausible and `Reject → Cancelled` is a guess; neither is written down.
+* Nothing in `apps/api/src/tasks` references either decision.
+
+Guessing here would give the lifecycle semantics nobody approved, on the one path where being wrong
+means work is silently cancelled or silently reopened. Both decisions are recorded on the approval
+and the task is left where it is until this is decided.
+
+## ADR-296 — A four-eyes approval cannot currently be satisfied
+
+**Status:** Open — reported, not changed (2026-09-16)
+
+`checkSeparationOfDuties` satisfies a `FourEyes` policy only when `priorActorUserIds` contains
+somebody other than the deciding actor. That list comes from `ApprovalService.priorDecidersOf`,
+which **excludes `Comment` deliberately** — commenting is not deciding. Every decision that is not a
+comment settles the request.
+
+So a `Pending` four-eyes request can never have a prior actor, and the refusal is always
+*"This needs a second person: nobody else has acted on it yet."* Observed from both directions: the
+requester is refused for having created it, and a second, distinct person is refused for being
+first.
+
+The consequence is narrow but real: choosing `FourEyes` in Objective Form 2's Approval column
+produces a gate nothing can pass. The fix is a design decision — either something other than a
+settling decision counts as acting, or a four-eyes request needs more than one settling decision —
+and it is not ours to pick. Reported alongside ADR-293's resolution.
+
+## ADR-296A — Four eyes: two distinct human approvals, actually reachable
+
+**Status:** Accepted (client decision, 2026-09-16)
+
+ADR-296 reported that no four-eyes gate could ever be satisfied. The cause was one function
+answering two questions at once. They are now separated.
+
+### Permission to be an eye — `checkSeparationOfDuties`
+
+Answers *may this person be one of the two*, and nothing about whether the requirement is finished.
+It refuses an automated actor, the creator, and anybody who has already acted on the request. It no
+longer refuses somebody for being first — that was the bug: every decision that would have made a
+prior actor also settled the request, so the first eye was always refused and there was never a
+second.
+
+### Satisfaction of the requirement — `ApprovalService.decide`
+
+Counts the eyes. On a four-eyes request an `Approve`:
+
+* appends its decision record — **always**, so both eyes are kept and the first approver is never
+  overwritten by the second. `approval_decision_records` is a child table with one row per
+  decision, which is the existing immutable model; no new table was needed;
+* counts **distinct** actors whose decision is `Approve` — a comment is not an eye, and one person
+  pressing the button twice is one eye however many rows they leave;
+* below `FOUR_EYES_REQUIRED`, leaves the request `Pending` and writes an audit line saying
+  *"1 of 2 approvals"*;
+* on reaching it, settles to `Approved` — and only then does the ADR-294 task reconciliation run,
+  so downstream work never starts on one signature.
+
+`Reject` and `SendBack` still settle on the first decision. Four eyes is a bar on letting something
+through, not on stopping it; requiring a second person to agree that work is wrong would leave a
+refused request open and its author waiting.
+
+### Told truthfully
+
+`ApprovalSummary` carries `approvalsRequired` and `approvalsGiven`, computed by the server so the
+screen and the settlement rule cannot disagree. The queue shows "0 of 2", "1 of 2", "2 of 2" and
+never presents the first approval as success.
+
+### A bug this change introduced, and its fix
+
+`approveEyesOf` first read the decision records outside a tenant transaction. Under row-level
+security an unscoped read returns nothing, so the queue showed "0 of 2" on a gate that already had
+an approval — the detail view, which reads from an already-loaded history, showed "1 of 2" and the
+two disagreed. Now wrapped in `runInTenantTransaction`, which is re-entrant, so the call from
+inside `decide` still joins that transaction.
+
+### Proved
+
+Thirteen tests in `approvals.e2e.spec.ts` covering each requirement, plus one that walks a
+four-eyes gate on a human task and asserts the ADR-294 reconciliation does **not** run after eye
+one and **does** after eye two. Two pre-existing tests asserted the old semantics and were updated
+to the new split rather than deleted — one in `authorization-engine.spec.ts`, one in
+`approvals.e2e.spec.ts` — each keeping the protection it actually provided.
+
+On Aarohan: `OPS-2026-002` step declared `FourEyes`; Kavya submitted with evidence; Neha approved
+(**1 of 2**, request `Pending`, task `WaitingApproval`); Rajiv approved (**2 of 2**, request
+`Approved`, task `Completed`). Rajiv's first attempt was correctly refused — Kavya works in
+Customer Operations and his Approver scope covered Operations only, so the gate was outside it
+until the scope was widened through the assignments route.
+
+ADR-295 is untouched: no `Reject` or `SendBack` task transition was invented.

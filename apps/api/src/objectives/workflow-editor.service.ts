@@ -7,6 +7,7 @@ import {
 
 import {
   ANALYSIS_SCHEMA_VERSION,
+  connectorDefinition,
   HIGH_RISK_TOOL_CATEGORIES,
   incompleteDodFields,
   mayConvertNode,
@@ -822,19 +823,30 @@ export class WorkflowEditorService {
   }
 
   /**
-   * Tool categories the plan needs that no live tool grant provides.
+   * Tool categories the plan needs that no usable connection could provide.
    *
-   * Reads the Prompt 16 grant table directly, because `ConnectionService` has no "which categories
-   * are available" question — its `mayAgentUse` answers a narrower one, about a named agent and a
-   * named connection, and an Engine Agent does not exist yet at this point in the plan.
+   * ## Why this asks about connections and not about grants
    *
-   * **A known limitation, stated rather than hidden:** this checks that a live *grant* exists for
-   * the category, not that the connection behind it is currently `Connected`. Prompt 16 derives
-   * connection state at read time from expiry and disablement, so a grant can outlive a usable
-   * connection. The summary can therefore say a connection is present when it is expired. That is
-   * the weaker of the two possible errors here — it produces a warning a manager can check rather
-   * than blocking a plan that is fine — and closing it properly belongs with the Approve & Assign
-   * transaction at Prompt 23, which is where a stale connection actually matters.
+   * It used to read the Prompt 16 grant table — "is there a live grant for this category" — and
+   * that question is unanswerable at plan time, because `connection_tool_grants.agent_id` is
+   * `NOT NULL` and an Engine Agent does not exist until Approve & Assign has run. So the check
+   * demanded a row that could only be created *after* the step it was blocking, and any plan with
+   * an AI node was refused forever:
+   *
+   *     Approve & Assign -> needs a tool grant -> needs an agent -> needs Approve & Assign
+   *
+   * The right question at plan time is capability: does this company have a connection, not
+   * disabled and not expired, whose connector supports the category the plan needs. That is what
+   * a manager can act on — connect a system, or take the tool out of the plan.
+   *
+   * **The per-agent grant is not weakened.** Nothing here authorises a run. Execution still goes
+   * through `ConnectionService.mayAgentUse`, which requires an explicit, unrevoked grant naming
+   * that agent and that connection, and the high-risk categories still require a reason on the
+   * grant. This moved a check to the moment it can be answered; it did not remove one.
+   *
+   * Expiry and disablement are now accounted for, which the previous version explicitly could not
+   * do — a grant could outlive the connection behind it and the summary would still call it
+   * present.
    */
   private async missingConnectionsFor(
     scope: TenantScope,
@@ -842,13 +854,25 @@ export class WorkflowEditorService {
   ): Promise<string[]> {
     if (neededTools.length === 0) return [];
 
-    const live = await this.prisma.runInTenantTransaction(scope, () =>
-      this.prisma.client.connectionToolGrant.findMany({
-        where: { revokedAt: null },
-        select: { category: true },
+    const now = new Date();
+    const connections = await this.prisma.runInTenantTransaction(scope, () =>
+      this.prisma.client.connection.findMany({
+        where: {
+          disabledAt: null,
+          needsReauthorization: false,
+          OR: [{ credentialExpiresAt: null }, { credentialExpiresAt: { gt: now } }],
+        },
+        select: { connectorKind: true },
       }),
     );
-    const provided = new Set(live.map((grant) => grant.category as string));
+
+    // Widened to string: `neededTools` arrives as the plan's own free list of category names, and
+    // a category the catalogue does not know must stay "not provided" rather than fail to compare.
+    const provided = new Set<string>(
+      connections.flatMap(
+        (connection) => connectorDefinition(connection.connectorKind)?.supportedCategories ?? [],
+      ),
+    );
 
     return neededTools.filter((tool) => !provided.has(tool));
   }

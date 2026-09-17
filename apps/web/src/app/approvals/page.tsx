@@ -74,6 +74,20 @@ export default function ApprovalsPage() {
   const [meta, setMeta] = useState<ApprovalsMetaView | null>(null);
   const [requests, setRequests] = useState<ApprovalSummaryView[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
+  /** userId -> display name, from the queue response. See `namesFor` in approval.service.ts. */
+  const [people, setPeople] = useState<Record<string, string>>({});
+
+  /**
+   * A person's name, or a short reference when this queue does not know them.
+   *
+   * The fallback is the old behaviour and stays for the case it was hiding: somebody who has left
+   * the company is not in the membership map, and "no longer in this company" is more use than
+   * eight hex characters.
+   */
+  const personName = (userId: string | null | undefined): string => {
+    if (userId === null || userId === undefined) return '—';
+    return people[userId] ?? 'No longer in this company';
+  };
   const [tab, setTab] = useState<'Pending' | 'Delegated' | 'Decided'>('Pending');
   const [selected, setSelected] = useState<ApprovalRequestDetailView | null>(null);
   const [note, setNote] = useState('');
@@ -114,6 +128,7 @@ export default function ApprovalsPage() {
       ]);
       setMeta(loadedMeta);
       setCounts(listed.counts);
+      setPeople(listed.people ?? {});
       setRequests(
         tab === 'Decided'
           ? listed.requests.filter((row) => row.status !== 'Pending')
@@ -148,6 +163,7 @@ export default function ApprovalsPage() {
     try {
       const updated = await approvalsApi.decide(tenantId, selected.id, { decision, note });
       setSelected(updated);
+      setPeople((known) => ({ ...known, ...(updated.people ?? {}) }));
       setNote('');
       setError(null);
       await load();
@@ -270,7 +286,7 @@ export default function ApprovalsPage() {
               header: 'Requester',
               render: (row) => (
                 <span className="uboss-mono uboss-muted-3">
-                  {row.requestedByUserId.slice(0, 8)}
+                  {personName(row.requestedByUserId)}
                 </span>
               ),
             },
@@ -317,6 +333,20 @@ export default function ApprovalsPage() {
                           : 'grey'
                     }
                   />
+                  {/*
+                    Four eyes, told truthfully (ADR-296). One approval on a two-person gate is
+                    progress, not success, and showing only "Pending" hides that somebody has
+                    already signed while showing a tick would be a lie. Ordinary requests need one
+                    approval and say nothing extra.
+                  */}
+                  {(row.approvalsRequired ?? 1) > 1 && (
+                    <>
+                      <br />
+                      <small className="uboss-muted-3">
+                        {row.approvalsGiven ?? 0} of {row.approvalsRequired} approvals
+                      </small>
+                    </>
+                  )}
                   {row.escalatedAt !== null && (
                     <>
                       <br />
@@ -383,7 +413,7 @@ export default function ApprovalsPage() {
           <CardBody>
             <p className="uboss-muted">
               Requested by{' '}
-              <span className="uboss-mono">{selected.requestedByUserId.slice(0, 8)}</span>
+              <span>{personName(selected.requestedByUserId)}</span>
               {' · '}
               {selected.typeLabel}
               {' · '}
@@ -393,7 +423,7 @@ export default function ApprovalsPage() {
             {selected.actingUnderDelegationFrom !== null && (
               <Banner tone="info">
                 You are deciding this as a delegate for{' '}
-                <span className="uboss-mono">{selected.actingUnderDelegationFrom.slice(0, 8)}</span>
+                <span>{personName(selected.actingUnderDelegationFrom)}</span>
                 . The record will say so.
               </Banner>
             )}
@@ -415,7 +445,7 @@ export default function ApprovalsPage() {
               <span className="uboss-kv-key">Addressed to</span>
               <span className="uboss-kv-value">
                 {selected.namedApproverUserId !== null
-                  ? `A named approver (${selected.namedApproverUserId.slice(0, 8)})`
+                  ? `A named approver (${personName(selected.namedApproverUserId)})`
                   : selected.approverRoleKind === null
                     ? 'Nobody — this request is misconfigured'
                     : selected.approverRoleKind === 'FourEyes'
@@ -435,7 +465,7 @@ export default function ApprovalsPage() {
                 <span className="uboss-kv-value">
                   {selected.escalatedAt} to{' '}
                   <span className="uboss-mono">
-                    {selected.escalatedToUserId?.slice(0, 8) ?? '—'}
+                    {personName(selected.escalatedToUserId)}
                   </span>
                   {' — attention only; nothing was decided.'}
                 </span>
@@ -466,12 +496,12 @@ export default function ApprovalsPage() {
                     status={selected.status}
                     tone={selected.status === 'Approved' ? 'success' : 'grey'}
                   />{' '}
-                  by <span className="uboss-mono">{selected.decidedByUserId?.slice(0, 8)}</span>
+                  by <span>{personName(selected.decidedByUserId)}</span>
                   {selected.decidedOnBehalfOfUserId !== null && (
                     <>
                       {' on behalf of '}
                       <span className="uboss-mono">
-                        {selected.decidedOnBehalfOfUserId.slice(0, 8)}
+                        {personName(selected.decidedOnBehalfOfUserId)}
                       </span>
                     </>
                   )}
@@ -492,11 +522,11 @@ export default function ApprovalsPage() {
                 {selected.history.map((entry) => (
                   <li key={entry.id}>
                     <b>{entry.decisionLabel}</b> by{' '}
-                    <span className="uboss-mono">{entry.actorUserId.slice(0, 8)}</span>
+                    <span>{personName(entry.actorUserId)}</span>
                     {entry.onBehalfOfUserId !== null && (
                       <>
                         {' for '}
-                        <span className="uboss-mono">{entry.onBehalfOfUserId.slice(0, 8)}</span>
+                        <span>{personName(entry.onBehalfOfUserId)}</span>
                       </>
                     )}
                     {entry.note === '' ? null : <> — {entry.note}</>}

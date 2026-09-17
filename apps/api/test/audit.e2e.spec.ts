@@ -300,6 +300,19 @@ describe('audit and security foundations (e2e)', () => {
       id,
     );
 
+  /** The text columns, for the tests that care what was actually stored. */
+  const textRow = async (resourceId: string) =>
+    (
+      await ctx.admin.unsafeRootClient.$queryRawUnsafe<
+        { resource_ref: string | null; summary: string | null; reason: string | null }[]
+      >(
+        'SELECT resource_ref, summary, reason FROM "audit_events" WHERE chain_key = $1 ' +
+          'AND resource_id = $2',
+        tenantId,
+        resourceId,
+      )
+    )[0];
+
   // =========================================================================
   describe('append-only, enforced by the database', () => {
     it('chains every appended row', async () => {
@@ -311,6 +324,55 @@ describe('audit and security foundations (e2e)', () => {
       // company's chain, so it is the one row with no predecessor.
       assert.equal(Number(rows[0]?.sequence), 1);
       assert.equal(rows[0]?.prev_hash, null, 'The first row of a chain has no predecessor.');
+    });
+
+    // Free text on an audit event comes from what people typed — an approval's title, a decision
+    // note. Postgres does not truncate an over-long value, it refuses the insert, and the business
+    // write has already happened by then. That produced a 500 on deciding an approval whose title
+    // ran to 122 characters, leaving the row updated and its audit event missing — the one outcome
+    // an append-only trail must never produce.
+    it('fits over-long free text to its column instead of losing the event', async () => {
+      const longRef = 'R'.repeat(400);
+      const longSummary = 'S'.repeat(4000);
+      const longReason = 'N'.repeat(4000);
+
+      await auditService().recordForTenantOrThrow(scope(), {
+        action: 'objective.published',
+        resourceType: 'objective',
+        resourceId: 'obj-long',
+        summary: longSummary,
+        reason: longReason,
+        resourceRef: longRef,
+        actorUserId: adminId,
+      });
+
+      const written = await textRow('obj-long');
+      assert.ok(written, 'the event was written rather than refused');
+      assert.ok(written.resource_ref && written.summary && written.reason);
+
+      assert.equal(written.resource_ref.length, 120);
+      assert.equal(written.summary.length, 500);
+      assert.equal(written.reason.length, 1000);
+      // Marked, so a shortened value never reads as the whole of what somebody wrote.
+      for (const field of [written.resource_ref, written.summary, written.reason]) {
+        assert.ok(field.endsWith('…'), 'truncation is marked with an ellipsis');
+      }
+    });
+
+    it('leaves text that already fits exactly as it was', async () => {
+      await auditService().recordForTenantOrThrow(scope(), {
+        action: 'objective.published',
+        resourceType: 'objective',
+        resourceId: 'obj-short',
+        summary: 'Short and complete.',
+        resourceRef: 'V7',
+        actorUserId: adminId,
+      });
+
+      const written = await textRow('obj-short');
+      assert.ok(written);
+      assert.equal(written.resource_ref, 'V7');
+      assert.equal(written.summary, 'Short and complete.');
     });
 
     it('refuses UPDATE from the application role — by privilege, before any trigger', async () => {

@@ -8,6 +8,7 @@ import cookieParser from 'cookie-parser';
 import request from 'supertest';
 
 import {
+  ANALYSIS_SCHEMA_VERSION,
   APPROVAL_REQUEST_TYPES,
   APPROVAL_TYPE_MODULE,
   FOUR_EYES_APPROVAL_KIND,
@@ -33,6 +34,7 @@ import { ExecutorService } from '../src/executor/executor.service.js';
 import { RunController } from '../src/runs/run.controller.js';
 import { CompanySettingsService } from '../src/settings/company-settings.service.js';
 import { ApprovalService } from '../src/approvals/approval.service.js';
+import { HumanTaskService } from '../src/tasks/human-task.service.js';
 import { AuditEventService } from '../src/audit/audit-event.service.js';
 import { SecurityEventService } from '../src/audit/security-event.service.js';
 import { AUTH_CONFIG, loadAuthConfig } from '../src/auth/auth.config.js';
@@ -139,6 +141,7 @@ describe('approval engine, delegation and four-eyes (e2e)', () => {
   const engine = () => app.get(RunEngineService);
   const executor = () => app.get(ExecutorService);
   const approvals = () => app.get(ApprovalService);
+  const tasks = () => app.get(HumanTaskService);
   const skills = () => app.get(SkillService);
 
   before(async () => {
@@ -208,6 +211,7 @@ describe('approval engine, delegation and four-eyes (e2e)', () => {
         // Prompt 28: the Executor now raises a real approval row for RequestApproval, rather
         // than reporting that it asked for a decision nobody could see.
         ApprovalService,
+        HumanTaskService,
         CompanySettingsService,
         TenantContextService,
         Reflector,
@@ -911,10 +915,26 @@ describe('approval engine, delegation and four-eyes (e2e)', () => {
       });
       const approve = view.available.find((a) => a.decision === 'Approve');
 
-      // The Head has approvals:Approve and did not raise it, but nobody else has acted, so four
-      // eyes is not yet satisfied.
-      assert.equal(approve?.allowed, false);
-      assert.match(approve?.reason ?? '', /second person|four.eyes/i);
+      // ADR-296: the Head holds approvals:Approve and did not raise it, so they are a valid
+      // *first* eye. Being first is no longer a refusal — that was the bug. What must still hold
+      // is that one person cannot carry the gate, which is asserted below on the request itself.
+      assert.equal(approve?.allowed, true, 'a qualified person may give the first approval');
+
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: headUserId,
+        approvalId: raised.id,
+        decision: 'Approve',
+        note: 'First pair of eyes.',
+      });
+
+      const afterOne = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.approvalRequest.findFirstOrThrow({
+          where: { id: raised.id },
+          select: { status: true },
+        }),
+      );
+      assert.equal(afterOne.status, 'Pending', 'one approval does not satisfy four eyes');
     });
 
     it('satisfies four eyes once a second person has acted', async () => {
@@ -1821,12 +1841,12 @@ describe('approval engine, delegation and four-eyes (e2e)', () => {
       assert.equal(gate?.module, 'approvals');
     });
 
-    it('will not let a Manager decide a gate addressed to Manager without the Approver role', async () => {
-      // The client's locked Approve & Assign boundary, end to end: the step asks for a Manager
-      // decision, so the request is routed to the Manager role — and the Manager template
-      // deliberately holds no Approve. A manager who should also approve is additionally
-      // assigned the Approver role, which makes the second decision visible in the assignment
-      // record instead of implied by a job title.
+    // ADR-293: the Manager role now holds `approvals:Approve`, because Form 2 offers `Manager` as
+    // an approval authority and a request routed there was previously undecidable by anybody. The
+    // separation that mattered is unchanged — it never lived in the absence of the grant. This
+    // test keeps the scenario it always had (a manager signing off the plan they authored) and now
+    // asserts the rule that actually refuses it.
+    it('still refuses a Manager deciding a gate on the plan they authored themselves', async () => {
       await assignedAiWork({
         steps: [
           step({ position: 1, approval: 'Manager' }),
@@ -1844,8 +1864,9 @@ describe('approval engine, delegation and four-eyes (e2e)', () => {
       const gate = queue.requests.find((r) => r.type === 'WorkflowStepApproval');
       if (gate === undefined) throw new Error('expected an approval gate');
 
-      // Routing may or may not admit them depending on whether the node named an owner; either
-      // way the decision is refused, and for a reason that names the missing authority.
+      // `assignedAiWork` creates, reviews and assigns everything as the manager, so they are the
+      // requester. NoSelfApproval keys on exactly that and refuses — the grant changes nothing
+      // about it.
       await assert.rejects(
         () =>
           approvals().decide({
@@ -1855,8 +1876,171 @@ describe('approval engine, delegation and four-eyes (e2e)', () => {
             decision: 'Approve',
             note: 'Signing off my own team plan.',
           }),
-        /does not include "Approve"|names a different approver|addressed to a/i,
+        /something you created|a different person|names a different approver|addressed to a/i,
       );
+    });
+
+    // -----------------------------------------------------------------------
+    // ADR-293 — what the Manager grant does and does not reach.
+    //
+    // Six checks, one per limit the decision named. Each one is written so that it would fail if
+    // the limit were dropped, not merely pass while the limit happens to hold.
+    // -----------------------------------------------------------------------
+    describe('the Manager approval grant (ADR-293)', () => {
+      /** A Manager-addressed request raised by somebody else, so self-approval is not in play. */
+      const addressedToManagers = async (overrides: Record<string, unknown> = {}) =>
+        approvals().raise({
+          scope: scope(),
+          type: 'OutputApproval',
+          title: 'Weekly pack ready for the manager to sign off',
+          detail: 'Submitted by the team member who did the work.',
+          subjectType: 'HumanTask',
+          requestedByUserId: workerUserId,
+          approverRoleKind: 'Manager',
+          ...overrides,
+        });
+
+      it('lets a Manager approve in-scope work a subordinate submitted', async () => {
+        const raised = await addressedToManagers();
+
+        const decided = await approvals().decide({
+          scope: scope(),
+          actorUserId: managerUserId,
+          approvalId: raised.id,
+          decision: 'Approve',
+          note: 'Checked against the weekly template; the exception list is complete.',
+        });
+
+        assert.equal(decided.status, 'Approved');
+      });
+
+      it('still refuses a Manager approving a request they raised themselves', async () => {
+        const raised = await addressedToManagers({ requestedByUserId: managerUserId });
+
+        await assert.rejects(
+          () =>
+            approvals().decide({
+              scope: scope(),
+              actorUserId: managerUserId,
+              approvalId: raised.id,
+              decision: 'Approve',
+              note: 'Approving my own submission.',
+            }),
+          /something you created|a different person/i,
+        );
+      });
+
+      it('does not let a Manager approve work outside their TeamSubtree', async () => {
+        // The scope is evaluated against the request's owner. The fixture employs the manager as
+        // the root with two reports under them; the Head is not in that subtree at all. So a
+        // Manager-addressed request whose owner is the Head is in this company, addressed to this
+        // role, and still out of reach — which is the whole point of TeamSubtree.
+        const outside = await addressedToManagers({
+          requestedByUserId: headUserId,
+          title: 'Work belonging to somebody outside the manager’s team',
+        });
+
+        await assert.rejects(
+          () =>
+            approvals().decide({
+              scope: scope(),
+              actorUserId: managerUserId,
+              approvalId: outside.id,
+              decision: 'Approve',
+              note: 'Reaching outside my own team.',
+            }),
+          /scope|outside|not in your|covers/i,
+        );
+      });
+
+      it('does not let a Manager decide a request addressed to another role', async () => {
+        // Head-addressed. The grant is not a master key: routing still decides who may answer.
+        const raised = await highRiskAddressedToHeads();
+
+        await assert.rejects(
+          () =>
+            approvals().decide({
+              scope: scope(),
+              actorUserId: managerUserId,
+              approvalId: raised.id,
+              decision: 'Approve',
+              note: 'Taking this one as well.',
+            }),
+          /addressed to a|names a different approver|does not include/i,
+        );
+      });
+
+      it('does not let a Manager decide a request in another company', async () => {
+        const raised = await addressedToManagers();
+
+        // The other tenant's scope, with this company's manager as the actor. Row-level security
+        // confines the read before authorization is consulted, so the request is simply not there.
+        await assert.rejects(
+          () =>
+            approvals().decide({
+              scope: tenantScopeForPlatformOperation(otherTenantId),
+              actorUserId: managerUserId,
+              approvalId: raised.id,
+              decision: 'Approve',
+              note: 'Reaching across a tenant boundary.',
+            }),
+          /not found|no such|no role in this company|outside/i,
+        );
+      });
+
+      it('does not let one Manager settle a four-eyes gate on their own', async () => {
+        // Still true, for a better reason: the Manager may now be an eye, but one eye is not the
+        // gate. Two distinct people are required, and ADR-296 proves the full sequence.
+        const raised = await addressedToManagers({
+          type: 'HighRiskAction',
+          title: 'A four-eyes action',
+          approverRoleKind: 'FourEyes',
+        });
+
+        await approvals().decide({
+          scope: scope(),
+          actorUserId: managerUserId,
+          approvalId: raised.id,
+          decision: 'Approve',
+          note: 'One pair of eyes.',
+        });
+
+        const state = await ctx.prisma.runAsPlatformOperation(() =>
+          ctx.prisma.client.approvalRequest.findFirstOrThrow({
+            where: { id: raised.id },
+            select: { status: true },
+          }),
+        );
+        assert.equal(state.status, 'Pending', 'one Manager approval does not settle four eyes');
+      });
+
+      it('still refuses an Employee, who holds no Approve at all', async () => {
+        const raised = await addressedToManagers();
+
+        await assert.rejects(
+          () =>
+            approvals().decide({
+              scope: scope(),
+              actorUserId: workerUserId,
+              approvalId: raised.id,
+              decision: 'Approve',
+              note: 'Approving my own work as an employee.',
+            }),
+          /does not include "Approve"|addressed to a|something you created|a different person/i,
+        );
+      });
+
+      it('leaves Head and Approver able to decide exactly what they always could', async () => {
+        const headRequest = await highRiskAddressedToHeads({ requestedByUserId: workerUserId });
+        const decided = await approvals().decide({
+          scope: scope(),
+          actorUserId: headUserId,
+          approvalId: headRequest.id,
+          decision: 'Approve',
+          note: 'Head decision, unchanged by the Manager grant.',
+        });
+        assert.equal(decided.status, 'Approved');
+      });
     });
   });
 
@@ -1952,6 +2136,632 @@ describe('approval engine, delegation and four-eyes (e2e)', () => {
       const actions = events.map((e) => e.action);
       assert.ok(actions.includes('approvals.requested'));
       assert.ok(actions.includes('approvals.approve'));
+    });
+  });
+
+  // ===========================================================================
+  // ADR-294 — the human task approval loop.
+  //
+  // Submitting a task that needs approval parks it at WaitingApproval and raises an OutputApproval
+  // against it. Nothing used to read that back, so an approved task never finished. These tests
+  // drive the real services end to end: the task is submitted through HumanTaskService and decided
+  // through ApprovalService. The only Prisma writes are fixtures standing a task up in the first
+  // place — never a status nudged to make an assertion pass.
+  // ===========================================================================
+  describe('the human task approval loop (ADR-294)', () => {
+    /** A task that has reached WaitingApproval the way a person reaches it. */
+    const taskAwaitingApproval = async ({
+      approvalKind = 'Manager',
+      assignee = workerUserId,
+    }: { approvalKind?: string; assignee?: string } = {}) => {
+      const created = await objectives().create({
+        scope: scope(),
+        actorUserId: managerUserId,
+        content: form2(),
+        steps: mixedSteps(),
+      });
+      const version = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.objectiveVersion.findFirstOrThrow({
+          where: { objectiveId: created.id },
+          select: { id: true },
+        }),
+      );
+
+      // A task points at the workflow draft it came from, so the draft has to exist first. The
+      // graph is the minimum the schema accepts: these tests are about the approval loop, not
+      // about what the analysis produces.
+      const draft = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.objectiveWorkflowDraft.create({
+          data: {
+            tenantId,
+            objectiveId: created.id,
+            objectiveVersionId: version.id,
+            graph: { nodes: [{ id: 'step-1', kind: 'Human' }], edges: [] },
+            schemaVersion: ANALYSIS_SCHEMA_VERSION,
+          },
+          select: { id: true },
+        }),
+      );
+
+      const task = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.humanTask.create({
+          data: {
+            tenantId,
+            objectiveId: created.id,
+            objectiveVersionId: version.id,
+            workflowDraftId: draft.id,
+            nodeId: 'step-1',
+            title: 'Validate the weekly submissions',
+            assignedToUserId: assignee,
+            assignedByUserId: managerUserId,
+            expectedOutput: 'A validated submission list.',
+            evidenceRequirement: 'The submission log.',
+            approvalKind,
+            status: 'InProgress',
+            startedAt: new Date(),
+          },
+          select: { id: true },
+        }),
+      );
+
+      // Through the real service from here: evidence, then submit.
+      await tasks().addEvidence({
+        scope: scope(),
+        actorUserId: assignee,
+        taskId: task.id,
+        description: 'All branches submitted.',
+        reference: 'branch-ops/week-38',
+      });
+      const submitted = await tasks().submit({
+        scope: scope(),
+        actorUserId: assignee,
+        taskId: task.id,
+      });
+      assert.equal(submitted.status, 'WaitingApproval');
+
+      const request = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.approvalRequest.findFirstOrThrow({
+          where: { subjectType: 'HumanTask', subjectId: task.id },
+          select: { id: true, status: true },
+        }),
+      );
+      return { taskId: task.id, approvalId: request.id, objectiveId: created.id };
+    };
+
+    const statusOf = async (taskId: string) =>
+      ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.humanTask.findFirstOrThrow({
+          where: { id: taskId },
+          select: { status: true, completedAt: true, submittedAt: true },
+        }),
+      );
+
+    it('completes the task when its single required approval is approved', async () => {
+      const { taskId, approvalId } = await taskAwaitingApproval();
+      assert.equal((await statusOf(taskId)).status, 'WaitingApproval');
+
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: managerUserId,
+        approvalId,
+        decision: 'Approve',
+        note: 'Checked against the weekly template.',
+      });
+
+      const after = await statusOf(taskId);
+      assert.equal(after.status, 'Completed');
+      assert.ok(after.completedAt, 'a completed task records when it completed');
+      assert.ok(after.submittedAt, 'and keeps when it was submitted');
+    });
+
+    it('keeps the evidence, the approver and the decision on the completed task', async () => {
+      const { taskId, approvalId } = await taskAwaitingApproval();
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: managerUserId,
+        approvalId,
+        decision: 'Approve',
+        note: 'Signed off with the exception noted.',
+      });
+
+      const evidence = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.humanTaskEvidence.findMany({ where: { taskId } }),
+      );
+      assert.equal(evidence.length, 1, 'evidence survives completion');
+
+      const request = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.approvalRequest.findFirstOrThrow({ where: { id: approvalId } }),
+      );
+      assert.equal(request.status, 'Approved');
+      assert.equal(request.decidedByUserId, managerUserId, 'the approver is on the record');
+      assert.ok(request.decidedAt, 'and when they decided');
+      assert.match(request.decisionNote ?? '', /exception/);
+
+      // The completion is in the trail, linked to the task and naming the approvals that satisfied
+      // it, so "why did this finish" is answerable without inference.
+      const events = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.auditEvent.findMany({
+          where: { tenantId, resourceId: taskId, action: 'todo.task_completed' },
+        }),
+      );
+      assert.equal(events.length, 1);
+      assert.match(JSON.stringify(events[0]?.metadata ?? {}), /approvalRequestIds/);
+    });
+
+    it('does not duplicate side effects when reconciled again', async () => {
+      const { taskId, approvalId } = await taskAwaitingApproval();
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: managerUserId,
+        approvalId,
+        decision: 'Approve',
+        note: 'First and only decision.',
+      });
+      const first = await statusOf(taskId);
+
+      // A retry, a redelivered decision, a sweep: the same call again must change nothing.
+      const again = await tasks().reconcileApprovalOutcome({
+        scope: scope(),
+        taskId,
+        actorUserId: managerUserId,
+      });
+      assert.equal(again.changed, false, 'the second pass is a no-op');
+
+      const second = await statusOf(taskId);
+      assert.equal(second.status, 'Completed');
+      assert.deepEqual(second.completedAt, first.completedAt, 'completion time is not moved');
+
+      const events = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.auditEvent.findMany({
+          where: { tenantId, resourceId: taskId, action: 'todo.task_completed' },
+        }),
+      );
+      assert.equal(events.length, 1, 'and the trail records it once');
+    });
+
+    it('does not let the requester approve their own task through the loop', async () => {
+      // Assigned to the manager, so the manager is the one who submitted it and raised the request.
+      const { taskId, approvalId } = await taskAwaitingApproval({ assignee: managerUserId });
+
+      await assert.rejects(
+        () =>
+          approvals().decide({
+            scope: scope(),
+            actorUserId: managerUserId,
+            approvalId,
+            decision: 'Approve',
+            note: 'Approving my own work.',
+          }),
+        /something you created|a different person/i,
+      );
+
+      assert.equal((await statusOf(taskId)).status, 'WaitingApproval');
+    });
+
+    it('cannot be completed by a decision from another company', async () => {
+      const { taskId, approvalId } = await taskAwaitingApproval();
+
+      await assert.rejects(
+        () =>
+          approvals().decide({
+            scope: tenantScopeForPlatformOperation(otherTenantId),
+            actorUserId: managerUserId,
+            approvalId,
+            decision: 'Approve',
+            note: 'From the wrong company.',
+          }),
+        /not found|no such|no role in this company|outside/i,
+      );
+
+      assert.equal((await statusOf(taskId)).status, 'WaitingApproval');
+    });
+
+    it('is untouched by an approval for a different resource', async () => {
+      const { taskId } = await taskAwaitingApproval();
+      const unrelated = await highRiskAddressedToHeads({ requestedByUserId: workerUserId });
+
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: headUserId,
+        approvalId: unrelated.id,
+        decision: 'Approve',
+        note: 'Nothing to do with that task.',
+      });
+
+      assert.equal((await statusOf(taskId)).status, 'WaitingApproval');
+    });
+
+    it('does not let the assignee reach Completed by re-submitting', async () => {
+      const { taskId } = await taskAwaitingApproval();
+
+      // Re-submitting is permitted by the lifecycle and does not throw, so the property worth
+      // asserting is the one the requirement is about: it does not finish the task. The assignee
+      // cannot reach Completed from the task side at all — that edge does not exist, and approval
+      // remains outstanding afterwards.
+      await tasks().submit({ scope: scope(), actorUserId: workerUserId, taskId });
+
+      const after = await statusOf(taskId);
+      assert.notEqual(after.status, 'Completed', 'submitting again is not a way to finish');
+      assert.equal(after.status, 'WaitingApproval');
+      assert.equal(after.completedAt, null);
+
+      const stillPending = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.approvalRequest.count({
+          where: { subjectType: 'HumanTask', subjectId: taskId, status: 'Pending' },
+        }),
+      );
+      assert.ok(stillPending > 0, 'an approval is still outstanding');
+    });
+
+    it('is not completed by reconciliation alone while the approval is still pending', async () => {
+      // The Executor may observe and reconcile; it must never stand in for the approver. Calling
+      // the reconciliation directly, with the request still Pending, must change nothing.
+      const { taskId } = await taskAwaitingApproval();
+
+      const outcome = await tasks().reconcileApprovalOutcome({
+        scope: scope(),
+        taskId,
+        actorUserId: headUserId,
+      });
+
+      assert.equal(outcome.changed, false);
+      assert.equal((await statusOf(taskId)).status, 'WaitingApproval');
+    });
+  });
+
+  // ===========================================================================
+  // ADR-296 — four eyes means two distinct human approvals on the same request.
+  //
+  // The rule used to refuse anybody not preceded by another actor, while every decision that would
+  // have made someone a prior actor also settled the request — so the first eye was always refused
+  // and there was never a second. Permission to be an eye and satisfaction of the requirement are
+  // now separate questions: the SoD gate decides who may contribute one, and the settlement counts
+  // them.
+  // ===========================================================================
+  describe('four eyes, two distinct people (ADR-296)', () => {
+    /** A four-eyes request raised by somebody who is not going to decide it. */
+    const fourEyesRequest = async (overrides: Record<string, unknown> = {}) =>
+      approvals().raise({
+        scope: scope(),
+        type: 'HighRiskAction',
+        title: 'Release the regulatory filing early',
+        detail: 'Two people have to agree.',
+        subjectType: 'Objective',
+        requestedByUserId: workerUserId,
+        approverRoleKind: 'FourEyes',
+        ...overrides,
+      });
+
+    const stateOf = async (approvalId: string) =>
+      ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.approvalRequest.findFirstOrThrow({
+          where: { id: approvalId },
+          select: { status: true, decidedByUserId: true, decidedAt: true },
+        }),
+      );
+
+    const eyesOn = async (approvalId: string) =>
+      ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.approvalDecisionRecord.findMany({
+          where: { approvalRequestId: approvalId },
+          orderBy: { occurredAt: 'asc' },
+          select: { decision: true, actorUserId: true, note: true, occurredAt: true },
+        }),
+      );
+
+    it('leaves the request Pending after the first valid approval', async () => {
+      const raised = await fourEyesRequest();
+
+      const after = await approvals().decide({
+        scope: scope(),
+        actorUserId: managerUserId,
+        approvalId: raised.id,
+        decision: 'Approve',
+        note: 'First pair of eyes.',
+      });
+
+      assert.equal((await stateOf(raised.id)).status, 'Pending', 'one approval does not settle it');
+      assert.equal(after.approvalsGiven, 1);
+      assert.equal(after.approvalsRequired, 2);
+    });
+
+    it('approves on the second distinct approval', async () => {
+      const raised = await fourEyesRequest();
+
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: managerUserId,
+        approvalId: raised.id,
+        decision: 'Approve',
+        note: 'First pair of eyes.',
+      });
+      const second = await approvals().decide({
+        scope: scope(),
+        actorUserId: headUserId,
+        approvalId: raised.id,
+        decision: 'Approve',
+        note: 'Second pair of eyes.',
+      });
+
+      const state = await stateOf(raised.id);
+      assert.equal(state.status, 'Approved');
+      assert.ok(state.decidedAt, 'the settlement is timestamped');
+      assert.equal(second.approvalsGiven, 2);
+      assert.equal(second.approvalsRequired, 2);
+    });
+
+    it('does not let the same person be both eyes', async () => {
+      const raised = await fourEyesRequest();
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: managerUserId,
+        approvalId: raised.id,
+        decision: 'Approve',
+        note: 'First.',
+      });
+
+      await assert.rejects(
+        () =>
+          approvals().decide({
+            scope: scope(),
+            actorUserId: managerUserId,
+            approvalId: raised.id,
+            decision: 'Approve',
+            note: 'And again.',
+          }),
+        /already acted|second decision has to come from somebody else/i,
+      );
+
+      assert.equal((await stateOf(raised.id)).status, 'Pending');
+    });
+
+    it('is idempotent when the first approver retries', async () => {
+      const raised = await fourEyesRequest();
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: managerUserId,
+        approvalId: raised.id,
+        decision: 'Approve',
+        note: 'First.',
+      });
+      const before = await eyesOn(raised.id);
+
+      await approvals()
+        .decide({
+          scope: scope(),
+          actorUserId: managerUserId,
+          approvalId: raised.id,
+          decision: 'Approve',
+          note: 'Retry.',
+        })
+        .catch(() => null);
+
+      const after = await eyesOn(raised.id);
+      assert.equal(after.length, before.length, 'a retry adds no second eye');
+      assert.equal((await stateOf(raised.id)).status, 'Pending');
+    });
+
+    it('does not count a comment as an eye', async () => {
+      const raised = await fourEyesRequest();
+
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: managerUserId,
+        approvalId: raised.id,
+        decision: 'Comment',
+        note: 'Looks reasonable to me.',
+      });
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: headUserId,
+        approvalId: raised.id,
+        decision: 'Approve',
+        note: 'One genuine approval.',
+      });
+
+      assert.equal(
+        (await stateOf(raised.id)).status,
+        'Pending',
+        'a comment plus one approval is one eye, not two',
+      );
+    });
+
+    it('does not let the creator be an eye', async () => {
+      const raised = await fourEyesRequest({ requestedByUserId: managerUserId });
+
+      await assert.rejects(
+        () =>
+          approvals().decide({
+            scope: scope(),
+            actorUserId: managerUserId,
+            approvalId: raised.id,
+            decision: 'Approve',
+            note: 'My own request.',
+          }),
+        /something you created|a different person/i,
+      );
+    });
+
+    it('does not let an Employee without authority be an eye', async () => {
+      const raised = await fourEyesRequest();
+
+      await assert.rejects(
+        () =>
+          approvals().decide({
+            scope: scope(),
+            actorUserId: otherWorkerUserId,
+            approvalId: raised.id,
+            decision: 'Approve',
+            note: 'I would like to approve this.',
+          }),
+        /does not include "Approve"|addressed to a|outside what your role covers/i,
+      );
+
+      assert.equal((await stateOf(raised.id)).status, 'Pending');
+    });
+
+    it('does not let an actor from another company be an eye', async () => {
+      const raised = await fourEyesRequest();
+
+      await assert.rejects(
+        () =>
+          approvals().decide({
+            scope: tenantScopeForPlatformOperation(otherTenantId),
+            actorUserId: managerUserId,
+            approvalId: raised.id,
+            decision: 'Approve',
+            note: 'From the wrong company.',
+          }),
+        /not found|no such|no role in this company|outside/i,
+      );
+
+      assert.equal((await stateOf(raised.id)).status, 'Pending');
+    });
+
+    it('keeps both decisions, neither overwriting the other', async () => {
+      const raised = await fourEyesRequest();
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: managerUserId,
+        approvalId: raised.id,
+        decision: 'Approve',
+        note: 'First pair of eyes.',
+      });
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: headUserId,
+        approvalId: raised.id,
+        decision: 'Approve',
+        note: 'Second pair of eyes.',
+      });
+
+      const records = (await eyesOn(raised.id)).filter((row) => row.decision === 'Approve');
+      assert.equal(records.length, 2, 'both eyes are on the record');
+      assert.deepEqual(
+        records.map((row) => row.actorUserId),
+        [managerUserId, headUserId],
+        'in the order they were given, with the first approver intact',
+      );
+      assert.match(records[0]?.note ?? '', /First pair/);
+      assert.match(records[1]?.note ?? '', /Second pair/);
+      for (const row of records) assert.ok(row.occurredAt, 'each eye is timestamped');
+    });
+
+    it('records the first eye in the trail without calling it final', async () => {
+      const raised = await fourEyesRequest();
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: managerUserId,
+        approvalId: raised.id,
+        decision: 'Approve',
+        note: 'First.',
+      });
+
+      const events = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.auditEvent.findMany({
+          where: { tenantId, resourceId: raised.id, action: 'approvals.approve' },
+        }),
+      );
+      assert.equal(events.length, 1);
+      assert.match(events[0]?.summary ?? '', /1 of 2 approvals/);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // ADR-296 meeting ADR-294: a four-eyes gate on a human task.
+  // ---------------------------------------------------------------------------
+  describe('four eyes on a human task (ADR-296 + ADR-294)', () => {
+    it('does not complete the task after the first eye, and does after the second', async () => {
+      const created = await objectives().create({
+        scope: scope(),
+        actorUserId: managerUserId,
+        content: form2(),
+        steps: mixedSteps(),
+      });
+      const version = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.objectiveVersion.findFirstOrThrow({
+          where: { objectiveId: created.id },
+          select: { id: true },
+        }),
+      );
+      const draft = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.objectiveWorkflowDraft.create({
+          data: {
+            tenantId,
+            objectiveId: created.id,
+            objectiveVersionId: version.id,
+            graph: { nodes: [{ id: 'step-1', kind: 'Human' }], edges: [] },
+            schemaVersion: ANALYSIS_SCHEMA_VERSION,
+          },
+          select: { id: true },
+        }),
+      );
+      const task = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.humanTask.create({
+          data: {
+            tenantId,
+            objectiveId: created.id,
+            objectiveVersionId: version.id,
+            workflowDraftId: draft.id,
+            nodeId: 'step-1',
+            title: 'Work needing two signatures',
+            assignedToUserId: workerUserId,
+            assignedByUserId: managerUserId,
+            expectedOutput: 'A signed-off result.',
+            evidenceRequirement: 'The working papers.',
+            approvalKind: 'FourEyes',
+            status: 'InProgress',
+            startedAt: new Date(),
+          },
+          select: { id: true },
+        }),
+      );
+
+      await tasks().addEvidence({
+        scope: scope(),
+        actorUserId: workerUserId,
+        taskId: task.id,
+        description: 'Working papers attached.',
+        reference: 'wp/2026-38',
+      });
+      await tasks().submit({ scope: scope(), actorUserId: workerUserId, taskId: task.id });
+
+      const request = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.approvalRequest.findFirstOrThrow({
+          where: { subjectType: 'HumanTask', subjectId: task.id },
+          select: { id: true },
+        }),
+      );
+
+      const taskStatus = async () =>
+        (
+          await ctx.prisma.runAsPlatformOperation(() =>
+            ctx.prisma.client.humanTask.findFirstOrThrow({
+              where: { id: task.id },
+              select: { status: true },
+            }),
+          )
+        ).status;
+
+      // Eye one: the request stays open, and ADR-294 reconciliation must not run.
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: managerUserId,
+        approvalId: request.id,
+        decision: 'Approve',
+        note: 'First pair of eyes.',
+      });
+      assert.equal(await taskStatus(), 'WaitingApproval', 'one eye does not finish the work');
+
+      // Eye two: the gate closes and the task follows.
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: headUserId,
+        approvalId: request.id,
+        decision: 'Approve',
+        note: 'Second pair of eyes.',
+      });
+      assert.equal(await taskStatus(), 'Completed');
     });
   });
 });

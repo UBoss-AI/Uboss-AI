@@ -278,7 +278,7 @@ export class InvitationService {
       });
 
       if (membership) {
-        const [employment, roleCount, rootCount] = await Promise.all([
+        const [employment, roleCount, rootCount, bootstrapCount] = await Promise.all([
           this.prisma.client.employmentRecord.findFirst({
             where: { tenantId: invitation.tenantId, userId: invitation.userId },
             select: { departmentId: true, reportingManagerUserId: true },
@@ -290,8 +290,25 @@ export class InvitationService {
               OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
             },
           }),
+          // Excluding the subject: being the root means having no manager, so counting
+          // themselves made the first employee fail the requirement the waiver exempts them from.
           this.prisma.client.employmentRecord.count({
-            where: { tenantId: invitation.tenantId, reportingManagerUserId: null },
+            where: {
+              tenantId: invitation.tenantId,
+              reportingManagerUserId: null,
+              userId: { not: invitation.userId },
+            },
+          }),
+          // The grant company provisioning issued to this company's initial administrator. See the
+          // bootstrap-admin note in `activationReadiness`: without it a newly provisioned company
+          // has nobody who can ever sign in to build its hierarchy.
+          this.prisma.client.roleAssignment.count({
+            where: {
+              tenantId: invitation.tenantId,
+              userId: invitation.userId,
+              bootstrap: true,
+              OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+            },
           }),
         ]);
 
@@ -301,6 +318,7 @@ export class InvitationService {
           employment,
           roleCount,
           companyHasReportingRoot: rootCount > 0,
+          hasBootstrapRole: bootstrapCount > 0,
         });
 
         if (!readiness.ready) {

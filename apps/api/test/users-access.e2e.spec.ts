@@ -426,6 +426,72 @@ describe('users & access (e2e)', () => {
       assert.equal(readiness.ready, true);
       assert.match(readiness.summary, /outside the hierarchy/);
     });
+
+    // The waiver exists for the person at the top of the chart, and it used to be unreachable by
+    // exactly that person: the root IS an employment record with no manager, so counting every
+    // such record included the subject and the answer was always "yes, a root exists". The first
+    // employee could be placed at the top and then never invited, refused for lacking the manager
+    // that being the root means not having.
+    it('does not count the subject as the reporting root that disqualifies them', async () => {
+      const repository = app.get(AccessRepository);
+
+      await ensureAdminIsEmployed();
+      const employment = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.employmentRecord.findFirst({
+          where: { tenantId, reportingManagerUserId: null },
+          select: { userId: true },
+        }),
+      );
+      assert.ok(employment, 'the fixture needs somebody at the top of the chart');
+
+      // Asked about anybody else, the root is there.
+      assert.equal(await repository.hasReportingRoot(scope()), true);
+      // Asked about the root themselves, nobody else is above them.
+      assert.equal(await repository.hasReportingRoot(scope(), employment.userId), false);
+    });
+
+    // A freshly provisioned company has no departments — the setup checklist has the admin build
+    // them after signing in. Without this exception that admin can never activate, and nobody
+    // else in the company can create the employment record they are missing.
+    it('lets the initial administrator of an empty company activate', () => {
+      const readiness = activationReadiness({
+        userType: 'InternalUser',
+        accountState: 'InvitePending',
+        employment: null,
+        roleCount: 1,
+        companyHasReportingRoot: false,
+        hasBootstrapRole: true,
+      });
+      assert.equal(readiness.ready, true);
+    });
+
+    // The narrowness is the point: it is the bootstrap grant plus an empty company, not either
+    // one alone.
+    it('still requires employment once the company has a reporting root', () => {
+      const readiness = activationReadiness({
+        userType: 'InternalUser',
+        accountState: 'InvitePending',
+        employment: null,
+        roleCount: 1,
+        companyHasReportingRoot: true,
+        hasBootstrapRole: true,
+      });
+      assert.equal(readiness.ready, false);
+      assert.match(readiness.summary, /employment record/);
+    });
+
+    it('still requires employment for an ordinary invitee into an empty company', () => {
+      const readiness = activationReadiness({
+        userType: 'InternalUser',
+        accountState: 'InvitePending',
+        employment: null,
+        roleCount: 1,
+        companyHasReportingRoot: false,
+        hasBootstrapRole: false,
+      });
+      assert.equal(readiness.ready, false);
+      assert.match(readiness.summary, /employment record/);
+    });
   });
 
   // =========================================================================

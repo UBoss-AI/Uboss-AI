@@ -109,11 +109,27 @@ export class AccessRepository {
     );
   }
 
-  /** Does this company have anybody at the top of its reporting tree? */
-  async hasReportingRoot(scope: TenantScope): Promise<boolean> {
+  /**
+   * Does this company have anybody at the top of its reporting tree **other than this person**?
+   *
+   * `exceptUserId` is what makes the first-person exception work. `activationReadiness` waives the
+   * reporting-manager requirement only when no root exists, for the person who has nobody to
+   * report to — but the root *is* an employment record with no manager, so counting every such
+   * record includes the subject and the answer was always true the moment they were added. The
+   * person the waiver exists for was the one person it never reached: the company's first employee
+   * could be placed at the top of the chart and then never invited, refused for lacking the
+   * manager that being the root means not having.
+   *
+   * Excluding the subject asks the question the rule means: is somebody else already up there.
+   */
+  async hasReportingRoot(scope: TenantScope, exceptUserId?: string): Promise<boolean> {
     return this.prisma.runInTenantTransaction(scope, async () => {
       const count = await this.prisma.client.employmentRecord.count({
-        where: { tenantId: scope.tenantId, reportingManagerUserId: null },
+        where: {
+          tenantId: scope.tenantId,
+          reportingManagerUserId: null,
+          ...(exceptUserId === undefined ? {} : { userId: { not: exceptUserId } }),
+        },
       });
       return count > 0;
     });

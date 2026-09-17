@@ -330,18 +330,42 @@ describe('AppShell', () => {
     fireEvent.click(toggle);
     expect(container.querySelector('.uboss-shell--collapsed')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Expand sidebar' })).toBeInTheDocument();
+
+    // The sidebar was a one-way door: it collapsed and could not be expanded again. The cause was
+    // layout — collapsed, the brand kept the fixed height it uses to line up with the top bar, so
+    // the toggle overflowed its box and the scroll area below painted over it. jsdom has no layout
+    // and the repository has no Playwright suite in `verify`, so this asserts the half that IS
+    // testable here: pressing the control a second time genuinely returns to the expanded state.
+    fireEvent.click(screen.getByRole('button', { name: 'Expand sidebar' }));
+    expect(container.querySelector('.uboss-shell--collapsed')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Collapse sidebar' })).toBeInTheDocument();
   });
 });
 
 describe('Company navigation model', () => {
-  it('includes Roles & Permissions, which the prototype failed to insert', () => {
+  // Users & Access and Roles & Permissions used to sit in the sidebar as well as in Settings, so
+  // an admin met each destination twice. The client asked for the sidebar copies to go. What the
+  // original tests were really defending was that neither screen becomes reachable by URL alone,
+  // so that is asserted directly against Settings rather than against the sidebar.
+  it('does not repeat Roles & Permissions in the sidebar, because Settings owns it', () => {
     const keys = COMPANY_NAV.flatMap((group) => group.items.map((item) => item.key));
-    expect(keys).toContain('roles');
+    expect(keys).not.toContain('roles');
+    expect(SETTINGS_SECTIONS.map((section) => section.key)).toContain('roles');
   });
 
-  it('includes Users & Access, which was orphaned in the prototype', () => {
+  it('does not repeat Users & Access in the sidebar, because Settings owns it', () => {
     const keys = COMPANY_NAV.flatMap((group) => group.items.map((item) => item.key));
-    expect(keys).toContain('users');
+    expect(keys).not.toContain('users');
+    expect(SETTINGS_SECTIONS.map((section) => section.key)).toContain('users');
+  });
+
+  // The counterpart: this one is NOT a Settings duplicate. The Settings section of a similar name
+  // is `uboss`, the cross-company lookup policy; the search screen itself is only ever reached
+  // from here, so dropping it would orphan it.
+  it('keeps UBoss Profile Search, which Settings does not carry', () => {
+    const keys = COMPANY_NAV.flatMap((group) => group.items.map((item) => item.key));
+    expect(keys).toContain('profile-search');
+    expect(SETTINGS_SECTIONS.map((section) => section.key)).not.toContain('profile-search');
   });
 
   it('uses the canonical Engine Agent and Executor Agent labels', () => {
@@ -372,6 +396,64 @@ describe('SettingsShell', () => {
     const nav = screen.getByRole('navigation', { name: 'Settings sections' });
     expect(nav.querySelectorAll('button')).toHaveLength(19);
     expect(screen.getByText('Detail panel')).toBeInTheDocument();
+  });
+
+  it('filters the section list by name', () => {
+    render(
+      <SettingsShell sections={SETTINGS_SECTIONS} activeKey="general" onSelect={() => {}}>
+        <p>Detail panel</p>
+      </SettingsShell>,
+    );
+
+    fireEvent.change(screen.getByLabelText('Search settings'), { target: { value: 'notif' } });
+
+    expect(screen.getByRole('button', { name: 'Notifications & Escalations' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Billing' })).not.toBeInTheDocument();
+  });
+
+  // The categories people hunt for are not named after the words they search. Matching the
+  // description too is what makes the box worth having.
+  it('filters on the description as well, so a word not in the title still finds it', () => {
+    render(
+      <SettingsShell sections={SETTINGS_SECTIONS} activeKey="general" onSelect={() => {}}>
+        <p>Detail panel</p>
+      </SettingsShell>,
+    );
+
+    fireEvent.change(screen.getByLabelText('Search settings'), { target: { value: 'budget' } });
+
+    expect(screen.getByRole('button', { name: 'Tokens & Cost' })).toBeInTheDocument();
+  });
+
+  it('says so when nothing matches, rather than showing an empty column', () => {
+    render(
+      <SettingsShell sections={SETTINGS_SECTIONS} activeKey="general" onSelect={() => {}}>
+        <p>Detail panel</p>
+      </SettingsShell>,
+    );
+
+    fireEvent.change(screen.getByLabelText('Search settings'), { target: { value: 'zzzzz' } });
+
+    const nav = screen.getByRole('navigation', { name: 'Settings sections' });
+    expect(nav.querySelectorAll('.uboss-settings-nav-item')).toHaveLength(0);
+    expect(screen.getByRole('status')).toHaveTextContent('No settings match');
+  });
+
+  // Searching filters what the caller already passed. It must never be able to surface a section
+  // the server withheld from this person.
+  it('cannot reveal a section that was not passed in', () => {
+    const permitted = SETTINGS_SECTIONS.filter((section) => section.key === 'general');
+
+    render(
+      <SettingsShell sections={permitted} activeKey="general" onSelect={() => {}}>
+        <p>Detail panel</p>
+      </SettingsShell>,
+    );
+
+    fireEvent.change(screen.getByLabelText('Search settings'), { target: { value: 'billing' } });
+
+    expect(screen.queryByRole('button', { name: 'Billing' })).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('No settings match');
   });
 
   it('marks the active section', () => {

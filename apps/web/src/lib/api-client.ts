@@ -2359,11 +2359,15 @@ export interface ObjectiveListRow {
   code: string;
   objectiveName: string;
   departmentId: string;
+  /** Printed by the list. The id stays for links and filters; this is what a person reads. */
+  departmentName: string;
   status: ObjectiveStatus;
   statusLabel: string;
   versionNumber: number;
   live: boolean;
   responsibleOwnerUserId: string | null;
+  /** Null when the objective has not been sent to anybody yet. */
+  responsibleOwnerName: string | null;
   targetCompletionTime: number | null;
   timeUnit: TimeUnit | null;
   updatedAt: string;
@@ -3385,6 +3389,9 @@ export interface ApprovalSummaryView {
   hoursOpen: number;
   escalatedAt: string | null;
   escalatedToUserId: string | null;
+  /** How many distinct approvals this needs, and has. Four-eyes gates need two (ADR-296). */
+  approvalsRequired?: number;
+  approvalsGiven?: number;
 }
 
 export interface ApprovalRequestDetailView extends ApprovalSummaryView {
@@ -3399,6 +3406,8 @@ export interface ApprovalRequestDetailView extends ApprovalSummaryView {
   available: { decision: string; label: string; allowed: boolean; reason: string }[];
   actingUnderDelegationFrom: string | null;
   version: number;
+  /** userId -> display name for everybody this request names. */
+  people?: Record<string, string>;
 }
 
 export interface ApprovalDelegationView {
@@ -3439,9 +3448,13 @@ export const approvalsApi = {
     if (filters.mineOnly !== undefined) query.set('mineOnly', String(filters.mineOnly));
     const suffix = query.toString() === '' ? '' : `?${query.toString()}`;
 
-    return call<{ requests: ApprovalSummaryView[]; counts: Record<string, number> }>(
-      `/tenants/${encodeURIComponent(tenantId)}/approvals${suffix}`,
-    );
+    // `people` maps a user id to a display name, for the columns that used to print the
+    // first eight characters of a UUID. A name absent from it keeps the short-id fallback.
+    return call<{
+      requests: ApprovalSummaryView[];
+      counts: Record<string, number>;
+      people?: Record<string, string>;
+    }>(`/tenants/${encodeURIComponent(tenantId)}/approvals${suffix}`);
   },
 
   view: (tenantId: string, approvalId: string) =>

@@ -114,7 +114,7 @@ export class InvitationAccessService {
     }
 
     // The readiness gate, before the email rather than after the click.
-    const hasRoot = await this.access.hasReportingRoot(input.scope);
+    const hasRoot = await this.access.hasReportingRoot(input.scope, input.subjectUserId);
     const readiness = activationReadiness({
       userType: person.userType as never,
       accountState: person.accountState as never,

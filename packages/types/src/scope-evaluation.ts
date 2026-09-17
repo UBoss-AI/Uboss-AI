@@ -344,9 +344,24 @@ export function checkSeparationOfDuties(input: {
       continue;
     }
 
-    // FourEyes: at least one *other* person must already have acted, and the actor must not be
-    // among them. An automated actor can never satisfy it — two agents are not four eyes, and
-    // treating them as such is precisely the silent bypass the locked rule forbids.
+    /*
+     * FourEyes — may *this* person be one of the two eyes.
+     *
+     * This answers a question about the actor, not about whether the requirement is finished.
+     * Those are different questions and conflating them is what made four eyes unsatisfiable
+     * (ADR-296): the rule used to refuse anybody who was not preceded by another actor, while
+     * every decision that would have made someone a prior actor also settled the request. The
+     * first eye was therefore always refused, so there was never a second.
+     *
+     * Whether two eyes have been given is a settlement question, and it belongs where the
+     * decisions are counted — `ApprovalService.decide`. What stays here is who may contribute one:
+     *
+     *   * not an automated actor. Two agents are not four eyes, and treating them as such is
+     *     exactly the silent bypass the locked rule forbids;
+     *   * not the person who created the thing;
+     *   * not somebody who has already acted on it — one person cannot be both eyes, however many
+     *     times they press the button.
+     */
     if (input.actingAsAgent === true) {
       return {
         satisfied: false,
@@ -357,10 +372,6 @@ export function checkSeparationOfDuties(input: {
       };
     }
 
-    const priorActors = (input.resource.priorActorUserIds ?? []).filter(
-      (userId) => userId !== input.actorUserId,
-    );
-
     if (
       input.resource.createdByUserId !== undefined &&
       input.resource.createdByUserId === input.actorUserId
@@ -368,11 +379,13 @@ export function checkSeparationOfDuties(input: {
       return { satisfied: false, rule: policy.rule, detail: policy.reason };
     }
 
-    if (priorActors.length === 0) {
+    if ((input.resource.priorActorUserIds ?? []).includes(input.actorUserId)) {
       return {
         satisfied: false,
         rule: policy.rule,
-        detail: `${policy.reason} This needs a second person: nobody else has acted on it yet.`,
+        detail:
+          `${policy.reason} You have already acted on this one; the second decision has to come ` +
+          'from somebody else.',
       };
     }
   }

@@ -30,11 +30,27 @@ export interface NavGroup {
 /**
  * Company Workspace navigation.
  *
- * Mirrors the client's approved UI reference. Two corrections to the prototype are applied
- * here deliberately (see docs/UX_MAP.md §7):
- *  - "Roles & Permissions" IS present. In the prototype a broken group-name lookup meant the
- *    item was never inserted into the sidebar, leaving the screen reachable only by URL.
- *  - "Users & Access" IS present, for the same reason.
+ * Mirrors the client's approved UI reference.
+ *
+ * ## Why Administration holds no "Users & Access" or "Roles & Permissions"
+ *
+ * Both were once listed here. The prototype's broken group-name lookup meant neither item was
+ * ever inserted into its sidebar, and the screens were reachable only by typing a URL, so this
+ * file added them back (docs/UX_MAP.md §7). That reasoning has since stopped applying: Settings
+ * carries both as sections of its own — `users` with an explicit "Open Users & Access" button
+ * onto /settings/users, and `roles` as the very section the old sidebar link pointed at
+ * (`/settings?section=roles`). An admin therefore met the same two destinations twice, once in
+ * the sidebar and again inside Settings.
+ *
+ * The client asked for the duplicates to go, so the sidebar now offers each destination once,
+ * through Settings. Nothing became unreachable — the tests below assert both sections still
+ * stand in SETTINGS_SECTIONS, which is what the earlier "is present" tests were really
+ * protecting.
+ *
+ * "UBoss Profile Search" STAYS, and is not the same kind of item. Settings does hold a
+ * similarly-named section, but that one is `uboss` — "UBoss Profile Search Policy", the
+ * cross-company lookup *policy*. The search screen itself lives at /profile-search and nothing
+ * else in the product links to it, so removing it here would orphan it.
  *
  * Visibility is presentation only. The server decides what a user may actually open, and every
  * route is independently guarded — a hidden item is not an access control.
@@ -70,8 +86,9 @@ export const COMPANY_NAV: readonly NavGroup[] = [
   {
     group: 'Administration',
     items: [
-      { key: 'users', label: 'Users & Access', icon: 'users', href: '/settings/users' },
-      { key: 'roles', label: 'Roles & Permissions', icon: 'key', href: '/settings?section=roles' },
+      // "Users & Access" and "Roles & Permissions" are deliberately absent — both are Settings
+      // sections, and listing them here too showed an admin the same destination twice. See the
+      // note above COMPANY_NAV.
       {
         key: 'profile-search',
         label: 'UBoss Profile Search',

@@ -337,14 +337,21 @@ describe('approve & assign and the human to-do list (e2e)', () => {
         });
       }
 
-      // A live connection granting Read and Write, or the readiness check refuses every AI step
+      // A live connection providing Read and Write, or the readiness check refuses every AI step
       // for want of a connection — which is correct behaviour, and would make every test here
       // about that one refusal.
+      //
+      // `mock-erp`, not `google-drive`: the readiness check now asks whether a usable connection's
+      // *connector* supports the category, and `google-drive` is in no catalogue and has no
+      // adapter. `connections.e2e.spec.ts` asserts the service refuses exactly that kind ("refuses
+      // a connector kind nobody implements"), so this fixture — which writes straight to Prisma —
+      // was standing up a connection the product itself would never accept. mock-erp is the
+      // catalogue's Company-scope connector and supports Read and Write.
       const connection = await ctx.prisma.client.connection.create({
         data: {
           tenantId,
           scope: 'Company',
-          connectorKind: 'google-drive',
+          connectorKind: 'mock-erp',
           label: 'Regulatory Drive',
           ownerUserId,
           environment: 'Test',

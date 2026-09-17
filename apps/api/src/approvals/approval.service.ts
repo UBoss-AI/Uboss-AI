@@ -40,12 +40,21 @@ import {
   type AuthorizationContext,
 } from '../authorization/authorization.service.js';
 import { NotificationService } from '../notifications/notification.service.js';
+import { HumanTaskService } from '../tasks/human-task.service.js';
 import { OrganizationRepository } from '../persistence/organization.repository.js';
 import { PrismaService } from '../persistence/prisma.service.js';
 import {
   tenantScopeForPlatformOperation,
   type TenantScope,
 } from '../persistence/tenant-context.js';
+
+/**
+ * How many distinct people a four-eyes gate needs (ADR-296).
+ *
+ * Named rather than written as `2` in three places, because the number is the rule: "four eyes"
+ * is two pairs, and a reader should not have to infer that from a literal.
+ */
+export const FOUR_EYES_REQUIRED = 2;
 
 /** One thing somebody did to a request, as the drawer shows it. */
 export interface ApprovalDecisionView {
@@ -81,6 +90,15 @@ export interface ApprovalSummary {
   hoursOpen: number;
   escalatedAt: string | null;
   escalatedToUserId: string | null;
+  /**
+   * How many distinct approvals this request needs, and how many it has (ADR-296).
+   *
+   * `1` for an ordinary request; `FOUR_EYES_REQUIRED` for a four-eyes gate. Given to the screen
+   * rather than left to it, so "Pending — 1 of 2 approvals" and the server's own settlement rule
+   * cannot disagree about what is outstanding.
+   */
+  approvalsRequired: number;
+  approvalsGiven: number;
 }
 
 /** One request in full. */
@@ -103,6 +121,8 @@ export interface ApprovalView extends ApprovalSummary {
   /** Set when this actor is standing in for the named approver right now. */
   actingUnderDelegationFrom: string | null;
   version: number;
+  /** userId -> display name for everybody this request names, the decision history included. */
+  people: Record<string, string>;
 }
 
 export interface DelegationView {
@@ -163,6 +183,12 @@ export class ApprovalService {
     private readonly auditEvents: AuditEventService,
     private readonly notifications: NotificationService,
     private readonly organization: OrganizationRepository,
+    /**
+     * Closing the human-task approval loop (ADR-294). One-way: the task service raises its own
+     * approval row through Prisma and knows nothing about this service, so injecting it here
+     * cannot form a cycle.
+     */
+    private readonly humanTasks: HumanTaskService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -426,6 +452,22 @@ export class ApprovalService {
         );
       }
 
+      /*
+       * Four eyes: two distinct people, so the first Approve records an eye and leaves the request
+       * open (ADR-296).
+       *
+       * The decision is appended either way — both eyes are kept, and the first approver is never
+       * overwritten by the second, because `approval_decision_records` is a child table with one
+       * row per decision. Only the *settlement* waits.
+       *
+       * `Reject` and `SendBack` still settle on the first decision. Four eyes is a bar on letting
+       * something through, not on stopping it: requiring a second person to agree that work is
+       * wrong would leave a refused request open and the requester waiting.
+       */
+      const needsTwoEyes = requiredSodRule({ approverRoleKind: request.approverRoleKind }) !== null;
+
+      // Appended once, for every path. The decision record is the immutable fact; what follows
+      // only decides whether this decision also settles the request.
       await this.appendDecision(input.scope.tenantId, request.id, {
         decision: input.decision,
         actorUserId: input.actorUserId,
@@ -434,6 +476,37 @@ export class ApprovalService {
           ? {}
           : { onBehalfOfUserId: delegation.fromUserId, delegationId: delegation.id }),
       });
+
+      if (needsTwoEyes && input.decision === 'Approve') {
+        // Counted from the records, not from a tally on the row: the decisions are the truth. A
+        // repeat by somebody who already approved cannot add an eye — the SoD gate refuses them
+        // before they reach here — and counting distinct actors makes that structural rather than
+        // dependent on the gate.
+        const eyes = await this.approveEyesOf(input.scope, request.id);
+
+        if (eyes.length < FOUR_EYES_REQUIRED) {
+          await this.auditEvents.appendWithinCurrentScope(input.scope.tenantId, {
+            action: 'approvals.approve',
+            resourceType: 'approval-request',
+            resourceId: request.id,
+            actorUserId: input.actorUserId,
+            resourceRef: request.title,
+            summary:
+              `Approved "${request.title}" — ${eyes.length} of ${FOUR_EYES_REQUIRED} approvals. ` +
+              'A four-eyes gate needs a second, different person.',
+            metadata: {
+              approvalType: request.type,
+              decision: 'Approve',
+              fourEyesGate: true,
+              approvalsGiven: eyes.length,
+              approvalsRequired: FOUR_EYES_REQUIRED,
+            },
+          });
+          return;
+        }
+        // The second eye. Falls through to settle, so the status write, the notification and the
+        // ADR-294 task reconciliation all happen exactly once.
+      }
 
       const updated = await this.prisma.client.approvalRequest.update({
         where: { id: request.id },
@@ -468,6 +541,26 @@ export class ApprovalService {
         },
       });
 
+      /*
+       * Close the loop on whatever was waiting for this decision (ADR-294).
+       *
+       * Inside the same transaction on purpose: the decision and the task's state commit together,
+       * so a crash between them cannot leave an approved request beside a task still waiting on
+       * it. `reconcileApprovalOutcome` re-reads every approval governing that task and finishes it
+       * only when the whole requirement is satisfied — this service does not tell it to complete
+       * anything, it tells it that something changed.
+       *
+       * Guarded on the subject rather than the decision: an approval for anything else, or one
+       * carrying no subject, reaches no task at all.
+       */
+      if (request.subjectType === 'HumanTask' && request.subjectId !== null) {
+        await this.humanTasks.reconcileApprovalOutcome({
+          scope: input.scope,
+          taskId: request.subjectId,
+          actorUserId: input.actorUserId,
+        });
+      }
+
       await this.notifyRequester(input.scope, updated, input.decision, input.note);
     });
 
@@ -493,7 +586,7 @@ export class ApprovalService {
     type?: ApprovalRequestType | undefined;
     /** Only the ones this actor is the named approver for, or a delegate of. */
     mineOnly?: boolean | undefined;
-  }): Promise<{ requests: ApprovalSummary[]; counts: Record<string, number> }> {
+  }): Promise<{ requests: ApprovalSummary[]; counts: Record<string, number>; people: Record<string, string> }> {
     const context = await this.authorization.contextFor(input.scope, input.actorUserId);
     await this.authorization.assertCan(context, { module: 'approvals', action: 'View' });
 
@@ -556,7 +649,13 @@ export class ApprovalService {
       });
       if (!decision.allowed) continue;
 
-      visible.push(this.toSummary(candidate.row, prepared.now));
+      // Only four-eyes rows need the count; everything else is 1-of-1 and asking would be a
+      // query per row for an answer that is already known.
+      const eyes =
+        requiredSodRule({ approverRoleKind: candidate.row.approverRoleKind }) === null
+          ? 0
+          : (await this.approveEyesOf(input.scope, candidate.row.id)).length;
+      visible.push(this.toSummary(candidate.row, prepared.now, eyes));
     }
 
     const delegatedFrom = prepared.delegatedFrom;
@@ -581,7 +680,54 @@ export class ApprovalService {
       }
     }
 
-    return { requests: visible, counts };
+    return { requests: visible, counts, people: await this.namesFor(input.scope, visible) };
+  }
+
+  /**
+   * Display names for the people a set of requests refers to.
+   *
+   * The queue carried only user ids, so the screen printed the first eight characters of a UUID
+   * where a requester's name belongs — `01a0a903` in the "Requested by" column, and the same for
+   * the named approver and whoever a request was escalated to. Unreadable, and identical-looking
+   * for any two people whose ids share a prefix.
+   *
+   * Returned as one map rather than a name field beside every id, because the same person appears
+   * in several roles across several rows and the screen already has the ids to look up. A name
+   * missing from the map means the screen keeps its existing short-id fallback, which is what
+   * happens for somebody no longer in the company.
+   *
+   * Resolved through `tenantMembership`: `users` is global and carries no row-level security, so
+   * querying it directly could name somebody from another company.
+   */
+  private async namesFor(
+    scope: TenantScope,
+    requests: readonly {
+      requestedByUserId: string;
+      namedApproverUserId: string | null;
+      escalatedToUserId: string | null;
+    }[],
+  ): Promise<Record<string, string>> {
+    const ids = [
+      ...new Set(
+        requests
+          .flatMap((request) => [
+            request.requestedByUserId,
+            request.namedApproverUserId,
+            request.escalatedToUserId,
+          ])
+          .filter((id): id is string => id !== null),
+      ),
+    ];
+    if (ids.length === 0) return {};
+
+    const members = await this.prisma.runInTenantTransaction(scope, () =>
+      this.prisma.client.tenantMembership.findMany({
+        where: { tenantId: scope.tenantId, userId: { in: ids } },
+        select: { userId: true, user: { select: { displayName: true } } },
+      }),
+    );
+
+    return Object.fromEntries(members.map((m) => [m.userId, m.user.displayName]));
   }
 
   /** One request in full, with its history and what this actor may do. */
@@ -1002,6 +1148,24 @@ export class ApprovalService {
   }
 
   /** The distinct people who have already decided — commenters are not deciders. */
+  /**
+   * The distinct people who have actually approved this request.
+   *
+   * Only `Approve` counts. A comment is a comment — `priorDecidersOf` already excludes them for
+   * the separation-of-duties check and the same holds here: an eye is an approval, not a remark.
+   * Distinct actors, so one person pressing the button twice is one eye however many rows they
+   * leave behind.
+   */
+  private async approveEyesOf(scope: TenantScope, approvalRequestId: string): Promise<string[]> {
+    return this.prisma.runInTenantTransaction(scope, async () => {
+      const rows = await this.prisma.client.approvalDecisionRecord.findMany({
+        where: { tenantId: scope.tenantId, approvalRequestId, decision: 'Approve' },
+        select: { actorUserId: true },
+      });
+      return [...new Set(rows.map((row) => row.actorUserId))];
+    });
+  }
+
   private priorDecidersOf(history: readonly { decision: string; actorUserId: string }[]): string[] {
     return [
       ...new Set(history.filter((row) => row.decision !== 'Comment').map((row) => row.actorUserId)),
@@ -1141,6 +1305,7 @@ export class ApprovalService {
       escalatedToUserId: string | null;
     },
     now: Date,
+    approvalsGiven = 0,
   ): ApprovalSummary {
     const type = row.type as ApprovalRequestType;
     const aging = agingBucketFor({ submittedAt: row.createdAt, dueAt: row.dueAt, now });
@@ -1166,6 +1331,16 @@ export class ApprovalService {
       hoursOpen: Math.round(aging.hoursOpen * 10) / 10,
       escalatedAt: row.escalatedAt?.toISOString() ?? null,
       escalatedToUserId: row.escalatedToUserId,
+      approvalsRequired:
+        requiredSodRule({ approverRoleKind: row.approverRoleKind }) === null
+          ? 1
+          : FOUR_EYES_REQUIRED,
+      approvalsGiven:
+        row.status === 'Approved'
+          ? requiredSodRule({ approverRoleKind: row.approverRoleKind }) === null
+            ? 1
+            : FOUR_EYES_REQUIRED
+          : approvalsGiven,
     };
   }
 
@@ -1295,7 +1470,13 @@ export class ApprovalService {
     }
 
     return {
-      ...this.toSummary(row, now),
+      ...this.toSummary(
+        row,
+        now,
+        history.filter((entry) => entry.decision === 'Approve')
+          .map((entry) => entry.actorUserId)
+          .filter((id, index, all) => all.indexOf(id) === index).length,
+      ),
       detail: row.detail,
       decidedByUserId: row.decidedByUserId,
       decidedOnBehalfOfUserId: row.decidedOnBehalfOfUserId,
@@ -1316,6 +1497,21 @@ export class ApprovalService {
       available,
       actingUnderDelegationFrom: delegation?.fromUserId ?? null,
       version: row.version,
+      people: await this.namesFor(scope, [
+        {
+          requestedByUserId: row.requestedByUserId,
+          namedApproverUserId: row.namedApproverUserId,
+          escalatedToUserId: row.escalatedToUserId,
+        },
+        // The history's actors, folded into the same shape so one lookup covers the whole drawer.
+        ...history.flatMap((entry) => [
+          {
+            requestedByUserId: entry.actorUserId,
+            namedApproverUserId: entry.onBehalfOfUserId,
+            escalatedToUserId: null,
+          },
+        ]),
+      ]),
     };
   }
 

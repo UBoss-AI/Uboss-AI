@@ -18,6 +18,11 @@ export interface ActivationSubject {
   roleCount: number;
   /** Whether this company has anybody at the top of its reporting tree yet. */
   companyHasReportingRoot: boolean;
+  /**
+   * Whether one of those assignments is the bootstrap grant that company provisioning created for
+   * the initial administrator. Defaults to false, so every existing caller keeps the full gate.
+   */
+  hasBootstrapRole?: boolean;
 }
 
 /**
@@ -71,9 +76,30 @@ export function activationReadiness(subject: ActivationSubject): ActivationReadi
 
   const missing: string[] = [];
 
-  if (!subject.employment) {
+  /*
+   * The initial administrator of a freshly provisioned company.
+   *
+   * Without this the product cannot be set up at all. Provisioning creates the company, the admin
+   * and a bootstrap role assignment, and nothing else — no departments, because
+   * `COMPANY_SETUP_TASKS` puts "Build departments and reporting hierarchy" and "Invite internal
+   * users" *after* the admin has access, which is the right order. So at the moment that admin
+   * clicks their activation link there is no department to belong to and no manager to report to,
+   * and the only person who could create either is the admin being refused. The platform plane
+   * cannot do it for them either: acting inside a company without a membership is correctly
+   * refused ("A platform account cannot act inside a company workspace without an explicit
+   * membership"). A newly provisioned company was therefore impossible to enter.
+   *
+   * This is the same structural exception the reporting-manager rule already makes for the first
+   * person in a company, applied to the same person for the same reason, and it closes the moment
+   * a reporting root exists. It is narrow on purpose: it needs the provisioning-issued bootstrap
+   * grant AND an empty company. An ordinary invited employee gets the full gate, including every
+   * later admin.
+   */
+  const isBootstrapAdmin = subject.hasBootstrapRole === true && !subject.companyHasReportingRoot;
+
+  if (!subject.employment && !isBootstrapAdmin) {
     missing.push('an employment record (department and reporting manager)');
-  } else {
+  } else if (subject.employment) {
     if (!subject.employment.departmentId) {
       missing.push('a department');
     }

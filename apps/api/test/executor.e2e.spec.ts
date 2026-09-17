@@ -30,6 +30,7 @@ import { ExecutorService } from '../src/executor/executor.service.js';
 import { RunController } from '../src/runs/run.controller.js';
 import { CompanySettingsService } from '../src/settings/company-settings.service.js';
 import { ApprovalService } from '../src/approvals/approval.service.js';
+import { HumanTaskService } from '../src/tasks/human-task.service.js';
 import { AuditEventService } from '../src/audit/audit-event.service.js';
 import { SecurityEventService } from '../src/audit/security-event.service.js';
 import { AUTH_CONFIG, loadAuthConfig } from '../src/auth/auth.config.js';
@@ -200,6 +201,7 @@ describe('executor agent and exception center (e2e)', () => {
         // Prompt 28: the Executor now raises a real approval row for RequestApproval, rather
         // than reporting that it asked for a decision nobody could see.
         ApprovalService,
+        HumanTaskService,
         CompanySettingsService,
         TenantContextService,
         Reflector,

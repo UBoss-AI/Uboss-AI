@@ -227,7 +227,10 @@ export default function UsersAccessPage() {
       variant="company"
       workspaceName={activeWorkspace?.tenantName ?? '—'}
       groups={navGroups}
-      activeKey="users"
+      // This screen is reached through Settings -> Users & Access, and the sidebar no longer
+      // carries a "users" item of its own, so Settings is the entry that should read as active.
+      // Naming the removed key here would leave the whole sidebar unhighlighted.
+      activeKey="settings"
       {...bell.shellProps}
       user={signedInUser}
       accountMenu={accountMenu}

@@ -880,10 +880,18 @@ Module Visibility → Allowed Actions_. It is **presentation only**; enforcement
 1. **FIXED at Prompt 2 — dead navigation mutation.** The prototype splices items into groups named
    `Work & Agents` and `Admin`, but its actual groups are `Home / Builders / Operations / Settings`,
    so the **Roles & Permissions sidebar item and the Approvals badge were never inserted**.
-   `COMPANY_NAV` now includes `roles` under an `Administration` group, and the Approvals badge is
-   part of the model. A unit test asserts the `roles` key is present.
-2. **FIXED at Prompt 2 — `users` screen orphaned.** Users & Access had no link anywhere. It is now a
-   first-class `COMPANY_NAV` item, asserted by a unit test.
+   `COMPANY_NAV` gained a `roles` item under an `Administration` group, and the Approvals badge is
+   part of the model.
+   **SUPERSEDED (client amendment, 2026-09-16):** the `roles` sidebar item is removed again. It
+   pointed at `/settings?section=roles` — literally a Settings section — so an admin met the same
+   destination twice. The Approvals badge is unaffected. See ADR-290.
+2. **FIXED at Prompt 2 — `users` screen orphaned.** Users & Access had no link anywhere. It became a
+   first-class `COMPANY_NAV` item.
+   **SUPERSEDED (client amendment, 2026-09-16):** the `users` sidebar item is removed. The screen is
+   no longer orphaned — Settings → Users & Access carries an "Open Users & Access" button onto
+   `/settings/users`, so the original defect stays fixed through a single entry rather than two. The
+   unit tests now assert both sections remain in `SETTINGS_SECTIONS`, which is what "not orphaned"
+   actually required. See ADR-290.
 3. **OPEN — `objective/review` and `objective/versions` orphaned.** Both are implemented in the
    prototype but unlinked. Versions must be reachable, since it demonstrates the locked versioning
    rule. Due with the Objective module (Prompts 15–19).

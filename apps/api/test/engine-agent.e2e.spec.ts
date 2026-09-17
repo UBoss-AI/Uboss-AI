@@ -22,6 +22,7 @@ import { AgentBuilderService } from '../src/agents/agent-builder.service.js';
 import { EngineAgentController } from '../src/agents/engine-agent.controller.js';
 import { EngineAgentService } from '../src/agents/engine-agent.service.js';
 import { ApprovalService } from '../src/approvals/approval.service.js';
+import { HumanTaskService } from '../src/tasks/human-task.service.js';
 import { AuditEventService } from '../src/audit/audit-event.service.js';
 import { SecurityEventService } from '../src/audit/security-event.service.js';
 import { AUTH_CONFIG, loadAuthConfig } from '../src/auth/auth.config.js';
@@ -178,6 +179,7 @@ describe('engine agent registry and versioning (e2e)', () => {
         // Prompt 28: activation approval is now a real record this service creates and
         // `activateVersion` verifies, so the registry cannot be tested without it.
         ApprovalService,
+        HumanTaskService,
         TenantContextService,
         Reflector,
         ReportingHierarchyResolver,

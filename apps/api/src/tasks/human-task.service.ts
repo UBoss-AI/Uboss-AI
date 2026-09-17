@@ -397,6 +397,121 @@ export class HumanTaskService {
     });
   }
 
+  /**
+   * Close the loop between an approval decision and the task waiting on it.
+   *
+   * `submit` parks a task at `WaitingApproval` and raises an `OutputApproval` carrying
+   * `subjectType: 'HumanTask'` and this task's id. Nothing used to read that back, so an approved
+   * task stayed `WaitingApproval` for ever and the work could never finish (ADR-294).
+   *
+   * ## Why this asks about every request, not the one that was just decided
+   *
+   * A task may be governed by more than one approval, and "one row turned Approved" is not the
+   * same statement as "the approval requirement is satisfied". This reads *all* requests against
+   * this task and only finishes it when none is still `Pending` and every settled one is
+   * `Approved`. One outstanding approver, and the task stays where it is.
+   *
+   * The separation-of-duties rules are not re-implemented here and must not be: a request cannot
+   * reach `Approved` at all unless `ApprovalService.decide` got past `assertCan` with the
+   * `NoSelfApproval` control and any `FourEyes` policy already applied. A four-eyes gate whose
+   * first decision was refused leaves the row `Pending`, so this sees an unsatisfied requirement
+   * and does nothing — which is the behaviour, arrived at by not duplicating the rule.
+   *
+   * ## Idempotent, and safe to run again
+   *
+   * The first thing it does is check the task is still `WaitingApproval`. A second call — a retry,
+   * a redelivered decision, a reconciliation sweep — finds `Completed` and changes nothing, so the
+   * audit event is written once and the completion timestamp is never moved.
+   *
+   * ## Transaction and scope
+   *
+   * No transaction is opened here. `runInTenantTransaction` is re-entrant for the same tenant, so
+   * called from inside `decide`'s write transaction this joins it: the decision and the task's
+   * state commit together or not at all. It also refuses to nest under a *different* tenant, which
+   * is what makes a cross-tenant reconciliation impossible rather than merely unlikely.
+   *
+   * ## What it deliberately does not do
+   *
+   * Nothing for `Rejected` or `SentBack`. The product defines no task transition for either, and
+   * inventing one during an integration is how a lifecycle acquires semantics nobody approved —
+   * see ADR-295. Those decisions are recorded on the approval and the task is left alone.
+   */
+  async reconcileApprovalOutcome(input: {
+    scope: TenantScope;
+    taskId: string;
+    /** Whoever's decision prompted this. Recorded as the actor on the completion event. */
+    actorUserId: string;
+  }): Promise<{ changed: boolean; status: HumanTaskStatus }> {
+    return this.prisma.runInTenantTransaction(input.scope, async () => {
+      const row = await this.prisma.client.humanTask.findFirst({
+        where: { id: input.taskId },
+        select: { id: true, title: true, status: true, startedAt: true, submittedAt: true },
+      });
+
+      // Not ours to see, or already past the gate. Either way there is nothing to do.
+      if (row === null || row.status !== 'WaitingApproval') {
+        return { changed: false, status: (row?.status ?? 'Cancelled') as HumanTaskStatus };
+      }
+
+      const governing = await this.prisma.client.approvalRequest.findMany({
+        where: {
+          tenantId: input.scope.tenantId,
+          subjectType: 'HumanTask',
+          subjectId: input.taskId,
+        },
+        select: { id: true, status: true },
+      });
+
+      // A task parked at WaitingApproval with no approval governing it is a data problem, not a
+      // task to finish. Left alone rather than completed on the strength of an absence.
+      if (governing.length === 0) {
+        return { changed: false, status: row.status as HumanTaskStatus };
+      }
+
+      const outstanding = governing.filter((request) => request.status === 'Pending');
+      const approved = governing.filter((request) => request.status === 'Approved');
+      if (outstanding.length > 0 || approved.length !== governing.length) {
+        return { changed: false, status: row.status as HumanTaskStatus };
+      }
+
+      // The declared route, walked rather than jumped: WaitingApproval -> Submitted -> Completed.
+      // Both legs are checked against ALLOWED_HUMAN_TASK_TRANSITIONS, so this cannot become a
+      // private shortcut if the lifecycle changes underneath it.
+      this.assertMove('WaitingApproval', 'Submitted');
+      this.assertMove('Submitted', 'Completed');
+
+      const now = new Date();
+      await this.prisma.client.humanTask.update({
+        where: { id: row.id },
+        data: {
+          status: 'Completed',
+          completedAt: now,
+          // Preserved, not rewritten: the submission and its evidence are the record of the work.
+          ...(row.submittedAt === null ? { submittedAt: now } : {}),
+          ...(row.startedAt === null ? { startedAt: now } : {}),
+          version: { increment: 1 },
+        },
+      });
+
+      await this.auditEvents.appendWithinCurrentScope(input.scope.tenantId, {
+        action: 'todo.task_completed',
+        resourceType: 'human_task',
+        resourceId: row.id,
+        actorUserId: input.actorUserId,
+        resourceRef: row.title,
+        summary: `Completed "${row.title}": every approval it was waiting on is approved.`,
+        metadata: {
+          taskId: row.id,
+          completedBy: 'approval',
+          approvalRequestIds: governing.map((request) => request.id).join(','),
+          approvalsRequired: governing.length,
+        },
+      });
+
+      return { changed: true, status: 'Completed' as HumanTaskStatus };
+    });
+  }
+
   // -------------------------------------------------------------------------
   // Internals
   // -------------------------------------------------------------------------

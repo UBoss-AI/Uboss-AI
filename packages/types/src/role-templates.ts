@@ -141,11 +141,41 @@ export const ROLE_TEMPLATES: Record<Exclude<RoleKind, 'Custom'>, RoleTemplate> =
   /**
    * Manager — runs a team.
    *
-   * Adds `Assign`, `Schedule` and `Pause` over a team subtree. Deliberately **not** `Approve`:
-   * the client's locked Approve & Assign boundary is that handing work to a person and approving
-   * the plan are separate decisions. A manager who should also approve is given the Approver role
-   * as well, which makes the second decision visible in the assignment record instead of implied
-   * by a job title.
+   * Adds `Assign`, `Schedule` and `Pause` over a team subtree.
+   *
+   * ## `approvals:Approve` — granted, and why the boundary still holds
+   *
+   * This role previously had no `Approve`, on the reasoning that handing work to a person and
+   * approving the plan are separate decisions, and that a manager who must also approve should be
+   * given the Approver role as well.
+   *
+   * That left a routing the product could express but never satisfy. Objective Form 2's Approval
+   * column offers `Manager`, so the analysis emits approval nodes addressed to this role and
+   * Approve & Assign raises real requests against it — which nobody could then decide. Asked from
+   * either side the refusals were both correct and jointly fatal: a Head holding `approvals:Approve`
+   * was told "This request is addressed to a Manager, which you do not hold", and the Manager was
+   * told "Your role does not include \"Approve\" on this". Work sat at `WaitingApproval` with no
+   * path forward (ADR-293).
+   *
+   * The client's decision is to keep `Manager` as a valid Form 2 Approval option and grant this
+   * role `Approve`. **The separation this used to provide is not lost, because none of it lived
+   * in the absence of the grant** — every limit is enforced elsewhere and none of it is relaxed
+   * here:
+   *
+   *   * **Addressed-to.** `isAddressedTo` / `routingFor` already refuse a decision by anybody the
+   *     request was not routed to. A Manager gains nothing on a Head- or Approver-addressed request.
+   *   * **Scope.** `maxScope` stays `TeamSubtree`, and the authorization engine evaluates every
+   *     approval against the request's resource. A department outside the subtree, and any other
+   *     tenant, stay refused — the latter by row-level security before authorization is consulted.
+   *   * **No self-approval.** The platform-wide `NoSelfApproval` control seeded at Prompt 7 keys on
+   *     `createdByUserId`; a manager approving their own authored or requested work is refused by
+   *     the same rule that always refused it.
+   *   * **Four eyes.** `requiredSodRule` counts distinct people through `priorActorUserIds`. One
+   *     manager is one person, so a single Manager approval cannot satisfy a `FourEyes` gate.
+   *
+   * Head and Approver are unchanged. Company Admin is unchanged and still holds no `Approve` on
+   * anything — an administrator who must also approve is still additionally assigned the Approver
+   * role, which is the part of the original reasoning that was doing real work.
    */
   Manager: {
     kind: 'Manager',
@@ -162,7 +192,8 @@ export const ROLE_TEMPLATES: Record<Exclude<RoleKind, 'Custom'>, RoleTemplate> =
       todo: ['View', 'Comment', 'Create', 'EditDraft', 'Assign'],
       agents: ['View', 'Comment', 'Run', 'Schedule', 'Pause'],
       executor: COLLABORATE,
-      approvals: COLLABORATE,
+      // Bound by addressed-to, TeamSubtree scope, NoSelfApproval and FourEyes — see the note above.
+      approvals: ['View', 'Comment', 'Approve'],
       performance: READ_ONLY,
       reports: ['View', 'Export'],
       users: READ_ONLY,

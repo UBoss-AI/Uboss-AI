@@ -26,6 +26,7 @@ import { RunSchedulerService, parseBusinessCron } from '../src/runs/run-schedule
 import { RunController } from '../src/runs/run.controller.js';
 import { CompanySettingsService } from '../src/settings/company-settings.service.js';
 import { ApprovalService } from '../src/approvals/approval.service.js';
+import { HumanTaskService } from '../src/tasks/human-task.service.js';
 import { AuditEventService } from '../src/audit/audit-event.service.js';
 import { SecurityEventService } from '../src/audit/security-event.service.js';
 import { AUTH_CONFIG, loadAuthConfig } from '../src/auth/auth.config.js';
@@ -196,6 +197,7 @@ describe('run engine, queue and scheduler (e2e)', () => {
         AgentOperatorService,
         EngineAgentService,
         ApprovalService,
+        HumanTaskService,
         { provide: RunQueue, useClass: InlineRunQueue },
         RunProgressGateway,
         RunEngineService,

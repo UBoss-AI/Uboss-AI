@@ -81,9 +81,26 @@ export class RoleAdministrationService {
       throw new NotFoundException('That person is not a member of this company.');
     }
 
-    // A role can only be given to someone who is actually here. Assigning to an offboarded
-    // person would create authority that reactivating them would silently restore.
-    if (membership.accountState !== 'Active' && membership.accountState !== 'InvitePending') {
+    /*
+     * A role can only be given to someone who is actually here. Assigning to a suspended or
+     * offboarded person would create authority that reactivating them would silently restore.
+     *
+     * `NotInvited` is included because that is when a role is *supposed* to be granted.
+     * `COMPANY_SETUP_TASKS` runs "Configure roles, scope, module visibility and allowed actions"
+     * before "Invite internal users from Settings -> Users & Access", and the invitation itself
+     * refuses to send until the person holds at least one role (`activationReadiness`). Excluding
+     * `NotInvited` closed the loop on itself: a newly added employee could not be given a role
+     * because they had not been invited, and could not be invited because they had no role, so
+     * nobody added through Add Employee could ever be onboarded. The only way past it was a direct
+     * database write — which is exactly what `users-access.e2e.spec.ts` does, with the comment
+     * "A role, so the readiness gate is satisfied", because the service would not do it.
+     *
+     * Granting a role to somebody who cannot yet sign in grants nothing on its own: authorization
+     * runs off a live session, and `NotInvited` has no credential. The role becomes effective when
+     * they activate, which is the point.
+     */
+    const ASSIGNABLE_STATES = ['Active', 'InvitePending', 'NotInvited'];
+    if (!ASSIGNABLE_STATES.includes(membership.accountState)) {
       throw new BadRequestException(
         `That person's account is ${membership.accountState}, so a role cannot be assigned to them.`,
       );

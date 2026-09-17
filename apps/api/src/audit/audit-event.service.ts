@@ -145,6 +145,32 @@ export class AuditEventService {
     }
   }
 
+  /**
+   * Fit free text to its column, rather than lose the event to the database.
+   *
+   * `resource_ref`, `summary` and `reason` all carry text derived from what people typed — an
+   * approval's title, a decision note, a step's own wording. None of it is length-checked upstream,
+   * and Postgres does not truncate: it refuses the insert. That surfaced as a 500 on a perfectly
+   * ordinary action, deciding an approval whose title ran to 122 characters:
+   *
+   *     Invalid `this.prisma.client.auditEvent.create()` invocation
+   *     DriverAdapterError: LengthMismatch
+   *
+   * The business decision had already been written at that point, so the failure did not just
+   * report badly — it left the row updated and its audit event missing, which is the one outcome an
+   * append-only trail must never produce.
+   *
+   * Truncation is marked with an ellipsis so a shortened value never reads as the whole of what
+   * somebody wrote, and nothing is actually lost: `resource_id` points at the row the text came
+   * from. `action` and `resource_type` are deliberately not truncated — those are code-controlled
+   * constants, and one too long is a programming error that should fail loudly rather than be
+   * quietly trimmed.
+   */
+  private static fit(value: string | undefined, limit: number): string | null {
+    if (value === undefined) return null;
+    return value.length <= limit ? value : `${value.slice(0, limit - 1)}…`;
+  }
+
   private normalise(
     tenantId: string | null,
     input: AuditEventInput,
@@ -156,10 +182,10 @@ export class AuditEventService {
       resourceType: input.resourceType,
       resourceId: input.resourceId ?? null,
       actorUserId: input.actorUserId ?? actorUserId(getActor()) ?? null,
-      summary: input.summary ?? null,
-      reason: input.reason ?? null,
+      summary: AuditEventService.fit(input.summary, 500),
+      reason: AuditEventService.fit(input.reason, 1000),
       resourceVersion: input.resourceVersion ?? null,
-      resourceRef: input.resourceRef ?? null,
+      resourceRef: AuditEventService.fit(input.resourceRef, 120),
       correlationId: input.correlationId ?? getCorrelationId() ?? null,
       metadata: (metadata ?? null) as Prisma.InputJsonValue | null,
       ...(input.occurredAt === undefined ? {} : { occurredAt: input.occurredAt }),

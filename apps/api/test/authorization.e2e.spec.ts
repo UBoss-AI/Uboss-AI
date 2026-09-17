@@ -572,6 +572,70 @@ describe('authorization (e2e)', () => {
   });
 
   // =========================================================================
+  // A newly added employee is NotInvited, and the invitation refuses to send until they hold a
+  // role. If a role could not be granted before the invitation, nobody added through Add Employee
+  // could ever be onboarded — which is the order COMPANY_SETUP_TASKS prescribes: configure roles,
+  // then invite. Suspended and offboarded accounts stay refused, which is what the rule is for.
+  describe('which account states may be given a role', () => {
+    it('grants a role to a person who has not been invited yet', async () => {
+      const membership = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.tenantMembership.findFirst({
+          where: { tenantId, userId: employeeId },
+          select: { accountState: true },
+        }),
+      );
+      // Guard the premise: if the fixture is already Active this test proves nothing.
+      assert.ok(membership);
+
+      await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.tenantMembership.updateMany({
+          where: { tenantId, userId: employeeId },
+          data: { accountState: 'NotInvited' },
+        }),
+      );
+
+      await assign(employeeId, { roleKind: 'Employee', scopeKind: 'OwnWork' });
+
+      await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.tenantMembership.updateMany({
+          where: { tenantId, userId: employeeId },
+          data: { accountState: membership.accountState },
+        }),
+      );
+    });
+
+    it('still refuses an offboarded account', async () => {
+      const before = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.tenantMembership.findFirst({
+          where: { tenantId, userId: employeeId },
+          select: { accountState: true },
+        }),
+      );
+      assert.ok(before);
+
+      await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.tenantMembership.updateMany({
+          where: { tenantId, userId: employeeId },
+          data: { accountState: 'Offboarded' },
+        }),
+      );
+
+      const response = await assign(
+        employeeId,
+        { roleKind: 'Employee', scopeKind: 'OwnWork' },
+        400,
+      );
+      assert.match((response.body as { message: string }).message, /Offboarded/);
+
+      await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.tenantMembership.updateMany({
+          where: { tenantId, userId: employeeId },
+          data: { accountState: before.accountState },
+        }),
+      );
+    });
+  });
+
   describe('custom roles', () => {
     it('cannot grant a permission its creator does not have', async () => {
       // The escalation: mint a role carrying something you lack, then assign it to a colleague

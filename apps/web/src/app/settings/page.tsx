@@ -20,6 +20,7 @@ import {
 } from '@uboss/ui';
 
 import { useAccountMenu } from '../../lib/use-account-menu';
+import { can, useMyAccess } from '../../lib/use-my-access';
 import { useSignedInUser } from '../../lib/use-signed-in-user';
 import { RoutedAppShell } from '../../components/RoutedAppShell';
 import {
@@ -178,6 +179,18 @@ export default function CompanySettingsPage() {
   }, [view]);
 
   const mayAdministerAnything = (view?.categories ?? []).some((candidate) => candidate.anyEditable);
+
+  /**
+   * The Users & Access *category* is settings copy about how accounts are governed, and the server
+   * returns it to people who hold no `users` grant at all. The screen it links to is a different
+   * thing: /settings/users lists real accounts and answers "You do not have access to that part of
+   * UBoss." without `users:View`. Offering the button to somebody the server will refuse is a
+   * promise the product cannot keep, so the link is gated on the grant the API actually checks
+   * (access.controller.ts). Manager holds exactly ["View"] and keeps the button; Approver and
+   * Employee hold nothing on this module and no longer see it.
+   */
+  const myAccess = useMyAccess();
+  const mayOpenUsersScreen = can(myAccess, 'users', 'View');
 
   const materialDirty = useMemo(
     () =>
@@ -541,7 +554,7 @@ export default function CompanySettingsPage() {
                 ) : null}
 
                 {/* The two categories that are real screens elsewhere, linked rather than duplicated. */}
-                {active === 'users' ? (
+                {active === 'users' && mayOpenUsersScreen ? (
                   <div className="uboss-actions">
                     <Button variant="navy" onClick={() => router.push('/settings/users')}>
                       Open Users &amp; Access

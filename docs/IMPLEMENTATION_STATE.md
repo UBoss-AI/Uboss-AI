@@ -3625,3 +3625,54 @@ set a node owner though the API accepts one and Approve & Assign requires it; Fo
 and Objective Owner fields are plain text bound to UUID-typed API fields; `RateLimit-*` headers are
 sent but not listed in CORS `exposedHeaders`, so no browser client can read them; 13 seeded users
 have roles but no credential; Department and TeamSubtree scopes are seeded empty.
+
+## Single-company acceptance run — Aarohan Healthcare (2026-09-16)
+
+A hands-on acceptance pass before multi-tenant testing, run entirely locally against
+`localhost:5442/uboss_dev`. No remote push, no CI, Prompt 45A not started. The Prompt 45 rollback
+point (`5113905`) is untouched.
+
+### What was built, and how
+
+One acceptance company, **Aarohan Healthcare Services Pvt. Ltd.** (`AHS`), provisioned through
+`POST /platform/provisioning/companies` and taken to `Active` through the real lifecycle route.
+Six departments, four employees in a real reporting chain, five working logins created the
+product's own way — invite, then exchange the one-time activation token for a credential. No
+password was ever written to the database directly, and no activation token was logged.
+
+The objective journey ran end to end through the product: `OPS-2026-001` created on the real
+Form 2 with four workflow rows, analysed into 2 human and 2 AI steps with 4 approval gates, a
+company Skill authored and moved Draft → Review → Approved → Published **by three different roles**,
+a `mock-erp` connection tested to `Connected`, and Approve & Assign producing 2 human tasks, 2 AI
+work assignments, 5 approval requests and 10 executor expectations. The assignee then worked his
+task through the real screens: started it, recorded evidence, submitted it to `WaitingApproval`.
+
+### Defects found and fixed
+
+Four guards formed a loop that made a newly provisioned company unusable, and a fifth check
+demanded a record that could only exist after the step it blocked. All five are in **ADR-292**, with
+the refusal text that found each one. Two presentation defects were fixed at their source rather
+than on the screen: the objectives list and the approvals queue both printed truncated UUIDs where
+names belong (**ADR-291**, and `namesFor` in `approval.service.ts`). The Settings navigation gained
+the search the brief asked for, filtering on label *and* description, with a test proving it cannot
+surface a category the server withheld.
+
+### Genuine limitations carried forward
+
+* **An approval addressed to `Manager` cannot be decided by anyone** — the role holds no
+  `approvals:Approve`. Four of Aarohan's five pending approvals are stuck on it. Reported for a
+  governance decision rather than patched: **ADR-293**.
+* **The workflow editor still has no owner control.** The API accepts `ownerUserId` on a node; the
+  screen offers no way to set it, so every human step had to be given its owner through the API.
+* **An existing user cannot be placed in the hierarchy.** `addEmployee` always creates a new person
+  (it matches on Aadhaar, and `users.email` is unique); `updateEmployment` refuses without an
+  existing record. So Aarohan's provisioned administrator is not in the reporting chart, and the
+  chart is rooted at the Head of Operations instead.
+* **Role assignment has no company-side route** — `POST /tenants/:id/authorization/assignments` is
+  `@PlatformOnly()`, which that controller already records as an acknowledged follow-up. A Company
+  Admin cannot grant a role in-product.
+* **No AI provider is configured**, so the analysis runs against the mock model and says so on
+  screen. No Engine Agent was activated and no run was executed: Test Agent and Activate Agent are
+  correctly disabled while prerequisites are unmet, and nothing was faked to fill them.
+* **Executor** reports zero exceptions, which is accurate — nothing is overdue or failed yet.
+* Verification was Chromium-only.

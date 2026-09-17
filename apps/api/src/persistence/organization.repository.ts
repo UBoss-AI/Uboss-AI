@@ -322,10 +322,23 @@ export class OrganizationRepository {
     managerUserId: string;
   }): Promise<string[]> {
     const rows = await this.prisma.client.$queryRawUnsafe<{ user_id: string }[]>(
+      /*
+       * The seed row is the person themselves, unconditionally — NOT a lookup in
+       * `employment_records`.
+       *
+       * It used to select the manager's own employment record as the starting point, so somebody
+       * with no employment record got an EMPTY subtree. An empty scope means nobody, by design, so
+       * their Dashboard reported nothing at all: a manager with a task assigned to them and an
+       * Engine Agent they own was told "Nothing in your scope yet". `report-scope.service.ts`
+       * already documented the intended behaviour — "a manager is inside their own subtree, the
+       * resolver already treats it that way" — and this is the line that makes that true rather
+       * than merely stated.
+       *
+       * This cannot widen anyone's access: it adds the actor to their own scope and nobody else.
+       * The recursive half is unchanged, so who reports to whom is still decided by the hierarchy.
+       */
       `WITH RECURSIVE subtree AS (
-         SELECT e."user_id"
-           FROM "employment_records" e
-          WHERE e."tenant_id" = $1::uuid AND e."user_id" = $2::uuid
+         SELECT $2::uuid AS "user_id"
          UNION
          SELECT child."user_id"
            FROM "employment_records" child

@@ -247,10 +247,41 @@
   color: #fff;
 }
 
+/*
+ * The navigation list, and its scrollbar.
+ *
+ * `overflow-y: auto` on a dark panel gets the browser's default scrollbar — a wide light track
+ * with a heavy grey thumb, painted straight down the navy. It reads as a piece of the product
+ * rather than a piece of the browser, and it is the loudest thing in the sidebar.
+ *
+ * Styled thin and translucent instead, so it belongs to the panel: visible enough to grab, quiet
+ * enough to ignore. `scrollbar-width`/`scrollbar-color` cover Firefox; the `::-webkit-` rules cover
+ * Chromium and Safari. Scrolling itself is untouched — this is paint, not behaviour, and the
+ * scrollbar still appears exactly when there is something to scroll.
+ */
 .uboss-side-scroll {
   overflow-y: auto;
   flex: 1;
   padding: 8px 8px 16px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.uboss-side-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.uboss-side-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.uboss-side-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+}
+
+.uboss-side-scroll:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.28);
 }
 
 .uboss-nav-group {
@@ -394,6 +425,22 @@
   flex-direction: column;
   gap: 10px;
   padding: 16px 0 12px;
+  /*
+   * Let the stack be as tall as it is.
+   *
+   * Expanded, the brand is pinned to the top bar's height so the two pieces of chrome share one
+   * horizontal edge. Collapsed, it turns into two rows — the logo above the toggle — which is
+   * taller than that. Keeping the fixed height made the toggle overflow the brand's box, and the
+   * scroll area immediately below it painted straight over the overflow: the button was plainly
+   * visible and completely unclickable, because `elementFromPoint` at its centre returned
+   * `.uboss-side-scroll`. Collapsing worked, expanding could never be pressed, and the sidebar was
+   * a one-way door.
+   *
+   * `flex: none` as well as `height: auto`: in a column flex container an item with content taller
+   * than its basis will otherwise shrink back under it and reintroduce the same overlap.
+   */
+  height: auto;
+  flex: none;
 }
 
 .uboss-shell--collapsed .uboss-side-brand-text,
@@ -2294,6 +2341,29 @@ textarea.uboss-input,
   padding: 8px;
   max-height: 640px;
   overflow: auto;
+}
+
+/* The settings filter. It sits inside the scrolling nav rather than above it, so it stays with
+   the list it filters; sticky so it does not scroll away from a long category list. */
+.uboss-settings-search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  max-width: none;
+  flex: none;
+  background: var(--uboss-surface);
+  padding-bottom: 8px;
+  margin-bottom: 2px;
+}
+
+.uboss-settings-search input {
+  height: var(--uboss-control-h-sm);
+}
+
+.uboss-settings-nav-empty {
+  margin: 8px 12px;
+  font-size: var(--uboss-font-size-sm);
+  color: var(--uboss-text-3);
 }
 
 .uboss-settings-nav-item {

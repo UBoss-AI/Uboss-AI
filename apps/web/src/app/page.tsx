@@ -1,34 +1,26 @@
-import Link from 'next/link';
+import { redirect } from 'next/navigation';
 
 /**
- * Bootstrap landing page.
+ * The front door.
  *
- * Deliberately not a product screen. The Login experience (six-section left presentation:
- * MAP, Optimize, Build, Operate, Govern, Manage Task) and the authenticated dashboards are
- * built in later prompts; there is no public company signup at any point.
+ * There is no public landing page and no public company signup, so the only thing "/" can
+ * sensibly do is take somebody to the sign-in screen. Anyone already signed in is sent on to their
+ * workspace from there, which is the same path the rest of the product uses — this route does not
+ * need to know about sessions to do its one job.
+ *
+ * ## What this replaced
+ *
+ * A Prompt 1 bootstrap page that said "Repository foundation is in place. Product screens are
+ * added one prompt at a time." and offered three links: Sign in, **the design system gallery**,
+ * and a platform health check. It survived forty-four prompts because nothing navigates to "/" —
+ * every screen links to a real route — so it was only ever seen by somebody typing the bare host,
+ * which is exactly what a customer or an evaluator does first.
+ *
+ * The design-system link is the part that mattered: it advertised an internal development surface
+ * on the one page an anonymous visitor is most likely to reach. Those pages hold no real data —
+ * they are static previews with hardcoded sample props — but a development gallery is not
+ * something to put a signpost to on the front door.
  */
 export default function HomePage() {
-  return (
-    <main style={{ maxWidth: 560, margin: '48px auto', padding: 24 }}>
-      <h1 style={{ fontSize: 20, fontWeight: 800 }}>UBOSS AI AMS</h1>
-      <p style={{ color: 'var(--uboss-text-2)', marginTop: 6 }}>
-        Repository foundation is in place. Product screens are added one prompt at a time.
-      </p>
-      <p style={{ marginTop: 20 }}>
-        <Link href="/login" className="uboss-link">
-          Sign in &rarr;
-        </Link>
-      </p>
-      <p style={{ marginTop: 8 }}>
-        <Link href="/design-system" className="uboss-link">
-          UBoss design system &amp; shells →
-        </Link>
-      </p>
-      <p style={{ marginTop: 8 }}>
-        <Link href="/health" className="uboss-link">
-          Platform health check →
-        </Link>
-      </p>
-    </main>
-  );
+  redirect('/login');
 }

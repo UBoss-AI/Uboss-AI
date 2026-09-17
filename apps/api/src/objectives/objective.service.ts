@@ -145,6 +145,13 @@ export interface ObjectiveListRow {
   code: string;
   objectiveName: string;
   departmentId: string;
+  /**
+   * The department's name, for the list to print. The row carried only `departmentId`, so the
+   * screen showed the first eight characters of a UUID where a person expects "Production" —
+   * unreadable, and impossible to scan a list by. Resolved here rather than on the client so one
+   * request answers the whole list.
+   */
+  departmentName: string;
   /** The status a person means when they ask "what state is this objective in". */
   status: ObjectiveStatus;
   statusLabel: string;
@@ -153,6 +160,12 @@ export interface ObjectiveListRow {
   /** True when `versionNumber` refers to a published version. */
   live: boolean;
   responsibleOwnerUserId: string | null;
+  /**
+   * That person's display name, or null when the objective has not been sent to anyone yet.
+   * Looked up through `tenantMembership`, so a user who is not a member of this tenant can never
+   * be named here even if an id somehow referenced one.
+   */
+  responsibleOwnerName: string | null;
   targetCompletionTime: number | null;
   timeUnit: TimeUnit | null;
   updatedAt: string;
@@ -228,31 +241,68 @@ export class ObjectiveService {
     const context = await this.authorization.contextFor(input.scope, input.actorUserId);
     await this.authorization.assertCan(context, { module: 'objective', action: 'View' });
 
-    const rows = await this.prisma.runInTenantTransaction(input.scope, async () => {
-      const objectives = await this.prisma.client.objective.findMany({
-        where: {
-          ...(input.departmentId === undefined ? {} : { departmentId: input.departmentId }),
-        },
-        orderBy: { updatedAt: 'desc' },
-      });
+    const { rows, departmentNames, ownerNames } = await this.prisma.runInTenantTransaction(
+      input.scope,
+      async () => {
+        const objectives = await this.prisma.client.objective.findMany({
+          where: {
+            ...(input.departmentId === undefined ? {} : { departmentId: input.departmentId }),
+          },
+          orderBy: { updatedAt: 'desc' },
+        });
 
-      if (objectives.length === 0) return [];
+        const empty = {
+          rows: [] as { objective: (typeof objectives)[number]; versions: ObjectiveVersion[] }[],
+          departmentNames: new Map<string, string>(),
+          ownerNames: new Map<string, string>(),
+        };
+        if (objectives.length === 0) return empty;
 
-      const versions = await this.prisma.client.objectiveVersion.findMany({
-        // The tenant is named so the planner can use `(tenant_id, objective_id, version_number)`.
-        // RLS already confines this read; without the column the index is unusable (ADR-271).
-        where: {
-          tenantId: input.scope.tenantId,
-          objectiveId: { in: objectives.map((objective) => objective.id) },
-        },
-        orderBy: { versionNumber: 'desc' },
-      });
+        const versions = await this.prisma.client.objectiveVersion.findMany({
+          // The tenant is named so the planner can use `(tenant_id, objective_id, version_number)`.
+          // RLS already confines this read; without the column the index is unusable (ADR-271).
+          where: {
+            tenantId: input.scope.tenantId,
+            objectiveId: { in: objectives.map((objective) => objective.id) },
+          },
+          orderBy: { versionNumber: 'desc' },
+        });
 
-      return objectives.map((objective) => ({
-        objective,
-        versions: versions.filter((version) => version.objectiveId === objective.id),
-      }));
-    });
+        // Two more reads in the same transaction, following the same shape as the versions read
+        // above: gather the ids, resolve them in one query each, join in memory. The list needs
+        // names to be readable, and doing it per row would be a query per objective.
+        const departments = await this.prisma.client.department.findMany({
+          where: { id: { in: [...new Set(objectives.map((objective) => objective.departmentId))] } },
+          select: { id: true, name: true },
+        });
+
+        const ownerIds = [
+          ...new Set(
+            versions
+              .map((version) => version.responsibleOwnerUserId)
+              .filter((id): id is string => id !== null),
+          ),
+        ];
+        // Through the membership, not the user table: `users` is global and carries no RLS, so
+        // asking it directly would happily name somebody from another company.
+        const members =
+          ownerIds.length === 0
+            ? []
+            : await this.prisma.client.tenantMembership.findMany({
+                where: { tenantId: input.scope.tenantId, userId: { in: ownerIds } },
+                select: { userId: true, user: { select: { displayName: true } } },
+              });
+
+        return {
+          rows: objectives.map((objective) => ({
+            objective,
+            versions: versions.filter((version) => version.objectiveId === objective.id),
+          })),
+          departmentNames: new Map(departments.map((d) => [d.id, d.name])),
+          ownerNames: new Map(members.map((m) => [m.userId, m.user.displayName])),
+        };
+      },
+    );
 
     const visible: ObjectiveListRow[] = [];
 
@@ -290,11 +340,16 @@ export class ObjectiveService {
         code: objective.code,
         objectiveName: shown.objectiveName,
         departmentId: objective.departmentId,
+        departmentName: departmentNames.get(objective.departmentId) ?? '—',
         status: shown.status,
         statusLabel: OBJECTIVE_STATUS_LABELS[shown.status],
         versionNumber: shown.versionNumber,
         live: shown.status === 'Active',
         responsibleOwnerUserId: shown.responsibleOwnerUserId,
+        responsibleOwnerName:
+          shown.responsibleOwnerUserId === null
+            ? null
+            : ownerNames.get(shown.responsibleOwnerUserId) ?? null,
         targetCompletionTime: shown.targetCompletionTime,
         timeUnit: shown.timeUnit as TimeUnit | null,
         updatedAt: objective.updatedAt.toISOString(),
