@@ -6493,3 +6493,84 @@ table.uboss-wfg {
 :root[data-theme='dark'] .uboss-login--platform .uboss-login-left {
   background: linear-gradient(165deg, #08080b 0%, #120e22 55%, #1b1235 100%);
 }
+
+/* ============================================================
+   Identity provider buttons
+   ============================================================ */
+
+/*
+  Each provider's own mark, on this product's own button.
+
+  The marks keep their colours because that is what makes them recognisable at a glance and what
+  each provider's brand terms require; everything around them — height, radius, focus ring, the
+  border — is the same as every other control on this form, so the row reads as part of the page
+  rather than as three pasted logos.
+
+  Apple's mark is monochrome by design and takes the button's text colour, which is what lets it
+  work in both themes without a second asset.
+*/
+.uboss-provider-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  height: var(--uboss-control-h);
+  padding: 0 14px;
+  border-radius: var(--uboss-radius-button);
+  border: 1px solid var(--uboss-border-control);
+  background: var(--uboss-surface);
+  color: var(--uboss-text);
+  font-family: inherit;
+  font-size: var(--uboss-font-size-sm);
+  font-weight: 550;
+  cursor: pointer;
+  transition:
+    background var(--uboss-motion) var(--uboss-ease),
+    border-color var(--uboss-motion) var(--uboss-ease),
+    transform var(--uboss-motion-micro) var(--uboss-ease-standard);
+}
+
+.uboss-provider-btn:hover:not([disabled]) {
+  background: var(--uboss-bg-2);
+  border-color: var(--uboss-border-control-hover);
+}
+
+/* The same press the rest of the product answers with. */
+.uboss-provider-btn:active:not([disabled]) {
+  transform: scale(0.98);
+}
+
+.uboss-provider-btn:focus-visible {
+  outline: var(--uboss-focus-outline);
+  outline-offset: var(--uboss-focus-offset);
+}
+
+.uboss-provider-btn[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.uboss-provider-mark {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+/* Apple's mark is a silhouette and follows the text, so it inverts with the theme. */
+.uboss-provider-btn--apple .uboss-provider-mark {
+  color: var(--uboss-text);
+}
+
+/*
+  The three provider buttons, stacked under the divider.
+
+  A row at wide widths and a stack when there is not room for three labels — "Continue with
+  Microsoft" does not fit beside two others on a narrow form, and a truncated provider name is
+  worse than a taller stack.
+*/
+.uboss-provider-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}

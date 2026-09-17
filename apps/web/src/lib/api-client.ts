@@ -160,12 +160,28 @@ export interface SsoConnectionSummary {
   id: string;
   displayName: string;
   protocol: 'Oidc' | 'Saml';
+  /**
+   * Which well-known provider this connection is, so the button can carry the right mark.
+   *
+   * Derived on the server from the issuer, which is never sent: an unauthenticated visitor gets
+   * one of four words, not a URL. Older servers omit it, and an omitted value means "generic"
+   * rather than an error.
+   */
+  providerKind?: 'google' | 'microsoft' | 'apple' | 'generic';
 }
 
 export interface SignInMethods {
   allowPassword: boolean;
   requireSso: boolean;
   ssoConnections: SsoConnectionSummary[];
+  /**
+   * Google, Microsoft or Apple, when this deployment has credentials for them.
+   *
+   * Separate from `ssoConnections`, which are a company's own enterprise connections. These
+   * belong to UBoss and are offered to everyone. Absent on an older server, and an absent list
+   * means none are configured rather than that the question could not be asked.
+   */
+  socialProviders?: { kind: 'google' | 'microsoft' | 'apple'; displayName: string }[];
   mfaExpected: boolean;
 }
 
@@ -1253,6 +1269,18 @@ export const authApi = {
     }
     return { kind: 'signed-in', ...body };
   },
+
+  /**
+   * Begin a Google, Microsoft or Apple sign-in.
+   *
+   * Answers with the provider authorization URL. The server refuses a provider it holds no
+   * credentials for rather than building a URL that cannot complete.
+   */
+  startSocial: (kind: "google" | "microsoft" | "apple") =>
+    call<{ authorizationUrl: string }>("/auth/sso/social/start", {
+      method: "POST",
+      body: JSON.stringify({ kind }),
+    }),
 
   signInMethods: (email: string) =>
     call<SignInMethods>(`/auth/sign-in-methods?email=${encodeURIComponent(email)}`),

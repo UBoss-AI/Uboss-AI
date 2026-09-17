@@ -11,6 +11,7 @@ import {
   LoginPresentation,
   NoPublicSignupNotice,
   SkeletonText,
+  ProviderButton,
 } from '@uboss/ui';
 
 import { rememberWorkspace } from '../lib/active-workspace';
@@ -265,6 +266,27 @@ export function SignInFlow({ plane }: SignInFlowProps) {
       setStep((current) => (current.kind === 'enrol' ? { ...current, message } : current));
       setCode('');
     } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Begin a Google, Microsoft or Apple sign-in.
+   *
+   * The same shape as an enterprise connection: the server answers with an authorization URL and
+   * the browser leaves for the provider. A full navigation rather than a fetch, because the
+   * identity provider has to own the next page.
+   */
+  const startSocial = async (kind: 'google' | 'microsoft' | 'apple') => {
+    setBusy(true);
+    setSsoError(null);
+    try {
+      const { authorizationUrl } = await authApi.startSocial(kind);
+      window.location.assign(authorizationUrl);
+    } catch (error) {
+      setSsoError(
+        error instanceof ApiError ? error.message : 'That sign-in method is not available.',
+      );
       setBusy(false);
     }
   };
@@ -612,6 +634,12 @@ export function SignInFlow({ plane }: SignInFlowProps) {
   // ---- credentials ----
   const submitting = step.kind === 'submitting';
   const ssoConnections = methods?.ssoConnections ?? [];
+  /*
+   * UBoss's own Google, Microsoft and Apple applications, as opposed to a company's enterprise
+   * connection. The server lists only the ones this deployment holds credentials for, so an
+   * unconfigured provider is absent rather than present-and-broken.
+   */
+  const socialProviders = methods?.socialProviders ?? [];
   const showPassword = methods === null || methods.allowPassword;
 
   return (
@@ -685,23 +713,56 @@ export function SignInFlow({ plane }: SignInFlowProps) {
           </p>
         ) : null}
 
-        {showPassword && ssoConnections.length > 0 ? <div className="uboss-or">or</div> : null}
+        {showPassword && (ssoConnections.length > 0 || socialProviders.length > 0) ? (
+          <div className="uboss-or">or</div>
+        ) : null}
+
+        {socialProviders.length > 0 ? (
+          /*
+           * One button per provider this deployment can actually complete a sign-in with.
+           *
+           * Pressing one starts the real authorization redirect. It never creates an account:
+           * there is no public signup in UBoss, and an address arriving from Google still has to
+           * belong to an invited, active identity or the sign-in is refused. Anyone can obtain a
+           * Google account, and that must not be a way into somebody's company.
+           */
+          <div className="uboss-provider-row">
+            {socialProviders.map((provider) => (
+              <ProviderButton
+                key={provider.kind}
+                kind={provider.kind}
+                label={provider.displayName}
+                onClick={() => void startSocial(provider.kind)}
+                disabled={busy}
+              />
+            ))}
+          </div>
+        ) : null}
 
         {ssoConnections.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {ssoConnections.map((connection) => (
-              <Button
+              /*
+               * One button per connection the company has actually configured, wearing that
+               * provider's mark.
+               *
+               * Nothing here is decorative. A Google, Microsoft or Apple button appears because an
+               * enabled OIDC connection for that provider exists, and pressing it starts the same
+               * real authorization redirect any other connection starts. Three marks sitting on a
+               * login page that cannot use them would be worse than none: somebody clicks, is
+               * refused, and concludes their account is broken rather than that the company has
+               * not set it up.
+               */
+              <ProviderButton
                 key={connection.id}
-                block
-                icon="shield"
+                kind={connection.providerKind ?? 'generic'}
+                label={connection.displayName}
                 onClick={() => void startSso(connection.id)}
                 disabled={busy || connection.protocol === 'Saml'}
                 {...(connection.protocol === 'Saml'
                   ? { title: 'SAML sign-in is not available yet. Use an OIDC connection.' }
                   : {})}
-              >
-                {connection.displayName}
-              </Button>
+              />
             ))}
           </div>
         ) : (

@@ -194,20 +194,55 @@ export class EnterpriseIdentityRepository {
   }
 
   /**
+   * Which well-known provider an issuer belongs to.
+   *
+   * Derived here, on the server, and never from the display name: a company can call a connection
+   * anything, so matching on the name would put an Apple mark on a Google connection the first
+   * time somebody wrote "Apple SSO (via Google Workspace)". The issuer is the provider's own
+   * identifier and cannot be typed wrong.
+   *
+   * Anything unrecognised is `generic`. A provider this does not know is not one to guess at.
+   */
+  private static providerKindOf(issuer: string | null): 'google' | 'microsoft' | 'apple' | 'generic' {
+    const value = (issuer ?? '').toLowerCase();
+    if (value.includes('accounts.google.com')) return 'google';
+    if (value.includes('login.microsoftonline.com') || value.includes('sts.windows.net')) {
+      return 'microsoft';
+    }
+    if (value.includes('appleid.apple.com')) return 'apple';
+    return 'generic';
+  }
+
+  /**
    * The enabled connections a company offers, read while nobody is signed in.
    *
    * Platform-plane for the same reason as `findPolicyForPlatform`. It returns only what the
    * login screen may show — never a client secret, an issuer or a discovery URL.
+   *
+   * `providerKind` is new and is deliberately *less* than the issuer it comes from. The login
+   * screen needs to know which mark to draw on a button, and the honest way to do that is one of
+   * four words rather than a URL that carries the company's own directory identifiers inside it.
+   * The issuer is read here and does not leave this method.
    */
   async listEnabledConnectionsForPlatform(
     tenantId: string,
-  ): Promise<{ id: string; displayName: string; protocol: 'Oidc' | 'Saml' }[]> {
+  ): Promise<
+    {
+      id: string;
+      displayName: string;
+      protocol: 'Oidc' | 'Saml';
+      providerKind: 'google' | 'microsoft' | 'apple' | 'generic';
+    }[]
+  > {
     const rows = await this.prisma.client.ssoConnection.findMany({
       where: { tenantId, enabled: true },
-      select: { id: true, displayName: true, protocol: true },
+      select: { id: true, displayName: true, protocol: true, issuer: true },
       orderBy: { createdAt: 'asc' },
     });
-    return rows;
+    return rows.map(({ issuer, ...rest }) => ({
+      ...rest,
+      providerKind: EnterpriseIdentityRepository.providerKindOf(issuer),
+    }));
   }
 
   async countEnabledConnectionsForPlatform(tenantId: string): Promise<number> {

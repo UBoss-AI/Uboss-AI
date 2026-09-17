@@ -271,7 +271,12 @@ export class AuthenticationPolicyService {
     allowPassword: boolean;
     requireMfa: boolean;
     requireSso: boolean;
-    ssoConnections: { id: string; displayName: string; protocol: 'Oidc' | 'Saml' }[];
+    ssoConnections: {
+      id: string;
+      displayName: string;
+      protocol: 'Oidc' | 'Saml';
+      providerKind: 'google' | 'microsoft' | 'apple' | 'generic';
+    }[];
   }> {
     const at = email.lastIndexOf('@');
     const domain =
@@ -300,15 +305,21 @@ export class AuthenticationPolicyService {
   /**
    * Which sign-in methods a company offers, for the login screen.
    *
-   * Answers with what is *allowed*, never with configuration detail: connection display names
-   * and ids, but no issuer, no client id and no discovery URL. Someone who can see a login page
-   * is by definition unauthenticated.
+   * Answers with what is *allowed*, never with configuration detail: connection display names,
+   * ids, and which well-known provider each one is — but no issuer, no client id and no discovery
+   * URL. Someone who can see a login page is by definition unauthenticated, and `providerKind` is
+   * one of four words rather than a URL carrying the company's directory identifiers.
    */
   async signInMethodsForTenant(tenantId: string): Promise<{
     allowPassword: boolean;
     requireMfa: boolean;
     requireSso: boolean;
-    ssoConnections: { id: string; displayName: string; protocol: 'Oidc' | 'Saml' }[];
+    ssoConnections: {
+      id: string;
+      displayName: string;
+      protocol: 'Oidc' | 'Saml';
+      providerKind: 'google' | 'microsoft' | 'apple' | 'generic';
+    }[];
   }> {
     return this.prisma.runAsPlatformOperation(async () => {
       const policy = toEffective(tenantId, await this.enterprise.findPolicyForPlatform(tenantId));

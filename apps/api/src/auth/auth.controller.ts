@@ -42,6 +42,7 @@ import {
 import { UserRepository } from '../persistence/user.repository.js';
 
 import { AuthenticationPolicyService } from './authentication-policy.service.js';
+import { configuredSocialProviders } from './social-providers.config.js';
 import { InvitationService } from './invitation.service.js';
 import { LoginService } from './login.service.js';
 import { MfaLoginService } from './mfa-login.service.js';
@@ -436,6 +437,17 @@ export class AuthController {
       // Only what the screen must render: a name and an id to start the flow with. No issuer, no
       // client id, no discovery URL.
       ssoConnections: methods.ssoConnections,
+      /*
+       * Which of Google, Microsoft and Apple this deployment holds credentials for.
+       *
+       * Only the name and the mark — never a client id, and never a secret. A provider with no
+       * credentials is simply absent from this list, so the login screen shows a button that
+       * cannot work only if somebody deliberately made it so.
+       */
+      socialProviders: configuredSocialProviders().map((provider) => ({
+        kind: provider.kind,
+        displayName: provider.displayName,
+      })),
       // Advertised so the screen can warn "you will be asked for a code", never so it can skip
       // the check — the server decides that again after the password.
       mfaExpected: methods.requireMfa,
