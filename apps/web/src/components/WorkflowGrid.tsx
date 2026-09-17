@@ -42,6 +42,38 @@ export function blankWorkflowStep(position: number): Form2WorkflowStep {
   };
 }
 
+/**
+ * A step as the editor holds it — exactly the fields the save accepts, and nothing else.
+ *
+ * The objective view returns each saved step with an `id`, and the form fed those straight back on
+ * the next save, where the DTO refused them: "steps.0.property id should not exist". The effect was
+ * that a draft could be created and then never saved again. It was invisible until something tried
+ * the second save, because the first one has no ids to send.
+ *
+ * Whitelisting on the way in rather than on the way out is deliberate: the editor's state is then
+ * the same shape the server expects, so there is one place where that shape is decided instead of
+ * a stripping step somebody can forget to call on a new code path.
+ */
+export function toEditableStep(step: Form2WorkflowStep): Form2WorkflowStep {
+  return {
+    position: step.position,
+    whoPersonName: step.whoPersonName ?? null,
+    whoDesignation: step.whoDesignation ?? null,
+    whoEngine: step.whoEngine,
+    whenTrigger: step.whenTrigger ?? null,
+    whenFrequency: step.whenFrequency ?? null,
+    whatExactWork: step.whatExactWork,
+    inputWhatIsUsed: step.inputWhatIsUsed ?? null,
+    inputReceivedFrom: step.inputReceivedFrom ?? null,
+    whereWorkIsDone: step.whereWorkIsDone ?? null,
+    outputWhatIsProduced: step.outputWhatIsProduced ?? null,
+    outputSentTo: step.outputSentTo ?? null,
+    timeTaken: step.timeTaken ?? null,
+    currentProblem: step.currentProblem ?? null,
+    approval: step.approval,
+  };
+}
+
 /** Renumber after a reorder, insert or delete, so `position` is always 1..n with no gaps. */
 function renumber(steps: readonly Form2WorkflowStep[]): Form2WorkflowStep[] {
   return steps.map((step, index) => ({ ...step, position: index + 1 }));

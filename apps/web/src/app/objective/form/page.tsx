@@ -27,7 +27,7 @@ import {
   readRememberedWorkspace,
   resolveActiveWorkspace,
 } from '../../../lib/active-workspace';
-import { blankWorkflowStep, WorkflowGrid } from '../../../components/WorkflowGrid';
+import { blankWorkflowStep, toEditableStep, WorkflowGrid } from '../../../components/WorkflowGrid';
 import {
   ApiError,
   authApi,
@@ -151,7 +151,13 @@ function ObjectiveFormInner() {
         const shown = loaded.openDraft ?? loaded.activeVersion ?? loaded.versions[0] ?? null;
         if (shown) {
           setContent(shown.content);
-          setSteps(shown.steps.length === 0 ? [blankWorkflowStep(1)] : shown.steps);
+          // Through toEditableStep: the view carries an `id` per step that the save refuses, so
+          // feeding the view straight back made a second save of any existing draft impossible.
+          setSteps(
+            shown.steps.length === 0
+              ? [blankWorkflowStep(1)]
+              : shown.steps.map(toEditableStep),
+          );
         }
         if (loaded.reward) {
           setReward(loaded.reward);

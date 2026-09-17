@@ -5530,3 +5530,86 @@ table.uboss-wfg {
     box-shadow: 0 0 0 3px var(--uboss-ai-soft);
   }
 }
+
+/* ============================================================
+   Toasts
+   ============================================================ */
+
+/*
+  Bottom left, and that is a decision rather than a default.
+
+  This product's primary controls are at the bottom right of a drawer footer and the top right of
+  the top bar. A toast in either place covers the button somebody was about to press, which does
+  not merely annoy — it causes the next mistake. Bottom left is the one corner that is reliably
+  empty on every screen here.
+
+  It is also narrow and does not stretch: a full-width bar across the bottom of a table reads as
+  part of the table, and this is not part of anything.
+*/
+.uboss-toast-region {
+  position: fixed;
+  left: 20px;
+  bottom: 20px;
+  z-index: 80;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  /* Clear of the controls, and never wider than a sentence. */
+  max-width: min(420px, calc(100vw - 40px));
+  /* The region is not a surface: only the toasts in it take pointer events, so an empty region
+     cannot swallow a click meant for the page underneath. */
+  pointer-events: none;
+}
+
+.uboss-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 13px;
+  border-radius: var(--uboss-radius-card);
+  border: 1px solid var(--uboss-border);
+  background: var(--uboss-surface);
+  box-shadow: var(--uboss-shadow-3);
+  color: var(--uboss-text);
+  font-size: var(--uboss-font-size-sm);
+  line-height: 1.45;
+}
+
+.uboss-toast-message {
+  flex: 1;
+  min-width: 0;
+}
+
+.uboss-toast--ok {
+  border-color: var(--uboss-success);
+  color: var(--uboss-text);
+}
+
+.uboss-toast--error {
+  border-color: var(--uboss-danger);
+}
+
+.uboss-toast--working {
+  border-color: var(--uboss-ai);
+}
+
+.uboss-toast-close {
+  border: 0;
+  background: transparent;
+  color: var(--uboss-text-3);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: var(--uboss-radius-control);
+  flex: none;
+  transition: color var(--uboss-motion-micro) var(--uboss-ease-standard);
+}
+
+.uboss-toast-close:hover {
+  color: var(--uboss-text);
+}
+
+.uboss-toast-close:focus-visible {
+  outline: var(--uboss-focus-outline);
+  outline-offset: var(--uboss-focus-offset);
+}

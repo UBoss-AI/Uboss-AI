@@ -1,5 +1,6 @@
 'use client';
 
+import { motion } from 'motion/react';
 import { useCallback, useEffect, useState } from 'react';
 
 import {
@@ -19,6 +20,7 @@ import {
   PageHeader,
   StatusBadge,
   type StatusTone,
+  transition,
 } from '@uboss/ui';
 
 import {
@@ -92,6 +94,19 @@ export default function ApprovalsPage() {
   const [selected, setSelected] = useState<ApprovalRequestDetailView | null>(null);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  /*
+   * Which decision is in the air, rather than merely that something is.
+   *
+   * `busy` disables every control, which is right — a second decision must not be sent while the
+   * first is unresolved. But it says nothing about which one was pressed, so all three buttons go
+   * quiet together and the person who clicked Approve has no confirmation that the click landed
+   * on Approve. On a screen where the three outcomes are irreversible and different, that is the
+   * gap worth closing.
+   *
+   * Set on click and cleared when the server has answered — never before, so nothing here implies
+   * an outcome the server has not given.
+   */
+  const [deciding, setDeciding] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -160,6 +175,7 @@ export default function ApprovalsPage() {
   const decide = async (decision: string) => {
     if (tenantId === null || selected === null) return;
     setBusy(true);
+    setDeciding(decision);
     try {
       const updated = await approvalsApi.decide(tenantId, selected.id, { decision, note });
       setSelected(updated);
@@ -172,6 +188,7 @@ export default function ApprovalsPage() {
       setError(cause instanceof ApiError ? cause.message : 'That decision was refused.');
     } finally {
       setBusy(false);
+      setDeciding(null);
     }
   };
 
@@ -342,9 +359,21 @@ export default function ApprovalsPage() {
                   {(row.approvalsRequired ?? 1) > 1 && (
                     <>
                       <br />
-                      <small className="uboss-muted-3">
+                      {/*
+                        Keyed by the count, so the first of two approvals arriving is a change you
+                        can see rather than a digit that reads differently next time you look. It
+                        animates on a real change only: the key is the number the server sent.
+                      */}
+                      <motion.small
+                        className="uboss-muted-3"
+                        key={`${row.approvalsGiven ?? 0}-of-${row.approvalsRequired}`}
+                        initial={{ opacity: 0, y: -2 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={transition('small', 'enter')}
+                        style={{ display: 'inline-block' }}
+                      >
                         {row.approvalsGiven ?? 0} of {row.approvalsRequired} approvals
-                      </small>
+                      </motion.small>
                     </>
                   )}
                   {row.escalatedAt !== null && (
@@ -400,9 +429,16 @@ export default function ApprovalsPage() {
                   // The server's own sentence. Not a paraphrase, and not this screen's guess at
                   // what the rule is.
                   title={option.reason}
+                  // Only the pressed control reports work, and only while the request is open.
+                  // aria-busy rather than a changed label: the label is what was chosen, and
+                  // rewriting it mid-flight loses that.
+                  aria-busy={deciding === option.decision}
                   onClick={() => void decide(option.decision)}
                 >
                   {option.label}
+                  {deciding === option.decision ? (
+                    <span className="uboss-sr-only"> — sending, waiting for the server</span>
+                  ) : null}
                 </Button>
               ))}
             </div>

@@ -8,7 +8,7 @@ import {
   type Form2WorkflowStep,
 } from '@uboss/types';
 
-import { blankWorkflowStep, WorkflowGrid } from './WorkflowGrid';
+import { blankWorkflowStep, WorkflowGrid, toEditableStep } from './WorkflowGrid';
 
 /** A harness that owns the rows, the way the form page does. */
 function Harness({ initial }: { initial?: Form2WorkflowStep[] }) {
@@ -157,5 +157,50 @@ describe('WorkflowGrid', () => {
     expect((screen.getByLabelText('Step 1 Exact Work') as HTMLTextAreaElement).readOnly).toBe(true);
     expect((screen.getByTitle('Insert below') as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByTitle('Duplicate') as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe('toEditableStep — the shape the save accepts', () => {
+  /*
+   * The bug this closes: the objective view returns each saved step with an `id`, the form fed
+   * those straight back on the next save, and the DTO refused them with
+   * "steps.0.property id should not exist". A draft could be created and then never saved again.
+   *
+   * It stayed hidden because the first save has no ids to send — only the second one fails, and
+   * only on a draft that had already been saved once.
+   */
+  it('drops fields the server did not ask for', () => {
+    const fromTheServer = {
+      ...blankWorkflowStep(1),
+      whatExactWork: 'Reconcile the branch ledger',
+      // Present on every step the view returns.
+      id: '01a0ae6d-5668-770a-bba9-5f82441ab8c3',
+      createdAt: '2026-09-17T00:00:00.000Z',
+    } as unknown as Parameters<typeof toEditableStep>[0];
+
+    const editable = toEditableStep(fromTheServer);
+
+    expect(Object.keys(editable)).not.toContain('id');
+    expect(Object.keys(editable)).not.toContain('createdAt');
+  });
+
+  it('keeps everything the step actually says', () => {
+    const step = {
+      ...blankWorkflowStep(3),
+      whoPersonName: 'Neha Verma',
+      whoDesignation: 'Operations Manager',
+      whoEngine: 'Human' as const,
+      whatExactWork: 'Check the exception queue',
+      approval: 'Required' as const,
+      timeTaken: '30 minutes',
+    };
+
+    // Losing a field here would silently discard somebody's work on the next save, which is a
+    // worse failure than the one this function exists to fix.
+    expect(toEditableStep(step)).toEqual(step);
+  });
+
+  it('carries the position through, because that is the step\u2019s identity to the server', () => {
+    expect(toEditableStep(blankWorkflowStep(7)).position).toBe(7);
   });
 });
