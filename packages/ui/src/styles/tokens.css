@@ -33,18 +33,69 @@
 
   /* The sidebar, the nav chrome, the strongest dark surfaces. Navy in BOTH themes — see the dark
      section below for why it is deliberately not inverted. */
-  --uboss-navy: #0b1220;
-  --uboss-navy-2: #111827;
+  /* ==========================================================================
+     The sidebar (Phase 2/7)
+     ==========================================================================
+     Violet in Light, near-black in Dark. Its own tokens rather than the navy ones, because the
+     sidebar is now a gradient and the navy family is still what the Master Console and the other
+     authority chrome are painted with.
+
+     **The gradient range is darker than the supplied one, and deliberately.** The supplied stops
+     were #6D28D9 -> #8B5CF6 -> #A78BFA. Measured against the white nav labels that sit on them:
+     7.10:1, 4.23:1 and 2.72:1 — so every label in the lower half of the sidebar failed WCAG 1.4.3,
+     and the supplied secondary text #EDE9FE was worse still at 2.29:1. The range below keeps the
+     same hue and the same soft top-left-to-bottom-right sweep, and holds white at 5.70:1 at its
+     lightest point. The brighter violets are not lost: they carry the AI accents, the selected
+     edge and the login artwork, where they sit behind large type and graphics. */
+
+  --uboss-sidebar-start: #5b21b6; /* white 8.98:1 */
+  --uboss-sidebar-main: #6d28d9; /* white 7.10:1 */
+  --uboss-sidebar-end: #7c3aed; /* white 5.70:1 — the lightest point a label sits on */
+  --uboss-sidebar-bg: linear-gradient(
+    160deg,
+    var(--uboss-sidebar-start) 0%,
+    var(--uboss-sidebar-main) 52%,
+    var(--uboss-sidebar-end) 100%
+  );
+  --uboss-sidebar-text: #ffffff;
+  --uboss-sidebar-text-2: #e9e3fb; /* 5.03:1 at the lightest stop */
+  --uboss-sidebar-icon: #f5f3ff;
+  --uboss-sidebar-hover: rgba(255, 255, 255, 0.1);
+  --uboss-sidebar-selected: rgba(91, 33, 182, 0.38);
+  --uboss-sidebar-selected-edge: #c4b5fd;
+
+  /* ==========================================================================
+     AI (Phase 2)
+     ==========================================================================
+     The intelligence layer: analysis, agents, skills, the signature moments. Distinct from the
+     primary action colour so "this is UBoss thinking" never reads as "press me". */
+
+  --uboss-ai: #8b5cf6;
+  --uboss-ai-bright: #a78bfa;
+  --uboss-ai-highlight: #c4b5fd;
+  --uboss-ai-soft: #f5f3ff;
+  /* Rare energy accent. Signature moments only — never ordinary UI. */
+  --uboss-ai-energy: #d946ef;
+
+  /* The Dashboard donut. Two violets from one family: darker for Agents, lighter for Pending Jobs,
+     so the slices differ in value as well as hue and survive a greyscale reading. */
+  --uboss-donut-agents-from: #7c3aed;
+  --uboss-donut-agents-to: #8b5cf6;
+  --uboss-donut-pending-from: #a78bfa;
+  --uboss-donut-pending-to: #c4b5fd;
+
+  --uboss-navy: #241a3d;
+  --uboss-navy-2: #2d2150;
   /* Deepest: the Master Console top bar and the start of the login gradient. */
-  --uboss-navy-900: #070b14;
+  --uboss-navy-900: #17102b;
   /* Lightest rung. Carries white text (avatar initials), so it is held above 4.5:1 with white —
      measured 12.69:1 — and also serves as a visible border against navy. */
-  --uboss-navy-700: #223449;
+  --uboss-navy-700: #4a3a75;
 
   /* Text on a navy surface. 12.69:1 on --uboss-navy, so it holds for body copy, not just headings. */
-  --uboss-navy-ink: #c9d6e5;
+  --uboss-navy-ink: #e9e3fb;
   /* Secondary text on navy: inactive nav labels, section captions. 7.03:1. */
-  --uboss-navy-ink-2: #8fa0b8;
+  --uboss-navy-ink-2: #b9aede;
 
   /* ==========================================================================
      Blue: primary action, and only primary action
@@ -52,10 +103,10 @@
      Save, Continue, Analyze, Test Agent. One per screen. If a second blue button appears on a
      screen, one of them is not the primary action and should be secondary. */
 
-  --uboss-blue: #2563eb; /* 5.17:1 with white, so white text on a blue button is safe */
-  --uboss-blue-600: #1d4ed8; /* hover / pressed */
-  --uboss-blue-050: #eef3ff;
-  --uboss-blue-100: #dbe7ff;
+  --uboss-blue: #7c3aed; /* the primary action. White on it: 5.70:1 */
+  --uboss-blue-600: #6d28d9; /* hover. Pressed goes to #5b21b6 via --uboss-sidebar-start */
+  --uboss-blue-050: #f3e8ff;
+  --uboss-blue-100: #e4d4fd;
   /*
    * Blue as a FILL, with white text on it.
    *
@@ -65,8 +116,8 @@
    *
    * In light mode they happen to coincide. In dark mode they do not, which is the point.
    */
-  --uboss-blue-solid: #2563eb; /* white on it: 5.17:1 */
-  --uboss-blue-solid-hover: #1d4ed8; /* 6.70:1 */
+  --uboss-blue-solid: #7c3aed; /* white on it: 5.70:1 */
+  --uboss-blue-solid-hover: #6d28d9; /* white 7.10:1 */
 
   /* ==========================================================================
      Teal: identity, selection, activity
@@ -75,7 +126,7 @@
 
   /* Brand teal. 5.47:1 on white and 5.47:1 behind white text, so this one is safe as text and as a
      fill. Use it wherever teal has to be *read*. */
-  --uboss-teal: #0f766e;
+  --uboss-teal: #6d28d9; /* 7.10:1 with white */
   /*
    * Bright interaction teal. 3.74:1 — above the 3:1 floor for a non-text interface element, below
    * the 4.5:1 floor for text.
@@ -83,11 +134,11 @@
    * So: rails, indicators, progress fills, focus accents, the selected-item bar. NEVER as text,
    * and never as a fill with white text on it. When teal has to carry words, it is --uboss-teal.
    */
-  --uboss-teal-bright: #0d9488;
-  --uboss-teal-050: #eaf6f4;
-  --uboss-teal-ink: #0f766e; /* 4.95:1 on --uboss-teal-050 */
+  --uboss-teal-bright: #8b5cf6;
+  --uboss-teal-050: #f5f3ff;
+  --uboss-teal-ink: #6d28d9; /* 6.79:1 on --uboss-teal-050 */
   /* Teal as a FILL, white text on it. The brand teal already works here, in both themes. */
-  --uboss-teal-solid: #0f766e; /* white on it: 5.47:1 */
+  --uboss-teal-solid: #6d28d9; /* white on it: 7.10:1 */
 
   /* ==========================================================================
      Semantic statuses
@@ -118,18 +169,18 @@
      ========================================================================== */
 
   --uboss-surface: #ffffff;
-  --uboss-surface-raised: #fbfcfe;
-  --uboss-bg: #f6f8fb;
-  --uboss-bg-2: #eef2f7;
+  --uboss-surface-raised: #ffffff;
+  --uboss-bg: #f8fafc;
+  --uboss-bg-2: #f3f4f6;
 
   /*
    * Dividers and panel edges. These GROUP rather than identify, so WCAG 1.4.11 does not apply and
    * they stay quiet — which is what keeps a screen of panels calm.
    */
-  --uboss-border: #d7dee8;
-  --uboss-border-2: #e7ebf0;
+  --uboss-border: #e5e7eb;
+  --uboss-border-2: #eef0f3;
   /* An explicit name for the same value, for call sites that mean "this only groups things". */
-  --uboss-border-subtle: #d7dee8;
+  --uboss-border-subtle: #e5e7eb;
   /*
    * The edge of an interactive control, and the reason it is a separate token.
    *
@@ -145,16 +196,16 @@
    * Hover deepens it to a measured 5.67 worst case, so pointing at a control is visible without
    * relying on colour alone. Focus is the blue ring, measured at 5.17:1 against white.
    */
-  --uboss-border-control: #7d8a9f;
-  --uboss-border-control-hover: #556070;
+  --uboss-border-control: #cbd5e1;
+  --uboss-border-control-hover: #94a3b8;
   --uboss-border-control-focus: var(--uboss-blue);
 
   /* ==========================================================================
      Text
      ========================================================================== */
 
-  --uboss-text: #0f172a; /* 17.85:1 on surface */
-  --uboss-text-2: #475569; /* 7.58:1 on surface, 6.74:1 on bg-2 */
+  --uboss-text: #111827; /* 17.74:1 on surface */
+  --uboss-text-2: #475569; /* 7.58:1 on surface */
   /*
    * Muted: empty states, helper text, table meta, step numbers.
    *
@@ -164,7 +215,9 @@
    * ones it was originally derived against: 5.08 on surface, 4.78 on bg, 4.52 on bg-2. Still
    * clears the minimum on all three, so it carries over unchanged.
    */
-  --uboss-text-3: #646f81;
+  /* Re-measured against the new surfaces: 4.76 on surface, 4.55 on the canvas, 4.43 on bg-2.
+     The canvas is the one that matters — it is where most muted text sits. */
+  --uboss-text-3: #64748b;
   /* Text on a filled dark control (primary button, navy chip). */
   --uboss-text-on-dark: #ffffff;
 
@@ -267,10 +320,42 @@
      Short and unobtrusive. A transition long enough to notice is a transition that makes the
      software feel slow, and this is software people use for eight hours. */
 
-  --uboss-motion-fast: 120ms;
-  --uboss-motion: 150ms;
-  --uboss-motion-slow: 180ms;
+  /* The scale, by what the motion is FOR rather than by how long it lasts. A component that needs
+     a number reaches for the meaning, which is what keeps a dropdown and a drawer from drifting
+     apart. The first three are the productive tier; the last two are reserved for the signature
+     moments (login, donut, analysis, workflow reveal) and are the only ones a reader consciously
+     notices. */
+  --uboss-motion-micro: 100ms; /* hover, focus, press — felt, not seen */
+  --uboss-motion-small: 160ms; /* selection, row change, toast */
+  --uboss-motion-panel: 240ms; /* dropdown, popover, tab content */
+  --uboss-motion-large: 320ms; /* drawer, dialog, route */
+  --uboss-motion-signature: 480ms; /* donut draw, workflow reveal, brand moments */
+
+  /* The previous names, kept because ~4800 lines of components.css use them, mapped onto the new
+     scale so there is still one source of truth. */
+  --uboss-motion-fast: var(--uboss-motion-micro);
+  --uboss-motion: var(--uboss-motion-small);
+  --uboss-motion-slow: var(--uboss-motion-panel);
+
+  /* Four curves, by role. `standard` for anything that stays on screen; `enter` decelerates so
+     arriving things settle; `exit` accelerates so leaving things get out of the way; `emphasized`
+     is the signature curve with a little overshoot in its tail. */
   --uboss-ease: cubic-bezier(0.2, 0, 0.2, 1);
+  --uboss-ease-standard: cubic-bezier(0.2, 0, 0.2, 1);
+  --uboss-ease-enter: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --uboss-ease-exit: cubic-bezier(0.3, 0, 0.8, 0.15);
+  --uboss-ease-emphasized: cubic-bezier(0.34, 1.2, 0.64, 1);
+  /*
+   * Indeterminate loading loops — the only motion in the product that repeats.
+   *
+   * They are deliberately NOT on the interaction scale above. A spinner says "still working", so
+   * it has to outlast any single interaction; borrowing 160ms from the interaction scale would
+   * make it a strobe. Naming them keeps them inside the system rather than leaving three bare
+   * numbers in the stylesheet that read as drift.
+   */
+  --uboss-motion-loop-spin: 620ms;
+  --uboss-motion-loop-pulse: 1400ms;
+  --uboss-motion-loop-shimmer: 1300ms;
 
   /* ==========================================================================
      Focus: visible on every interactive element, never removed
@@ -322,21 +407,21 @@
   :root:not([data-theme='light']) {
     color-scheme: dark;
 
-    --uboss-blue: #5b8def; /* 5.09:1 at worst (on the raised surface) */
-    --uboss-blue-600: #7aa7f5;
-    --uboss-blue-050: #152239;
-    --uboss-blue-100: #1e3358;
+    --uboss-blue: #a78bfa; /* 7.22:1 — the accent you read */
+    --uboss-blue-600: #c4b5fd;
+    --uboss-blue-050: #1b1430;
+    --uboss-blue-100: #2a1f4d;
     /* Darker than --uboss-blue, because white sits on this one. White: 5.69:1; and 3.35:1
        against the page, so the button still has an edge you can see. Hover goes lighter, as
        it does everywhere on a dark ground. */
-    --uboss-blue-solid: #2b62c9;
-    --uboss-blue-solid-hover: #3568c4; /* white 5.35:1 */
+    --uboss-blue-solid: #6d28d9; /* white 7.10:1 */
+    --uboss-blue-solid-hover: #7c3aed; /* white 5.70:1 — hover lightens on a dark ground */
 
-    --uboss-teal: #2dd4bf; /* 8.83:1 at worst — safe as text on any dark surface */
-    --uboss-teal-bright: #14b8a6; /* 6.61:1 — the rail and the progress fill */
-    --uboss-teal-050: #0d2b29;
-    --uboss-teal-ink: #2dd4bf; /* 8.09:1 on --uboss-teal-050 */
-    --uboss-teal-solid: #0f766e; /* white on it: 5.47:1, and 3.48:1 against the page */
+    --uboss-teal: #a78bfa; /* one accent family, not two */
+    --uboss-teal-bright: #8b5cf6;
+    --uboss-teal-050: #1b1430;
+    --uboss-teal-ink: #c4b5fd;
+    --uboss-teal-solid: #6d28d9; /* white 7.10:1 */
 
     --uboss-success: #4ade80;
     --uboss-success-050: #0f2a1b; /* 8.81:1 */
@@ -354,23 +439,50 @@
     --uboss-purple: #a78bfa;
     --uboss-purple-050: #201a33; /* 6.14:1 */
 
-    --uboss-surface: #111923;
-    --uboss-surface-raised: #16202c;
-    --uboss-bg: #0b1018;
-    --uboss-bg-2: #16202c;
+    --uboss-surface: #171821; /* card */
+    --uboss-surface-raised: #1d1e29;
+    --uboss-bg: #0b0b0f; /* the page */
+    --uboss-bg-2: #12131a;
 
-    --uboss-border: #263343;
-    --uboss-border-2: #1d2733;
-    --uboss-border-subtle: #263343;
+    --uboss-border: #2a2c38;
+    --uboss-border-2: #22242e;
+    --uboss-border-subtle: #2a2c38;
     /* 3.72 on the page, 3.45 on surface, 3.21 on the raised surface -- the lightest surface a
        control sits on and therefore the worst case. */
-    --uboss-border-control: #5d6f88;
-    --uboss-border-control-hover: #7a8ca6;
+    --uboss-border-control: #55586a;
+    --uboss-border-control-hover: #6e7286;
 
-    --uboss-text: #e8eef5; /* 14.08:1 at worst */
-    --uboss-text-2: #aab7c6; /* 8.06:1 at worst */
+    --uboss-text: #f8fafc; /* 18.78:1 on the page */
+    --uboss-text-2: #c4c7d1; /* 10.46:1 on a card */
     /* The approved dark muted token. 5.16 / 5.56 / 4.80 against surface, page and raised. */
-    --uboss-text-3: #7b8ca4;
+    --uboss-text-3: #8c91a3; /* 5.63 card / 5.90 surface */
+
+    /* Chrome. Light paints the sidebar violet; Dark paints it near-black and lets the violet
+       accents do the work on top of it. Never pure #000 — the layers need somewhere to go. */
+    --uboss-navy: #0a0a0d;
+    --uboss-navy-2: #12131a;
+    --uboss-navy-900: #08080b;
+    --uboss-navy-700: #2a2c38;
+    --uboss-navy-ink: #c4c7d1;
+    --uboss-navy-ink-2: #8c91a3;
+    --uboss-sidebar-start: #0a0a0d;
+    --uboss-sidebar-main: #0a0a0d;
+    --uboss-sidebar-end: #0c0c11;
+    --uboss-sidebar-bg: linear-gradient(160deg, #0a0a0d 0%, #0a0a0d 60%, #0c0c11 100%);
+    --uboss-sidebar-text: #f8fafc;
+    --uboss-sidebar-text-2: #c4c7d1;
+    --uboss-sidebar-icon: #c4b5fd;
+    --uboss-sidebar-hover: rgba(139, 92, 246, 0.12);
+    --uboss-sidebar-selected: rgba(139, 92, 246, 0.18);
+    --uboss-sidebar-selected-edge: #a78bfa;
+    --uboss-ai: #a78bfa;
+    --uboss-ai-bright: #c4b5fd;
+    --uboss-ai-highlight: #ddd6fe;
+    --uboss-ai-soft: #1b1430;
+    --uboss-donut-agents-from: #7c3aed;
+    --uboss-donut-agents-to: #a78bfa;
+    --uboss-donut-pending-from: #c4b5fd;
+    --uboss-donut-pending-to: #ddd6fe;
 
     --uboss-bronze-bg: #2a1e13;
     --uboss-bronze-fg: #d8a878;
@@ -397,18 +509,18 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --uboss-blue: #5b8def;
-  --uboss-blue-600: #7aa7f5;
-  --uboss-blue-050: #152239;
-  --uboss-blue-100: #1e3358;
-  --uboss-blue-solid: #2b62c9;
-  --uboss-blue-solid-hover: #3568c4;
+  --uboss-blue: #a78bfa; /* 7.22:1 — the accent you read */
+  --uboss-blue-600: #c4b5fd;
+  --uboss-blue-050: #1b1430;
+  --uboss-blue-100: #2a1f4d;
+  --uboss-blue-solid: #6d28d9; /* white 7.10:1 */
+  --uboss-blue-solid-hover: #7c3aed; /* white 5.70:1 — hover lightens on a dark ground */
 
-  --uboss-teal: #2dd4bf;
-  --uboss-teal-bright: #14b8a6;
-  --uboss-teal-050: #0d2b29;
-  --uboss-teal-ink: #2dd4bf;
-  --uboss-teal-solid: #0f766e;
+  --uboss-teal: #a78bfa; /* one accent family, not two */
+  --uboss-teal-bright: #8b5cf6;
+  --uboss-teal-050: #1b1430;
+  --uboss-teal-ink: #c4b5fd;
+  --uboss-teal-solid: #6d28d9; /* white 7.10:1 */
 
   --uboss-success: #4ade80;
   --uboss-success-050: #0f2a1b;
@@ -424,20 +536,47 @@
   --uboss-purple: #a78bfa;
   --uboss-purple-050: #201a33;
 
-  --uboss-surface: #111923;
-  --uboss-surface-raised: #16202c;
-  --uboss-bg: #0b1018;
-  --uboss-bg-2: #16202c;
+  --uboss-surface: #171821; /* card */
+  --uboss-surface-raised: #1d1e29;
+  --uboss-bg: #0b0b0f; /* the page */
+  --uboss-bg-2: #12131a;
 
-  --uboss-border: #263343;
-  --uboss-border-2: #1d2733;
-  --uboss-border-subtle: #263343;
-  --uboss-border-control: #5d6f88;
-  --uboss-border-control-hover: #7a8ca6;
+  --uboss-border: #2a2c38;
+  --uboss-border-2: #22242e;
+  --uboss-border-subtle: #2a2c38;
+  --uboss-border-control: #55586a;
+  --uboss-border-control-hover: #6e7286;
 
-  --uboss-text: #e8eef5;
-  --uboss-text-2: #aab7c6;
-  --uboss-text-3: #7b8ca4;
+  --uboss-text: #f8fafc; /* 18.78:1 on the page */
+  --uboss-text-2: #c4c7d1; /* 10.46:1 on a card */
+  --uboss-text-3: #8c91a3; /* 5.63 card / 5.90 surface */
+
+  /* Chrome. Light paints the sidebar violet; Dark paints it near-black and lets the violet
+     accents do the work on top of it. Never pure #000 — the layers need somewhere to go. */
+  --uboss-navy: #0a0a0d;
+  --uboss-navy-2: #12131a;
+  --uboss-navy-900: #08080b;
+  --uboss-navy-700: #2a2c38;
+  --uboss-navy-ink: #c4c7d1;
+  --uboss-navy-ink-2: #8c91a3;
+  --uboss-sidebar-start: #0a0a0d;
+  --uboss-sidebar-main: #0a0a0d;
+  --uboss-sidebar-end: #0c0c11;
+  --uboss-sidebar-bg: linear-gradient(160deg, #0a0a0d 0%, #0a0a0d 60%, #0c0c11 100%);
+  --uboss-sidebar-text: #f8fafc;
+  --uboss-sidebar-text-2: #c4c7d1;
+  --uboss-sidebar-icon: #c4b5fd;
+  --uboss-sidebar-hover: rgba(139, 92, 246, 0.12);
+  --uboss-sidebar-selected: rgba(139, 92, 246, 0.18);
+  --uboss-sidebar-selected-edge: #a78bfa;
+  --uboss-ai: #a78bfa;
+  --uboss-ai-bright: #c4b5fd;
+  --uboss-ai-highlight: #ddd6fe;
+  --uboss-ai-soft: #1b1430;
+  --uboss-donut-agents-from: #7c3aed;
+  --uboss-donut-agents-to: #a78bfa;
+  --uboss-donut-pending-from: #c4b5fd;
+  --uboss-donut-pending-to: #ddd6fe;
 
   --uboss-bronze-bg: #2a1e13;
   --uboss-bronze-fg: #d8a878;

@@ -33,5 +33,8 @@
     "react-dom": "19.2.8",
     "vite": "8.2.2",
     "vitest": "5.0.0"
+  },
+  "dependencies": {
+    "motion": "^13.4.0"
   }
 }

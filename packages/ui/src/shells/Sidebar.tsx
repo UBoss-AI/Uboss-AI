@@ -1,8 +1,10 @@
 'use client';
 
+import { motion } from 'motion/react';
 import type { MouseEvent } from 'react';
 
 import { cn } from '../lib/class-names';
+import { transition } from '../motion/motion';
 import { initials } from '../lib/initials';
 import type { NavGroup } from '../navigation/navigation-model';
 import { Icon } from '../primitives/Icon';
@@ -98,6 +100,24 @@ export function Sidebar({
 
               const inner = (
                 <>
+                  {/*
+                    The selected state, as one element that moves between items rather than one
+                    that switches off here and on there. `layoutId` is what makes the highlight
+                    travel: Motion measures where it was, where it is now, and animates between
+                    them, so choosing a different screen reads as the selection moving rather than
+                    as two separate things blinking.
+
+                    It sits behind the label and is `aria-hidden` — the fact that carries meaning
+                    is `aria-current="page"` on the item, which is unaffected by any of this.
+                  */}
+                  {active ? (
+                    <motion.span
+                      layoutId="uboss-nav-selected"
+                      className="uboss-nav-indicator"
+                      aria-hidden="true"
+                      transition={transition('panel', 'standard')}
+                    />
+                  ) : null}
                   <span className="uboss-nav-icon">
                     <Icon name={item.icon} size={18} />
                   </span>

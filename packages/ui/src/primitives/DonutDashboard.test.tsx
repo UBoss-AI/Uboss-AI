@@ -93,3 +93,63 @@ describe('DonutDashboard — locked two-slice contract', () => {
     expect(screen.getByText('0')).toBeInTheDocument();
   });
 });
+
+describe('DonutDashboard — the chart is truthful before it has moved', () => {
+  /*
+   * The regression this exists for. An earlier version of the signature animation held the arc
+   * lengths and the centre count in motion values starting at zero, so the first frame of the
+   * chart said "0" and drew nothing, and only became correct once the animation had run. That is
+   * a chart that lies to anything not watching it move: a screenshot, a print, a browser with
+   * animations disabled, an automated check. The rule is now the other way round — the DOM holds
+   * the real numbers and the motion is layered on top of them.
+   */
+  const arcsOf = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('circle')).slice(1);
+
+  it('gives each arc its real length on the very first frame', () => {
+    const { container } = render(<DonutDashboard agents={15} pendingJobs={5} />);
+    const [agentsArc, pendingArc] = arcsOf(container);
+
+    // pathLength={1} means the dasharray is a fraction of the ring, so 15 of 20 is about .75.
+    const lengthOf = (arc: Element | undefined) =>
+      Number((arc?.getAttribute('stroke-dasharray') ?? '').split(' ')[0]);
+
+    expect(lengthOf(agentsArc)).toBeCloseTo(0.75, 1);
+    expect(lengthOf(pendingArc)).toBeCloseTo(0.25, 1);
+  });
+
+  it('shows the true total in the centre without waiting for an animation', () => {
+    render(<DonutDashboard agents={15} pendingJobs={5} />);
+
+    // No timers advanced, no frames run. The number is simply correct.
+    expect(screen.getByText('20')).toBeInTheDocument();
+  });
+
+  /*
+   * The contract between this file and components.css. The keyframes end at
+   * `stroke-dasharray: var(--uboss-arc)`, so an arc whose group does not set that property would
+   * animate to nothing and vanish — in the browser only, where no unit test would see it. The
+   * two live in different files, which is precisely why one of them has to check the other.
+   */
+  it('publishes each arc length as --uboss-arc for the CSS draw to land on', () => {
+    const { container } = render(<DonutDashboard agents={15} pendingJobs={5} />);
+
+    const groups = Array.from(container.querySelectorAll('g'));
+    expect(groups).toHaveLength(2);
+
+    for (const [index, group] of groups.entries()) {
+      const published = (group as SVGElement).style.getPropertyValue('--uboss-arc');
+      expect(published).not.toBe('');
+      expect(published).toBe(arcsOf(container)[index]?.getAttribute('stroke-dasharray'));
+    }
+  });
+
+  it('keeps a tiny category visible rather than rounding it away', () => {
+    const { container } = render(<DonutDashboard agents={1} pendingJobs={999} />);
+    const [agentsArc] = arcsOf(container);
+
+    expect(
+      Number((agentsArc?.getAttribute('stroke-dasharray') ?? '').split(' ')[0]),
+    ).toBeGreaterThan(0);
+  });
+});

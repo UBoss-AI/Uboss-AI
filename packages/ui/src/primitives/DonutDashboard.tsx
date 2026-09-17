@@ -1,6 +1,10 @@
 'use client';
 
+import { motion } from 'motion/react';
+import { useEffect, useId, useState } from 'react';
+
 import { cn } from '../lib/class-names';
+import { prefersReducedMotion, transition } from '../motion/motion';
 import { EmptyState } from './EmptyState';
 
 /**
@@ -18,6 +22,22 @@ import { EmptyState } from './EmptyState';
  *
  * Counts must already be permission-scoped by the caller: the server returns only what the
  * signed-in user is allowed to see.
+ *
+ * ## The motion, and what it is careful about
+ *
+ * **The DOM always carries the true numbers.** The arc's `stroke-dasharray` attribute is its real
+ * length from the first frame, and the centre figure is the real total; the draw-on is a CSS
+ * animation of the *style*, which overrides the attribute while it runs and lands exactly on it.
+ * That ordering matters: an arc whose attribute started at zero would be a chart that told the
+ * truth only once it had finished moving, and anything reading it before then — a test, a
+ * screenshot, a browser with animations off — would read a lie.
+ *
+ * Later changes are a transition on the same property, so a refresh moves the arc from where it
+ * was rather than redrawing it from empty. A dashboard that re-animated from zero on every poll
+ * would flash at somebody trying to read it.
+ *
+ * Nothing loops. The highlight passes the circumference once, on first reveal, and stops. Under
+ * `prefers-reduced-motion` the draw and the sweep are both off and the chart is simply complete.
  */
 export interface DonutDashboardProps {
   /** Engine Agents visible to the signed-in user. */
@@ -33,20 +53,15 @@ export interface DonutDashboardProps {
   className?: string;
 }
 
-/*
- * The legend swatches, which must be the same colours as the arcs they key.
- *
- * They were #0EA5E9 and #2563EB — the first a cyan that is not in the palette, and neither one
- * following the theme, so in dark mode the key and the chart drifted apart. Tokens instead, and
- * the same two the arcs use.
- */
-const AGENTS_COLOR = 'var(--uboss-teal-bright)';
-const PENDING_COLOR = 'var(--uboss-blue)';
-
 const RADIUS = 80;
 const STROKE = 34;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
-const GAP = 7;
+/** The visual gap between the arcs, as a fraction of the circumference. */
+const GAP = 7 / CIRCUMFERENCE;
+/** A non-zero count must stay visible, however small its share. */
+const MIN_ARC = 2 / CIRCUMFERENCE;
+/** How far a hovered arc lifts out of the ring. */
+const LIFT = 3;
 
 export function DonutDashboard({
   agents,
@@ -56,7 +71,27 @@ export function DonutDashboard({
   centerLabel = 'MY WORK',
   className,
 }: DonutDashboardProps) {
+  const gradientId = useId();
+  const [hovered, setHovered] = useState<'agents' | 'pending' | null>(null);
+  const [revealed, setRevealed] = useState(prefersReducedMotion());
+
   const total = agents + pendingJobs;
+  const agentsFraction = total === 0 ? 0 : agents / total;
+  const pendingFraction = total === 0 ? 0 : pendingJobs / total;
+
+  const agentsTarget = agents === 0 ? 0 : Math.max(agentsFraction - GAP, MIN_ARC);
+  const pendingTarget = pendingJobs === 0 ? 0 : Math.max(pendingFraction - GAP, MIN_ARC);
+
+  const agentsDash = `${agentsTarget} ${Math.max(1 - agentsTarget, 0)}`;
+  const pendingDash = `${pendingTarget} ${Math.max(1 - pendingTarget, 0)}`;
+
+  // One pass of the highlight, once the arcs have drawn. Not a loop: a dashboard that pulses for
+  // ever is a dashboard nobody can read beside.
+  useEffect(() => {
+    if (prefersReducedMotion()) return undefined;
+    const timer = window.setTimeout(() => setRevealed(true), 520);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   if (total === 0) {
     return (
@@ -68,13 +103,12 @@ export function DonutDashboard({
     );
   }
 
-  const agentsFraction = agents / total;
-  const pendingFraction = pendingJobs / total;
-
-  // Leave a small visual gap between the two arcs, but never let an arc collapse to nothing
-  // when its count is non-zero — a 1-of-20 slice must still be visible.
-  const agentsLength = agents === 0 ? 0 : Math.max(agentsFraction * CIRCUMFERENCE - GAP, 2);
-  const pendingLength = pendingJobs === 0 ? 0 : Math.max(pendingFraction * CIRCUMFERENCE - GAP, 2);
+  const centre =
+    hovered === 'agents'
+      ? { label: 'AGENTS', value: agents.toString(), sub: 'Engine Agents in scope' }
+      : hovered === 'pending'
+        ? { label: 'PENDING JOBS', value: pendingJobs.toString(), sub: 'awaiting action' }
+        : { label: centerLabel, value: null, sub: 'items in scope' };
 
   return (
     <div className={cn('uboss-donut-wrap', className)}>
@@ -87,23 +121,22 @@ export function DonutDashboard({
           role="img"
           aria-label={`${agents} Agents and ${pendingJobs} Pending Jobs, ${total} items in your scope`}
         >
-          {/*
-            No gradients, and no cyan.
+          <defs>
+            {/*
+              Two violets from the same family, one darker and one lighter, so the slices are
+              distinguishable by value as well as by hue. Colour is still not the only signal: the
+              arcs never touch, and the legend below names each one with its count.
+            */}
+            <linearGradient id={`${gradientId}-agents`} x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="var(--uboss-donut-agents-from)" />
+              <stop offset="100%" stopColor="var(--uboss-donut-agents-to)" />
+            </linearGradient>
+            <linearGradient id={`${gradientId}-pending`} x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="var(--uboss-donut-pending-from)" />
+              <stop offset="100%" stopColor="var(--uboss-donut-pending-to)" />
+            </linearGradient>
+          </defs>
 
-            The two arcs were painted #2FD0F5→#0BA6E4 and #4C86FF→#2159DC: four hardcoded hex
-            values, none of them in the palette, and the first pair is the pre-Prompt-45 cyan that
-            no longer exists as a token. Because the Dashboard was only ever seen in its empty
-            state, the chart nobody could see kept its old colours through the whole redesign.
-
-            Now the two locked accents, flat and from tokens, so they follow the theme:
-            **Agents are teal** because teal is the product's AI identity, and **Pending Jobs are
-            blue** because they are work waiting on a person to act.
-
-            Teal and blue sit only 1.38:1 apart, so colour is deliberately NOT the thing that tells
-            the slices apart: the arcs are separated by GAP so they never touch, and the legend
-            below names each one with its count. That is the same rule the rest of the product
-            follows — a status is never carried by colour alone.
-          */}
           <circle
             cx="110"
             cy="110"
@@ -113,62 +146,107 @@ export function DonutDashboard({
             strokeWidth={30}
           />
 
-          {agentsLength > 0 ? (
-            <circle
-              className={onSelectAgents ? 'uboss-donut-slice' : undefined}
-              cx="110"
-              cy="110"
-              r={RADIUS}
-              fill="none"
-              stroke="var(--uboss-teal-bright)"
-              strokeWidth={STROKE}
-              strokeLinecap="round"
-              strokeDasharray={`${agentsLength} ${CIRCUMFERENCE - agentsLength}`}
-              strokeDashoffset={0}
-              onClick={onSelectAgents}
-            />
+          {agentsTarget > 0 ? (
+            <g style={{ '--uboss-arc': agentsDash } as React.CSSProperties}>
+              <motion.circle
+                className={cn('uboss-donut-arc', onSelectAgents && 'uboss-donut-slice')}
+                cx="110"
+                cy="110"
+                r={RADIUS}
+                pathLength={1}
+                fill="none"
+                stroke={`url(#${gradientId}-agents)`}
+                strokeWidth={STROKE}
+                strokeLinecap="round"
+                strokeDasharray={agentsDash}
+                strokeDashoffset={0}
+                animate={{
+                  r: hovered === 'agents' ? RADIUS + LIFT : RADIUS,
+                  opacity: hovered === 'pending' ? 0.55 : 1,
+                }}
+                transition={transition('small')}
+                onClick={onSelectAgents}
+                onMouseEnter={() => setHovered('agents')}
+                onMouseLeave={() => setHovered(null)}
+              />
+            </g>
           ) : null}
 
-          {pendingLength > 0 ? (
-            <circle
-              className={onSelectPendingJobs ? 'uboss-donut-slice' : undefined}
+          {pendingTarget > 0 ? (
+            <g style={{ '--uboss-arc': pendingDash } as React.CSSProperties}>
+              <motion.circle
+                className={cn('uboss-donut-arc', onSelectPendingJobs && 'uboss-donut-slice')}
+                cx="110"
+                cy="110"
+                r={RADIUS}
+                pathLength={1}
+                fill="none"
+                stroke={`url(#${gradientId}-pending)`}
+                strokeWidth={STROKE}
+                strokeLinecap="round"
+                strokeDasharray={pendingDash}
+                strokeDashoffset={-agentsFraction}
+                animate={{
+                  r: hovered === 'pending' ? RADIUS + LIFT : RADIUS,
+                  opacity: hovered === 'agents' ? 0.55 : 1,
+                }}
+                transition={transition('small')}
+                onClick={onSelectPendingJobs}
+                onMouseEnter={() => setHovered('pending')}
+                onMouseLeave={() => setHovered(null)}
+              />
+            </g>
+          ) : null}
+
+          {/* The single highlight pass. Mounted once the arcs have drawn, and it runs exactly once. */}
+          {revealed && !prefersReducedMotion() ? (
+            <motion.circle
+              key="sweep"
               cx="110"
               cy="110"
               r={RADIUS}
+              pathLength={1}
               fill="none"
-              stroke="var(--uboss-blue)"
+              stroke="var(--uboss-ai-highlight)"
               strokeWidth={STROKE}
               strokeLinecap="round"
-              strokeDasharray={`${pendingLength} ${CIRCUMFERENCE - pendingLength}`}
-              strokeDashoffset={-(agentsFraction * CIRCUMFERENCE)}
-              onClick={onSelectPendingJobs}
+              strokeDasharray="0.06 0.94"
+              initial={{ strokeDashoffset: 0, opacity: 0.45 }}
+              animate={{ strokeDashoffset: -1, opacity: 0 }}
+              transition={{ duration: 0.9, ease: 'linear' }}
+              style={{ pointerEvents: 'none' }}
             />
           ) : null}
         </svg>
 
         <div className="uboss-donut-center">
-          <div className="uboss-donut-center-label">{centerLabel}</div>
-          <div className="uboss-donut-center-value">{total}</div>
-          <div className="uboss-donut-center-sub">items in scope</div>
+          <div className="uboss-donut-center-label">{centre.label}</div>
+          <div className="uboss-donut-center-value">{centre.value ?? total}</div>
+          <div className="uboss-donut-center-sub">{centre.sub}</div>
         </div>
       </div>
 
       {/*
         The legend is the keyboard-accessible route into both drill-downs: SVG arcs alone would
-        leave keyboard users unable to reach the detail screens.
+        leave keyboard users unable to reach the detail screens. Focus highlights the matching arc
+        too, so the connection is not hover-only.
       */}
       <div className="uboss-donut-legend">
         <DonutLegendItem
-          color={AGENTS_COLOR}
+          swatch="var(--uboss-donut-agents-to)"
           value={agents}
           label="Agents"
+          active={hovered === 'agents'}
           onSelect={onSelectAgents}
+          onHighlight={(on) => setHovered(on ? 'agents' : null)}
         />
         <DonutLegendItem
-          color={PENDING_COLOR}
+          swatch="var(--uboss-donut-pending-to)"
           value={pendingJobs}
           label="Pending Jobs"
+          active={hovered === 'pending'}
           onSelect={onSelectPendingJobs}
+          onHighlight={(on) => setHovered(on ? 'pending' : null)}
         />
       </div>
     </div>
@@ -176,19 +254,23 @@ export function DonutDashboard({
 }
 
 function DonutLegendItem({
-  color,
+  swatch,
   value,
   label,
+  active,
   onSelect,
+  onHighlight,
 }: {
-  color: string;
+  swatch: string;
   value: number;
   label: string;
+  active: boolean;
   onSelect?: (() => void) | undefined;
+  onHighlight: (on: boolean) => void;
 }) {
   const content = (
     <>
-      <span className="uboss-legend-swatch" style={{ background: color }} aria-hidden="true" />
+      <span className="uboss-legend-swatch" style={{ background: swatch }} aria-hidden="true" />
       <span>
         <span className="uboss-legend-value">{value}</span>
         <span className="uboss-legend-label">{label}</span>
@@ -203,8 +285,16 @@ function DonutLegendItem({
   return (
     <button
       type="button"
-      className="uboss-legend-item uboss-legend-item--clickable"
+      className={cn(
+        'uboss-legend-item',
+        'uboss-legend-item--clickable',
+        active && 'uboss-legend-item--active',
+      )}
       onClick={onSelect}
+      onMouseEnter={() => onHighlight(true)}
+      onMouseLeave={() => onHighlight(false)}
+      onFocus={() => onHighlight(true)}
+      onBlur={() => onHighlight(false)}
     >
       {content}
     </button>

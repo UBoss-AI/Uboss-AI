@@ -160,8 +160,10 @@
    lets selection be the only thing on this panel that changes colour. */
 
 .uboss-sidebar {
-  background: var(--uboss-navy);
-  color: var(--uboss-navy-ink);
+  /* One token, two themes: a violet sweep in Light, a near-black one in Dark. The gradient lives
+     in the token rather than here so the sidebar and the login panel cannot drift apart. */
+  background: var(--uboss-sidebar-bg);
+  color: var(--uboss-sidebar-text-2);
   position: sticky;
   top: 0;
   height: 100vh;
@@ -294,13 +296,14 @@
 }
 
 .uboss-nav-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 0 10px;
   height: 32px;
   border-radius: var(--uboss-radius-control);
-  color: var(--uboss-navy-ink);
+  color: var(--uboss-sidebar-text-2);
   font-weight: 500;
   cursor: pointer;
   margin: 1px 0;
@@ -318,8 +321,8 @@
 }
 
 .uboss-nav-item:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: #fff;
+  background: var(--uboss-sidebar-hover);
+  color: var(--uboss-sidebar-text);
 }
 
 /*
@@ -329,18 +332,33 @@
    greyscale and a colour-blind reading, the tint survives a glance from across the
    room, the icon survives a narrow rail where the label is hidden.
 
-   Teal rather than blue because blue means "this is the button to press" everywhere
+   A deeper violet than the ground rather than the primary action colour, because the primary
+   colour means "this is the button to press" everywhere
    else in the product, and the page you are already on is not an action. */
 
 .uboss-nav-item--active {
-  background: rgba(13, 148, 136, 0.16);
-  color: #fff;
+  color: var(--uboss-sidebar-text);
   font-weight: 550;
-  box-shadow: inset 2px 0 0 var(--uboss-teal-bright);
 }
 
-.uboss-nav-item--active:hover {
-  background: rgba(13, 148, 136, 0.22);
+/* The travelling selection. Absolutely positioned so it can be measured and moved between items,
+   and behind the content so the label never flickers underneath it. The rail survives greyscale
+   and a colour-blind reading; the tint survives a glance from across the room. */
+.uboss-nav-indicator {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: var(--uboss-radius-control);
+  background: var(--uboss-sidebar-selected);
+  box-shadow: inset 2px 0 0 var(--uboss-sidebar-selected-edge);
+  pointer-events: none;
+}
+
+.uboss-nav-item > .uboss-nav-icon,
+.uboss-nav-item > .uboss-nav-label,
+.uboss-nav-item > .uboss-nav-badge {
+  position: relative;
+  z-index: 1;
 }
 
 .uboss-nav-item--active .uboss-nav-icon {
@@ -1013,7 +1031,7 @@
   /* The gap in the ring is what makes the rotation visible. */
   border-top-color: transparent;
   opacity: 0.85;
-  animation: uboss-spin 620ms linear infinite;
+  animation: uboss-spin var(--uboss-motion-loop-spin) linear infinite;
 }
 
 @keyframes uboss-spin {
@@ -1695,14 +1713,6 @@ textarea.uboss-input,
   text-align: left;
 }
 
-.uboss-legend-item--clickable {
-  cursor: pointer;
-}
-
-.uboss-legend-item--clickable:hover {
-  background: var(--uboss-bg-2);
-}
-
 .uboss-legend-swatch {
   width: 12px;
   height: 12px;
@@ -1722,13 +1732,69 @@ textarea.uboss-input,
   display: block;
 }
 
-.uboss-donut-slice {
-  cursor: pointer;
-  transition: opacity 0.15s;
+/*
+  The draw-on, and why it is CSS animating the *style* rather than JavaScript rewriting the
+  attribute. The `stroke-dasharray` attribute on each arc is its real length from the first
+  frame — so the chart is truthful before it has moved, and stays truthful for a screenshot, a
+  test, or a browser that never runs this animation. A style rule wins over a presentation
+  attribute, so the keyframes below can start the arc at nothing and land it exactly on the
+  number the attribute already carries. `--uboss-arc` is that number, set inline on the group.
+
+  The transition on the same property is for the second visit: when the counts change the arc
+  moves from where it was instead of redrawing from empty, which is what stops a dashboard
+  flashing at somebody every time it refreshes.
+*/
+@keyframes uboss-donut-draw {
+  from {
+    stroke-dasharray: 0 1;
+  }
+  to {
+    stroke-dasharray: var(--uboss-arc);
+  }
 }
 
-.uboss-donut-slice:hover {
-  opacity: 0.85;
+.uboss-donut-arc {
+  /* A subtle outer glow gives the ring depth without pretending to be three-dimensional. */
+  filter: drop-shadow(0 0 6px rgba(124, 58, 237, 0.18));
+  stroke-dasharray: var(--uboss-arc);
+  transition: stroke-dasharray var(--uboss-motion-panel) var(--uboss-ease-standard);
+  animation: uboss-donut-draw var(--uboss-motion-signature) var(--uboss-ease-enter) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Complete on the first frame. The end state is identical; only the travel goes. */
+  .uboss-donut-arc {
+    animation: none;
+    transition: none;
+  }
+}
+
+/*
+  Hover dims the *other* arc rather than the one under the cursor, and it is done in the
+  component so the lift and the dim stay one gesture. There is deliberately no `transition`
+  declared on this selector: `transition` is a shorthand, and a second one here would silently
+  cancel the arc's own stroke-dasharray transition above.
+*/
+.uboss-donut-slice {
+  cursor: pointer;
+}
+
+/* The legend and the arc are one thing: hovering or focusing either lights both, so the
+   connection between a number and its slice is never hover-only. */
+.uboss-legend-item--active {
+  background: var(--uboss-ai-soft);
+  border-color: var(--uboss-ai);
+}
+
+.uboss-legend-item--clickable {
+  cursor: pointer;
+  transition:
+    background var(--uboss-motion-micro) var(--uboss-ease-standard),
+    border-color var(--uboss-motion-micro) var(--uboss-ease-standard);
+}
+
+.uboss-legend-item--clickable:hover {
+  background: var(--uboss-bg-2);
 }
 
 /* ============================================================
@@ -1789,7 +1855,7 @@ textarea.uboss-input,
   border-radius: 50%;
   border: 2px solid var(--uboss-blue);
   opacity: 0.4;
-  animation: uboss-pulse 1.4s infinite;
+  animation: uboss-pulse var(--uboss-motion-loop-pulse) var(--uboss-ease-standard) infinite;
 }
 
 @keyframes uboss-pulse {
@@ -2223,7 +2289,7 @@ textarea.uboss-input,
     var(--uboss-bg-2) 63%
   );
   background-size: 400% 100%;
-  animation: uboss-shimmer 1.3s infinite;
+  animation: uboss-shimmer var(--uboss-motion-loop-shimmer) linear infinite;
   border-radius: var(--uboss-radius-control);
 }
 
@@ -2708,7 +2774,7 @@ textarea.uboss-input,
     z-index: 60;
     width: var(--uboss-sidebar-width);
     transform: translateX(-100%);
-    transition: transform 0.2s;
+    transition: transform var(--uboss-motion-panel) var(--uboss-ease-standard);
     box-shadow: var(--uboss-shadow-3);
   }
 
@@ -3174,7 +3240,7 @@ textarea.uboss-input,
 
 .uboss-org-node .uboss-org-card,
 .uboss-org-node text {
-  transition: 0.15s;
+  transition: all var(--uboss-motion-small) var(--uboss-ease-standard);
 }
 
 .uboss-org-node:hover .uboss-org-card {
@@ -3188,7 +3254,7 @@ textarea.uboss-input,
 }
 
 .uboss-org-action circle {
-  transition: 0.14s;
+  transition: all var(--uboss-motion-small) var(--uboss-ease-standard);
 }
 
 .uboss-org-action:hover circle {
@@ -3792,7 +3858,7 @@ table.uboss-wfg {
   font-weight: 500;
   color: var(--uboss-text-2);
   cursor: pointer;
-  transition: 0.16s;
+  transition: all var(--uboss-motion-small) var(--uboss-ease-standard);
 }
 
 .uboss-chip:hover {
