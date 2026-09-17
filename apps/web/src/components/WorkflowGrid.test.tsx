@@ -191,7 +191,7 @@ describe('toEditableStep — the shape the save accepts', () => {
       whoDesignation: 'Operations Manager',
       whoEngine: 'Human' as const,
       whatExactWork: 'Check the exception queue',
-      approval: 'Required' as const,
+      approval: 'Manager' as const,
       timeTaken: '30 minutes',
     };
 

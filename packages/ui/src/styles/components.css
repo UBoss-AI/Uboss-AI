@@ -5613,3 +5613,42 @@ table.uboss-wfg {
   outline: var(--uboss-focus-outline);
   outline-offset: var(--uboss-focus-offset);
 }
+
+/* ============================================================
+   Executor exceptions
+   ============================================================ */
+
+/*
+  Restraint is the requirement here, and it is not a style preference.
+
+  This table is read when something has gone wrong, by somebody deciding what to deal with first.
+  Motion that draws the eye anywhere other than severity and age is motion competing with the job.
+  So exceptions arrive a beat apart — enough to see that the list grew after a sweep rather than
+  having always looked like this — and nothing else on the row moves at all.
+
+  Nothing here pulses, including Escalated. An escalation is a fact about who is now responsible,
+  not work in progress, and a blinking row would be asking for attention the row cannot reward.
+  Scoped to this table on purpose: the same animation across every table in the product would
+  make ordinary lists feel urgent.
+*/
+@keyframes uboss-exception-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.uboss-exceptions tbody tr {
+  animation: uboss-exception-in var(--uboss-motion-panel) var(--uboss-ease-enter) backwards;
+  animation-delay: calc(
+    min(var(--uboss-row, 0), var(--uboss-motion-stagger-max)) * var(--uboss-motion-stagger)
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Removed, not shortened — a backwards fill holds the last row invisible for its whole delay,
+     and this is a list somebody is reading under pressure. */
+  .uboss-exceptions tbody tr {
+    animation: none !important;
+  }
+}

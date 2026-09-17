@@ -236,6 +236,9 @@ export default function ExecutorPage() {
           </div>
 
           <DataTable
+            // Scoped: exceptions arrive a beat apart so a sweep that raised something is
+            // visible as a change. No other table in the product does this.
+            className="uboss-exceptions"
             caption="Exceptions"
             rows={exceptions}
             rowKey={(row) => row.id}

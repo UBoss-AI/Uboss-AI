@@ -131,9 +131,18 @@ export function DataTable<Row>({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {rows.map((row, index) => (
             <tr
               key={rowKey(row)}
+              /*
+               * The row's position, published for CSS.
+               *
+               * No table animates by default — a product where every list ripples on arrival makes
+               * ordinary lists feel urgent. But a caller that has a reason to stagger its rows
+               * needs the index in CSS, and this is the only place that can give it. Costs one
+               * custom property per row and changes nothing on its own.
+               */
+              style={{ '--uboss-row': index } as React.CSSProperties}
               data-clickable={onRowSelect ? 'true' : undefined}
               // Keyboard parity for clickable rows: focusable, and activated by Enter or Space.
               tabIndex={onRowSelect ? 0 : undefined}

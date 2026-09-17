@@ -28,6 +28,7 @@ import {
   resolveActiveWorkspace,
 } from '../../../lib/active-workspace';
 import { blankWorkflowStep, toEditableStep, WorkflowGrid } from '../../../components/WorkflowGrid';
+import { parseValidationProblems } from '../../../lib/validation-problems';
 import {
   ApiError,
   authApi,
@@ -117,6 +118,12 @@ function ObjectiveFormInner() {
   const [rewardOpen, setRewardOpen] = useState(false);
   const [rewardNote, setRewardNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /*
+   * The refusal, broken into things a person can act on. Derived rather than stored, so it cannot
+   * drift from the message it came from.
+   */
+  const problems = error === null ? [] : parseValidationProblems(error);
+  const problemFields = new Set(problems.map((problem) => problem.field).filter((field): field is string => field !== null));
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -321,7 +328,33 @@ function ObjectiveFormInner() {
         }
       />
 
-      {error === null ? null : <Banner tone="danger">{error}</Banner>}
+      {error === null ? null : (
+        /*
+         * A refusal, said in sentences.
+         *
+         * The server's DTO failures arrive as "content.objectiveName must be longer than or equal
+         * to 1 characters", and this banner used to show that verbatim — a property path and a
+         * character count, with no field marked, on a form with forty columns. A written domain
+         * refusal is passed through untouched; only the generated ones are translated.
+         */
+        <Banner tone="danger">
+          {problems.length === 1 ? (
+            problems[0]?.text
+          ) : (
+            <>
+              {problems.length} things need fixing before this can be saved:
+              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                {problems.map((problem) => (
+                  // The original is kept on the element, so a bug report can still quote it.
+                  <li key={problem.raw} title={problem.raw}>
+                    {problem.text}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </Banner>
+      )}
       {notice === null ? null : <Banner tone="ok">{notice}</Banner>}
       {!readOnly ? null : (
         <Banner tone="info">
@@ -344,6 +377,7 @@ function ObjectiveFormInner() {
               </label>
               <input
                 id="objectiveName"
+                aria-invalid={problemFields.has('objectiveName') || undefined}
                 value={content.objectiveName}
                 readOnly={readOnly}
                 maxLength={200}
@@ -358,6 +392,7 @@ function ObjectiveFormInner() {
                   and inventing a second source for it here is how two lists come to disagree. */}
               <input
                 id="departmentId"
+                aria-invalid={problemFields.has('departmentId') || undefined}
                 value={content.departmentId}
                 readOnly={readOnly}
                 placeholder="Department"
@@ -373,6 +408,7 @@ function ObjectiveFormInner() {
               </label>
               <input
                 id="objectiveOwnerUserId"
+                aria-invalid={problemFields.has('objectiveOwnerUserId') || undefined}
                 value={content.objectiveOwnerUserId}
                 readOnly={readOnly}
                 placeholder="Objective Owner"
@@ -397,6 +433,7 @@ function ObjectiveFormInner() {
             </label>
             <textarea
               id="expectedFinalResult"
+              aria-invalid={problemFields.has('expectedFinalResult') || undefined}
               rows={3}
               value={content.expectedFinalResult}
               readOnly={readOnly}
@@ -496,6 +533,7 @@ function ObjectiveFormInner() {
               <label htmlFor="responsibleOwnerUserId">Responsible Owner / Send To</label>
               <input
                 id="responsibleOwnerUserId"
+                aria-invalid={problemFields.has('responsibleOwnerUserId') || undefined}
                 value={content.responsibleOwnerUserId ?? ''}
                 readOnly={readOnly}
                 onChange={(event) => field('responsibleOwnerUserId', orNull(event.target.value))}

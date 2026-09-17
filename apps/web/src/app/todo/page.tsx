@@ -1,5 +1,6 @@
 'use client';
 
+import { motion } from 'motion/react';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -14,6 +15,7 @@ import {
   SearchField,
   StatusBadge,
   type StatusTone,
+  transition,
 } from '@uboss/ui';
 
 import {
@@ -247,7 +249,24 @@ export default function TodoPage() {
               key: 'status',
               header: 'Status',
               render: (row: HumanTaskView) => (
-                <StatusBadge tone={toneOf(row)} status={row.displayStatus} dot />
+                /*
+                 * Keyed by the status the server sent, so a task moving from Not Started to In
+                 * Progress, or into Waiting Approval, is a change you can see rather than a badge
+                 * that reads differently the next time you look at the list.
+                 *
+                 * It animates only when that string changes. Re-fetching the same status
+                 * re-renders the same key and nothing moves — otherwise every poll would look
+                 * like progress.
+                 */
+                <motion.span
+                  key={row.displayStatus}
+                  initial={{ opacity: 0, y: -3 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={transition('small', 'enter')}
+                  style={{ display: 'inline-block' }}
+                >
+                  <StatusBadge tone={toneOf(row)} status={row.displayStatus} dot />
+                </motion.span>
               ),
             },
           ]}

@@ -1,5 +1,6 @@
 'use client';
 
+import { motion } from 'motion/react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -12,6 +13,7 @@ import {
   PageHeader,
   SearchField,
   StatusBadge,
+  transition,
 } from '@uboss/ui';
 
 import {
@@ -270,7 +272,16 @@ function WorkspaceChatInner() {
                       </span>
                       {conversation.unread > 0 ? (
                         // A badge, not a concatenated label — the locked rule for counts.
-                        <StatusBadge status={String(conversation.unread)} tone="blue" />
+                        // Keyed by the count, so it moves when the count really changes.
+                        <motion.span
+                          key={conversation.unread}
+                          initial={{ opacity: 0, scale: 0.85 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={transition('small', 'emphasized')}
+                          style={{ display: 'inline-block' }}
+                        >
+                          <StatusBadge status={String(conversation.unread)} tone="blue" />
+                        </motion.span>
                       ) : null}
                     </button>
                   </li>
@@ -328,7 +339,22 @@ function WorkspaceChatInner() {
                   {/* ---- messages ---- */}
                   <ul className="chat-messages" data-testid="chat-messages">
                     {open.messages.map((message) => (
-                      <li key={message.id} className="chat-message">
+                      /*
+                       * A message arrives rather than appearing. Keyed by its id, so this runs
+                       * once when the message is first rendered and never again on a re-fetch.
+                       *
+                       * This is not a liveness claim. There is no socket bound and this screen
+                       * deliberately has no typing indicator, presence dot or "live" badge — a
+                       * test enforces that. A message easing in says "this is new to the list",
+                       * which is true of a message that has just been loaded.
+                       */
+                      <motion.li
+                        key={message.id}
+                        className="chat-message"
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={transition('small', 'enter')}
+                      >
                         <div className="chat-message-meta">
                           <span>{message.authorName}</span>
                           <time dateTime={message.sentAt}>
@@ -353,7 +379,7 @@ function WorkspaceChatInner() {
                             )}
                           </p>
                         ))}
-                      </li>
+                      </motion.li>
                     ))}
                   </ul>
 
