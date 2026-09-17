@@ -1,4 +1,8 @@
+import { motion } from 'motion/react';
+import { useId } from 'react';
+
 import { cn } from '../lib/class-names';
+import { transition } from '../motion/motion';
 
 export interface SegmentedOption {
   value: string;
@@ -33,6 +37,10 @@ export function SegmentedControl({
   label,
   className,
 }: SegmentedControlProps) {
+  // Scoped per instance: two segmented controls on a screen sharing a layout id would send the
+  // pill flying between them.
+  const indicatorId = useId();
+
   return (
     <div className={cn('uboss-seg', className)} role="group" aria-label={label}>
       {options.map((option) => (
@@ -43,7 +51,15 @@ export function SegmentedControl({
           aria-pressed={option.value === value}
           onClick={() => onChange(option.value)}
         >
-          {option.label}
+          {option.value === value ? (
+            <motion.span
+              layoutId={indicatorId}
+              className="uboss-seg-indicator"
+              aria-hidden="true"
+              transition={transition('panel', 'standard')}
+            />
+          ) : null}
+          <span className="uboss-seg-label">{option.label}</span>
         </button>
       ))}
     </div>

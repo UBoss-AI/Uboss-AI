@@ -1,9 +1,11 @@
 'use client';
 
+import { motion } from 'motion/react';
 import type { KeyboardEvent, ReactNode } from 'react';
-import { useRef } from 'react';
+import { useId, useRef } from 'react';
 
 import { cn } from '../lib/class-names';
+import { transition } from '../motion/motion';
 
 export interface TabItem {
   id: string;
@@ -23,9 +25,18 @@ export interface TabsProps {
 /**
  * Keyboard-navigable tab list following the WAI-ARIA tabs pattern:
  * arrow keys move between tabs, Home/End jump to the ends, and only the active tab is tabbable.
+ *
+ * The underline is one element that moves between tabs rather than a border switched on and off,
+ * so the eye can follow the selection instead of having to find it again. The id is scoped per
+ * instance: two tab lists on one screen sharing a layout id would animate the underline flying
+ * from one to the other.
+ *
+ * It is a real element, not an animation — with motion disabled it is simply already under the
+ * selected tab, so the selected state never depends on anything having run.
  */
 export function Tabs({ items, activeId, onChange, label, className }: TabsProps) {
   const refs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const indicatorId = useId();
 
   const focusTab = (id: string) => {
     onChange(id);
@@ -89,6 +100,14 @@ export function Tabs({ items, activeId, onChange, label, className }: TabsProps)
             onKeyDown={handleKeyDown}
           >
             {item.label}
+            {selected ? (
+              <motion.span
+                layoutId={indicatorId}
+                className="uboss-tab-underline"
+                aria-hidden="true"
+                transition={transition('panel', 'standard')}
+              />
+            ) : null}
           </button>
         );
       })}

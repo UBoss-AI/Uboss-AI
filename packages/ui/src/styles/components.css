@@ -914,12 +914,14 @@
   gap: 7px;
   cursor: pointer;
   white-space: nowrap;
-  /* Colour only. Nothing here moves. */
+  /* Colour, plus a press the finger can feel. Nothing moves on hover — a row of buttons that
+     lift as the pointer crosses them turns a toolbar into a ripple. */
   transition:
     background var(--uboss-motion) var(--uboss-ease),
     border-color var(--uboss-motion) var(--uboss-ease),
     color var(--uboss-motion) var(--uboss-ease),
-    box-shadow var(--uboss-motion-fast) var(--uboss-ease);
+    box-shadow var(--uboss-motion-fast) var(--uboss-ease),
+    transform var(--uboss-motion-micro) var(--uboss-ease-standard);
 }
 
 .uboss-btn:hover:not([disabled]):not([aria-busy='true']) {
@@ -1152,7 +1154,9 @@
   background: var(--uboss-surface);
   border: 1px solid var(--uboss-border);
   border-radius: var(--uboss-radius-card);
-  transition: border-color var(--uboss-motion) var(--uboss-ease);
+  transition:
+    border-color var(--uboss-motion) var(--uboss-ease),
+    box-shadow var(--uboss-motion) var(--uboss-ease);
 }
 
 .uboss-card-body {
@@ -1571,7 +1575,6 @@
 
 .uboss-tab[aria-selected='true'] {
   color: var(--uboss-blue);
-  border-bottom-color: var(--uboss-blue);
 }
 
 .uboss-tab[disabled] {
@@ -3295,9 +3298,7 @@ textarea.uboss-input,
 }
 
 .uboss-seg button.is-on {
-  background: var(--uboss-surface);
   color: var(--uboss-text);
-  box-shadow: var(--uboss-shadow-1);
 }
 
 .uboss-seg button:focus-visible {
@@ -5091,6 +5092,105 @@ table.uboss-wfg {
   .uboss-mmc,
   .uboss-mm-center,
   .uboss-content {
+    animation: none !important;
+  }
+}
+
+/* ============================================================
+   Selection that moves, and a button you can feel (Phases 10-15)
+   ============================================================ */
+
+/*
+  Tabs and the segmented control both used to paint their selected state directly on the selected
+  control — a border here, a background there — which meant selection blinked out in one place and
+  appeared in another. Both now have one indicator that travels, the same device the sidebar uses,
+  so the three places a person picks something in this product behave the same way.
+
+  The indicator is an element, not an animation. With motion disabled it is simply already in the
+  right place, so what is selected never depends on anything having run.
+*/
+.uboss-tab {
+  position: relative;
+}
+
+.uboss-tab-underline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  /* Sits on the tab list's own 1px rule rather than above it. */
+  bottom: -1px;
+  height: 2px;
+  background: var(--uboss-blue);
+  border-radius: 1px;
+}
+
+.uboss-seg button {
+  position: relative;
+  transition:
+    color var(--uboss-motion-micro) var(--uboss-ease-standard);
+}
+
+.uboss-seg-indicator {
+  position: absolute;
+  inset: 0;
+  border-radius: 7px;
+  background: var(--uboss-surface);
+  box-shadow: var(--uboss-shadow-1);
+  z-index: 0;
+}
+
+/* The label rides above the pill that slides under it. */
+.uboss-seg-label {
+  position: relative;
+  z-index: 1;
+}
+
+/*
+  Press feedback.
+
+  98%, which is under a pixel on a 36px control — not enough to see, which is the point. A button
+  that visibly shrinks reads as a toy; this reads as the surface giving very slightly under the
+  finger, and its whole job is to confirm the press landed on this control rather than the one
+  beside it. Disabled and busy buttons are excluded: they are not accepting the press, so they
+  must not answer it.
+*/
+.uboss-btn:active:not([disabled]):not([aria-busy='true']),
+.uboss-seg button:active,
+.uboss-tab:active:not([disabled]) {
+  transform: scale(0.98);
+}
+
+/*
+  The account menu opening (Phase 13).
+
+  It grows from the trigger rather than appearing beside it: 4px of travel and a transform origin
+  at the top right, which is the corner it is anchored to. The scale is 0.96, small enough that
+  nothing inside visibly stretches on the way.
+
+  Fill is `backwards` for the same reason as everywhere else in this file — a held transform is a
+  containing block, and this panel is exactly the sort of thing that later grows a submenu.
+*/
+@keyframes uboss-menu-open {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.96);
+  }
+}
+
+.uboss-account-menu {
+  transform-origin: top right;
+  animation: uboss-menu-open var(--uboss-motion-panel) var(--uboss-ease-enter) backwards;
+}
+
+.uboss-account-item {
+  transition: background var(--uboss-motion-micro) var(--uboss-ease-standard);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Removed rather than shortened: a backwards fill holds the opening frame until the animation
+     first ticks, and a menu that is briefly invisible is a menu that was not there when it was
+     asked for. */
+  .uboss-account-menu {
     animation: none !important;
   }
 }
