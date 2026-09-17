@@ -357,6 +357,33 @@
   --uboss-motion-loop-pulse: 1400ms;
   --uboss-motion-loop-shimmer: 1300ms;
   /*
+   * Ambient motion — the third scale, and the slowest.
+   *
+   * Interaction durations answer a person (100–480ms). Loader durations say "still working"
+   * (0.6–1.4s). These say nothing at all: they are atmosphere behind the Dashboard and the sign-in
+   * panel, and their whole purpose is to be noticed as depth rather than as animation. Thirty to
+   * forty-odd seconds is the point — at any speed a person could follow, a background stops being
+   * a background.
+   *
+   * They are named for the same reason the loop durations are: three bare multi-second numbers in
+   * a stylesheet read as drift, and the difference between a deliberate exception and an accident
+   * should not have to be inferred.
+   */
+  --uboss-motion-ambient-drift-1: 34s;
+  --uboss-motion-ambient-drift-2: 42s;
+  --uboss-motion-ambient-drift-3: 38s;
+  /* The sign-in centre node, and the one travelling connector signal. */
+  --uboss-motion-ambient-breathe: 8s;
+  --uboss-motion-ambient-signal: 6s;
+  /* The dark field: a minority of nodes pulse, one or two paths carry energy. */
+  --uboss-motion-ambient-pulse: 5.5s;
+  --uboss-motion-ambient-flow: 7s;
+  --uboss-motion-ambient-flow-slow: 9s;
+  /* The three signature curves on the sign-in panel, each slower than the last. */
+  --uboss-motion-ambient-sig-1: 9s;
+  --uboss-motion-ambient-sig-2: 12s;
+  --uboss-motion-ambient-sig-3: 15s;
+  /*
    * The per-item delay for a list that reveals in order. Matched by `stagger()` in
    * src/motion/motion.ts, which caps the same way — a forty-row workflow at 40ms each would take
    * a second and a half to finish appearing, which stops being a reveal and becomes a wait.

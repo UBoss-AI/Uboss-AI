@@ -5065,9 +5065,27 @@ table.uboss-wfg {
   and the six lines would finish at six different moments.
 */
 .uboss-mm-links path {
-  stroke-dasharray: 1;
-  animation: uboss-login-draw var(--uboss-motion-signature) var(--uboss-ease-standard) backwards;
+  /*
+    No dash, and that is the whole point.
+
+    These carried `stroke-dasharray: 1` so a draw-on could animate the offset, on the assumption
+    that `pathLength="1"` would normalise the dash to the path's own length. It does not apply here,
+    so the browser read it as one pixel on, one pixel off, and drew six dotted lines. Measured
+    against the reference, whose connectors have `stroke-dasharray: none`, that was the entire
+    difference between a diagram and a set of broken marks.
+
+    The reveal is an opacity fade instead: the connectors arrive with the rest of the composition
+    and nothing about them is dotted at any point.
+  */
+  stroke-dasharray: none;
+  animation: uboss-mm-link-in var(--uboss-motion-signature) var(--uboss-ease-standard) backwards;
   animation-delay: 220ms;
+}
+
+@keyframes uboss-mm-link-in {
+  from {
+    opacity: 0;
+  }
 }
 
 /* The capability cards settle in after the diagram that positions them. */
@@ -5754,4 +5772,724 @@ table.uboss-wfg {
   .uboss-login--platform .uboss-plat-grid {
     display: none;
   }
+}
+
+/* ============================================================
+   Customer login — the approved radial composition (STEP 2A)
+   ============================================================ */
+
+/*
+  Ported from the approved reference, value for value.
+
+  The panel is the violet the reference specifies, and the two corner glows come with it — they are
+  what stops the gradient reading as a flat sheet.
+
+  The contrast work is already done by the composition rather than by changing any colour: the
+  capability cards are dark navy at 74% over the violet, which measures 15.72:1 for white at the
+  top of the gradient and 11.88:1 at the bottom, with descriptions at 5.58–7.38:1 and icons at
+  7.25–9.58:1. Nothing on this panel puts small text straight onto the light end.
+
+  The one value worth stating plainly: white "UB" over the node's own gradient measures 3.23:1 at
+  the centre, where the glyph sits, and 1.85:1 at its lightest corner. At 30px and weight 800 it is
+  large text, which needs 3:1, so it passes — but only just, and only because it is large. It is a
+  brand mark rather than content, and it is aria-hidden.
+*/
+.uboss-login-left {
+  background: linear-gradient(160deg, #6d28d9 0%, #8b5cf6 50%, #a78bfa 100%);
+}
+
+.uboss-login-left::before {
+  content: '';
+  position: absolute;
+  width: 520px;
+  height: 520px;
+  border-radius: 50%;
+  top: -180px;
+  right: -160px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.22), transparent 68%);
+  pointer-events: none;
+}
+
+.uboss-login-left::after {
+  content: '';
+  position: absolute;
+  width: 460px;
+  height: 460px;
+  border-radius: 50%;
+  bottom: -200px;
+  left: -140px;
+  background: radial-gradient(circle, rgba(196, 181, 253, 0.3), transparent 70%);
+  pointer-events: none;
+}
+
+/* Lavender connectors at the reference's own weight. */
+.uboss-mm-links path {
+  stroke: #c4b5fd;
+  /*
+    Solid, and all six the same.
+
+    These are the structure of the diagram — they say which capability belongs to the centre — so
+    every one of them is drawn end to end. An earlier version put a travelling dash on one, which
+    made that connector read as broken rather than as alive; the flowing curves behind the panel
+    already carry that energy, and they are decoration rather than structure, which is where it
+    belongs.
+  */
+  opacity: 0.72;
+  stroke-dasharray: none;
+  filter: drop-shadow(0 0 3px rgba(196, 181, 253, 0.5));
+}
+
+/* The centre node, exactly as the reference draws it. */
+.uboss-mm-center {
+  background: linear-gradient(135deg, #c4b5fd, #7c3aed);
+}
+
+.uboss-mm-center b {
+  /* Colour unchanged from the reference; the shadow only lifts the glyph off the light corner. */
+  text-shadow: 0 1px 10px rgba(45, 16, 94, 0.45);
+}
+
+/*
+  Glass over the violet. The card colour is the reference's dark navy, which is what keeps every
+  piece of text on this panel comfortably readable regardless of where the card sits on the
+  gradient.
+*/
+.uboss-mmc {
+  backdrop-filter: blur(6px);
+}
+/*
+  The capability card's two accent colours, as the reference sets them.
+
+  These stay cyan and blue-grey rather than following the violet identity the rest of the product
+  moved to, because the reference keeps them and the panel needs the separation: an all-violet card
+  on an all-violet panel loses the distinction between the surface and what is written on it. Both
+  measure well over the whole gradient — the icon 7.25:1 at the panel's lightest point, the
+  description 5.58:1.
+*/
+.uboss-mmc-icon {
+  color: #8fd3f5;
+}
+
+.uboss-mmc small {
+  color: #9db4cf;
+}
+
+/*
+  A very soft breath, once every eight seconds, moving 1.5%.
+
+  The brief allows the centre to carry a quiet energy. This is the only thing still moving on the
+  panel after the reveal finishes, it changes nothing but scale, and it is small enough that it
+  reads as presence rather than as animation — which is the whole difference between this and the
+  bouncing the brief rules out.
+*/
+@keyframes uboss-ub-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.015);
+  }
+}
+
+.uboss-mm-center {
+  animation: uboss-ub-breathe var(--uboss-motion-ambient-breathe) var(--uboss-ease-standard)
+    infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /*
+     The complete final visual, immediately. The breath and the signal are the only two things
+     still moving after the reveal, so removing them leaves the composition exactly as designed.
+  */
+  .uboss-mm-center {
+    animation: none !important;
+  }
+}
+
+/*
+  The signature curves.
+
+  Three long paths behind the whole panel, flowing slowly and endlessly. They are the reference's
+  own composition and they sit at z-index 0, beneath the rings, the connectors, the cards and the
+  assurance strip — everything that carries meaning is above them.
+
+  The dash is long relative to the gap, so what travels reads as a current in the line rather than
+  as a dot chasing along it.
+*/
+.uboss-lg-sig {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.85;
+}
+
+.uboss-lg-sig path {
+  fill: none;
+  stroke-linecap: round;
+  /*
+    Mostly drawn, with one moving gap.
+
+    The reference uses 420/620, which leaves more of each curve absent than present at any moment —
+    on a still screen that reads as a broken line rather than as a flowing one, which is exactly
+    what it looked like. A long dash against a short gap keeps the same travelling current and
+    keeps the curve continuous, which is what the composition is for.
+  */
+  stroke-dasharray: 940 120;
+  animation: uboss-lg-flow var(--uboss-motion-ambient-sig-1) linear infinite;
+}
+
+.uboss-lg-sig path:nth-child(2) {
+  animation-duration: var(--uboss-motion-ambient-sig-2);
+  animation-delay: -3s;
+}
+
+.uboss-lg-sig path:nth-child(3) {
+  animation-duration: var(--uboss-motion-ambient-sig-3);
+  animation-delay: -6s;
+}
+
+@keyframes uboss-lg-flow {
+  to {
+    /* One full dash + gap, so the loop is seamless rather than snapping back. */
+    stroke-dashoffset: -1060;
+  }
+}
+
+/*
+  The assurance strip needs a floor.
+
+  Its colours are the reference's — #9db4cf text with a sky icon — but at the bottom of the panel
+  those land on #A78BFA at about 1.6:1, which is why the strip washes out there. The fix is the one
+  the capability cards already use on this same panel: a dark translucent surface. Same palette,
+  5.58:1 instead of 1.6:1, and it now reads as a deliberate band rather than as text that faded.
+*/
+.uboss-mm-foot {
+  background: rgba(11, 20, 34, 0.74);
+  border: 1px solid rgba(120, 160, 210, 0.18);
+  border-radius: 12px;
+  padding: 12px 16px;
+  backdrop-filter: blur(6px);
+}
+
+.uboss-mm-foot-item {
+  color: #9db4cf;
+}
+
+.uboss-mm-foot-item svg {
+  color: #0ea5e9;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The curves stay exactly where they are; only the current stops. */
+  .uboss-lg-sig path {
+    animation: none !important;
+    stroke-dasharray: none;
+  }
+}
+
+/* ============================================================
+   Dashboard ambience — the whole canvas, both themes (STEP 2A)
+   ============================================================ */
+
+/*
+  The layer spans the workspace, not the card.
+
+  An ambience confined to a card-sized rectangle reads as a decorated widget; this one runs from
+  under the top bar to the bottom of the content region, which is what makes the theme switch
+  change the *environment* rather than one panel. It is scoped to the Dashboard on purpose — the
+  other screens keep the ordinary workspace surface, because a table is for reading and a field
+  behind it is noise.
+
+  `isolation: isolate` gives the stage its own stacking context, so the layer cannot escape behind
+  the sidebar or in front of a control no matter what z-index anything inside the content uses.
+*/
+.uboss-dash-stage {
+  position: relative;
+  isolation: isolate;
+  /*
+    The layer bleeds sideways past the content padding so there is no hard edge, and that bleed was
+    widening the page by 4px — a scrollbar appearing on a screen whose content fits. Clipping here
+    keeps the bleed (the layer still reaches past the padding, it just cannot extend the document)
+    and the sideways scroll goes.
+  */
+  overflow-x: clip;
+  /*
+    The stage fills the workspace, not just its content.
+
+    Without this it is only as tall as the header and the one card, so the field stopped in a hard
+    line partway down the screen and everything below it was plain background — which is the
+    card-sized rectangle the brief rules out, just a larger one. The viewport minus the top bar and
+    the content's own padding is the region a person actually sees as "the dashboard".
+  */
+  min-height: calc(100vh - var(--uboss-topbar-height) - 82px);
+}
+
+.uboss-dash-amb {
+  position: absolute;
+  /* Bleeds past the content padding on every side, so there is no hard edge anywhere. */
+  inset: -32px -28px -60px;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: 18px;
+}
+
+/* Everything the person came for sits above it, in normal flow. */
+.uboss-dash-stage > *:not(.uboss-dash-amb) {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------------------------------------------------------------- LIGHT */
+
+/*
+  Light stays light. The grid is at 0.03 — present when you look for it, absent when you read.
+*/
+.uboss-dash-amb::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, var(--uboss-text) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--uboss-text) 1px, transparent 1px);
+  background-size: 64px 64px;
+  opacity: 0.03;
+}
+
+.uboss-amb-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(46px);
+  opacity: 0.55;
+  /* Promoted once, then only transform changes — the blur is never recomputed per frame. */
+  will-change: transform;
+}
+
+.uboss-amb-orb--1 {
+  width: 420px;
+  height: 420px;
+  top: -120px;
+  left: 4%;
+  background: radial-gradient(circle at 35% 35%, #c4b5fd, rgba(196, 181, 253, 0) 68%);
+  animation: uboss-amb-drift-1 var(--uboss-motion-ambient-drift-1) var(--uboss-ease-standard)
+    infinite alternate;
+}
+
+.uboss-amb-orb--2 {
+  width: 360px;
+  height: 360px;
+  top: 40px;
+  right: 6%;
+  background: radial-gradient(circle at 60% 40%, #a5f3fc, rgba(165, 243, 252, 0) 68%);
+  animation: uboss-amb-drift-2 var(--uboss-motion-ambient-drift-2) var(--uboss-ease-standard)
+    infinite alternate;
+}
+
+.uboss-amb-orb--3 {
+  width: 300px;
+  height: 300px;
+  bottom: -110px;
+  left: 38%;
+  background: radial-gradient(circle at 50% 50%, #ddd6fe, rgba(221, 214, 254, 0) 70%);
+  animation: uboss-amb-drift-3 var(--uboss-motion-ambient-drift-3) var(--uboss-ease-standard)
+    infinite alternate;
+}
+
+/* translate3d, so the compositor owns it and the main thread is not asked every frame. */
+@keyframes uboss-amb-drift-1 {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(60px, 40px, 0) scale(1.12);
+  }
+}
+
+@keyframes uboss-amb-drift-2 {
+  from {
+    transform: translate3d(0, 0, 0) scale(1.06);
+  }
+  to {
+    transform: translate3d(-54px, 52px, 0) scale(0.94);
+  }
+}
+
+@keyframes uboss-amb-drift-3 {
+  from {
+    transform: translate3d(0, 0, 0) scale(0.96);
+  }
+  to {
+    transform: translate3d(46px, -38px, 0) scale(1.1);
+  }
+}
+
+/* The constellation belongs to Dark. */
+.uboss-amb-neural,
+.uboss-amb-veil {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- DARK */
+
+/*
+  The dark field. Both routes to the theme, because tokens.css keeps two copies and one of them is
+  always the one somebody forgets.
+*/
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .uboss-dash-amb {
+    background: radial-gradient(120% 90% at 50% -10%, #101b33 0%, #0b1220 45%, #080d18 100%);
+  }
+
+  :root:not([data-theme='light']) .uboss-dash-amb::before {
+    /* The grid is the Light treatment; the constellation replaces it. */
+    opacity: 0;
+  }
+
+  :root:not([data-theme='light']) .uboss-amb-orb {
+    display: none;
+  }
+
+  :root:not([data-theme='light']) .uboss-amb-neural,
+  :root:not([data-theme='light']) .uboss-amb-veil {
+    display: block;
+  }
+}
+
+:root[data-theme='dark'] .uboss-dash-amb {
+  background: radial-gradient(120% 90% at 50% -10%, #101b33 0%, #0b1220 45%, #080d18 100%);
+}
+
+:root[data-theme='dark'] .uboss-dash-amb::before {
+  opacity: 0;
+}
+
+:root[data-theme='dark'] .uboss-amb-orb {
+  display: none;
+}
+
+:root[data-theme='dark'] .uboss-amb-neural,
+:root[data-theme='dark'] .uboss-amb-veil {
+  display: block;
+}
+
+.uboss-amb-neural {
+  position: absolute;
+  inset: 0;
+}
+
+.uboss-nn {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/*
+  Most of the network is quiet structure. Only a tenth of the links carry energy and under a third
+  of the nodes breathe — the brief's line is "Enterprise AI Intelligence, not Gaming Neon
+  Dashboard", and the difference is almost entirely how much of it is moving at once.
+*/
+.uboss-nn-line {
+  stroke: #6d8bd6;
+  stroke-width: 0.7;
+  opacity: 0.16;
+}
+
+.uboss-nn-line--hot {
+  stroke: #a78bfa;
+  opacity: 0.34;
+  stroke-dasharray: 6 210;
+  animation: uboss-nn-flow var(--uboss-motion-ambient-flow) linear infinite;
+}
+
+.uboss-nn-line--cyan {
+  stroke: #67e8f9;
+  animation-duration: var(--uboss-motion-ambient-flow-slow);
+  animation-delay: -3s;
+}
+
+@keyframes uboss-nn-flow {
+  to {
+    stroke-dashoffset: -216;
+  }
+}
+
+.uboss-nn-dot {
+  fill: #8fa8dc;
+  opacity: 0.3;
+}
+
+.uboss-nn-dot--live {
+  animation: uboss-nn-pulse var(--uboss-motion-ambient-pulse) var(--uboss-ease-standard) infinite;
+  /* Staggered per node, so the field never beats in unison. */
+  animation-delay: var(--uboss-nn-delay, 0s);
+}
+
+.uboss-nn-dot--violet {
+  fill: #a78bfa;
+}
+
+.uboss-nn-dot--cyan {
+  fill: #67e8f9;
+}
+
+@keyframes uboss-nn-pulse {
+  0%,
+  100% {
+    opacity: 0.22;
+    r: 2;
+  }
+  45% {
+    opacity: 0.85;
+    r: 3.2;
+  }
+}
+
+/*
+  The quiet zone. The field is thinnest exactly where the donut and its numbers are, because
+  atmosphere behind data has to get out of the way of the data.
+*/
+.uboss-amb-veil {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    58% 52% at 50% 46%,
+    rgba(11, 18, 32, 0.86) 0%,
+    rgba(11, 18, 32, 0.35) 55%,
+    transparent 78%
+  );
+}
+
+/* ---------------------------------------------------------------- the hero card */
+
+/*
+  Translucent, so the field shows around and faintly through it — a fully opaque panel would cut a
+  rectangle out of the environment and put the donut back in a box.
+*/
+.uboss-dash-stage .uboss-card {
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(12px);
+  border-color: rgba(196, 181, 253, 0.45);
+  box-shadow: 0 24px 60px -30px rgba(76, 29, 149, 0.28);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .uboss-dash-stage .uboss-card {
+    background: rgba(19, 26, 44, 0.72);
+    border-color: #24314f;
+    box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.8);
+  }
+
+  :root:not([data-theme='light']) .uboss-dash-stage .uboss-donut-arc {
+    filter: drop-shadow(0 0 7px rgba(167, 139, 250, 0.55));
+  }
+}
+
+:root[data-theme='dark'] .uboss-dash-stage .uboss-card {
+  background: rgba(19, 26, 44, 0.72);
+  border-color: #24314f;
+  box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.8);
+}
+
+:root[data-theme='dark'] .uboss-dash-stage .uboss-donut-arc {
+  filter: drop-shadow(0 0 7px rgba(167, 139, 250, 0.55));
+}
+
+/* ---------------------------------------------------------------- narrower */
+
+@media (max-width: 900px) {
+  /*
+     Less density rather than a shrunken copy. The orbs are the atmosphere; the grid and the
+     constellation become clutter at this size, where the content already fills the screen.
+  */
+  .uboss-dash-amb {
+    inset: -20px -16px -40px;
+  }
+
+  .uboss-amb-orb--3 {
+    display: none;
+  }
+
+  .uboss-dash-amb::before {
+    opacity: 0.02;
+  }
+}
+
+/* ---------------------------------------------------------------- reduced motion */
+
+@media (prefers-reduced-motion: reduce) {
+  /*
+     The look stays, the movement goes. The orbs hold their opening position and the nodes hold a
+     steady brightness — the identity of this screen is the field, not the fact that it drifts.
+  */
+  .uboss-amb-orb,
+  .uboss-nn-line--hot,
+  .uboss-nn-dot--live {
+    animation: none !important;
+  }
+
+  .uboss-nn-dot--live {
+    opacity: 0.55;
+  }
+
+  .uboss-nn-line--hot {
+    stroke-dasharray: none;
+  }
+}
+
+/* ============================================================
+   Sign-in panel — symmetry, zoom, and the dark theme
+   ============================================================ */
+
+/*
+  1. The two sides must mirror each other.
+
+  The grid's columns were already symmetric — 172 / 112 / 172 with equal gaps — but the whole grid
+  measured 504px inside a 544px box and sat against the left edge, so the centre node ended up 20px
+  right of where the connector SVG puts its origin. Every left-hand curve was therefore drawn 20px
+  longer than its right-hand twin. Centring the grid content puts the node on the SVG's centre line
+  and the six curves become true mirror images.
+*/
+.uboss-mm-grid {
+  justify-content: center;
+  /*
+    The list's own indent, removed.
+
+    This element is a <ul> — the six capabilities are a list, and keeping the semantics is right —
+    but the browser's default stylesheet gives a list 40px of inline-start padding. That pushed the
+    whole mind-map 40px right inside its box, which put the centre node 20px off the connector
+    SVG's centre line, which drew every left-hand curve 20px longer than its right-hand twin.
+    The reference is a <div> and never had the indent to begin with.
+  */
+  padding: 0;
+  margin: 0;
+}
+
+/*
+  2. The connectors, clearly drawn.
+
+  They are the structure of the diagram, so they are stated at full strength rather than whispered.
+  The glow is what carries them over the busiest part of the gradient.
+*/
+.uboss-mm-links path {
+  opacity: 0.85;
+  filter: drop-shadow(0 0 5px rgba(196, 181, 253, 0.75));
+}
+
+/*
+  3. Zoom, and the narrow window that amounts to the same thing.
+
+  Browser zoom shrinks the CSS viewport, so a person at 200% has roughly a 720px-wide window. At
+  that size the brand panel is decoration competing with the only thing on the page that matters,
+  and the reference resolves it the same way: the panel goes and the form takes the full width.
+
+  The threshold is 980px rather than a phone width on purpose — it is about how much room the form
+  has, not about what device this is.
+*/
+@media (max-width: 980px) {
+  .uboss-login {
+    grid-template-columns: 1fr;
+  }
+
+  .uboss-login-left {
+    display: none;
+  }
+
+  .uboss-login-right {
+    /* The card keeps a comfortable measure rather than stretching across the whole window. */
+    padding: 32px 24px;
+  }
+
+  .uboss-login-card {
+    max-width: 460px;
+    margin: 0 auto;
+  }
+}
+
+/* ============================================================
+   Dark theme — the sign-in page follows the choice
+   ============================================================ */
+
+/*
+  Both sides, not just the form.
+
+  The panel was a fixed violet regardless of the theme, so somebody who had chosen Dark met a
+  bright lavender wall on the way in and the dark product behind it. In Dark the panel becomes the
+  same near-black the rest of the product uses, with the violet held back to the glows, the
+  connectors and the centre node — the identity is the composition, not the brightness.
+
+  Stated through both routes to the theme, because tokens.css keeps two copies of the dark values
+  and one of them is always the one that gets forgotten.
+*/
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .uboss-login-left {
+    background: linear-gradient(160deg, #0b0b12 0%, #171326 46%, #241a3d 100%);
+  }
+
+  :root:not([data-theme='light']) .uboss-login-left::before {
+    background: radial-gradient(circle, rgba(167, 139, 250, 0.18), transparent 68%);
+  }
+
+  :root:not([data-theme='light']) .uboss-login-left::after {
+    background: radial-gradient(circle, rgba(124, 58, 237, 0.22), transparent 70%);
+  }
+
+  :root:not([data-theme='light']) .uboss-mmc {
+    /* Darker than the panel rather than lighter, so the cards still read as raised. */
+    background: rgba(8, 10, 20, 0.82);
+    border-color: rgba(167, 139, 250, 0.22);
+  }
+
+  :root:not([data-theme='light']) .uboss-mm-foot {
+    background: rgba(8, 10, 20, 0.82);
+    border-color: rgba(167, 139, 250, 0.2);
+  }
+
+  :root:not([data-theme='light']) .uboss-mm-rings span {
+    border-color: rgba(167, 139, 250, 0.12);
+  }
+}
+
+:root[data-theme='dark'] .uboss-login-left {
+  background: linear-gradient(160deg, #0b0b12 0%, #171326 46%, #241a3d 100%);
+}
+
+:root[data-theme='dark'] .uboss-login-left::before {
+  background: radial-gradient(circle, rgba(167, 139, 250, 0.18), transparent 68%);
+}
+
+:root[data-theme='dark'] .uboss-login-left::after {
+  background: radial-gradient(circle, rgba(124, 58, 237, 0.22), transparent 70%);
+}
+
+:root[data-theme='dark'] .uboss-mmc {
+  background: rgba(8, 10, 20, 0.82);
+  border-color: rgba(167, 139, 250, 0.22);
+}
+
+:root[data-theme='dark'] .uboss-mm-foot {
+  background: rgba(8, 10, 20, 0.82);
+  border-color: rgba(167, 139, 250, 0.2);
+}
+
+:root[data-theme='dark'] .uboss-mm-rings span {
+  border-color: rgba(167, 139, 250, 0.12);
+}
+
+/*
+  The platform console's panel follows the same rule, so the two front doors stay a matched pair in
+  either theme rather than one of them changing and the other not.
+*/
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .uboss-login--platform .uboss-login-left {
+    background: linear-gradient(165deg, #08080b 0%, #120e22 55%, #1b1235 100%);
+  }
+}
+
+:root[data-theme='dark'] .uboss-login--platform .uboss-login-left {
+  background: linear-gradient(165deg, #08080b 0%, #120e22 55%, #1b1235 100%);
 }

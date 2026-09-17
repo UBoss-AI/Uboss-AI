@@ -80,10 +80,16 @@ describe('the motion scale governs every stylesheet', () => {
     for (const loop of ['spin', 'pulse', 'shimmer']) {
       expect(tokens).toMatch(new RegExp(`--uboss-motion-loop-${loop}:`));
     }
-
-    // And nothing on the interaction scale may repeat: an idle screen is idle.
+    // Ambient motion is slower than anything a person reacts to, and is named for the same reason.
+    for (const ambient of ['drift-1', 'breathe', 'signal', 'pulse', 'flow']) {
+      expect(tokens).toMatch(new RegExp(`--uboss-motion-ambient-${ambient}:`));
+    }
+    // And nothing on the interaction scale may repeat: an idle screen is idle. Two families are
+    // allowed to — loaders, which say "still working", and ambient motion, which is atmosphere at
+    // thirty-plus seconds. Both are named, which is what separates a deliberate exception from
+    // a number somebody typed.
     const interactionLoops = motionDeclarations.filter(
-      ({ text }) => /infinite/.test(text) && !/--uboss-motion-loop-/.test(text),
+      ({ text }) => /infinite/.test(text) && !/--uboss-motion-(loop|ambient)-/.test(text),
     );
     expect(listed(interactionLoops)).toEqual([]);
   });
@@ -111,7 +117,7 @@ describe('motion tokens resolve', () => {
   );
 
   /** Custom properties set inline by a component rather than declared in a stylesheet. */
-  const setInJs = new Set(['--uboss-arc', '--uboss-row']);
+  const setInJs = new Set(['--uboss-arc', '--uboss-row', '--uboss-nn-delay']);
 
   const referenced = sheets.flatMap(({ name, css }) =>
     css.split('\n').flatMap((line, index) =>

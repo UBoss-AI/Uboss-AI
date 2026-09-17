@@ -148,6 +148,7 @@ export type {
  * a duration that drifts — which is the whole argument for the scale existing. See
  * src/motion/motion.ts, and motion.test.ts which asserts these agree with tokens.css.
  */
+export { DashboardAmbience } from './primitives/DashboardAmbience';
 export { Toast, ToastRegion } from './primitives/Toast';
 export type { ToastProps, ToastTone } from './primitives/Toast';
 export { RunState } from './primitives/RunState';

@@ -49,6 +49,21 @@ export function LoginPresentation({ children, variant = 'customer' }: LoginPrese
   return (
     <div className="uboss-login">
       <section className="uboss-login-left" aria-label="About UBoss">
+        {/*
+          The signature curves, from the approved reference.
+
+          Three long paths sweeping the whole panel, behind everything. They are what stops the
+          gradient reading as a flat sheet, and they are a different layer from the connectors
+          between the centre node and the capability cards — those are short and structural, these
+          are atmosphere. The viewBox is stretched to the panel deliberately: the curves are
+          composed for the shape they end up in, not for a square.
+        */}
+        <svg className="uboss-lg-sig" viewBox="0 0 600 900" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+          <path d="M-20,260 C140,180 220,420 380,330 C520,250 560,430 640,380" stroke="#C084FC" strokeWidth={1.6} opacity={0.9} />
+          <path d="M-20,470 C120,400 240,640 400,540 C540,450 580,600 640,560" stroke="#A78BFA" strokeWidth={1.8} opacity={0.75} />
+          <path d="M-20,700 C160,630 250,830 420,740 C540,680 580,790 640,760" stroke="#7C3AED" strokeWidth={1.2} opacity={0.6} />
+        </svg>
+
         <div className="uboss-login-brand">
           <div className="uboss-side-logo" aria-hidden="true">
             U
@@ -73,6 +88,15 @@ export function LoginPresentation({ children, variant = 'customer' }: LoginPrese
             <span style={{ width: 820, height: 820 }} />
           </div>
 
+          {/*
+            The connectors, exactly as the reference draws them.
+
+            They are arcs sweeping out of the centre and past the cards, not links between two
+            boxes — together they make the lens shape that is the composition. An attempt to
+            "correct" them into short node-to-card links removed the part doing the work and left
+            six stubs. The inner ends sit under the centre node on purpose; the curve emerges from
+            behind it, which is what makes the node read as the source.
+          */}
           <svg
             className="uboss-mm-links"
             viewBox="0 0 100 100"
@@ -83,7 +107,7 @@ export function LoginPresentation({ children, variant = 'customer' }: LoginPrese
             <path
               d="M50,50 C42,50 40,17 33,17"
               stroke="var(--uboss-login-link)"
-              strokeWidth={1.4}
+              strokeWidth={1.8}
               pathLength={1}
               vectorEffect="non-scaling-stroke"
               opacity={0.75}
@@ -91,7 +115,7 @@ export function LoginPresentation({ children, variant = 'customer' }: LoginPrese
             <path
               d="M50,50 C44,50 41,50 33,50"
               stroke="var(--uboss-login-link)"
-              strokeWidth={1.4}
+              strokeWidth={1.8}
               pathLength={1}
               vectorEffect="non-scaling-stroke"
               opacity={0.9}
@@ -99,7 +123,7 @@ export function LoginPresentation({ children, variant = 'customer' }: LoginPrese
             <path
               d="M50,50 C42,50 40,83 33,83"
               stroke="var(--uboss-login-link)"
-              strokeWidth={1.4}
+              strokeWidth={1.8}
               pathLength={1}
               vectorEffect="non-scaling-stroke"
               opacity={0.6}
@@ -107,7 +131,7 @@ export function LoginPresentation({ children, variant = 'customer' }: LoginPrese
             <path
               d="M50,50 C58,50 60,17 67,17"
               stroke="var(--uboss-login-link)"
-              strokeWidth={1.4}
+              strokeWidth={1.8}
               pathLength={1}
               vectorEffect="non-scaling-stroke"
               opacity={0.75}
@@ -115,7 +139,7 @@ export function LoginPresentation({ children, variant = 'customer' }: LoginPrese
             <path
               d="M50,50 C56,50 59,50 67,50"
               stroke="var(--uboss-login-link)"
-              strokeWidth={1.4}
+              strokeWidth={1.8}
               pathLength={1}
               vectorEffect="non-scaling-stroke"
               opacity={0.9}
@@ -123,7 +147,7 @@ export function LoginPresentation({ children, variant = 'customer' }: LoginPrese
             <path
               d="M50,50 C58,50 60,83 67,83"
               stroke="var(--uboss-login-link)"
-              strokeWidth={1.4}
+              strokeWidth={1.8}
               pathLength={1}
               vectorEffect="non-scaling-stroke"
               opacity={0.6}

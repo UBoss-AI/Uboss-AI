@@ -3,7 +3,15 @@
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 
-import { Banner, Card, CardBody, DonutDashboard, PageHeader, SkeletonText } from '@uboss/ui';
+import {
+  Banner,
+  Card,
+  CardBody,
+  DashboardAmbience,
+  DonutDashboard,
+  PageHeader,
+  SkeletonText,
+} from '@uboss/ui';
 
 import {
   ApiError,
@@ -109,36 +117,48 @@ export default function DashboardPage(): React.JSX.Element {
         void authApi.logout().finally(() => window.location.assign('/login'));
       }}
     >
-      <PageHeader title="Dashboard" breadcrumbs={[{ label: 'Dashboard' }]} />
+      {/*
+        The stage exists so the atmosphere can span the whole workspace rather than sit behind the
+        card. It adds no content and carries no data: the ambience is decoration, the contract
+        below is unchanged — one donut, two categories — and the layer itself is aria-hidden and
+        cannot receive a pointer.
 
-      {error !== null ? <Banner tone="danger">{error}</Banner> : null}
+        This is the only screen with it. A field behind a table would be noise.
+      */}
+      <div className="uboss-dash-stage">
+        <DashboardAmbience />
 
-      <Card>
-        <CardBody>
-          {counts === null ? (
-            <SkeletonText lines={3} />
-          ) : (
-            <>
-              {/*
+        <PageHeader title="Dashboard" breadcrumbs={[{ label: 'Dashboard' }]} />
+
+        {error !== null ? <Banner tone="danger">{error}</Banner> : null}
+
+        <Card>
+          <CardBody>
+            {counts === null ? (
+              <SkeletonText lines={3} />
+            ) : (
+              <>
+                {/*
                 One donut, two slices, and each one drills into the list it counts. The
                 destinations come from the server so this screen and the contract cannot drift.
               */}
-              <DonutDashboard
-                agents={counts.agents}
-                pendingJobs={counts.pendingJobs}
-                onSelectAgents={() => router.push(hrefFor('agents'))}
-                onSelectPendingJobs={() => router.push(hrefFor('pendingJobs'))}
-              />
+                <DonutDashboard
+                  agents={counts.agents}
+                  pendingJobs={counts.pendingJobs}
+                  onSelectAgents={() => router.push(hrefFor('agents'))}
+                  onSelectPendingJobs={() => router.push(hrefFor('pendingJobs'))}
+                />
 
-              {/*
+                {/*
                 The legend, not a KPI. Without it a manager and an employee see two different
                 numbers with no way to tell why they differ.
               */}
-              <p className="uboss-muted">{counts.scope}</p>
-            </>
-          )}
-        </CardBody>
-      </Card>
+                <p className="uboss-muted">{counts.scope}</p>
+              </>
+            )}
+          </CardBody>
+        </Card>
+      </div>
     </RoutedAppShell>
   );
 }
