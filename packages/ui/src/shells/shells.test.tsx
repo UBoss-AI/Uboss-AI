@@ -561,10 +561,25 @@ describe('LoginPresentation', () => {
   it('states that accounts are provisioned, not self-created', () => {
     render(<NoPublicSignupNotice />);
 
-    expect(screen.getByText(/No public company signup/)).toBeInTheDocument();
-    expect(
-      screen.getByText(/Tenants are provisioned from the UBoss Master Console/),
-    ).toBeInTheDocument();
+    // The fact this notice exists to state.
+    expect(screen.getByText(/No public signup/)).toBeInTheDocument();
+    expect(screen.getByText(/set up for you/)).toBeInTheDocument();
+  });
+
+  /*
+   * This notice appears on the login, activation and access-help screens — all of them customer
+   * facing. It used to say "Tenants are provisioned from the UBoss Master Console", which is true
+   * and is written for us: a customer has no word for a tenant and has never seen the Master
+   * Console. Teaching them that UBoss has an inside is not a prerequisite for understanding that
+   * they cannot sign themselves up.
+   */
+  it('says it in the customer\u2019s vocabulary, not UBoss\u2019s', () => {
+    const { container } = render(<NoPublicSignupNotice />);
+    const said = container.textContent ?? '';
+
+    expect(said).not.toMatch(/Tenant/i);
+    expect(said).not.toMatch(/Master Console/i);
+    expect(said).not.toMatch(/Platform/i);
   });
 });
 
@@ -678,5 +693,110 @@ describe('TopBar — search', () => {
 
     // Trimmed, because a trailing space is a typo rather than a query.
     expect(onSearch).toHaveBeenCalledWith('Priya');
+  });
+});
+
+describe('LoginPresentation — two front doors, one visual system', () => {
+  /*
+   * The two pages are opened by different people for different reasons, and the cost of confusing
+   * them is not symmetrical: a customer who wanders into the platform console should meet a wall,
+   * while a UBoss engineer on the customer login only loses a minute. So the difference has to be
+   * structural — a different composition, not a different heading on the same one.
+   */
+  it('gives the customer the product identity and the capability map', () => {
+    const { container } = render(
+      <LoginPresentation>
+        <p>form</p>
+      </LoginPresentation>,
+    );
+
+    expect(container.querySelector('.uboss-mindmap')).not.toBeNull();
+    expect(screen.getByText('UBOSS AI AMS')).toBeInTheDocument();
+    // The six locked sections stay until the client approves a different grouping.
+    for (const capability of ['MAP', 'Optimize', 'Build', 'Operate', 'Govern', 'Manage Task']) {
+      expect(screen.getByText(capability)).toBeInTheDocument();
+    }
+  });
+
+  it('never mentions the inside of UBoss on the customer door', () => {
+    const { container } = render(
+      <LoginPresentation>
+        <p>form</p>
+      </LoginPresentation>,
+    );
+    const said = container.textContent ?? '';
+
+    // A customer should not have to learn that UBoss has a platform plane in order to sign in.
+    for (const word of ['Master Console', 'Platform & Development', 'Internal', 'DevOps', 'Environment']) {
+      expect(said).not.toContain(word);
+    }
+  });
+
+  it('gives the platform door its own identity and boundary', () => {
+    render(
+      <LoginPresentation variant="platform">
+        <p>form</p>
+      </LoginPresentation>,
+    );
+
+    expect(screen.getByText('UBoss AI')).toBeInTheDocument();
+    expect(screen.getByText(/Platform & Development Console/)).toBeInTheDocument();
+    expect(screen.getByText(/Authorized internal access only/)).toBeInTheDocument();
+  });
+
+  it('composes the platform door differently rather than rewording the customer one', () => {
+    const { container } = render(
+      <LoginPresentation variant="platform">
+        <p>form</p>
+      </LoginPresentation>,
+    );
+
+    // Legible as a different place before anything on it has been read.
+    expect(container.querySelector('.uboss-login--platform')).not.toBeNull();
+    expect(container.querySelector('.uboss-mindmap')).toBeNull();
+    expect(container.querySelectorAll('.uboss-plat-words li')).toHaveLength(4);
+  });
+
+  it('never offers a company workspace on the platform door', () => {
+    const { container } = render(
+      <LoginPresentation variant="platform">
+        <p>form</p>
+      </LoginPresentation>,
+    );
+    const said = container.textContent ?? '';
+
+    expect(said).not.toMatch(/choose a workspace/i);
+    expect(said).not.toContain('UBOSS AI AMS');
+  });
+
+  it('reports nothing about the state of the platform to an anonymous visitor', () => {
+    const { container } = render(
+      <LoginPresentation variant="platform">
+        <p>form</p>
+      </LoginPresentation>,
+    );
+    const said = container.textContent ?? '';
+
+    // The grid is a motif. Anything resembling a reading would either be invented, or would be
+    // telling somebody who has not signed in how the platform is doing.
+    expect(said).not.toMatch(/\d+\s*(%|ms|req|error|incident|uptime)/i);
+    expect(said).not.toMatch(/healthy|degraded|operational/i);
+  });
+
+  it('keeps the form area identical, because the quality is shared even though the identity is not', () => {
+    const customer = render(
+      <LoginPresentation>
+        <button type="button">Sign In</button>
+      </LoginPresentation>,
+    );
+    expect(customer.container.querySelector('.uboss-login-card button')).not.toBeNull();
+    customer.unmount();
+
+    const platform = render(
+      <LoginPresentation variant="platform">
+        <button type="button">Sign In</button>
+      </LoginPresentation>,
+    );
+    expect(platform.container.querySelector('.uboss-login-card button')).not.toBeNull();
   });
 });

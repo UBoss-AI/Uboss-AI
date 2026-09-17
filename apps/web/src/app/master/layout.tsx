@@ -151,7 +151,9 @@ export default function MasterLayout({ children }: { children: ReactNode }) {
         }
         onSignOut={() => {
           forgetWorkspace();
-          void authApi.logout().finally(() => window.location.assign('/login'));
+          // Back to the door they came in by. Sending platform staff to the customer login after
+          // signing out of the console would drop them on a page with no way back into it.
+          void authApi.logout().finally(() => window.location.assign('/internal/login'));
         }}
         hasNotifications={false}
       >

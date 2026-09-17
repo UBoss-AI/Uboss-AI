@@ -32,6 +32,17 @@ const AUTH_ROUTES = [
 
 const read = (file: string) => readFileSync(path.join(APP, file), 'utf8');
 
+/*
+ * The sign-in form itself.
+ *
+ * It used to be inside `login/page.tsx`. Both front doors — the customer login and the platform
+ * console login — now render one shared flow, so the route files are thin and the markup these
+ * checks are about lives here. The route list above is still the list of pages a signed-out person
+ * can reach; only the place the form is written has moved.
+ */
+const SIGN_IN_FLOW = path.join(process.cwd(), 'src', 'components', 'SignInFlow.tsx');
+const readSignInFlow = () => readFileSync(SIGN_IN_FLOW, 'utf8');
+
 describe('auth routes — a person is never stranded', () => {
   it('reads the pages it claims to be checking', () => {
     // A path that silently resolved to nothing would pass every assertion below.
@@ -58,7 +69,15 @@ describe('auth routes — a person is never stranded', () => {
   );
 
   it('offers help from the sign-in page itself', () => {
-    expect(read('login/page.tsx')).toContain('/access-help');
+    expect(readSignInFlow()).toContain('/access-help');
+  });
+
+  /*
+   * Both doors, not just the customer one. A member of UBoss staff who cannot get in needs the
+   * same way forward as a customer, and the shared flow is what guarantees they get it.
+   */
+  it.each(['login/page.tsx', 'internal/login/page.tsx'])('%s renders the shared sign-in flow', (file) => {
+    expect(read(file)).toContain('SignInFlow');
   });
 });
 
@@ -77,7 +96,7 @@ describe('auth routes — no public company signup', () => {
   });
 
   it('mentions signup only to deny it', () => {
-    const source = read('login/page.tsx');
+    const source = readSignInFlow();
     const mentions = [...source.matchAll(/[^\n]*sign-?up[^\n]*/gi)].map((match) => match[0].trim());
 
     expect(mentions.length).toBeGreaterThan(0);

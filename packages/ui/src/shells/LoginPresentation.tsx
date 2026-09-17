@@ -6,6 +6,19 @@ import { Icon } from '../primitives/Icon';
 export interface LoginPresentationProps {
   /** The sign-in form, activation form or access-help form. */
   children?: ReactNode;
+  /**
+   * Which plane this is the front door to.
+   *
+   * `customer` is the product login: the radial mind-map, the six locked capability sections, the
+   * assurance strip. `platform` is the front door UBoss's own staff use, and it is deliberately a
+   * different composition rather than the same panel with different words — somebody who has both
+   * pages open must be able to tell them apart at a glance, before reading anything.
+   *
+   * What they share is the visual system and every primitive inside the card. What they do not
+   * share is identity: the customer page never mentions the platform, and the platform page never
+   * offers a company workspace.
+   */
+  variant?: 'customer' | 'platform';
 }
 
 /**
@@ -25,9 +38,13 @@ export interface LoginPresentationProps {
  * companies, and "Activate" only enables an already-invited identity. This component therefore
  * offers no sign-up affordance, by design.
  */
-export function LoginPresentation({ children }: LoginPresentationProps) {
+export function LoginPresentation({ children, variant = 'customer' }: LoginPresentationProps) {
   const left = LOGIN_CAPABILITIES.filter((capability) => capability.side === 'left');
   const right = LOGIN_CAPABILITIES.filter((capability) => capability.side === 'right');
+
+  if (variant === 'platform') {
+    return <PlatformLoginPresentation>{children}</PlatformLoginPresentation>;
+  }
 
   return (
     <div className="uboss-login">
@@ -170,16 +187,128 @@ export function LoginPresentation({ children }: LoginPresentationProps) {
 }
 
 /**
- * The provisioning notice shown beneath the sign-in form, worded exactly as the UI reference.
+ * The front door for UBoss's own staff.
+ *
+ * ## Why this is a second composition rather than a second set of words
+ *
+ * These two pages are opened by different people for different reasons, and the cost of confusing
+ * them is not symmetrical: a customer who wanders into the platform console should meet a wall,
+ * and a UBoss engineer who signs into the customer login wastes a minute. So the difference has to
+ * be legible before anything is read — a different shape, not a different heading on the same
+ * shape.
+ *
+ * ## What it says, and what it deliberately does not
+ *
+ * Four words — Platform, Governance, Operations, Security — because they are what this plane is
+ * for. There is no status, no counter and no chart: this page is seen by someone who is not yet
+ * authenticated, and anything that looked like monitoring data would either be invented or would
+ * be telling an anonymous visitor about the state of the platform.
+ *
+ * The grid behind them is a motif and nothing more. It is drawn, not measured.
+ */
+function PlatformLoginPresentation({ children }: { children?: ReactNode }) {
+  return (
+    <div className="uboss-login uboss-login--platform">
+      <section className="uboss-login-left" aria-label="About the UBoss platform console">
+        <div className="uboss-login-brand">
+          <div className="uboss-side-logo" aria-hidden="true">
+            U
+          </div>
+          <div>
+            <b>UBoss AI</b>
+            <span>Platform &amp; Development Console</span>
+          </div>
+        </div>
+
+        <span className="uboss-login-pill">
+          <i aria-hidden="true" />
+          Authorized internal access only
+        </span>
+
+        {/*
+          A motif, drawn rather than measured. Nothing on this panel reports the state of anything:
+          an unauthenticated visitor is told what this console is for, and nothing about how it is
+          doing.
+        */}
+        <div className="uboss-plat-grid" aria-hidden="true">
+          <svg viewBox="0 0 400 260" preserveAspectRatio="none" fill="none">
+            <defs>
+              <linearGradient id="uboss-plat-line" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="var(--uboss-ai-bright)" stopOpacity="0.55" />
+                <stop offset="100%" stopColor="var(--uboss-ai)" stopOpacity="0.08" />
+              </linearGradient>
+            </defs>
+            {[40, 90, 140, 190, 240].map((y) => (
+              <line key={`h${y}`} x1="0" y1={y} x2="400" y2={y} stroke="url(#uboss-plat-line)" strokeWidth="1" />
+            ))}
+            {[60, 140, 220, 300, 360].map((x) => (
+              <line key={`v${x}`} x1={x} y1="0" x2={x} y2="260" stroke="url(#uboss-plat-line)" strokeWidth="1" />
+            ))}
+            {[
+              [60, 90],
+              [140, 140],
+              [220, 90],
+              [300, 190],
+              [360, 140],
+            ].map(([cx, cy]) => (
+              <circle key={`n${cx}-${cy}`} cx={cx} cy={cy} r="3.5" fill="var(--uboss-ai-bright)" />
+            ))}
+            <path
+              d="M60,90 L140,140 L220,90 L300,190 L360,140"
+              stroke="var(--uboss-ai-bright)"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              pathLength={1}
+              className="uboss-plat-path"
+            />
+          </svg>
+        </div>
+
+        <ul className="uboss-plat-words">
+          {PLATFORM_CONSOLE_WORDS.map((word) => (
+            <li key={word}>{word}</li>
+          ))}
+        </ul>
+
+        <div className="uboss-mm-foot">
+          {LOGIN_ASSURANCES.map((assurance) => (
+            <span key={assurance.label} className="uboss-mm-foot-item">
+              <Icon name={assurance.icon} size={16} />
+              {assurance.label}
+            </span>
+          ))}
+        </div>
+      </section>
+
+      <section className="uboss-login-right" aria-label="Sign in">
+        <div className="uboss-login-card">{children}</div>
+      </section>
+    </div>
+  );
+}
+
+/** What this plane is for. Four, because a list long enough to scan is a list nobody reads. */
+const PLATFORM_CONSOLE_WORDS = ['Platform', 'Governance', 'Operations', 'Security'] as const;
+
+/**
+ * There is no public signup, said plainly on every screen that could be mistaken for one.
+ *
  * Kept as a component so it cannot drift between the login, activation and access-help screens.
+ *
+ * The wording avoids UBoss's own vocabulary on purpose. It used to read "Tenants are provisioned
+ * from the UBoss Master Console", which is true and is written for us: a customer does not have a
+ * word for a tenant, has never seen the Master Console, and does not need to learn that UBoss has
+ * an inside in order to understand that they cannot sign themselves up. The fact is the same; only
+ * the audience changed.
  */
 export function NoPublicSignupNotice() {
   return (
     <p className="uboss-auth-note">
       <Icon name="shield" size={16} />
       <span>
-        No public company signup. Tenants are provisioned from the UBoss Master Console;
-        &ldquo;Activate&rdquo; only enables an already-invited identity.
+        No public signup. A UBoss company account is set up for you, and &ldquo;Activate&rdquo; only
+        enables an identity that has already been invited.
       </span>
     </p>
   );
