@@ -3676,3 +3676,80 @@ surface a category the server withheld.
   correctly disabled while prerequisites are unmet, and nothing was faked to fill them.
 * **Executor** reports zero exceptions, which is accurate — nothing is overdue or failed yet.
 * Verification was Chromium-only.
+
+## Premium UI and motion
+
+A single motion scale in `tokens.css` — five durations, four curves, one stagger — restated in
+seconds in `packages/ui/src/motion/motion.ts` because Motion for React needs numbers, with a test
+asserting the two agree (**ADR-297**). `motion-scale.test.ts` refuses any off-scale duration or
+curve in any stylesheet, anything on the interaction scale that repeats, and any `var(--uboss-*)`
+no stylesheet declares. `vendor-prefix.test.ts` refuses both spellings of one property
+(**ADR-300**).
+
+Signature moments, each verified by sampling computed style frame by frame in a real browser:
+
+| Where | What moves | Verified |
+| --- | --- | --- |
+| Sign-in | brand, claim, diagram, assurances 60ms apart; six connectors draw together via `pathLength="1"` | caught part-way; settles with no transform held |
+| Sidebar | selection glides between items (shared layout); rail glides 248px ↔ 74px | 14 indicator positions; mid-flight 121.83px |
+| Page | content eases in on navigation; chrome deliberately still | 12 distinct opacities |
+| Dashboard donut | arcs draw, hover lifts one and dims the other, one highlight pass | truthful on the first frame (**ADR-298**) |
+| Tabs / segmented / settings | one indicator travels instead of the fill jumping | 10 / 14 / 10 positions, one element each |
+| Workflow grid | steps arrive a beat apart, capped at twelve rows | 0, 40, 80, 120, 160ms |
+| Dialogs | scrim blurs the page behind by 3px | read from the applied rules, not the source |
+
+Buttons answer a press at 98% — under a pixel on a 36px control, enough to confirm the press
+landed on this control and not the one beside it. Nothing moves on hover: a toolbar whose buttons
+lift as the pointer crosses them is a ripple.
+
+Under `prefers-reduced-motion` entrance animations are removed outright rather than shortened,
+because a `backwards` fill paints the opening frame until the animation's first tick and a
+zero-length animation that has not ticked still shows `opacity: 0` (**ADR-299**).
+
+### The five-role browser audit
+
+Each role walks its **own** sidebar rather than a list written into the script, so a screen that
+disappeared for a role shows as a missing row rather than a check that quietly stopped running.
+64 screens across Company Admin (13), Head/Approver (12), Manager (13), Employee (11) and
+Platform Admin (15). Final pass: **zero findings** — no console error, no retired colour, no
+off-scale duration, no animation still running on an idle screen, no horizontal overflow, no blank
+screen.
+
+Light and Dark at 1440 / 1024 / 768 across four representative layouts: zero findings. The two
+dark blocks in `tokens.css` are separate copies, so the check reads the resolved values through
+both routes — the media query and `[data-theme]` — and compares them; planting a one-token
+difference in one block was confirmed to fail it.
+
+What the audit caught and what was fixed:
+
+* every dashboard, for every role, logged `<circle> attribute r: Expected length, "undefined"`.
+  Motion had no starting value for an SVG presentation attribute and wrote `undefined` on the
+  first frame; the browser reports it and carries on, so it never showed on screen.
+* the dialog blur had never shipped — a hand-written `-webkit-` prefix made the build drop both
+  declarations (**ADR-300**).
+* the Master Console plane was still entirely blue-and-teal (**ADR-301**).
+* the org chart's add-person glyph and its own mark were still `#2563EB` inside a disc that had
+  already become violet. The department palette is deliberately left alone: those are categorical
+  data colours whose job is to be told apart from each other, which one hue cannot do.
+* the current step of the Create Company wizard pulsed for ever, because the wizard marks its
+  current step `running` and that is the only state the stepper has for "you are here". It plays
+  once now.
+* Head/Approver was offered Performance, which the engine refuses (**ADR-302**).
+
+### Genuine limitations carried forward, from this pass
+
+* **A department-scoped role cannot read its own performance** — **ADR-303**, left open by
+  decision. The resource handed to the scope layer omits the subject's department, so the wider
+  role sees less of itself than the narrower one. Four tests pin the current behaviour at every
+  scope kind so that changing it is a visible decision.
+* **The sidebar gradient departs from the supplied design.** White on `#A78BFA` measures 2.72:1
+  and `#EDE9FE` on it 2.29:1, both below 4.5:1, so the rail ships as
+  `#5B21B6 → #6D28D9 → #7C3AED` (5.70:1 at its lightest point). Reported, not hidden.
+* **Route transitions are CSS, not the View Transitions API.** Every screen renders its own shell,
+  so navigating remounts the content and a plain CSS animation lands on the right beat with no
+  route listener and no JavaScript. Enabling Next's experimental view-transition flag was not done
+  unilaterally.
+* Phases 17, 18, 20 to 29 and 31 to 32 of the premium pass inherit the global system — page
+  arrival, buttons, cards, tables, tabs, dialogs, states — but were not given screen-specific
+  signature motion of their own.
+* Verification was Chromium-only.

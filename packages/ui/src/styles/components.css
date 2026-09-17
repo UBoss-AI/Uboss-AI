@@ -1955,13 +1955,28 @@ textarea.uboss-input,
   color: var(--uboss-blue);
 }
 
+/*
+  The ring around the step you are on.
+
+  This looped forever, and the five-role audit caught it still running on an idle Create Company
+  form 1.5 seconds after the page settled. The wizard marks its current step `running`, which is
+  the only state ProgressStep has for "you are here" — so a form waiting for typing had a
+  permanently pulsing ring on it, which is the thing the motion rules are most explicit about:
+  nothing loops, and an idle screen is idle.
+
+  Once, not for ever. Three passes was the first attempt and it still had the ring moving four
+  seconds after the page settled — long enough that the audit caught it, which is long enough to
+  matter. One pass finds your place on arrival and then the screen is still; after that the step
+  is distinguishable by its marker, its label weight and its colour, none of which move. It ends
+  on `opacity: 0`, so the ring does not linger as a ghost.
+*/
 .uboss-step-pulse {
   position: absolute;
   inset: -6px;
   border-radius: 50%;
   border: 2px solid var(--uboss-blue);
   opacity: 0.4;
-  animation: uboss-pulse var(--uboss-motion-loop-pulse) var(--uboss-ease-standard) infinite;
+  animation: uboss-pulse var(--uboss-motion-loop-pulse) var(--uboss-ease-standard) forwards;
 }
 
 @keyframes uboss-pulse {

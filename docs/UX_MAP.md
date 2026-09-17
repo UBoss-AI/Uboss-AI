@@ -1929,3 +1929,20 @@ are untouched, which is what §3 actually protects.
 
 **A native `<select>` cannot show a photo.** §3 names selectors alongside Hierarchy and profile;
 the person _picker_ shows faces, the reporting-manager dropdown cannot and does not.
+
+## Navigation, per role, as measured
+
+Counted by walking each role's own sidebar in a browser rather than from the navigation model, so
+this is what the roles are actually offered:
+
+| Role | Sidebar items | Notes |
+| --- | --- | --- |
+| Company Admin | 13 | |
+| Head / Approver | 12 | Performance withheld — the engine refuses `performance/me` for a department-scoped role (**ADR-302**, open question **ADR-303**) |
+| Manager | 13 | Performance offered and it opens: this scope resolves the owner |
+| Employee | 11 | no `objective`, no `agent-builder` (CR-03) |
+| Platform Admin | 15 | separate plane, entered through "Open the Master Console" rather than a workspace picker |
+
+Every item each role is offered was opened and watched for a refusal. None refuses. That property
+is the rule the navigation now holds, and it is checked rather than assumed: a visible sidebar item
+must route to a screen the same person can open.

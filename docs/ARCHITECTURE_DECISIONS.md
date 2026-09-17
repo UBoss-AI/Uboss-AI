@@ -6678,3 +6678,156 @@ Customer Operations and his Approver scope covered Operations only, so the gate 
 until the scope was widened through the assignments route.
 
 ADR-295 is untouched: no `Reject` or `SendBack` task transition was invented.
+
+## ADR-297 — One motion scale, stated twice and checked
+
+**Context.** Motion needed durations as numbers (Motion for React) and as tokens (CSS). Before this
+pass the product had neither: eight rules carried literal durations — `0.14s`, `0.15s`, `0.16s`,
+`0.2s` and three loop values — each individually reasonable, together a set of controls that moved
+at slightly different speeds for no reason anyone could name.
+
+**Decision.** `tokens.css` owns the scale: five durations (micro 100ms, small 160ms, panel 240ms,
+large 320ms, signature 480ms), four curves, one stagger. `src/motion/motion.ts` restates the same
+numbers in seconds because Motion needs them as numbers, and `motion.test.ts` asserts the two
+agree. The legacy names (`--uboss-motion`, `--uboss-ease`, …) are aliases, not values —
+`--uboss-ease` was found to be a literal second copy of `--uboss-ease-standard` and was converted.
+
+Indeterminate loops get their own named tokens (`--uboss-motion-loop-spin/-pulse/-shimmer`). A
+spinner must outlast any single interaction, so borrowing 160ms from the interaction scale would
+make it a strobe. Naming them keeps the exception inside the system instead of leaving three bare
+numbers that read as drift.
+
+**Enforcement.** `motion-scale.test.ts` refuses any duration or curve in any stylesheet that is not
+a token, and refuses anything on the interaction scale that repeats. It exempts the global
+reduced-motion rule by recognising the block it lives in rather than by loosening the number
+pattern, because `0.01ms` there is deliberate: a true zero can stop `transitionend` firing and
+strand JavaScript waiting on it. It also refuses a `var(--uboss-*)` that no stylesheet declares —
+a misspelled custom property invalidates its whole declaration and the element silently stops
+animating, with no warning anywhere.
+
+**Consequences.** Every duration and curve is now one edit. The first version of the dangling-token
+check collected only names already beginning `motion` or `ease`, so a typo anywhere but the end of
+a name was invisible to it; it now reads the whole `--uboss-*` namespace.
+
+## ADR-298 — The chart tells the truth before it moves
+
+**Context.** The first attempt at the dashboard donut's signature animation held both arc lengths
+and the centre count in motion values starting at zero. It looked right. It was not: the DOM said
+`0` with no arcs until the animation had run, so the chart was wrong for anything not watching it
+move — a screenshot, a print, a test, a browser with animations disabled, an automated check.
+Three existing tests failed, which is what they were for.
+
+**Decision.** The DOM always carries the real numbers. The arc's `stroke-dasharray` **attribute**
+is its true length from the first frame and the centre figure is the true total. The draw-on is a
+CSS animation of the *style*, which outranks a presentation attribute while it runs and lands
+exactly on the value the attribute already holds. A transition on the same property means a
+refresh moves the arc from where it was rather than redrawing from empty — a dashboard that
+re-animated from zero on every poll would flash at somebody trying to read it.
+
+**Consequences.** The animation became a strict enhancement: remove it and the chart is still
+correct. `--uboss-arc` is set inline on each arc's group and the keyframes end on it, so a group
+that failed to publish it would animate the arc to nothing *in the browser only*; a test pins that
+link because the two halves live in different files.
+
+## ADR-299 — `animation-fill-mode: backwards`, and why not `both`
+
+**Context.** Entrance animations translate. `transform` creates a containing block for any
+`position: fixed` descendant, which is how a dialog ends up trapped inside a panel. Ending the
+keyframes on `transform: none` appears to settle it.
+
+**Decision.** It does not, and the fill mode is the reason. With `both` the browser holds the
+animated value, and `none` computes to `matrix(1, 0, 0, 1, 0, 0)` — still a transform. A `fixed`
+child inside `.uboss-content` measured 56px down the page instead of 0. Every entrance animation
+therefore uses `backwards`: it supplies the opening frame and then lets go, leaving the element
+with the styles it actually has and no containing block at all. The end state was never worth
+holding — it is the element at rest.
+
+**Consequences.** Under `prefers-reduced-motion` these animations are removed outright rather than
+shortened. A backwards fill paints the opening frame from the moment the element exists until the
+animation's *first tick*, so a zero-length animation that has not ticked yet still shows
+`opacity: 0` — the sign-in card measured blank for 570ms under load. Someone who has asked for
+less motion is the last person who should wait on an animation frame to see the form.
+
+## ADR-300 — Never write a vendor prefix by hand
+
+**Context.** The dialog scrim was given `backdrop-filter: blur(3px)` and, for safety,
+`-webkit-backdrop-filter: blur(3px)`. The blur never appeared.
+
+**Decision.** The CSS build adds prefixes from the browserslist targets itself, and a hand-written
+one collides with that rather than supplementing it: the rule was served with **both**
+declarations removed. Nothing failed — the stylesheet compiled, the page rendered, the property
+was simply absent. It was found by reading the applied `cssRules` out of a running browser, since
+the source file was correct and anything reading the source would have agreed with it.
+
+`vendor-prefix.test.ts` now refuses both spellings of one property in the same stylesheet. The
+three prefixed properties that remain have no unprefixed equivalent —
+`-webkit-font-smoothing`, `-webkit-overflow-scrolling`, `::-webkit-scrollbar` — and are allowed.
+
+**Consequences.** For anything the build can rewrite, a browser is the only honest check.
+
+## ADR-301 — The Master Console was left behind by the violet identity
+
+**Context.** `.uboss-shell--master` rebinds the entire palette for the platform plane. When the
+product moved to violet, that block was missed in full — every surface, border, text and accent
+token in it was still the previous blue-and-teal. The company plane had changed around it, so the
+two halves of the product no longer looked like one product.
+
+**Decision.** The plane is on the violet identity, with contrast measured against its own grounds
+(page `#17102b`, surface `#1f1636`, raised `#271c45`) rather than the root ones. `#6b5a94` was the
+natural pick for `--uboss-border-control` and measured 2.87:1, so it was raised to `#72609c`
+(3.15:1 on surface, 3.38:1 on the page) — that token is how a control's edge is found, so it
+carries the 1.4.11 obligation. `--uboss-border` stays quiet at 1.38:1, which is the same choice
+the light theme makes at 1.28:1 for a decorative divider.
+
+**Consequences.** Found by walking the Platform Admin's own sidebar in a browser and reading the
+computed colours off the page — not by reading the stylesheet, where nothing looked wrong. The
+audit that found it now runs over all five roles.
+
+## ADR-302 — A sidebar item that the engine will refuse is not offered
+
+**Context.** Head/Approver was offered Performance, and `GET performance/me` answered 403. The
+navigation filter gates each item on whether the person holds a grant on its module, and every
+role holds `performance:View` — so nothing in the module list could have predicted the refusal.
+
+The refusal comes from the scope layer. `performance/me` asks about
+`{ id: userId, ownerUserId: userId }` with no department, because "my own record" has nothing else
+to say about itself, and a department-scoped role cannot place a resource carrying no department.
+The engine fails closed there on purpose: a resource may well belong to a department nobody has
+recorded yet.
+
+**Decision** (governance decision taken by the product owner). Fix the navigation, not the
+permission. `AuthorizationService.unavailableNavKeys` runs the route's **own** `authorize` call and
+reports the keys it was refused; `filterNavigation` drops them. Not a second implementation of
+"can this person open Performance" — a second one would be another thing to keep in step, which is
+the argument the navigation filter already makes about role labels. No guard, permission or scope
+rule was altered; reaching `/performance` by URL is refused by the same engine with the same
+message as before.
+
+The filter keeps failing open on a missing module list, because that only means the answer has not
+arrived. It honours a refusal even while the list is loading, because that is the server having
+already been refused — and the loading window is exactly when people click things.
+
+**Consequences.** Measured after the change: Head/Approver is offered 12 items rather than 13 and
+none of them refuses; Company Admin, Manager and Employee still see Performance and it still
+opens. Manager's scope resolves the owner, so the fix is as narrow as the problem. A future
+Team/Department Performance screen must be a separate permission-aware route with its own key —
+`/performance/me` is not to be reused for it.
+
+## ADR-303 — Open: a department-scoped role cannot read its own performance
+
+**Status: open. No change made.**
+
+`performance.service.ts` `viewFor` carries the comment "A person may always read their own", and
+for a department-scoped role that is not what happens. The resource it hands the engine omits the
+subject's department, so the department branch fails closed — and the effect is that the *wider*
+role sees less of itself than the narrower one. An Employee on `OwnWork` reads their own record; a
+Head on `MultipleDepartments` does not.
+
+The scope engine's fail-closed rule is correct and is not in question. The incomplete thing is the
+resource passed to it. Adding the subject's `departmentId` would let a Head in that department
+read the record and still refuse a Head outside it — which is not a weakening of authorization,
+but it does change who can read what, and that is a product decision rather than a defect fix.
+
+Four tests in `authorization-engine.spec.ts` pin the current behaviour at every scope kind, so
+changing the rule is a visible decision rather than a silent one. ADR-302's navigation signal is
+computed from the live engine, so it will stop hiding Performance by itself if this is resolved.
