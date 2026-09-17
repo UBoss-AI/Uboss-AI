@@ -5418,3 +5418,115 @@ table.uboss-wfg {
     animation: none !important;
   }
 }
+
+/*
+  A gate that has just opened.
+
+  `readyToTest` and `readyToActivate` are computed from real setup and they flip while attention is
+  elsewhere on the page. Without a cue the control simply looks different from how it looked when
+  you last glanced at it, and what people do then is go looking for what else is wrong.
+
+  One pass, 480ms, and the ring is drawn outside the control so nothing inside moves — a button
+  that grows as it becomes available is a button whose label jumps. It fires only on the
+  transition, never on mount: see useJustBecameTrue.
+*/
+@keyframes uboss-just-enabled {
+  from {
+    box-shadow: 0 0 0 0 var(--uboss-ai);
+  }
+  to {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
+.uboss-just-enabled > .uboss-btn {
+  animation: uboss-just-enabled var(--uboss-motion-signature) var(--uboss-ease-exit) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /*
+     Kept, because this is information rather than decoration — it is the only thing saying a
+     control became available. It settles instead of expanding: the ring appears and stays for the
+     duration rather than travelling outwards.
+  */
+  .uboss-just-enabled > .uboss-btn {
+    animation: none;
+    box-shadow: 0 0 0 3px var(--uboss-ai);
+  }
+}
+
+/* ============================================================
+   Run state — motion means work
+   ============================================================ */
+
+/*
+  Thirteen real states, one rule: the dot moves only when a machine is doing something now.
+
+  A run waiting three days for an approval must not look busy, because the only question this
+  screen answers at a glance is which runs are moving and which are stuck. So Running and Retrying
+  pulse; waiting, blocked, queued and finished are still. Queued included — a queued run is
+  waiting for a worker, and an animation there would say the opposite of the truth.
+*/
+.uboss-run-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: var(--uboss-radius-pill);
+  border: 1px solid var(--uboss-border);
+  background: var(--uboss-bg-2);
+  color: var(--uboss-text-2);
+  white-space: nowrap;
+}
+
+.uboss-run-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+.uboss-run-state--working {
+  color: var(--uboss-ai);
+  border-color: var(--uboss-ai);
+  background: var(--uboss-ai-soft);
+}
+
+.uboss-run-state--waiting {
+  color: var(--uboss-warning);
+  border-color: var(--uboss-warning);
+  background: var(--uboss-warning-050);
+}
+
+.uboss-run-state--blocked,
+.uboss-run-state--failed {
+  color: var(--uboss-danger);
+  border-color: var(--uboss-danger);
+  background: var(--uboss-danger-050);
+}
+
+.uboss-run-state--done {
+  color: var(--uboss-success);
+  border-color: var(--uboss-success);
+  background: var(--uboss-success-050);
+}
+
+/* The only animated state on the screen, and it repeats because the work does. */
+.uboss-run-dot--working {
+  animation: uboss-pulse var(--uboss-motion-loop-pulse) var(--uboss-ease-standard) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /*
+     Kept rather than removed: this is the difference between "a machine is working on it" and
+     "nothing is happening", which is information. It becomes a steady ring instead of a beating
+     one — stating the same thing without moving.
+  */
+  .uboss-run-dot--working {
+    animation: none;
+    box-shadow: 0 0 0 3px var(--uboss-ai-soft);
+  }
+}

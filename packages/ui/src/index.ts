@@ -148,4 +148,7 @@ export type {
  * a duration that drifts — which is the whole argument for the scale existing. See
  * src/motion/motion.ts, and motion.test.ts which asserts these agree with tokens.css.
  */
+export { RunState } from './primitives/RunState';
+export type { RunStateProps } from './primitives/RunState';
+
 export { DURATION, EASE, prefersReducedMotion, stagger, transition } from './motion/motion';

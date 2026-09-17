@@ -1,5 +1,6 @@
 'use client';
 
+import { motion } from 'motion/react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useState } from 'react';
 
@@ -12,6 +13,7 @@ import {
   Icon,
   PageHeader,
   StatusBadge,
+  transition,
 } from '@uboss/ui';
 
 import {
@@ -24,6 +26,7 @@ import {
   type MeResponse,
   organizationApi,
 } from '../../lib/api-client';
+import { useJustBecameTrue } from '../../lib/use-just-became-true';
 import { useAccountMenu } from '../../lib/use-account-menu';
 import { useSignedInUser } from '../../lib/use-signed-in-user';
 import { RoutedAppShell } from '../../components/RoutedAppShell';
@@ -72,6 +75,17 @@ function AgentBuilderInner() {
   const [meta, setMeta] = useState<AgentBuilderMetaView | null>(null);
   const [assignments, setAssignments] = useState<AgentBuilderView[]>([]);
   const [selected, setSelected] = useState<AgentBuilderView | null>(null);
+
+  /*
+   * Readiness changes while you are looking elsewhere on this screen — a connection is resolved in
+   * another panel, the readiness answer comes back, and a control that was dead is live. These
+   * report the moment it happens so the control can say so, and they are false on mount: a cue on
+   * arrival would announce something that did not just occur.
+   */
+  const [testJustOpened, clearTestCue] = useJustBecameTrue(selected?.readiness.readyToTest ?? false);
+  const [activateJustOpened, clearActivateCue] = useJustBecameTrue(
+    selected?.readiness.readyToActivate ?? false,
+  );
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -347,9 +361,19 @@ function AgentBuilderInner() {
                 </Banner>
               ) : (
                 <Banner tone="info">
-                  {selected.missing.length} question
-                  {selected.missing.length === 1 ? '' : 's'} left. Everything else is inherited from
-                  the objective and policy.
+                  {/* Keyed by the count, so answering one is a change you can see rather than a
+                      digit that was different the next time you looked. */}
+                  <motion.span
+                    key={selected.missing.length}
+                    initial={{ opacity: 0, y: -3 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={transition('small', 'enter')}
+                    style={{ display: 'inline-block' }}
+                  >
+                    {selected.missing.length} question
+                    {selected.missing.length === 1 ? '' : 's'} left.
+                  </motion.span>{' '}
+                  Everything else is inherited from the objective and policy.
                 </Banner>
               )}
 
@@ -478,37 +502,64 @@ function AgentBuilderInner() {
               {selected.readiness.findings.length > 0 ? (
                 <>
                   <div className="uboss-section-label">What is standing in the way</div>
-                  {selected.readiness.findings.map((finding, index) => (
-                    <p className="uboss-notice-min" key={index}>
+                  {selected.readiness.findings.map((finding) => (
+                    /*
+                     * Keyed by what it says, not by its index, so resolving the first blocker does
+                     * not rewrite the text of the second. `layout` closes the gap the resolved one
+                     * left, which is what makes progress visible.
+                     *
+                     * The item itself is not animated out. It would stay in the accessibility tree
+                     * while it left, reading out a blocker that no longer applies — the same
+                     * reason a deleted workflow row goes immediately.
+                     */
+                    <motion.p
+                      className="uboss-notice-min uboss-readiness-finding"
+                      key={finding.summary}
+                      layout
+                      transition={transition('panel', 'standard')}
+                    >
                       <Icon name={finding.severity === 'Blocker' ? 'shield' : 'alert'} size={14} />
                       {finding.summary}
-                    </p>
+                    </motion.p>
                   ))}
                 </>
               ) : null}
 
               {selected.engineAgent === null ? (
                 <>
-                  <Button
-                    size="sm"
-                    disabled={busy || !selected.readiness.readyToTest}
-                    onClick={run((tenant, assignment) => agentBuilderApi.test(tenant, assignment))}
-                    style={{ marginTop: 12, width: '100%' }}
+                  {/* Says the gate has just opened, once, and only when it really did. */}
+                  <span
+                    className={testJustOpened ? 'uboss-just-enabled' : undefined}
+                    onAnimationEnd={clearTestCue}
+                    style={{ display: 'block' }}
                   >
-                    <Icon name="bolt" size={16} />
-                    Test agent
-                  </Button>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    disabled={busy || !selected.readiness.readyToActivate}
-                    onClick={run((tenant, assignment) =>
-                      agentBuilderApi.activate(tenant, assignment),
-                    )}
-                    style={{ marginTop: 8, width: '100%' }}
+                    <Button
+                      size="sm"
+                      disabled={busy || !selected.readiness.readyToTest}
+                      onClick={run((tenant, assignment) => agentBuilderApi.test(tenant, assignment))}
+                      style={{ marginTop: 12, width: '100%' }}
+                    >
+                      <Icon name="bolt" size={16} />
+                      Test agent
+                    </Button>
+                  </span>
+                  <span
+                    className={activateJustOpened ? 'uboss-just-enabled' : undefined}
+                    onAnimationEnd={clearActivateCue}
+                    style={{ display: 'block' }}
                   >
-                    Activate agent
-                  </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      disabled={busy || !selected.readiness.readyToActivate}
+                      onClick={run((tenant, assignment) =>
+                        agentBuilderApi.activate(tenant, assignment),
+                      )}
+                      style={{ marginTop: 8, width: '100%' }}
+                    >
+                      Activate agent
+                    </Button>
+                  </span>
                 </>
               ) : (
                 <p className="uboss-notice-min">

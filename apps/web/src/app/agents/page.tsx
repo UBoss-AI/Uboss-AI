@@ -16,15 +16,11 @@ import {
   SearchField,
   StatusBadge,
   type StatusTone,
+  RunState,
+  EmptyState,
 } from '@uboss/ui';
 
-import {
-  ApiError,
-  authApi,
-  engineAgentsApi,
-  type EngineAgentView,
-  type MeResponse,
-} from '../../lib/api-client';
+import { ApiError, authApi, engineAgentsApi, type EngineAgentView, type MeResponse, agentRunsApi, type AgentRunSummaryView } from '../../lib/api-client';
 import { useAccountMenu } from '../../lib/use-account-menu';
 import { useSignedInUser } from '../../lib/use-signed-in-user';
 import { RoutedAppShell } from '../../components/RoutedAppShell';
@@ -65,6 +61,17 @@ export default function EngineAgentsPage() {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [agents, setAgents] = useState<EngineAgentView[]>([]);
   const [selected, setSelected] = useState<EngineAgentView | null>(null);
+
+  /*
+   * The selected agent's runs, read from the run engine.
+   *
+   * Nothing here synthesises a run. `runs` stays null until the request answers, and an empty
+   * list is shown as an empty list — this environment has no AI provider configured and no run
+   * has ever executed, which is a fact about the setup and not something a screen should paper
+   * over with a sample.
+   */
+  const [runs, setRuns] = useState<AgentRunSummaryView[] | null>(null);
+  const [runsError, setRunsError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [includeArchived, setIncludeArchived] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -132,6 +139,29 @@ export default function EngineAgentsPage() {
   const term = search.trim().toLowerCase();
   const shown =
     term === '' ? agents : agents.filter((entry) => entry.name.toLowerCase().includes(term));
+
+  useEffect(() => {
+    if (tenantId === null || selected === null) {
+      setRuns(null);
+      setRunsError(null);
+      return;
+    }
+    let live = true;
+    setRuns(null);
+    setRunsError(null);
+    void agentRunsApi
+      .list(tenantId, selected.id)
+      .then((result) => {
+        if (live) setRuns(result.runs);
+      })
+      .catch((caught: unknown) => {
+        // Said plainly rather than shown as "no runs": not knowing is different from none.
+        if (live) setRunsError(caught instanceof Error ? caught.message : 'Could not read this agent\u2019s runs.');
+      });
+    return () => {
+      live = false;
+    };
+  }, [selected, tenantId]);
 
   return (
     <RoutedAppShell
@@ -384,6 +414,55 @@ export default function EngineAgentsPage() {
               <Icon name="shield" size={14} />
               {selected.health.note}
             </p>
+
+            <div className="uboss-section-label">Runs</div>
+            {runsError !== null ? (
+              <Banner tone="warn">{runsError}</Banner>
+            ) : runs === null ? (
+              <p className="uboss-notice-min">
+                <Icon name="clock" size={14} />
+                Reading this agent&rsquo;s runs&hellip;
+              </p>
+            ) : runs.length === 0 ? (
+              /*
+               * The truthful empty state. An agent with no runs has not succeeded and has not
+               * failed — and if no provider is configured it cannot run at all, which is a setup
+               * fact the operator needs rather than an absence to be styled over. The agent's own
+               * readiness note says which applies, so it is shown rather than guessed at here.
+               */
+              <EmptyState
+                icon="bolt"
+                title="No runs yet"
+                description={selected.health.note}
+              />
+            ) : (
+              runs.map((run) => (
+                <div className="uboss-kv" key={run.id}>
+                  <span className="uboss-kv-key">
+                    {run.startedAt === null ? 'Not started' : new Date(run.startedAt).toLocaleString()}
+                  </span>
+                  <span className="uboss-kv-value">
+                    {/* The state exactly as the engine reported it. Only Running and Retrying
+                        animate; waiting, blocked and finished are still. */}
+                    <RunState state={run.state} />
+                    {run.failureReason === null ? null : (
+                      <>
+                        <br />
+                        <small className="uboss-muted-3">{run.failureReason}</small>
+                      </>
+                    )}
+                    {run.producedByRealModel === false ? (
+                      <>
+                        <br />
+                        {/* Never implied, always stated: an output from the mock model is not a
+                            result, and a screen that hid this would be claiming one. */}
+                        <small className="uboss-muted-3">Produced without a real model</small>
+                      </>
+                    ) : null}
+                  </span>
+                </div>
+              ))
+            )}
 
             <div className="uboss-section-label">Versions</div>
             {selected.versions.map((version) => (
