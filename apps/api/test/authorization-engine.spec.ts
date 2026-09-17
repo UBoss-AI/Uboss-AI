@@ -1078,3 +1078,68 @@ describe('Agent Builder permissions are the documented journey', () => {
     }
   });
 });
+
+describe('reading your own record, at every scope', () => {
+  /*
+   * The asymmetry the Performance navigation fix exists because of.
+   *
+   * `GET performance/me` asks the engine about a resource identified only by its owner —
+   * `{ id: userId, ownerUserId: userId }` — with no department attached, because the request is
+   * "my own record" and the caller has nothing else to say about it.
+   *
+   * Under `OwnWork` that is allowed: the owner matches. Under a department scope it is refused,
+   * because a resource carrying no department cannot be placed in one and the engine fails closed
+   * rather than treating "no department" as a wildcard. That is the right default — a resource may
+   * well belong to a department nobody has recorded — but it means the *wider* role sees less of
+   * itself than the narrower one, which is what nobody expected.
+   *
+   * These tests do not assert that this is desirable. They assert what it currently is, so that
+   * the navigation signal built on top of it has something to be checked against, and so that
+   * changing the rule is a visible decision rather than a silent one.
+   */
+  const ownRecord = { id: 'user-1', ownerUserId: 'user-1' };
+
+  it('allows the owner under OwnWork', () => {
+    const outcome = isInScope({
+      grant: { kind: 'OwnWork', selectedResourceIds: [] },
+      resource: ownRecord,
+      actorUserId: 'user-1',
+    });
+
+    assert.equal(outcome.inScope, true);
+  });
+
+  it('refuses the same record under a department scope', () => {
+    const outcome = isInScope({
+      grant: { kind: 'MultipleDepartments', departmentIds: ['dept-a', 'dept-b'] },
+      resource: ownRecord,
+      actorUserId: 'user-1',
+    });
+
+    // Not a permission problem: the module grant is not consulted here at all.
+    assert.equal(outcome.inScope, false);
+    assert.equal(outcome.reason, 'out-of-scope');
+    assert.match(outcome.detail ?? '', /no department/);
+  });
+
+  it('allows it under a department scope once the record says which department it is in', () => {
+    // Stated to show the refusal above is about the missing field, not about the scope kind.
+    const outcome = isInScope({
+      grant: { kind: 'MultipleDepartments', departmentIds: ['dept-a', 'dept-b'] },
+      resource: { ...ownRecord, departmentId: 'dept-a' },
+      actorUserId: 'user-1',
+    });
+
+    assert.equal(outcome.inScope, true);
+  });
+
+  it('allows the owner under WholeCompany', () => {
+    const outcome = isInScope({
+      grant: { kind: 'WholeCompany' },
+      resource: ownRecord,
+      actorUserId: 'user-1',
+    });
+
+    assert.equal(outcome.inScope, true);
+  });
+});

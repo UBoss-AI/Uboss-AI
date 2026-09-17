@@ -28,8 +28,16 @@ import { useMyAccess } from './use-my-access';
  *
  * This is why the hook reads `visibleModules` directly rather than going through `can()`, which
  * leans the other way on purpose.
+ *
+ * `unavailableNavKeys` is the exception to failing open. It is not a pending answer — it is the
+ * server having already run a route's own authorize call and been refused — so it is honoured even
+ * while the module list is still loading.
  */
 export function useCompanyNavigation(): NavGroup[] {
   const access = useMyAccess();
-  return filterNavigation(COMPANY_NAV, access?.visibleModules ?? null);
+  return filterNavigation(
+    COMPANY_NAV,
+    access?.visibleModules ?? null,
+    access?.unavailableNavKeys ?? null,
+  );
 }

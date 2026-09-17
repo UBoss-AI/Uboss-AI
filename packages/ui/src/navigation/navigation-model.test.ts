@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { COMPANY_NAV, filterNavigation } from './navigation-model';
+import { COMPANY_NAV, filterNavigation, type NavGroup } from './navigation-model';
 
 /**
  * Permission-driven navigation — Prompt 40A (CR-03) §8.
@@ -130,5 +130,61 @@ describe('filterNavigation', () => {
       'dashboard',
       'chat',
     ]);
+  });
+});
+
+describe('an offered item is an item that opens', () => {
+  /*
+   * The rule this enforces: no visible sidebar entry may route to a screen the same person is
+   * forbidden to open.
+   *
+   * Module presence used to be the whole filter, and for almost every screen it is right. But a
+   * screen whose landing request names a specific row is subject to the scope layer too, and the
+   * scope layer can refuse what the module grant allowed. Performance is the case that found it:
+   * every role holds `performance:View`, so the sidebar offered it to a Head whose own record
+   * `GET performance/me` then refused, because a department-scoped role cannot place a resource
+   * carrying no department. The server now reports those keys, having run the route's own
+   * authorize call, and they are filtered here.
+   */
+  const keysOf = (groups: readonly NavGroup[]) => groups.flatMap((group) => group.items.map((item) => item.key));
+
+  it('offers Performance when nothing is known to refuse it', () => {
+    const offered = keysOf(filterNavigation(COMPANY_NAV, ['dashboard', 'performance'], []));
+    expect(offered).toContain('performance');
+  });
+
+  it('withholds an entry the engine has already refused', () => {
+    const offered = keysOf(filterNavigation(COMPANY_NAV, ['dashboard', 'performance'], ['performance']));
+
+    expect(offered).not.toContain('performance');
+    // And only that entry: a refusal is about one screen, not about the group it sits in.
+    expect(offered).toContain('dashboard');
+  });
+
+  /*
+   * The one place this deliberately does not fail open. A missing module list means the answer has
+   * not arrived, so the full menu is the right guess — but an unavailable key is not a pending
+   * answer, it is the server having been refused already. Showing it because the module list is
+   * still loading would put the broken item back on screen for exactly as long as the page takes
+   * to settle, which is when people click things.
+   */
+  it('honours a refusal even while the module list is still loading', () => {
+    const offered = keysOf(filterNavigation(COMPANY_NAV, null, ['performance']));
+
+    expect(offered).not.toContain('performance');
+    expect(offered).toContain('dashboard');
+    expect(offered.length).toBeGreaterThan(5);
+  });
+
+  it('still renders the whole menu when nothing is known either way', () => {
+    const offered = keysOf(filterNavigation(COMPANY_NAV, null, null));
+    expect(offered).toContain('performance');
+  });
+
+  it('drops a group that a refusal empties', () => {
+    const oneItemGroup: NavGroup[] = [{ group: 'SOLO', items: [{ key: 'performance', label: 'Performance', icon: 'medal', href: '/performance' }] }];
+
+    // A heading with nothing under it reads as a loading failure, which is why the group goes too.
+    expect(filterNavigation(oneItemGroup, ['performance'], ['performance'])).toEqual([]);
   });
 });

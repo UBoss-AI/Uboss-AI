@@ -59,6 +59,10 @@ export class MyAccessController {
       userType: context.userType,
       assignedScope: context.scope.kind,
       visibleModules: context.visibleModules,
+      // Entries whose module grant exists but whose landing request the engine refuses anyway,
+      // because it names a row the scope layer cannot place. Computed by running the route's own
+      // authorize call — see unavailableNavKeys.
+      unavailableNavKeys: await this.authorization.unavailableNavKeys(context),
       // The grants themselves, so a screen can disable a button rather than offering an action
       // that will be refused. The server still refuses it — this only spares the round trip.
       granted: context.granted,

@@ -312,6 +312,13 @@ export const LOGIN_ASSURANCES: readonly LoginAssurance[] = [
  * control**: every route is independently guarded, and a hidden item that somebody reaches by URL
  * is refused by the same absent grant that hid it. One mechanism, read twice.
  *
+ * ## Module presence is not always the whole answer
+ *
+ * A screen whose landing request names a specific row is subject to the scope layer as well as the
+ * module grant, and the scope layer can refuse what the grant allowed. The server reports those
+ * cases in `unavailableNavKeys`, computed by running the route's own authorize call, and they are
+ * filtered out here too. Still one mechanism read twice — the route refuses the same request.
+ *
  * That matters most for CR-03's central change. A standard Employee no longer holds `objective` or
  * `agent-builder`, so Objective Optimization and Agent Builder disappear from their sidebar —
  * and there is deliberately **no role check anywhere in this function**. Hard-coding "hide Agent
@@ -332,8 +339,17 @@ export const LOGIN_ASSURANCES: readonly LoginAssurance[] = [
 export function filterNavigation(
   groups: readonly NavGroup[],
   visibleModules: readonly string[] | null | undefined,
+  unavailableNavKeys: readonly string[] | null | undefined = null,
 ): NavGroup[] {
-  if (visibleModules === null || visibleModules === undefined) return [...groups];
+  const unavailable = new Set(unavailableNavKeys ?? []);
+  if (visibleModules === null || visibleModules === undefined) {
+    // Still honour the refusals. An unavailable key is a fact the server has already established
+    // by running the route's own check, so there is nothing generous about showing it — unlike a
+    // missing module list, which only means the answer has not arrived.
+    return groups
+      .map((group) => ({ group: group.group, items: group.items.filter((item) => !unavailable.has(item.key)) }))
+      .filter((group) => group.items.length > 0);
+  }
 
   const visible = new Set(visibleModules);
 
@@ -348,6 +364,13 @@ export function filterNavigation(
         // This used to be a plain `visible.has(item.key)`, with a comment claiming an item that
         // was not a module "would be kept". It was not: Workspace Chat, which deliberately has no
         // module, was filtered out for every role in the product.
+        // The server may also have established that this particular entry's landing request
+        // would be refused even though its module grant exists — a screen whose first request
+        // names a row the scope layer cannot place. Offering it anyway is the "hidden navigation
+        // is presentation only" rule read backwards: the item is not hidden to enforce anything,
+        // it is hidden because the answer is already known.
+        if (unavailable.has(item.key)) return false;
+
         const moduleKey = item.module === undefined ? item.key : item.module;
         return moduleKey === null || visible.has(moduleKey);
       }),

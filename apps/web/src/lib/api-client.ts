@@ -5086,6 +5086,9 @@ export const myAccessApi = {
       userType: string;
       assignedScope: string;
       visibleModules: string[];
+      /* Entries the engine refuses despite the module grant, because their landing request names
+         a row the scope layer cannot place. Optional so an older server simply omits it. */
+      unavailableNavKeys?: string[];
       granted: Record<string, string[]>;
       note: string;
     }>(`/tenants/${encodeURIComponent(tenantId)}/my-access`),

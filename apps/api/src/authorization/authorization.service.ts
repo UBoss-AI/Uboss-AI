@@ -205,6 +205,41 @@ export class AuthorizationService {
   }
 
   /**
+   * Which navigation entries this person would be refused if they clicked them.
+   *
+   * Module presence is not the whole answer. A nav item is offered when the person holds a grant
+   * on its module, and for almost every screen that is exactly right — but a screen whose landing
+   * request names a specific row is also subject to the scope layer, and the scope layer can
+   * refuse what the module grant allowed.
+   *
+   * Performance is the case that found this. `GET performance/me` asks for a resource identified
+   * only by its owner, and a department-scoped role cannot place a resource that carries no
+   * department, so the request fails closed. Everyone holds `performance:View`, so the sidebar
+   * offered the screen to a Head whose own record the engine then refused.
+   *
+   * This runs the **same** `authorize` call the route runs, rather than restating the rule. A
+   * second implementation of "can this person open Performance" would be a second thing to keep
+   * in step, and the two would eventually disagree — which is the whole argument the navigation
+   * filter already makes about role labels.
+   *
+   * Presentation only, in both directions: a key listed here is refused by the route as well, and
+   * a key missing here is still refused by the route if the engine changes its mind.
+   */
+  async unavailableNavKeys(context: AuthorizationContext): Promise<string[]> {
+    const unavailable: string[] = [];
+
+    // Performance's landing request is the signed-in person's own record.
+    const ownPerformance = await this.authorize(context, {
+      module: 'performance',
+      action: 'View',
+      resource: { id: context.userId, ownerUserId: context.userId },
+    });
+    if (!ownPerformance.allowed) unavailable.push('performance');
+
+    return unavailable;
+  }
+
+  /**
    * The authority of a platform-plane actor.
    *
    * A platform actor has no company membership and therefore no company role — that is what

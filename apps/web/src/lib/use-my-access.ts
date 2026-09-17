@@ -11,6 +11,12 @@ export interface MyAccess {
   userType: string;
   assignedScope: string;
   visibleModules: string[];
+  /**
+   * Navigation entries the engine refuses despite the module grant, because their landing request
+   * names a row the scope layer cannot place. Optional: an older server omits it, and an omitted
+   * list means "nothing known to be refused" rather than "everything is fine".
+   */
+  unavailableNavKeys?: string[];
   granted: Record<string, string[]>;
   note: string;
 }
