@@ -440,3 +440,63 @@ describe('SecurityMetric', () => {
     expect(screen.getByText('Critical')).toBeInTheDocument();
   });
 });
+
+describe('ProgressStep — a moving indicator must mean moving work', () => {
+  /*
+   * `running` carries two different meanings in this product and only the caller knows which.
+   *
+   * A wizard marks its current step `running` to say "you are here". An analysis run marks a
+   * stage `running` because a durable job really is working. The first must not have a ring
+   * pulsing beside a form that is waiting for typing — the audit caught exactly that, still
+   * moving 1.5 seconds after the page had settled — and the second needs one, because it is the
+   * only thing on screen saying the wait is progress rather than a hang.
+   *
+   * These tests pin which class each case gets, since the difference between them is honesty
+   * about what is happening and not a matter of taste.
+   */
+  const items = [
+    { id: 'a', label: 'Reading the objective', state: 'done' as const },
+    { id: 'b', label: 'Decomposing', state: 'running' as const },
+    { id: 'c', label: 'Building the workflow', state: 'todo' as const },
+  ];
+
+  it('marks position quietly by default', () => {
+    const { container } = render(<ProgressStep items={items} label="Steps" />);
+
+    const pulse = container.querySelector('.uboss-step-pulse');
+    expect(pulse).not.toBeNull();
+    // The plain class plays once; the stylesheet gives only --live an infinite iteration count.
+    expect(pulse?.classList.contains('uboss-step-pulse--live')).toBe(false);
+  });
+
+  it('marks genuinely running work as live when the caller says so', () => {
+    const { container } = render(<ProgressStep items={items} label="Steps" live />);
+
+    expect(container.querySelector('.uboss-step-pulse--live')).not.toBeNull();
+  });
+
+  it('gives a live indicator only to the running step', () => {
+    const { container } = render(<ProgressStep items={items} label="Steps" live />);
+
+    // One running step in, one indicator out. A done or todo step must not appear busy.
+    expect(container.querySelectorAll('.uboss-step-pulse--live')).toHaveLength(1);
+  });
+
+  it('shows no indicator at all once nothing is running', () => {
+    const finished = items.map((item) => ({ ...item, state: 'done' as const }));
+    const { container } = render(<ProgressStep items={finished} label="Steps" live />);
+
+    expect(container.querySelectorAll('.uboss-step-pulse')).toHaveLength(0);
+  });
+
+  it('states every step in words, not only by shape or colour', () => {
+    const { container } = render(<ProgressStep items={items} label="Steps" live />);
+
+    // Rendered for assistive technology only, as " — Completed" and so on, so read the spans
+    // rather than looking for the bare word.
+    const spoken = [...container.querySelectorAll('.uboss-sr-only')].map((el) => el.textContent?.trim());
+
+    // Whatever the indicator does, the state has to be readable without seeing it.
+    expect(spoken).toEqual(['— Completed', '— In progress', '— Not started']);
+  });
+});

@@ -38,9 +38,28 @@ const collect = (css: string) => {
   let reducedFrom: number | null = null;
   let pending = '';
   let selector = '';
+  let inDeclaration = false;
 
   for (const line of stripped.split('\n')) {
     const text = line.trim();
+
+    /*
+     * A declaration can span lines — prettier wraps any long `calc()` — and its continuation
+     * lines look exactly like selector fragments. Without this the parser read
+     * `min(var(--uboss-row,` as a selector and reported it as an unsilenced animation, which is
+     * the second time a bug in this parser has produced something that looked like a finding.
+     */
+    if (inDeclaration) {
+      if (text.includes(';')) inDeclaration = false;
+      depth += (line.match(/[{]/g) ?? []).length - (line.match(/[}]/g) ?? []).length;
+      continue;
+    }
+    if (text.includes(':') && !text.includes(';') && !text.endsWith('{')) {
+      inDeclaration = true;
+      depth += (line.match(/[{]/g) ?? []).length - (line.match(/[}]/g) ?? []).length;
+      continue;
+    }
+
     if (reducedFrom === null && text.includes('@media') && text.includes('prefers-reduced-motion')) {
       reducedFrom = depth;
     }

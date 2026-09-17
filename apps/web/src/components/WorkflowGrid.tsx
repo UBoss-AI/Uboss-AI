@@ -8,7 +8,9 @@ import {
   type WorkflowColumnDefinition,
 } from '@uboss/types';
 
-import { cn, Icon } from '@uboss/ui';
+import { cn, Icon, stagger, transition } from '@uboss/ui';
+import { motion } from 'motion/react';
+import { useRef, useState } from 'react';
 
 export interface WorkflowGridProps {
   steps: readonly Form2WorkflowStep[];
@@ -80,6 +82,40 @@ function renumber(steps: readonly Form2WorkflowStep[]): Form2WorkflowStep[] {
 export function WorkflowGrid({ steps, onChange, readOnly = false, className }: WorkflowGridProps) {
   const columns = FORM2_WORKFLOW_COLUMNS;
 
+  /*
+   * Row identity, kept here rather than on the step.
+   *
+   * A step is identified by its position, and reordering changes exactly that — so keying rows by
+   * position tells React that row 2 became row 3's contents, and it rewrites both rows in place.
+   * Nothing moves, so nothing can be followed: two rows swap their text and the eye has to
+   * re-read the grid to work out what happened. That is the whole cost of a reorder you cannot see.
+   *
+   * These ids belong to the editing session, not to the data. They are assigned on first render
+   * and carried through each operation the same way the steps are, which is what lets the rows
+   * animate to their new places instead of being redrawn. Nothing persists them and nothing else
+   * reads them: a step's identity in the saved draft is still its position.
+   */
+  const nextId = useRef(0);
+  const mint = () => {
+    nextId.current += 1;
+    return `row-${nextId.current}`;
+  };
+  const [rowIds, setRowIds] = useState<string[]>(() => steps.map(() => mint()));
+
+  // The data can change from outside (a draft loads, or the analysis writes a plan). Match the
+  // length without disturbing the ids that are already carrying rows.
+  if (rowIds.length !== steps.length) {
+    const corrected = steps.map((_, index) => rowIds[index] ?? mint());
+    setRowIds(corrected);
+  }
+
+  /*
+   * The row a change just touched, so the motion says *what* changed rather than only that
+   * something did. Cleared by the animation ending, not by a timer, so it cannot get out of step
+   * with what is on screen.
+   */
+  const [touched, setTouched] = useState<string | null>(null);
+
   /** The grouped banner row: one `th` per group, spanning its columns. */
   const groupHeader: { key: string; label: string; span: number; grouped: boolean }[] = [];
   for (let index = 1; index < columns.length;) {
@@ -101,6 +137,8 @@ export function WorkflowGrid({ steps, onChange, readOnly = false, className }: W
   }
 
   const update = (position: number, patch: Partial<Form2WorkflowStep>) => {
+    const index = steps.findIndex((step) => step.position === position);
+    if (index !== -1) setTouched(rowIds[index] ?? null);
     onChange(steps.map((step) => (step.position === position ? { ...step, ...patch } : step)));
   };
 
@@ -108,23 +146,42 @@ export function WorkflowGrid({ steps, onChange, readOnly = false, className }: W
     const index = steps.findIndex((step) => step.position === position);
     if (index === -1) return;
     const next = [...steps];
+    // The ids move exactly as the steps do, so a row keeps its identity across the operation.
+    const ids = [...rowIds];
 
     if (op === 'up' && index > 0) {
       [next[index - 1], next[index]] = [
         next[index] as Form2WorkflowStep,
         next[index - 1] as Form2WorkflowStep,
       ];
+      [ids[index - 1], ids[index]] = [ids[index] as string, ids[index - 1] as string];
     }
     if (op === 'down' && index < next.length - 1) {
       [next[index + 1], next[index]] = [
         next[index] as Form2WorkflowStep,
         next[index + 1] as Form2WorkflowStep,
       ];
+      [ids[index + 1], ids[index]] = [ids[index] as string, ids[index + 1] as string];
     }
-    if (op === 'insert') next.splice(index + 1, 0, blankWorkflowStep(0));
-    if (op === 'duplicate') next.splice(index + 1, 0, { ...(next[index] as Form2WorkflowStep) });
-    if (op === 'delete' && next.length > 1) next.splice(index, 1);
+    if (op === 'insert') {
+      next.splice(index + 1, 0, blankWorkflowStep(0));
+      const born = mint();
+      ids.splice(index + 1, 0, born);
+      setTouched(born);
+    }
+    if (op === 'duplicate') {
+      next.splice(index + 1, 0, { ...(next[index] as Form2WorkflowStep) });
+      const born = mint();
+      ids.splice(index + 1, 0, born);
+      setTouched(born);
+    }
+    if (op === 'delete' && next.length > 1) {
+      next.splice(index, 1);
+      ids.splice(index, 1);
+    }
+    if (op === 'up' || op === 'down') setTouched(ids[op === 'up' ? index - 1 : index + 1] ?? null);
 
+    setRowIds(ids);
     onChange(renumber(next));
   };
 
@@ -243,9 +300,31 @@ export function WorkflowGrid({ steps, onChange, readOnly = false, className }: W
         </thead>
         <tbody>
           {steps.map((step, index) => (
-            // --uboss-row drives the reveal stagger; the stylesheet caps it so a long workflow
-            // does not spend a second and a half assembling itself.
-            <tr key={step.position} style={{ "--uboss-row": index } as React.CSSProperties}>
+            /*
+             * Keyed by session identity, not position, and laid out by Motion — so moving a step
+             * is a move. `layout` animates the row to its new place, and the rows it displaces
+             * move with it, which is what makes a reorder legible.
+             *
+             * Removal is deliberately not animated. An exit animation keeps the row in the
+             * document — and so in the accessibility tree, still carrying its old step number —
+             * for as long as it takes to collapse. A row that has been deleted must not be
+             * readable, and what happened is already said by the rows below closing the gap.
+             */
+            <motion.tr
+              key={rowIds[index] ?? `fallback-${step.position}`}
+              layout
+              transition={{ ...transition('panel', 'standard'), delay: stagger(index, steps.length) }}
+              className={touched === rowIds[index] ? 'uboss-wfg-row--touched' : undefined}
+              onAnimationComplete={() => {
+                // Cleared by the animation, not a timer, so the mark cannot outlive what it marks.
+                if (touched === rowIds[index]) setTouched(null);
+              }}
+              // The first reveal: steps arrive a beat apart, so the order is visible in the way
+              // they appear. stagger() caps the sequence and returns 0 under reduced motion, so
+              // there is no second rule to keep in step.
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
               {columns.map((column) => cellFor(step, column))}
               <td>
                 <div className="uboss-wfg-rowops">
@@ -296,7 +375,7 @@ export function WorkflowGrid({ steps, onChange, readOnly = false, className }: W
                   </button>
                 </div>
               </td>
-            </tr>
+            </motion.tr>
           ))}
         </tbody>
       </table>

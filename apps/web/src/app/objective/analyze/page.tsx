@@ -351,7 +351,13 @@ function ObjectiveAnalyzeInner() {
               </p>
             ) : (
               <>
-                <ProgressStep label="AI analysis stages" items={stages} />
+                <ProgressStep
+                  label="AI analysis stages"
+                  items={stages}
+                  // A stage marked running here means a durable job really is working, so its
+                  // indicator keeps moving. See the prop: a wizard marking position does not.
+                  live={inFlight}
+                />
 
                 {run.failureReason === null ? null : (
                   <Banner tone="danger">{run.failureReason}</Banner>
@@ -399,7 +405,14 @@ function ObjectiveAnalyzeInner() {
                       }}
                     >
                       {run.draft.nodes.map((node, index) => (
-                        <div key={node.id} style={{ textAlign: 'center' }}>
+                        <div
+                          key={node.id}
+                          className="uboss-wf-reveal-item"
+                          // Drives the reveal beat. The plan is already computed and persisted —
+                          // this is the order it is read in, not a loading state, and every node
+                          // is on screen in the same order if the animation never runs.
+                          style={{ textAlign: 'center', '--uboss-row': index } as React.CSSProperties}
+                        >
                           {index === 0 ? null : <div className="uboss-wf-connector" />}
                           <WorkflowNode node={node} />
                         </div>

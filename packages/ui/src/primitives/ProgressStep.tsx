@@ -15,6 +15,19 @@ export interface ProgressStepProps {
   items: ProgressStepItem[];
   /** Accessible name for the list. */
   label: string;
+  /**
+   * Does a `running` step mean work is actually in flight?
+   *
+   * The distinction is not cosmetic. A wizard marks its current step `running` to say "you are
+   * here", and a ring that pulses for ever beside a form waiting for typing is motion with
+   * nothing behind it. An analysis run marks a stage `running` because a job really is working,
+   * and there an ongoing indicator is the truth — it is the only thing on screen saying the wait
+   * is progress rather than a hang.
+   *
+   * So the caller says which it is, and the default is the quiet one: something that merely marks
+   * position animates once and stops.
+   */
+  live?: boolean;
   className?: string;
 }
 
@@ -38,8 +51,10 @@ const STATE_LABEL: Record<StepState, string> = {
  *
  * It reports real progress only — never a fabricated completion. Each step carries a text
  * state for assistive technology.
+ *
+ * Pass `live` when a `running` step reflects work genuinely in flight; see the prop.
  */
-export function ProgressStep({ items, label, className }: ProgressStepProps) {
+export function ProgressStep({ items, label, live = false, className }: ProgressStepProps) {
   return (
     <ol
       className={cn('uboss-stepper', className)}
@@ -60,7 +75,10 @@ export function ProgressStep({ items, label, className }: ProgressStepProps) {
               ) : (
                 <>
                   {item.state === 'running' ? (
-                    <span className="uboss-step-pulse" aria-hidden="true" />
+                    <span
+                      className={cn('uboss-step-pulse', live && 'uboss-step-pulse--live')}
+                      aria-hidden="true"
+                    />
                   ) : null}
                   {index + 1}
                 </>

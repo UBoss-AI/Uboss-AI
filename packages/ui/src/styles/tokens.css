@@ -364,6 +364,9 @@
   --uboss-motion-stagger: 40ms;
   /* Twelve steps at 40ms is 480ms: the whole sequence stays inside the signature budget. */
   --uboss-motion-stagger-max: 12;
+  /* The beat between workflow nodes as the plan reveals. Longer than the list stagger because
+     each node is a shape to read rather than a row to scan. */
+  --uboss-wf-beat: 90ms;
 
   /* ==========================================================================
      Focus: visible on every interactive element, never removed

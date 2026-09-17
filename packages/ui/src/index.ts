@@ -140,3 +140,12 @@ export type {
   NavItem,
   SettingsSection,
 } from './navigation/navigation-model';
+
+/*
+ * The motion system, re-exported so the app uses the same numbers the components do.
+ *
+ * Without this an app-side animation would have to restate a duration, and a restated duration is
+ * a duration that drifts — which is the whole argument for the scale existing. See
+ * src/motion/motion.ts, and motion.test.ts which asserts these agree with tokens.css.
+ */
+export { DURATION, EASE, prefersReducedMotion, stagger, transition } from './motion/motion';

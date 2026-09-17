@@ -5271,39 +5271,23 @@ table.uboss-wfg {
 }
 
 /* ============================================================
-   The workflow arriving (Phase 19)
+   The workflow grid's rows
    ============================================================ */
 
 /*
-  A workflow is a sequence, and it arrives as one: each step a fixed beat behind the step above,
-  so the order is visible in the way it appears rather than only in the numbers down the side.
+  Row motion lives in WorkflowGrid, not here.
 
-  The delay is capped at twelve rows. Past that everything shares the last beat — a forty-step
-  workflow staggered all the way down would take a second and a half to finish appearing, which
-  stops being a reveal and becomes a wait. The cap is the same one `stagger()` applies in JS, and
-  both read the same token.
+  It began as a CSS stagger, which was right while the rows were static markup. Once reordering
+  had to be *visible* — a step moving to its new place rather than two rows swapping their text —
+  Motion had to own the row, because only it can animate an element to a position it has not been
+  given yet. Two systems writing transform on the same element would have fought during the first
+  240ms after mount, so the CSS reveal was removed rather than left as a second opinion.
+
+  What remains here is the mark on the row a change just touched, which is presentation.
 */
-@keyframes uboss-wfg-row-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-}
-
-.uboss-wfg tbody tr {
-  animation: uboss-wfg-row-in var(--uboss-motion-panel) var(--uboss-ease-enter) backwards;
-  animation-delay: calc(
-    min(var(--uboss-row, 0), var(--uboss-motion-stagger-max)) * var(--uboss-motion-stagger)
-  );
-}
-
-@media (prefers-reduced-motion: reduce) {
-  /* Removed outright: a backwards fill holds row 12 invisible for 480ms before its animation
-     starts, and someone who asked for less motion should not be reading a table that is still
-     assembling itself. */
-  .uboss-wfg tbody tr {
-    animation: none !important;
-  }
+.uboss-wfg-row--touched > td {
+  background: var(--uboss-teal-050);
+  transition: background var(--uboss-motion-panel) var(--uboss-ease-standard);
 }
 
 /* ============================================================
@@ -5328,6 +5312,109 @@ table.uboss-wfg {
 
 @media (prefers-reduced-motion: reduce) {
   .uboss-state {
+    animation: none !important;
+  }
+}
+
+/* ============================================================
+   Objective AI orchestration, and the workflow it produces
+   ============================================================ */
+
+/*
+  A stage that is genuinely working keeps moving; a stage that merely marks your position does not.
+
+  `.uboss-step-pulse` plays once — that is the wizard case, where `running` means "you are here"
+  and a form waiting for typing must not have a ring pulsing beside it. `--live` is the analysis
+  case, where a durable job really is running and this ring is the only thing on screen saying the
+  wait is progress rather than a hang. Nothing about the loop implies how far along it is: there
+  is no percentage here because the backend reports stages, not fractions, and a bar that filled
+  itself would be inventing one.
+*/
+.uboss-step-pulse--live {
+  animation: uboss-pulse var(--uboss-motion-loop-pulse) var(--uboss-ease-standard) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /*
+     The one indicator that cannot simply be removed — without it a reduced-motion reader has no
+     signal that the job is alive. It becomes a steady ring instead of a moving one: present,
+     stating the same thing, not animating.
+  */
+  .uboss-step-pulse--live {
+    animation: none;
+    opacity: 0.55;
+  }
+}
+
+/*
+  The workflow arriving after the analysis finishes.
+
+  The order is the argument: the goal, then the first step, then what that step leads to. Each
+  node waits on the connector that reaches it, so the plan assembles along its own dependencies
+  rather than all at once — which is the one thing a static screenshot of a workflow cannot tell
+  you and the one thing a person most needs to see.
+
+  This reveals a plan that has already been computed and persisted. Nothing here is a loading
+  state and nothing is speculative: if the reveal never ran, the same nodes would be on screen in
+  the same order, and the only loss is the sequence.
+*/
+@keyframes uboss-wf-node-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* A connector draws downward from the node above, because that is the direction of the flow. */
+@keyframes uboss-wf-connector-draw {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+/* Owners and skills settle after their node has arrived: the shape first, then what fills it. */
+@keyframes uboss-wf-detail-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.uboss-wf-reveal-item {
+  animation: uboss-wf-node-in var(--uboss-motion-panel) var(--uboss-ease-enter) backwards;
+  animation-delay: calc(
+    min(var(--uboss-row, 0), var(--uboss-motion-stagger-max)) * var(--uboss-wf-beat)
+  );
+}
+
+.uboss-wf-reveal-item .uboss-wf-connector {
+  transform-origin: top center;
+  animation: uboss-wf-connector-draw var(--uboss-motion-small) var(--uboss-ease-standard) backwards;
+  /* Half a beat earlier than its node: the line arrives, then what it points at. */
+  animation-delay: calc(
+    min(var(--uboss-row, 0), var(--uboss-motion-stagger-max)) * var(--uboss-wf-beat) -
+      var(--uboss-motion-small)
+  );
+}
+
+.uboss-wf-reveal-item .uboss-wf-node-body,
+.uboss-wf-reveal-item .uboss-wf-ai-label small {
+  animation: uboss-wf-detail-in var(--uboss-motion-small) var(--uboss-ease-standard) backwards;
+  animation-delay: calc(
+    min(var(--uboss-row, 0), var(--uboss-motion-stagger-max)) * var(--uboss-wf-beat) +
+      var(--uboss-motion-small)
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /*
+     Removed outright rather than shortened, for the reason ADR-299 records: a backwards fill
+     holds the opening frame until the animation's first tick, so the last node of a long plan
+     would be invisible for the length of its delay. The plan is simply there.
+  */
+  .uboss-wf-reveal-item,
+  .uboss-wf-reveal-item .uboss-wf-connector,
+  .uboss-wf-reveal-item .uboss-wf-node-body,
+  .uboss-wf-reveal-item .uboss-wf-ai-label small {
     animation: none !important;
   }
 }
