@@ -111,7 +111,7 @@ describe('motion tokens resolve', () => {
   );
 
   /** Custom properties set inline by a component rather than declared in a stylesheet. */
-  const setInJs = new Set(['--uboss-arc']);
+  const setInJs = new Set(['--uboss-arc', '--uboss-row']);
 
   const referenced = sheets.flatMap(({ name, css }) =>
     css.split('\n').flatMap((line, index) =>

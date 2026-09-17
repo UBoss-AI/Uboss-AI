@@ -5237,3 +5237,65 @@ table.uboss-wfg {
   position: relative;
   z-index: 1;
 }
+
+/* ============================================================
+   The workflow arriving (Phase 19)
+   ============================================================ */
+
+/*
+  A workflow is a sequence, and it arrives as one: each step a fixed beat behind the step above,
+  so the order is visible in the way it appears rather than only in the numbers down the side.
+
+  The delay is capped at twelve rows. Past that everything shares the last beat — a forty-step
+  workflow staggered all the way down would take a second and a half to finish appearing, which
+  stops being a reveal and becomes a wait. The cap is the same one `stagger()` applies in JS, and
+  both read the same token.
+*/
+@keyframes uboss-wfg-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.uboss-wfg tbody tr {
+  animation: uboss-wfg-row-in var(--uboss-motion-panel) var(--uboss-ease-enter) backwards;
+  animation-delay: calc(
+    min(var(--uboss-row, 0), var(--uboss-motion-stagger-max)) * var(--uboss-motion-stagger)
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Removed outright: a backwards fill holds row 12 invisible for 480ms before its animation
+     starts, and someone who asked for less motion should not be reading a table that is still
+     assembling itself. */
+  .uboss-wfg tbody tr {
+    animation: none !important;
+  }
+}
+
+/* ============================================================
+   Nothing, loading, and gone wrong (Phase 30)
+   ============================================================ */
+
+/*
+  The three states that share one rule: they all replace content that was expected to be there.
+
+  An empty state that snaps in reads as a failure — the eye does not distinguish "this arrived
+  and is empty" from "this broke". Easing it in says the screen finished its work and this is the
+  answer. It is deliberately the same arrival as a page, on the same curve, because to the person
+  reading it that is exactly what it is.
+
+  Skeletons are excluded: a loading placeholder that fades in delays the only signal the screen
+  has that anything is happening. It appears at once and shimmers, and the shimmer is the one
+  animation in this product allowed to repeat.
+*/
+.uboss-state {
+  animation: uboss-page-in var(--uboss-motion-panel) var(--uboss-ease-enter) backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .uboss-state {
+    animation: none !important;
+  }
+}

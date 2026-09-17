@@ -356,6 +356,14 @@
   --uboss-motion-loop-spin: 620ms;
   --uboss-motion-loop-pulse: 1400ms;
   --uboss-motion-loop-shimmer: 1300ms;
+  /*
+   * The per-item delay for a list that reveals in order. Matched by `stagger()` in
+   * src/motion/motion.ts, which caps the same way — a forty-row workflow at 40ms each would take
+   * a second and a half to finish appearing, which stops being a reveal and becomes a wait.
+   */
+  --uboss-motion-stagger: 40ms;
+  /* Twelve steps at 40ms is 480ms: the whole sequence stays inside the signature budget. */
+  --uboss-motion-stagger-max: 12;
 
   /* ==========================================================================
      Focus: visible on every interactive element, never removed

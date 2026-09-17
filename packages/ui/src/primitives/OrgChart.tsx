@@ -53,6 +53,10 @@ const FALLBACK_COLOUR = '#2563EB';
  * The five named ones keep the reference's exact colours. Anything else is hashed into a fixed
  * palette, so the same department is always the same colour — a chart whose colours moved
  * between page loads would make the grouping useless.
+ *
+ * These stay outside the violet system on purpose. They are categorical data colours — their job
+ * is to be told apart from each other, which a single hue cannot do — whereas the chart's own
+ * chrome (the mark, the add-person glyph) belongs to the product and follows the tokens.
  */
 function departmentColour(name: string): string {
   const named = DEPARTMENT_COLOURS[name];
@@ -225,8 +229,8 @@ export function OrgChart({
       >
         <defs>
           <linearGradient id="uboss-org-logo" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#0EA5E9" />
-            <stop offset="1" stopColor="#2563EB" />
+            <stop offset="0" stopColor="var(--uboss-ai-bright)" />
+            <stop offset="1" stopColor="var(--uboss-blue)" />
           </linearGradient>
         </defs>
 
@@ -409,7 +413,7 @@ function OrgNode({
           />
           <path
             d={`M${right - 40} ${y + 12.5} v9 M${right - 44.5} ${y + 17} h9`}
-            stroke="#2563EB"
+            stroke="var(--uboss-blue)"
             strokeWidth={1.7}
             strokeLinecap="round"
           />

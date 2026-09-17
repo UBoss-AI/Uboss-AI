@@ -242,8 +242,10 @@ export function WorkflowGrid({ steps, onChange, readOnly = false, className }: W
           </tr>
         </thead>
         <tbody>
-          {steps.map((step) => (
-            <tr key={step.position}>
+          {steps.map((step, index) => (
+            // --uboss-row drives the reveal stagger; the stylesheet caps it so a long workflow
+            // does not spend a second and a half assembling itself.
+            <tr key={step.position} style={{ "--uboss-row": index } as React.CSSProperties}>
               {columns.map((column) => cellFor(step, column))}
               <td>
                 <div className="uboss-wfg-rowops">

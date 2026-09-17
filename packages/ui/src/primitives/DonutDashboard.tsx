@@ -36,6 +36,11 @@ import { EmptyState } from './EmptyState';
  * was rather than redrawing it from empty. A dashboard that re-animated from zero on every poll
  * would flash at somebody trying to read it.
  *
+ * The hover lift states its `initial` explicitly. Without it Motion has no starting value for
+ * `r` — it is an SVG presentation attribute, not a style — and writes `undefined` to it on the
+ * first frame. The browser reports "<circle> attribute r: Expected length" and carries on, so it
+ * showed up only in the console, on every dashboard, for every role.
+ *
  * Nothing loops. The highlight passes the circumference once, on first reveal, and stops. Under
  * `prefers-reduced-motion` the draw and the sweep are both off and the chart is simply complete.
  */
@@ -160,6 +165,7 @@ export function DonutDashboard({
                 strokeLinecap="round"
                 strokeDasharray={agentsDash}
                 strokeDashoffset={0}
+                initial={{ r: RADIUS, opacity: 1 }}
                 animate={{
                   r: hovered === 'agents' ? RADIUS + LIFT : RADIUS,
                   opacity: hovered === 'pending' ? 0.55 : 1,
@@ -186,6 +192,7 @@ export function DonutDashboard({
                 strokeLinecap="round"
                 strokeDasharray={pendingDash}
                 strokeDashoffset={-agentsFraction}
+                initial={{ r: RADIUS, opacity: 1 }}
                 animate={{
                   r: hovered === 'pending' ? RADIUS + LIFT : RADIUS,
                   opacity: hovered === 'agents' ? 0.55 : 1,

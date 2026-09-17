@@ -115,3 +115,25 @@ describe('stagger', () => {
     expect(last).toBeLessThan(stagger(count - 1, 4));
   });
 });
+
+describe('the stagger exists in both languages', () => {
+  /*
+   * A list revealed in order is done in CSS where the rows are static markup (the workflow grid)
+   * and in JS where Motion drives them. Two per-item delays would show up as a table that ripples
+   * at one speed beside a list that ripples at another, which is the drift the tokens exist to
+   * stop — so the CSS token and the JS cap are asserted equal here.
+   */
+  it('matches the per-item delay in CSS', () => {
+    const ms = Number.parseFloat(cssToken('uboss-motion-stagger').replace('ms', ''));
+    // stagger() caps the per-item delay at 0.04s; the token is the same number in milliseconds.
+    expect(stagger(1, 2)).toBeCloseTo(ms / 1000, 5);
+  });
+
+  it('caps at the same number of items', () => {
+    const cap = Number.parseInt(cssToken('uboss-motion-stagger-max'), 10);
+    const perItem = Number.parseFloat(cssToken('uboss-motion-stagger').replace('ms', '')) / 1000;
+
+    // Both languages stop stretching the sequence at the signature budget.
+    expect(cap * perItem).toBeCloseTo(DURATION.signature, 5);
+  });
+});
