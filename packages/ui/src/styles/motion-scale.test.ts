@@ -88,3 +88,70 @@ describe('the motion scale governs every stylesheet', () => {
     expect(listed(interactionLoops)).toEqual([]);
   });
 });
+
+describe('motion tokens resolve', () => {
+  /*
+   * A misspelled custom property is the quietest failure in CSS. `var(--uboss-mtoin-small)` makes
+   * the whole `transition` declaration invalid, the element simply stops animating, and nothing
+   * anywhere reports it — no console warning, no build error, no failing test. The only way to
+   * notice is to look at the right screen at the right moment.
+   */
+  /*
+   * Every `--uboss-*` reference in every stylesheet, not just the motion ones. The first version
+   * of this check collected only `var(--uboss-motion…)` and `var(--uboss-ease…)`, which meant a
+   * typo anywhere but the end of the name — `var(--uboss-mtoin-small)` — was invisible to it. A
+   * check that cannot fail is not a check, so it now looks at the whole namespace.
+   */
+  const declared = new Set(
+    sheets.flatMap(({ css }) =>
+      [...css.matchAll(/^ *(--uboss-[\w-]+) *:/gm)]
+        .map((match) => match[1])
+        .filter((name): name is string => name !== undefined),
+    ),
+  );
+
+  /** Custom properties set inline by a component rather than declared in a stylesheet. */
+  const setInJs = new Set(['--uboss-arc']);
+
+  const referenced = sheets.flatMap(({ name, css }) =>
+    css.split('\n').flatMap((line, index) =>
+      [...line.matchAll(/var\( *(--uboss-[\w-]+)/g)].map((match) => ({
+        name,
+        line: index + 1,
+        token: match[1] as string,
+      })),
+    ),
+  );
+
+  it('finds token references to check', () => {
+    expect(declared.size).toBeGreaterThan(20);
+    expect(referenced.length).toBeGreaterThan(100);
+  });
+
+  it('declares every token the stylesheets reference', () => {
+    const dangling = referenced
+      .filter(({ token }) => !declared.has(token) && !setInJs.has(token))
+      .map(({ name, line, token }) => `${name}:${line}  var(${token})`);
+
+    expect(dangling).toEqual([]);
+  });
+
+  it('keeps the legacy names as aliases rather than a second scale', () => {
+    const tokens = sheets.find((s) => s.name === 'tokens.css')?.css ?? '';
+
+    for (const legacy of [
+      '--uboss-motion-fast',
+      '--uboss-motion',
+      '--uboss-motion-slow',
+      '--uboss-ease',
+    ]) {
+      // Spaces spelled out rather than a backslash class: tokens.css indents with plain spaces,
+      // and this avoids an escape that is easy to lose when the file is edited by a script.
+      const pattern = new RegExp('^ *' + legacy + ': *([^;]+);', 'm');
+      const declaration = tokens.match(pattern)?.[1]?.trim();
+      expect(declaration, `${legacy} should alias the scale`).toMatch(
+        /^var\(--uboss-(motion|ease)-/,
+      );
+    }
+  });
+});

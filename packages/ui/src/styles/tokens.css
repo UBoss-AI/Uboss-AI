@@ -340,7 +340,7 @@
   /* Four curves, by role. `standard` for anything that stays on screen; `enter` decelerates so
      arriving things settle; `exit` accelerates so leaving things get out of the way; `emphasized`
      is the signature curve with a little overshoot in its tail. */
-  --uboss-ease: cubic-bezier(0.2, 0, 0.2, 1);
+  --uboss-ease: var(--uboss-ease-standard);
   --uboss-ease-standard: cubic-bezier(0.2, 0, 0.2, 1);
   --uboss-ease-enter: cubic-bezier(0.05, 0.7, 0.1, 1);
   --uboss-ease-exit: cubic-bezier(0.3, 0, 0.8, 0.15);

@@ -148,6 +148,42 @@
   margin: 0 auto;
 }
 
+/*
+  The page arriving (Phase 8).
+
+  Each screen renders its own shell, so navigating remounts `.uboss-content` — which means a plain
+  CSS animation runs on exactly the right beat, with no route listener, no client component and no
+  JavaScript at all. The sidebar and top bar are outside this element and deliberately stay put:
+  animating the chrome as well would say "new application" when the truth is "new page".
+
+  The rise is 6px, not 20. A page that visibly slides into place reads as a phone app; at this
+  distance the eye registers that something arrived without being able to describe what moved.
+
+  `transform` creates a containing block for any `position: fixed` descendant, which is how a
+  dialog ends up trapped inside a panel instead of centred on the viewport. It is tempting to
+  think `transform: none` in the final keyframe settles that — it does not. With `fill-mode:
+  both` the browser holds the animated value, and `none` computes to `matrix(1, 0, 0, 1, 0, 0)`,
+  which is still a transform: a fixed child measured 56px down the page rather than 0.
+
+  So the fill is `backwards`, not `both`. It supplies the opening frame before the animation
+  starts and then lets go, leaving the element with the styles it actually has and no containing
+  block at all. The end state was never worth holding — it is simply the element at rest.
+*/
+@keyframes uboss-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.uboss-content {
+  animation: uboss-page-in var(--uboss-motion-panel) var(--uboss-ease-enter) backwards;
+}
+
 /* ============================================================
    Sidebar
    ============================================================ */
@@ -464,6 +500,7 @@
 .uboss-shell--collapsed .uboss-side-brand-text,
 .uboss-shell--collapsed .uboss-nav-label,
 .uboss-shell--collapsed .uboss-side-foot-stack {
+  opacity: 0;
   display: none;
 }
 
@@ -503,6 +540,55 @@
 .uboss-shell--collapsed .uboss-side-foot {
   justify-content: center;
   padding: 12px 0;
+}
+
+/* ============================================================
+   Collapse, as a movement rather than a jump (Phase 7)
+   ============================================================ */
+
+/*
+  Collapsing used to be a snap: the grid column changed width in one frame and every label
+  vanished with it. Nothing was wrong with the result, but there was no way to see that the
+  sidebar had narrowed rather than been replaced — and the labels disappearing at the same
+  instant as the width meant the eye had nothing to follow.
+
+  So the rail glides, and the labels fade out just ahead of it. `display` is in the transition
+  with `allow-discrete` on purpose: fading a label to `opacity: 0` while leaving it in the
+  document would keep it in the accessibility tree, and the collapsed item already carries the
+  same words as its `aria-label` — a screen reader would hear the label twice. `allow-discrete`
+  flips `display` at the end of the fade instead, so the text is really gone when it looks gone.
+*/
+.uboss-shell {
+  transition: grid-template-columns var(--uboss-motion-panel) var(--uboss-ease-standard);
+}
+
+.uboss-side-brand-text,
+.uboss-nav-label,
+.uboss-side-foot-stack {
+  opacity: 1;
+  transition:
+    opacity var(--uboss-motion-small) var(--uboss-ease-standard),
+    display var(--uboss-motion-small) var(--uboss-ease-standard) allow-discrete;
+}
+
+/* Arriving: the label starts invisible so expanding fades it in rather than popping it. */
+@starting-style {
+  .uboss-side-brand-text,
+  .uboss-nav-label,
+  .uboss-side-foot-stack {
+    opacity: 0;
+  }
+}
+
+/* The icons slide to the centre of the rail instead of jumping there. */
+.uboss-nav-item,
+.uboss-side-scroll,
+.uboss-side-foot {
+  transition:
+    background var(--uboss-motion-micro) var(--uboss-ease-standard),
+    color var(--uboss-motion-micro) var(--uboss-ease-standard),
+    padding var(--uboss-motion-panel) var(--uboss-ease-standard),
+    gap var(--uboss-motion-panel) var(--uboss-ease-standard);
 }
 
 /* ============================================================
@@ -2482,7 +2568,7 @@ textarea.uboss-input,
  * path so the decision is in one place and can be changed in one place.
  */
 .uboss-login-left {
-  background: linear-gradient(165deg, var(--uboss-navy-900), var(--uboss-navy) 60%, #12283f);
+  background: linear-gradient(165deg, var(--uboss-navy-900), var(--uboss-navy) 60%, var(--uboss-navy-2));
   color: #fff;
   padding: 46px 52px;
   display: flex;
@@ -2490,8 +2576,9 @@ textarea.uboss-input,
   position: relative;
   overflow: hidden;
 
-  /* 10.06:1 on the navy behind it; decorative, but it should still read as deliberate. */
-  --uboss-login-link: #2dd4bf;
+  /* 5.34:1 against the lightest point of the gradient behind it — decorative, but it should
+     still read as deliberate. Teal here was the last of the old identity on this screen. */
+  --uboss-login-link: var(--uboss-ai-bright);
 }
 
 /* Transcribed from the reference stylesheet, which keeps .glow1/.glow2 even though its
@@ -4861,4 +4948,149 @@ table.uboss-wfg {
 .chat-stances[open] > summary,
 .uboss-disclosure[open] > summary {
   margin-bottom: var(--uboss-space-2);
+}
+
+/* ============================================================
+   Sign-in, arriving (Phase 6)
+   ============================================================ */
+
+/*
+  The one screen every person sees before they see anything else, and the only one they look at
+  while waiting rather than while working. It gets the product's longest animation.
+
+  The order is the argument the panel is making: the mark, then the claim, then the diagram that
+  explains it, then the assurances underneath. Each piece is 60ms behind the last, which is enough
+  to read as a sequence and not enough to be a queue — the whole thing is done inside the
+  signature budget.
+
+  Every fill is `backwards`. It supplies the opening frame and then lets go, so nothing is left
+  holding a transform: a held `matrix(1, 0, 0, 1, 0, 0)` is still a containing block, and the sign-in
+  card is exactly the kind of element that later wants a `position: fixed` dialog inside it.
+
+  Nothing here repeats. This plays once on arrival and the screen is then still.
+*/
+@keyframes uboss-login-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+@keyframes uboss-login-ring {
+  from {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+}
+
+@keyframes uboss-login-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+
+.uboss-login-brand,
+.uboss-login-pill,
+.uboss-mm-foot,
+.uboss-login-card {
+  animation: uboss-login-rise var(--uboss-motion-signature) var(--uboss-ease-enter) backwards;
+}
+
+.uboss-login-pill {
+  animation-delay: 60ms;
+}
+
+.uboss-mm-foot {
+  animation-delay: 300ms;
+}
+
+/* The card is the reason the page exists, so it arrives with the brand rather than after it. */
+.uboss-login-card {
+  animation-delay: 40ms;
+}
+
+/* The rings open outward from the centre mark. */
+.uboss-mm-rings span {
+  animation: uboss-login-ring var(--uboss-motion-signature) var(--uboss-ease-emphasized) backwards;
+}
+
+.uboss-mm-rings span:nth-child(1) {
+  animation-delay: 120ms;
+}
+.uboss-mm-rings span:nth-child(2) {
+  animation-delay: 160ms;
+}
+.uboss-mm-rings span:nth-child(3) {
+  animation-delay: 200ms;
+}
+.uboss-mm-rings span:nth-child(4) {
+  animation-delay: 240ms;
+}
+
+/*
+  The connectors draw from the centre outward. `pathLength="1"` is set on each path in
+  LoginPresentation so the dash values here are fractions of the line rather than user units —
+  the viewBox is stretched by `preserveAspectRatio="none"`, so real lengths would differ per path
+  and the six lines would finish at six different moments.
+*/
+.uboss-mm-links path {
+  stroke-dasharray: 1;
+  animation: uboss-login-draw var(--uboss-motion-signature) var(--uboss-ease-standard) backwards;
+  animation-delay: 220ms;
+}
+
+/* The capability cards settle in after the diagram that positions them. */
+.uboss-mmc,
+.uboss-mm-center {
+  animation: uboss-login-rise var(--uboss-motion-panel) var(--uboss-ease-enter) backwards;
+}
+
+.uboss-mm-center {
+  animation-delay: 180ms;
+}
+
+.uboss-mmc:nth-of-type(1) {
+  animation-delay: 260ms;
+}
+.uboss-mmc:nth-of-type(2) {
+  animation-delay: 300ms;
+}
+.uboss-mmc:nth-of-type(3) {
+  animation-delay: 340ms;
+}
+.uboss-mmc:nth-of-type(4) {
+  animation-delay: 380ms;
+}
+.uboss-mmc:nth-of-type(5) {
+  animation-delay: 420ms;
+}
+.uboss-mmc:nth-of-type(6) {
+  animation-delay: 460ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /*
+   * Removed outright, not shortened.
+   *
+   * The global rule collapses every duration to 0.01ms, which is the right default — but these
+   * animations use `backwards` fill, and a backwards fill paints the opening frame from the
+   * moment the element exists until the animation's first tick. A zero-length animation that has
+   * not ticked yet still shows `opacity: 0`, so on a busy main thread the sign-in card stays
+   * blank; measured at 570ms here. Someone who has asked for less motion is the last person who
+   * should be waiting on an animation frame to see the form.
+   *
+   * `animation: none` drops the fill with it, so the element is simply itself from the first
+   * frame — which is what the preference is asking for.
+   */
+  .uboss-login-brand,
+  .uboss-login-pill,
+  .uboss-mm-foot,
+  .uboss-login-card,
+  .uboss-mm-rings span,
+  .uboss-mm-links path,
+  .uboss-mmc,
+  .uboss-mm-center,
+  .uboss-content {
+    animation: none !important;
+  }
 }

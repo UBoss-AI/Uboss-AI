@@ -67,6 +67,7 @@ export function LoginPresentation({ children }: LoginPresentationProps) {
               d="M50,50 C42,50 40,17 33,17"
               stroke="var(--uboss-login-link)"
               strokeWidth={1.4}
+              pathLength={1}
               vectorEffect="non-scaling-stroke"
               opacity={0.75}
             />
@@ -74,6 +75,7 @@ export function LoginPresentation({ children }: LoginPresentationProps) {
               d="M50,50 C44,50 41,50 33,50"
               stroke="var(--uboss-login-link)"
               strokeWidth={1.4}
+              pathLength={1}
               vectorEffect="non-scaling-stroke"
               opacity={0.9}
             />
@@ -81,6 +83,7 @@ export function LoginPresentation({ children }: LoginPresentationProps) {
               d="M50,50 C42,50 40,83 33,83"
               stroke="var(--uboss-login-link)"
               strokeWidth={1.4}
+              pathLength={1}
               vectorEffect="non-scaling-stroke"
               opacity={0.6}
             />
@@ -88,6 +91,7 @@ export function LoginPresentation({ children }: LoginPresentationProps) {
               d="M50,50 C58,50 60,17 67,17"
               stroke="var(--uboss-login-link)"
               strokeWidth={1.4}
+              pathLength={1}
               vectorEffect="non-scaling-stroke"
               opacity={0.75}
             />
@@ -95,6 +99,7 @@ export function LoginPresentation({ children }: LoginPresentationProps) {
               d="M50,50 C56,50 59,50 67,50"
               stroke="var(--uboss-login-link)"
               strokeWidth={1.4}
+              pathLength={1}
               vectorEffect="non-scaling-stroke"
               opacity={0.9}
             />
@@ -102,6 +107,7 @@ export function LoginPresentation({ children }: LoginPresentationProps) {
               d="M50,50 C58,50 60,83 67,83"
               stroke="var(--uboss-login-link)"
               strokeWidth={1.4}
+              pathLength={1}
               vectorEffect="non-scaling-stroke"
               opacity={0.6}
             />
