@@ -1,9 +1,11 @@
 'use client';
 
+import { motion } from 'motion/react';
 import { useId, useMemo, useState, type ReactNode } from 'react';
 
 import { Icon } from '../primitives/Icon';
 import { cn } from '../lib/class-names';
+import { transition } from '../motion/motion';
 import type { SettingsSection } from '../navigation/navigation-model';
 
 export interface SettingsShellProps {
@@ -48,6 +50,9 @@ export function SettingsShell({
 }: SettingsShellProps) {
   const [query, setQuery] = useState('');
   const searchId = useId();
+  // Scoped per instance, like the sidebar's: a second settings list on the same screen sharing
+  // this id would send the highlight travelling between the two.
+  const indicatorId = useId();
 
   const labelFor = (section: SettingsSection) =>
     personalLabels && section.personalLabel ? section.personalLabel : section.label;
@@ -100,7 +105,15 @@ export function SettingsShell({
               aria-current={active ? 'page' : undefined}
               onClick={() => onSelect(section.key)}
             >
-              {labelFor(section)}
+              {active ? (
+                <motion.span
+                  layoutId={indicatorId}
+                  className="uboss-settings-indicator"
+                  aria-hidden="true"
+                  transition={transition('panel', 'standard')}
+                />
+              ) : null}
+              <span className="uboss-settings-nav-label">{labelFor(section)}</span>
             </button>
           );
         })}

@@ -2189,7 +2189,6 @@ textarea.uboss-input,
 .uboss-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(11, 18, 32, 0.5);
   display: flex;
   z-index: 50;
   animation: uboss-fade var(--uboss-motion) var(--uboss-ease);
@@ -2544,7 +2543,6 @@ textarea.uboss-input,
 /* Teal, matching the sidebar: the section you are looking at is a selection, not an action.
    Filled with the solid token because white text sits on it. */
 .uboss-settings-nav-item[aria-current='page'] {
-  background: var(--uboss-teal-solid);
   color: var(--uboss-text-on-dark);
   font-weight: 600;
 }
@@ -5193,4 +5191,49 @@ table.uboss-wfg {
   .uboss-account-menu {
     animation: none !important;
   }
+}
+
+/* ============================================================
+   Settings and overlays (Phase 16)
+   ============================================================ */
+
+/*
+  The scrim was rgba(11, 18, 32, 0.5) — a blue-black left over from the previous identity, and
+  flat. It is violet-black now, and it blurs what is behind it.
+
+  The blur is the point, not decoration: a dialog over a legible page competes with it, and people
+  read the wrong thing and then act in the dialog. Three pixels is enough that text behind stops
+  resolving into words while the shape of the page stays recognisable, so the dialog still reads
+  as being over this screen rather than over nothing.
+
+  `backdrop-filter` is not universal, which is why the scrim is opaque enough to work alone: on a
+  browser without it the overlay is exactly what it was before, just violet.
+*/
+.uboss-overlay {
+  background: rgba(23, 16, 43, 0.55);
+  backdrop-filter: blur(3px);
+}
+
+/*
+  Settings sections behave like the sidebar, because they are the same gesture: one indicator
+  travels down the list rather than the fill jumping between items.
+*/
+.uboss-settings-nav-item {
+  position: relative;
+  transition:
+    background var(--uboss-motion-micro) var(--uboss-ease-standard),
+    color var(--uboss-motion-micro) var(--uboss-ease-standard);
+}
+
+.uboss-settings-indicator {
+  position: absolute;
+  inset: 0;
+  border-radius: 9px;
+  background: var(--uboss-teal-solid);
+  z-index: 0;
+}
+
+.uboss-settings-nav-label {
+  position: relative;
+  z-index: 1;
 }
