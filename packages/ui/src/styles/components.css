@@ -6375,6 +6375,39 @@ table.uboss-wfg {
 }
 
 /*
+  The hero card takes the height the page is not using.
+
+  The stage already fills the workspace, so when the page heading moved into the top bar the card
+  kept its content height and left a third of the screen as bare field below it. Stretching it is
+  a flex problem rather than a min-height one: a percentage height against a parent sized by
+  `min-height` is indefinite, so it would have resolved to auto and changed nothing.
+
+  Only the Dashboard is affected — `.uboss-dash-stage` is that screen's own wrapper — and the
+  ambience layer is absolutely positioned, so it is out of flow and unaffected by the stage
+  becoming a flex container.
+*/
+.uboss-dash-stage {
+  display: flex;
+  flex-direction: column;
+}
+
+.uboss-dash-stage > .uboss-card,
+.uboss-dash-stage > .uboss-card > .uboss-card-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/*
+  The donut centres itself in whatever is left, and the scope line stays at the bottom of the card
+  where it already was. Without this the donut would sit at the top of the taller card and the
+  space would simply move inside it, which is the same problem one border further in.
+*/
+.uboss-dash-stage .uboss-donut-wrap {
+  flex: 1;
+}
+
+/*
   The muted line on this card uses text-2 rather than text-3.
 
   text-3 measured 4.44:1 here even at the old opacity — already under 4.5:1, and transparency was
