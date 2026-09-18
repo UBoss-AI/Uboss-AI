@@ -372,13 +372,30 @@ export class EmploymentService {
     subjectUserId: string;
   }): Promise<Record<string, unknown>> {
     const context = await this.authorization.contextFor(input.scope, input.actorUserId);
-    await this.authorization.assertCan(context, { module: 'hierarchy', action: 'View' });
+
+    /*
+     * Your own record is yours; somebody else's needs the Hierarchy module.
+     *
+     * This asserted `hierarchy:View` for every profile including the caller's own, which was
+     * harmless while every role template carried that grant. CR-03 §9 took it away from a standard
+     * Employee — they get Dashboard, To-do, their agents, Approvals, Chat and Settings — and the
+     * effect was that an Employee could no longer open **their own** profile, which §11 gives them
+     * as My Profile. The verification gate caught it; a targeted test run had not.
+     *
+     * So the grant is required for reading about other people, which is what it is for, and the
+     * self case is allowed on identity. Nothing else about the response changes: the masked
+     * identifier is still withheld from anybody who is neither the subject nor an administrator.
+     */
+    const isSelf = input.subjectUserId === input.actorUserId;
+    if (!isSelf) {
+      await this.authorization.assertCan(context, { module: 'hierarchy', action: 'View' });
+    }
 
     // The same scoping rule as the hierarchy list: the employment identity is directory
     // information, the entered identifier is not. Withheld by omission, so a screen cannot show
     // a blank and imply there is nothing on record.
     const maySeeIdentifier =
-      input.subjectUserId === input.actorUserId ||
+      isSelf ||
       (
         await this.authorization.authorize(context, {
           module: 'hierarchy',

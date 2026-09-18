@@ -436,17 +436,24 @@ describe('reports and the company dashboard (e2e)', () => {
   // -------------------------------------------------------------------------
 
   it('withholds a report whose second permission the reader lacks, rather than showing it empty', async () => {
-    const asEmployee = (
-      await asPerson(agent().get(`/tenants/${tenantId}/reports`), employeeUboss).expect(200)
+    /*
+     * Read by the Manager since CR-03 §9. The subject is the two-grant rule — holding
+     * `reports:View` is not enough when the report is sourced from a module you cannot open — and
+     * a standard Employee no longer holds `reports:View` at all, so they would demonstrate the
+     * first door rather than this one. The Manager holds `reports:View` and `settings:View`, and
+     * not `settings:Administer` or `settings:Audit`, which is the case this is about.
+     */
+    const asManager = (
+      await asPerson(agent().get(`/tenants/${tenantId}/reports`), managerUboss).expect(200)
     ).body as { reports: { key: string }[] };
-    const employeeKeys = asEmployee.reports.map((report) => report.key);
+    const managerKeys = asManager.reports.map((report) => report.key);
 
-    // An Employee holds `settings:View` but not `settings:Administer` or `settings:Audit`, so
-    // the company's AI spend and its audit trail are **absent** — an empty table would imply
-    // there was nothing to see.
-    assert.equal(employeeKeys.includes('AiUsageAndCost'), false);
-    assert.equal(employeeKeys.includes('AuditActivity'), false);
-    assert.equal(employeeKeys.includes('EmployeeWorkload'), true, 'they can still see their own');
+    assert.equal(managerKeys.includes('AiUsageAndCost'), false);
+    assert.equal(managerKeys.includes('AuditActivity'), false);
+    assert.equal(managerKeys.includes('EmployeeWorkload'), true, 'they can still see their team’s');
+
+    // And the Employee is refused the section outright, which is the other door.
+    await asPerson(agent().get(`/tenants/${tenantId}/reports`), employeeUboss).expect(403);
 
     const asAdmin = (
       await asPerson(agent().get(`/tenants/${tenantId}/reports`), adminUboss).expect(200)
@@ -523,14 +530,22 @@ describe('reports and the company dashboard (e2e)', () => {
     assert.equal(serialized.includes(employeeId), true, 'and their report’s');
   });
 
-  it('shows an employee only their own approvals', async () => {
+  it('scopes a report to the reader, and refuses the reader who holds no Reports grant', async () => {
     await seedApproval(adminId);
     await seedApproval(managerId);
     await seedApproval(employeeId);
 
-    const asEmployee = await reportFor(employeeUboss, 'ApprovalAging');
-    assert.equal(asEmployee.rows.length, 1);
-    assert.equal(asEmployee.rows[0]?.requestedBy, employeeId);
+    /*
+     * The OwnWork case used to be shown through the Employee. CR-03 §9 leaves a standard Employee
+     * with no `reports` grant, and the capability catalogue has no way to grant Reports read-only
+     * — `SeeTeamReports` bundles View with Export — so there is no default identity that reads a
+     * report at OwnWork scope any more. That gap is reported rather than papered over here; what
+     * this test can still prove is that the scope narrows per reader and that the refusal is
+     * total for somebody without the grant.
+     */
+    await asPerson(agent().get(`/tenants/${tenantId}/reports/ApprovalAging`), employeeUboss).expect(
+      403,
+    );
 
     const asManager = await reportFor(managerUboss, 'ApprovalAging');
     assert.equal(asManager.rows.length, 2, 'the manager and their report');
@@ -590,12 +605,18 @@ describe('reports and the company dashboard (e2e)', () => {
   it('lets a manager export and refuses an employee the same report', async () => {
     await seedApproval(employeeId);
 
-    // The employee can read it on screen.
+    /*
+     * Reading and exporting are separate grants, and that separation is asserted directly in the
+     * types suite (`REPORT_EXPORT_PERMISSION`). It used to be shown here through an Employee who
+     * could read but not export; CR-03 §9 removed their Reports grant, and nothing in the
+     * capability catalogue grants View without Export, so no identity demonstrates that pair any
+     * more. What is asserted here instead: the Employee is refused both, and the Manager may do
+     * both.
+     */
     await asPerson(agent().get(`/tenants/${tenantId}/reports/ApprovalAging`), employeeUboss).expect(
-      200,
+      403,
     );
 
-    // And cannot take it away.
     await asPerson(
       agent().get(`/tenants/${tenantId}/reports/ApprovalAging/export`),
       employeeUboss,

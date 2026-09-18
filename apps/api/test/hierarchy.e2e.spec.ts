@@ -1122,14 +1122,26 @@ describe('organization hierarchy (e2e)', () => {
 
   // =========================================================================
   describe('who may see what', () => {
-    it('lets an ordinary employee see the structure', async () => {
+    /*
+     * This asserted the opposite until CR-03 §9: an ordinary Employee used to hold
+     * `hierarchy:View` and was shown the whole company's structure. CR-03 makes the Employee
+     * operations-first — Dashboard, To-do, their agents, Approvals, Chat and Settings — so the
+     * org chart is now something an administrator grants rather than something everybody starts
+     * with. The route refuses on the missing grant, which is the same check the sidebar reads.
+     */
+    it('refuses an ordinary employee the company structure — CR-03 §9', async () => {
       await buildChain();
-      const response = await as(
+      await as(
         agent().get(`/tenants/${tenantId}/organization/hierarchy`),
         employeeUboss,
-      ).expect(200);
+      ).expect(403);
 
-      const body = response.body as { list: unknown[]; employeeCount: number };
+      // And the administrator still sees it, so this is a scope change and not a broken route.
+      const response = await as(
+        agent().get(`/tenants/${tenantId}/organization/hierarchy`),
+        adminUboss,
+      ).expect(200);
+      const body = response.body as { employeeCount: number };
       assert.equal(body.employeeCount, 3);
     });
 
@@ -1146,19 +1158,34 @@ describe('organization hierarchy (e2e)', () => {
       });
       await buildChain();
 
-      const employeeView = await hierarchy().viewFor(scope(), employeeId);
+      /*
+       * Read by the Manager rather than the Employee.
+       *
+       * The subject here is the identifier, not the module: somebody who may look at the
+       * structure still may not see what was entered. CR-03 §9 removed `hierarchy:View` from the
+       * Employee, so they no longer reach this list at all — asserting the masking through them
+       * would now be asserting the refusal, which the test above already does. The Manager holds
+       * `hierarchy:View` and not `Administer`, which is exactly the case this is about.
+       */
+      const managerView = await hierarchy().viewFor(scope(), managerId);
       const adminView = await hierarchy().viewFor(scope(), adminId);
 
-      assert.equal(employeeView.identifiersVisible, false);
+      assert.equal(managerView.identifiersVisible, false);
       assert.equal(adminView.identifiersVisible, true);
 
       // Withheld by omission, so a screen cannot render a blank as "no identifier on record".
-      const asEmployee = employeeView.list.find((row) => row.employeeId === 'E-1101');
+      const asManager = managerView.list.find((row) => row.employeeId === 'E-1101');
       const asAdmin = adminView.list.find((row) => row.employeeId === 'E-1101');
-      assert.ok(!('aadhaarMasked' in (asEmployee as object)));
+      assert.ok(!('aadhaarMasked' in (asManager as object)));
       assert.equal(asAdmin?.aadhaarMasked, `XXXX XXXX ${AADHAAR.top.slice(-4)}`);
     });
 
+    /*
+     * Still passes without `hierarchy:View`, and that is the point: CR-03 §11 gives every
+     * employee My Profile. `profileFor` asserted the Hierarchy grant before its self check, so
+     * removing that grant briefly stopped an Employee reading their own record. The grant is now
+     * required only for reading about somebody else.
+     */
     it('shows a person their own masked identifier', async () => {
       await buildChain();
       const own = await employment().profileFor({

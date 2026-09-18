@@ -19,7 +19,7 @@
     "dev:api": "npm run dev --workspace @uboss/api",
     "dev:web": "npm run dev --workspace @uboss/web",
     "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present",
-    "test": "npm run build:packages && npm run test --workspaces --if-present",
+    "test": "npm run build:packages && node scripts/run-workspace-tests.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
