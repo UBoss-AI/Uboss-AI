@@ -154,6 +154,16 @@ export default function HierarchyPage() {
     markup with a different submit — which is how the two drift apart.
   */
   const [editingDepartmentId, setEditingDepartmentId] = useState<string | null>(null);
+  /*
+    Archiving is its own dialog rather than a mode of the edit form.
+
+    It asks for something the edit form never does — a reason, which the server requires and keeps
+    — and it is the one action here that changes what the company looks like to everybody else. A
+    confirm step that shares a form with "rename this" is how somebody archives a department while
+    meaning to correct its spelling.
+  */
+  const [archivingDepartment, setArchivingDepartment] = useState<DepartmentRow | null>(null);
+  const [archiveReason, setArchiveReason] = useState('');
   const [departmentName, setDepartmentName] = useState('');
   const [departmentCode, setDepartmentCode] = useState('');
 
@@ -348,6 +358,44 @@ export default function HierarchyPage() {
     [departments],
   );
 
+  const askToArchive = useCallback(
+    (departmentId: string) => {
+      const department = departments.find((row) => row.id === departmentId);
+      if (department === undefined) {
+        setError('That department is no longer in this view. Reload and try again.');
+        return;
+      }
+      setError(null);
+      setArchiveReason('');
+      setArchivingDepartment(department);
+    },
+    [departments],
+  );
+
+  const submitArchive = useCallback(() => {
+    if (!tenantId || archivingDepartment === null) {
+      return;
+    }
+    organizationApi
+      .archiveDepartment(tenantId, archivingDepartment.id, archiveReason)
+      .then(() => {
+        setNotice(`Archived "${archivingDepartment.name}". Nothing was deleted.`);
+        setArchivingDepartment(null);
+        setArchiveReason('');
+        load();
+      })
+      .catch((caught: unknown) =>
+        /*
+          The server's own words. It refuses a department that still employs somebody, one with
+          child departments, and one already archived — three rules this screen would otherwise
+          have to restate and keep in step, and its message names which one applied.
+        */
+        setError(
+          caught instanceof ApiError ? caught.message : 'Could not archive that department.',
+        ),
+      );
+  }, [archiveReason, archivingDepartment, load, tenantId]);
+
   const submitDepartment = useCallback(() => {
     if (!tenantId) {
       return;
@@ -506,6 +554,20 @@ export default function HierarchyPage() {
                             setEmployeeOpen(true);
                           },
                           onEditDepartment: editDepartment,
+                          onArchiveDepartment: askToArchive,
+                        }
+                      : {})}
+                    {...(mayManageAccess
+                      ? {
+                          /*
+                            Offboarding lives in Settings and Users & Access, and this takes you
+                            there with that person open. It is not rebuilt here: it needs the
+                            impact assessment, a successor when the person has direct reports, and
+                            a reason — a second copy of those rules would be a second place for
+                            them to drift.
+                          */
+                          onOffboardPerson: (userId: string) =>
+                            router.push(`/settings/users?offboard=${encodeURIComponent(userId)}`),
                         }
                       : {})}
                     emptyMessage={
@@ -635,6 +697,51 @@ export default function HierarchyPage() {
               value={departmentCode}
               onChange={(event) => setDepartmentCode(event.target.value.toUpperCase())}
               placeholder="REG"
+            />
+          )}
+        </FormField>
+      </Modal>
+
+      {/* ---- Archive a department ---- */}
+      <Modal
+        open={archivingDepartment !== null}
+        onClose={() => setArchivingDepartment(null)}
+        title={`Archive ${archivingDepartment?.name ?? 'department'}`}
+        footer={
+          <>
+            <Button onClick={() => setArchivingDepartment(null)}>Cancel</Button>
+            <Button
+              variant="danger"
+              onClick={submitArchive}
+              disabled={archiveReason.trim().length < 5}
+            >
+              Archive department
+            </Button>
+          </>
+        }
+      >
+        {/*
+          Said plainly, because "archive" and "delete" are not the same thing and somebody reaching
+          for one may mean the other. The department stops being offered for new people; every
+          record that already names it goes on resolving to it.
+        */}
+        <Banner tone="info">
+          Nothing is deleted. The department is put away, so past employment and history keep
+          pointing at a department that still exists. It can hold nobody and no sub-department when
+          it is archived.
+        </Banner>
+        <FormField
+          label="Reason"
+          required
+          hint="Kept with the record. At least five characters."
+        >
+          {(wiring) => (
+            <input
+              {...wiring}
+              className="uboss-input"
+              value={archiveReason}
+              onChange={(event) => setArchiveReason(event.target.value)}
+              placeholder="e.g. Merged into Operations"
             />
           )}
         </FormField>

@@ -1,6 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   Banner,
@@ -94,7 +96,7 @@ type Tab = 'employees' | 'guests' | 'pendingInvitations';
  * question is always "why can I not invite this person", and making them guess is the difference
  * between a screen that helps and one that refuses.
  */
-export default function UsersAccessPage() {
+function UsersAccessInner() {
   // Prompt 40A (CR-03): the sidebar follows this person's real grants, never a role label.
   const navGroups = useCompanyNavigation();
   const myAccess = useMyAccess();
@@ -202,6 +204,20 @@ export default function UsersAccessPage() {
 
   const activeWorkspace = me?.workspaces.find((workspace) => workspace.tenantId === tenantId);
 
+  /*
+   * `?offboard=<userId>` opens this person's offboarding directly.
+   *
+   * The Hierarchy's employee cards offer "Offboard", and this is where that lands. The flow is not
+   * duplicated over there: offboarding needs the impact assessment, a successor when the person has
+   * direct reports, a reason, and `users:ManageAccess` — a second implementation of that would be
+   * a second set of rules to keep in step, on the screen least likely to be kept in step.
+   *
+   * It fires once. `opened` is a ref rather than state so that reopening is impossible after the
+   * person closes the dialog, without the effect having to depend on what it just did.
+   */
+  const requestedOffboard = useSearchParams().get('offboard');
+  const offboardOpened = useRef(false);
+
   const openOffboard = useCallback(
     (person: AccessPerson) => {
       if (!tenantId) {
@@ -221,6 +237,16 @@ export default function UsersAccessPage() {
     },
     [tenantId],
   );
+
+  useEffect(() => {
+    if (requestedOffboard === null || offboardOpened.current) return;
+    const person = view?.employees.find((row) => row.userId === requestedOffboard);
+    // Nothing until the list is here. A missing person once it is means a link to somebody this
+    // viewer cannot see, and the screen says nothing rather than guessing.
+    if (person === undefined) return;
+    offboardOpened.current = true;
+    openOffboard(person);
+  }, [openOffboard, requestedOffboard, view]);
 
   return (
     <RoutedAppShell
@@ -1003,5 +1029,14 @@ export default function UsersAccessPage() {
         )}
       </Modal>
     </RoutedAppShell>
+  );
+}
+
+/** `useSearchParams()` needs a Suspense boundary or the production build fails outright. */
+export default function UsersAccessPage() {
+  return (
+    <Suspense fallback={null}>
+      <UsersAccessInner />
+    </Suspense>
   );
 }

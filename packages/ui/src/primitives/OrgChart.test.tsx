@@ -200,6 +200,59 @@ describe('OrgChart — node actions', () => {
   });
 });
 
+describe('OrgChart — taking something away', () => {
+  /*
+   * There is no delete in this product, and the wording is the point. A department is archived so
+   * that past employment keeps resolving to a department that exists; a person is offboarded so
+   * that their work, approvals and audit trail keep an owner. A control labelled Delete would be
+   * describing something the server will not do.
+   */
+  it('offers Archive on a department, and calls back with its id', () => {
+    const onArchiveDepartment = vi.fn();
+    render(<OrgChart root={tree} onArchiveDepartment={onArchiveDepartment} />);
+
+    const action = screen.getByRole('button', { name: 'Archive the Production department' });
+    fireEvent.click(action);
+
+    expect(onArchiveDepartment).toHaveBeenCalledWith('dept-prod');
+    expect(screen.queryByRole('button', { name: /Delete/i })).not.toBeInTheDocument();
+  });
+
+  it('offers Offboard on a person, and calls back with their id', () => {
+    const onOffboardPerson = vi.fn();
+    render(<OrgChart root={tree} onOffboardPerson={onOffboardPerson} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Offboard Kavya Nair' }));
+
+    expect(onOffboardPerson).toHaveBeenCalledWith('user-1');
+  });
+
+  it('shows neither when the caller did not pass the handler', () => {
+    render(<OrgChart root={tree} onEditDepartment={vi.fn()} onEditPerson={vi.fn()} />);
+
+    // A control that cannot act should not be on the node at all, disabled or otherwise.
+    expect(screen.queryByRole('button', { name: /Archive/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Offboard/i })).not.toBeInTheDocument();
+  });
+
+  it('keeps every name inside the card once a third action is there', () => {
+    const { container } = render(
+      <OrgChart
+        root={tree}
+        onAddToDepartment={vi.fn()}
+        onEditDepartment={vi.fn()}
+        onArchiveDepartment={vi.fn()}
+      />,
+    );
+
+    // "Quality Assurance" is 17 characters and the longest name in this fixture; the lane grows
+    // with the number of actions, so this is the check that the card grew with it.
+    const names = [...container.querySelectorAll('text')].map((node) => node.textContent ?? '');
+    expect(names).toContain('Quality Assurance');
+    expect(names.some((name) => name.endsWith('…'))).toBe(false);
+  });
+});
+
 describe('OrgChart — a person’s avatar', () => {
   it('draws the photograph when there is one', () => {
     const { container } = render(<OrgChart root={tree} />);

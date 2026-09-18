@@ -43,6 +43,22 @@ export interface OrgChartProps {
    * department has a name, a code, a parent and a head, and none of those are fields on a person.
    */
   onEditDepartment?: (id: string) => void;
+  /**
+   * The archive action on a department node. Omit to hide it.
+   *
+   * Archive, not delete — the product has no delete for a department, so that nothing in the
+   * history points at a name that no longer exists. The caller is expected to say so, and to
+   * collect the reason the server requires.
+   */
+  onArchiveDepartment?: (id: string) => void;
+  /**
+   * The offboard action on a person node. Omit to hide it.
+   *
+   * Also not a delete: offboarding keeps the membership row and marks it, because somebody who
+   * left still has work, approvals and an audit trail attached to them. It needs a different
+   * permission from the rest of this chart (`users:ManageAccess`), which is the caller's to check.
+   */
+  onOffboardPerson?: (id: string) => void;
   /** Shown instead of the chart when a company has departments but nobody recorded. */
   emptyMessage?: string;
   className?: string;
@@ -56,7 +72,7 @@ export interface OrgChartProps {
  * "Customer Operations" arrived as "Customer Operatio…". The extra room is what lets the type
  * breathe and the names finish.
  */
-const BOX_WIDTH = 320;
+const BOX_WIDTH = 352;
 const BOX_HEIGHT = 84;
 const GAP_X = 26;
 const GAP_Y = 54;
@@ -99,7 +115,11 @@ const PERSON_TEXT_X = STRIPE + 14 + AVATAR_R * 2 + 14;
  * ever hidden, at rest or on hover, and the subtitle keeps the full width because the actions sit
  * above it rather than beside it.
  */
-const ACTION_LANE = 76;
+function actionLane(count: number): number {
+  // The rightmost circle is inset 26, each further one is 30 to its left, and 12 for the radius
+  // plus 8 of air before the text starts.
+  return count === 0 ? 16 : 46 + (count - 1) * 30;
+}
 
 /**
  * The department palette, from the reference's `DEPT_COL`.
@@ -264,8 +284,8 @@ function truncate(text: string, max: number): string {
  * `org-widths.mjs` measures every name against the space its card leaves it, so the estimate is
  * checked against a real layout rather than trusted.
  */
-function nameLimit(hasActions: boolean, textX: number = TEXT_X): number {
-  const available = BOX_WIDTH - textX - (hasActions ? ACTION_LANE : 16);
+function nameLimit(actionCount: number, textX: number = TEXT_X): number {
+  const available = BOX_WIDTH - textX - actionLane(actionCount);
   return Math.floor(available / 7.9);
 }
 
@@ -405,6 +425,8 @@ export function OrgChart({
   onEditPerson,
   onAddToDepartment,
   onEditDepartment,
+  onArchiveDepartment,
+  onOffboardPerson,
   emptyMessage,
   className,
 }: OrgChartProps) {
@@ -482,6 +504,8 @@ export function OrgChart({
             {...(onEditPerson === undefined ? {} : { onEditPerson })}
             {...(onAddToDepartment === undefined ? {} : { onAddToDepartment })}
             {...(onEditDepartment === undefined ? {} : { onEditDepartment })}
+            {...(onArchiveDepartment === undefined ? {} : { onArchiveDepartment })}
+            {...(onOffboardPerson === undefined ? {} : { onOffboardPerson })}
           />
         ))}
       </svg>
@@ -571,6 +595,14 @@ function BandLabel({
   );
 }
 
+/** What the hover tooltip says. Neither of the last two is called Delete, because neither is. */
+const ACTION_TITLES: Record<'add' | 'edit' | 'archive' | 'offboard', string> = {
+  add: 'Add',
+  edit: 'Edit',
+  archive: 'Archive',
+  offboard: 'Offboard',
+};
+
 const ACTION_R = 12;
 const ACTION_GAP = 30;
 const ACTION_RIGHT_INSET = 26;
@@ -603,7 +635,7 @@ function ActionButton({
   x: number;
   y: number;
   slot: number;
-  kind: 'add' | 'edit';
+  kind: 'add' | 'edit' | 'archive' | 'offboard';
   label: string;
   onActivate: () => void;
 }) {
@@ -629,13 +661,25 @@ function ActionButton({
         }
       }}
     >
-      <title>{kind === 'add' ? 'Add' : 'Edit'}</title>
+      <title>{ACTION_TITLES[kind]}</title>
       <circle
         cx={cx}
         cy={cy}
         r={ACTION_R}
-        fill={kind === 'add' ? 'var(--uboss-blue-050)' : 'var(--uboss-bg-2)'}
-        stroke={kind === 'add' ? 'var(--uboss-blue-100)' : 'var(--uboss-border)'}
+        fill={
+          kind === 'add'
+            ? 'var(--uboss-blue-050)'
+            : kind === 'edit'
+              ? 'var(--uboss-bg-2)'
+              : 'var(--uboss-danger-050)'
+        }
+        stroke={
+          kind === 'add'
+            ? 'var(--uboss-blue-100)'
+            : kind === 'edit'
+              ? 'var(--uboss-border)'
+              : 'var(--uboss-danger)'
+        }
       />
       {kind === 'add' ? (
         <path
@@ -644,7 +688,7 @@ function ActionButton({
           strokeWidth={1.8}
           strokeLinecap="round"
         />
-      ) : (
+      ) : kind === 'edit' ? (
         <path
           d={`M${cx - 4.6} ${cy + 4.6} l6.2 -6.2 2.3 2.3 -6.2 6.2 -3 .7 z`}
           fill="none"
@@ -652,6 +696,19 @@ function ActionButton({
           strokeWidth={1.4}
           strokeLinejoin="round"
         />
+      ) : kind === 'archive' ? (
+        /* A box with its lid on: put away, still there. Not a bin. */
+        <g stroke="var(--uboss-danger)" strokeWidth={1.4} fill="none" strokeLinejoin="round">
+          <path d={`M${cx - 5.5} ${cy - 4} h11 v3 h-11 z`} />
+          <path d={`M${cx - 4.3} ${cy - 1} h8.6 v5.5 h-8.6 z`} />
+          <path d={`M${cx - 1.8} ${cy + 1.5} h3.6`} strokeLinecap="round" />
+        </g>
+      ) : (
+        /* Somebody leaving through a door, rather than a person being erased. */
+        <g stroke="var(--uboss-danger)" strokeWidth={1.4} fill="none" strokeLinecap="round">
+          <path d={`M${cx + 0.5} ${cy - 5} h-5 v10 h5`} strokeLinejoin="round" />
+          <path d={`M${cx + 5.5} ${cy} h-5.5 m5.5 0 l-2.3 -2.4 m2.3 2.4 l-2.3 2.4`} />
+        </g>
       )}
     </g>
   );
@@ -744,6 +801,8 @@ function OrgNode({
   onEditPerson,
   onAddToDepartment,
   onEditDepartment,
+  onArchiveDepartment,
+  onOffboardPerson,
 }: {
   node: Placed;
   idPrefix: string;
@@ -752,6 +811,8 @@ function OrgNode({
   onEditPerson?: (id: string) => void;
   onAddToDepartment?: (id: string) => void;
   onEditDepartment?: (id: string) => void;
+  onArchiveDepartment?: (id: string) => void;
+  onOffboardPerson?: (id: string) => void;
 }) {
   const x = node.x - BOX_WIDTH / 2;
   const y = node.y - BOX_HEIGHT / 2;
@@ -779,7 +840,7 @@ function OrgNode({
         {/* Fixed inks: this card is navy in both themes, so its text cannot follow the theme. */}
         <text x={x + TEXT_X} y={y + 37} fill={INK_LIGHT} fontSize={15} fontWeight={800}>
           {/* The company card has no actions, so it keeps the whole width. */}
-          {truncate(node.name, nameLimit(false))}
+          {truncate(node.name, nameLimit(0))}
         </text>
         <text x={x + TEXT_X} y={y + 57} fill={INK_LIGHT_MUTED} fontSize={11.5}>
           {truncate(node.subtitle, 34)}
@@ -805,6 +866,13 @@ function OrgNode({
             label: `Edit the ${node.name} department`,
             onActivate: () => onEditDepartment(node.id),
           },
+      onArchiveDepartment === undefined
+        ? null
+        : {
+            kind: 'archive' as const,
+            label: `Archive the ${node.name} department`,
+            onActivate: () => onArchiveDepartment(node.id),
+          },
     ].filter((entry) => entry !== null);
 
     return (
@@ -822,7 +890,7 @@ function OrgNode({
         />
         <BandLabel x={x} y={y} colour={colour} label={departmentInitials(node.name)} fontSize={16} />
         <text x={x + TEXT_X} y={y + 37} fill="var(--uboss-text)" fontSize={14} fontWeight={750}>
-          {truncate(node.name, nameLimit(actions.length > 0))}
+          {truncate(node.name, nameLimit(actions.length))}
         </text>
         <text x={x + TEXT_X} y={y + 57} fill="var(--uboss-text-2)" fontSize={11.5}>
           {truncate(node.subtitle, 34)}
@@ -860,6 +928,13 @@ function OrgNode({
     onEditPerson === undefined
       ? null
       : { kind: 'edit' as const, label: `Edit ${node.name}`, onActivate: () => onEditPerson(node.id) },
+    onOffboardPerson === undefined
+      ? null
+      : {
+          kind: 'offboard' as const,
+          label: `Offboard ${node.name}`,
+          onActivate: () => onOffboardPerson(node.id),
+        },
   ].filter((entry) => entry !== null);
 
   return (
@@ -898,7 +973,7 @@ function OrgNode({
         name={node.name}
       />
       <text x={x + PERSON_TEXT_X} y={y + 37} fill="var(--uboss-text)" fontSize={13.5} fontWeight={700}>
-        {truncate(node.name, nameLimit(actions.length > 0, PERSON_TEXT_X))}
+        {truncate(node.name, nameLimit(actions.length, PERSON_TEXT_X))}
       </text>
       <text x={x + PERSON_TEXT_X} y={y + 57} fill="var(--uboss-text-2)" fontSize={11}>
         {truncate(node.subtitle, 34)}
