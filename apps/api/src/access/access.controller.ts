@@ -1,8 +1,11 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Post,
@@ -16,6 +19,7 @@ import {
   IsEmail,
   IsIn,
   IsInt,
+  IsISO8601,
   IsOptional,
   IsString,
   IsUUID,
@@ -25,13 +29,21 @@ import {
   MinLength,
 } from 'class-validator';
 
-import { CAPABILITY_KEYS, type CapabilityKey } from '@uboss/types';
+import {
+  CAPABILITY_KEYS,
+  ROLE_KINDS,
+  SCOPE_KINDS,
+  type CapabilityKey,
+  type RoleKind,
+  type ScopeKind,
+} from '@uboss/types';
 
 import { RequirePermission } from '../authorization/authorization.decorators.js';
 import { actorUserId } from '../request-context/authenticated-actor.js';
 import { getActor } from '../request-context/request-context.js';
 import { TenantScoped } from '../tenancy/tenancy.decorators.js';
 import { TenantContextService } from '../tenancy/tenant-context.service.js';
+import { RoleAdministrationService } from '../authorization/role-administration.service.js';
 import { CapabilityService } from './capability.service.js';
 import { BulkOperationService, MAX_BULK_ROWS } from './bulk-operation.service.js';
 import { InvitationAccessService } from './invitation-access.service.js';
@@ -153,6 +165,46 @@ class GrantCapabilitiesDto {
   capabilities!: CapabilityKey[];
 }
 
+/**
+ * A role grant made from inside the company, by an administrator of that company.
+ *
+ * The same shape the platform plane's `AssignRoleDto` carries, because it drives the same service.
+ * Two fields it does **not** have: a tenant (the route and `TenantScoped` decide that, so an
+ * administrator cannot reach another company) and a custom role id (a company role screen grants
+ * the built-in catalogue; authoring a custom role is a separate act on its own route).
+ */
+class GrantRoleDto {
+  @IsIn(ROLE_KINDS, { message: `roleKind must be one of: ${ROLE_KINDS.join(', ')}.` })
+  roleKind!: RoleKind;
+
+  @IsIn(SCOPE_KINDS, { message: `scopeKind must be one of: ${SCOPE_KINDS.join(', ')}.` })
+  scopeKind!: ScopeKind;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsString({ each: true })
+  @MaxLength(64, { each: true })
+  departmentIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(500)
+  @IsString({ each: true })
+  @MaxLength(64, { each: true })
+  selectedResourceIds?: string[];
+
+  /** Time-boxed access, for a contractor or a temporary approver. */
+  @IsOptional()
+  @IsISO8601({}, { message: 'expiresAt must be an ISO-8601 timestamp.' })
+  expiresAt?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  justification?: string;
+}
+
 @Controller('tenants/:tenantId/access')
 @TenantScoped()
 export class AccessController {
@@ -162,6 +214,7 @@ export class AccessController {
     private readonly offboardings: OffboardingService,
     private readonly bulk: BulkOperationService,
     private readonly capabilities: CapabilityService,
+    private readonly roles: RoleAdministrationService,
     private readonly tenantContext: TenantContextService,
   ) {}
 
@@ -398,6 +451,137 @@ export class AccessController {
       subjectUserId: userId,
       capability: capability as CapabilityKey,
     });
+  }
+
+  // =========================================================================
+  // Roles & Permissions, on the company plane
+  // =========================================================================
+  //
+  // Role administration lived only on `AuthorizationController`, which is `@PlatformOnly` — an
+  // interim from Prompt 7 that `docs/IMPLEMENTATION_STATE.md` has recorded as outstanding ever
+  // since ("the six route groups still wait"). The consequence in the product was concrete: a
+  // Company Admin could invite, suspend, offboard and grant capabilities, but could not give
+  // anybody a Role or a Scope without platform staff doing it for them.
+  //
+  // These routes re-home it. They run the **same** `RoleAdministrationService` the platform plane
+  // runs — one implementation of "may this grant be made", not a company-flavoured copy — and add
+  // exactly two things the platform plane does not need:
+  //
+  //   * the tenant comes from the route and `@TenantScoped`, never from a body, so an
+  //     administrator cannot reach another company;
+  //   * a **delegation ceiling**, so `users:ManageAccess` is not a licence to mint a Company Admin.
+  //
+  // Every privilege-escalation gate the platform path already enforces still applies underneath:
+  // no self-assignment, no scope above the role's ceiling, nothing for a suspended or offboarded
+  // account, and a security event on every grant and revocation.
+
+  /** The role catalogue, and how far this administrator may delegate each entry. */
+  @Get('roles')
+  @RequirePermission({ module: 'users', action: 'ManageAccess' })
+  async roleCatalogue(): Promise<unknown> {
+    const scope = this.tenantContext.requireScope();
+    const actor = this.currentUserId();
+    const mine = (await this.roles.listAssignments(scope)).filter(
+      (assignment) => assignment.userId === actor && !assignment.expired,
+    );
+    const granterRoles = mine.map((assignment) => ({
+      roleKind: assignment.roleKind as RoleKind,
+      scopeKind: assignment.scopeKind as ScopeKind,
+    }));
+
+    return {
+      roles: this.roles.roleCatalogue().map((role) => {
+        const problem = this.roles.delegationCeilingProblem({
+          granterRoles,
+          roleKind: role.kind,
+          scopeKind: role.defaultScope,
+        });
+        return { ...role, youMayGrant: problem === null, whyNot: problem };
+      }),
+      note:
+        'What you may grant is bounded by what you hold. A company administrator may grant any ' +
+        'role in their own company and nothing outside it; nobody grants themselves anything.',
+    };
+  }
+
+  /** One person's live roles in this company. */
+  @Get('people/:userId/roles')
+  @RequirePermission({ module: 'users', action: 'ManageAccess' })
+  async rolesOf(@Param('userId', new ParseUUIDPipe()) userId: string): Promise<unknown> {
+    const assignments = await this.roles.listAssignments(this.tenantContext.requireScope());
+    return { assignments: assignments.filter((assignment) => assignment.userId === userId) };
+  }
+
+  /** Grant a role, at a scope, inside this company. */
+  @Post('people/:userId/roles')
+  @RequirePermission({ module: 'users', action: 'ManageAccess' })
+  async grantRole(
+    @Param('userId', new ParseUUIDPipe()) userId: string,
+    @Body() body: GrantRoleDto,
+  ): Promise<unknown> {
+    const scope = this.tenantContext.requireScope();
+    const actor = this.currentUserId();
+
+    const mine = (await this.roles.listAssignments(scope)).filter(
+      (assignment) => assignment.userId === actor && !assignment.expired,
+    );
+    const problem = this.roles.delegationCeilingProblem({
+      granterRoles: mine.map((assignment) => ({
+        roleKind: assignment.roleKind as RoleKind,
+        scopeKind: assignment.scopeKind as ScopeKind,
+      })),
+      roleKind: body.roleKind,
+      scopeKind: body.scopeKind,
+    });
+    if (problem !== null) {
+      throw new ForbiddenException(problem);
+    }
+
+    const expiresAt = body.expiresAt === undefined ? undefined : new Date(body.expiresAt);
+    if (expiresAt !== undefined && Number.isNaN(expiresAt.getTime())) {
+      throw new BadRequestException('expiresAt is not a valid timestamp.');
+    }
+    if (expiresAt !== undefined && expiresAt <= new Date()) {
+      throw new BadRequestException(
+        'expiresAt is in the past, so the assignment would grant nothing.',
+      );
+    }
+
+    return this.roles.assign(
+      scope,
+      {
+        userId,
+        roleKind: body.roleKind,
+        scopeKind: body.scopeKind,
+        ...(body.departmentIds === undefined ? {} : { departmentIds: body.departmentIds }),
+        ...(body.selectedResourceIds === undefined
+          ? {}
+          : { selectedResourceIds: body.selectedResourceIds }),
+        ...(expiresAt === undefined ? {} : { expiresAt }),
+        ...(body.justification === undefined ? {} : { justification: body.justification }),
+      },
+      actor,
+    );
+  }
+
+  /**
+   * Revoke a role.
+   *
+   * The assignment is looked up inside this company's scope before anything is removed, so an id
+   * from another company is a 404 rather than a cross-tenant deletion. `revoke` records the
+   * security event.
+   */
+  @Delete('roles/:assignmentId')
+  @RequirePermission({ module: 'users', action: 'ManageAccess' })
+  async revokeRole(
+    @Param('assignmentId', new ParseUUIDPipe()) assignmentId: string,
+  ): Promise<unknown> {
+    const scope = this.tenantContext.requireScope();
+    const removed = await this.roles.revoke(scope, assignmentId, this.currentUserId());
+    if (!removed) {
+      throw new NotFoundException('No such role assignment in this company.');
+    }
+    return { revoked: true };
   }
 
   private currentUserId(): string {

@@ -263,6 +263,58 @@ export class RoleAdministrationService {
     }
   }
 
+  /**
+   * May this administrator hand out this role at this scope, inside their own company?
+   *
+   * The delegation ceiling, in the same shape the capability step already uses
+   * (`delegationProblems`): **a Company Admin may grant anything within the company**, and anybody
+   * else may grant only what they themselves hold and no wider than they hold it. Without this,
+   * re-homing role administration onto the company plane would mean anybody with
+   * `users:ManageAccess` could mint a Company Admin — which is the escalation the platform-only
+   * arrangement was avoiding, rather than a thing nobody had thought about.
+   *
+   * Deliberately not a permission check: the route's `users:ManageAccess` guard already answered
+   * whether they administer access at all. This answers how far that reaches.
+   *
+   * Returns the reason to refuse, or `null` to permit.
+   */
+  delegationCeilingProblem(input: {
+    granterRoles: readonly { roleKind: RoleKind; scopeKind: ScopeKind }[];
+    roleKind: RoleKind;
+    scopeKind: ScopeKind;
+  }): string | null {
+    if (input.granterRoles.some((role) => role.roleKind === 'CompanyAdmin')) {
+      return null;
+    }
+
+    const held = input.granterRoles.filter((role) => role.roleKind === input.roleKind);
+    if (held.length === 0) {
+      // `Custom` is a role kind with no template — its name lives on the custom role row — so the
+      // kind itself is the honest label rather than a lookup that cannot succeed.
+      const template = input.roleKind === 'Custom' ? undefined : ROLE_TEMPLATES[input.roleKind];
+      const label = template?.label ?? input.roleKind;
+      return (
+        `You do not hold the ${label} role yourself, so you cannot give it to somebody else. ` +
+        'Ask a company administrator.'
+      );
+    }
+
+    const widestHeld = held.reduce(
+      (widest, role) =>
+        SCOPE_BREADTH[role.scopeKind] > SCOPE_BREADTH[widest] ? role.scopeKind : widest,
+      held[0]!.scopeKind,
+    );
+
+    if (SCOPE_BREADTH[input.scopeKind] > SCOPE_BREADTH[widestHeld]) {
+      return (
+        `You hold that role at ${widestHeld} scope, so you cannot grant it at ${input.scopeKind} ` +
+        'scope. Access is delegated downwards, never widened.'
+      );
+    }
+
+    return null;
+  }
+
   async revoke(scope: TenantScope, assignmentId: string, actorUserId: string): Promise<boolean> {
     const assignment = await this.repository.findAssignment(scope, assignmentId);
     if (!assignment) {

@@ -8,6 +8,7 @@ import cookieParser from 'cookie-parser';
 import request from 'supertest';
 
 import { AccessController } from '../src/access/access.controller.js';
+import { RoleAdministrationService } from '../src/authorization/role-administration.service.js';
 import { activationReadiness } from '../src/access/activation-readiness.js';
 import { BulkOperationService } from '../src/access/bulk-operation.service.js';
 import { InvitationAccessService } from '../src/access/invitation-access.service.js';
@@ -178,6 +179,8 @@ describe('users & access (e2e)', () => {
         BulkOperationService,
         // Prompt 40A: the Access & Permissions step hangs off this controller.
         CapabilityService,
+        // Roles & Permissions on the company plane run the platform plane’s own service.
+        RoleAdministrationService,
         TenantContextService,
         Reflector,
         {
@@ -1588,6 +1591,198 @@ describe('users & access (e2e)', () => {
         .get(AccessRepository)
         .listBulkOperations(tenantScopeForPlatformOperation(otherTenantId));
       assert.equal(otherOperations.length, 0);
+    });
+  });
+
+  // =========================================================================
+  describe('roles and permissions, on the company plane', () => {
+    /*
+     * Role administration lived only on the platform-only `AuthorizationController` — an interim
+     * `docs/IMPLEMENTATION_STATE.md` has carried since Prompt 8 ("the six route groups still
+     * wait"). In the product that meant a Company Admin could invite, suspend and offboard, and
+     * could grant capabilities, but could not give anybody a Role or a Scope without platform
+     * staff. These routes run the same `RoleAdministrationService`, inside one company, with a
+     * delegation ceiling on top.
+     */
+    const grant = (userId: string, body: Record<string, unknown>, uboss = adminUboss) =>
+      as(agent().post(`/tenants/${tenantId}/access/people/${userId}/roles`), uboss).send(body);
+
+    it('lets a company administrator grant a role and a scope', async () => {
+      const response = await grant(employeeId, {
+        roleKind: 'Manager',
+        scopeKind: 'TeamSubtree',
+        justification: 'Stepping up to run the team.',
+      }).expect(201);
+
+      const body = response.body as { id: string };
+      assert.ok(body.id, 'no assignment was returned');
+
+      const listed = await as(
+        agent().get(`/tenants/${tenantId}/access/people/${employeeId}/roles`),
+        adminUboss,
+      ).expect(200);
+      const assignments = (listed.body as { assignments: { roleKind: string }[] }).assignments;
+      assert.ok(assignments.some((row) => row.roleKind === 'Manager'));
+    });
+
+    it('records the grant as security activity, with who and why', async () => {
+      await grant(employeeId, {
+        roleKind: 'Approver',
+        scopeKind: 'SelectedResource',
+        selectedResourceIds: ['obj-1'],
+        justification: 'Covering approvals while the head is away.',
+      }).expect(201);
+
+      const events = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.securityEvent.findMany({
+          where: { tenantId, action: 'security.role_assigned' },
+        }),
+      );
+      assert.ok(events.length > 0, 'the grant was not recorded');
+      assert.ok(events.every((event) => event.actorUserId === adminId));
+    });
+
+    it('refuses a scope wider than the role supports', async () => {
+      const response = await grant(employeeId, {
+        roleKind: 'Employee',
+        scopeKind: 'WholeCompany',
+      }).expect(400);
+
+      assert.match((response.body as { message: string }).message, /widest it supports/i);
+    });
+
+    it('refuses a grant to a suspended account, and to an offboarded one', async () => {
+      const subject = await addHierarchyPerson('Suspended Subject', 'E-901', '29876543210', adminId);
+      for (const state of ['Suspended', 'Offboarded'] as const) {
+        await ctx.prisma.runAsPlatformOperation(() =>
+          ctx.prisma.client.tenantMembership.updateMany({
+            where: { tenantId, userId: subject.userId },
+            data: { accountState: state },
+          }),
+        );
+
+        const response = await grant(subject.userId, {
+          roleKind: 'Manager',
+          scopeKind: 'TeamSubtree',
+        }).expect(400);
+        assert.match(
+          (response.body as { message: string }).message,
+          new RegExp(`account is ${state}`, 'i'),
+        );
+      }
+    });
+
+    it('refuses an administrator granting themselves anything', async () => {
+      const response = await grant(adminId, {
+        roleKind: 'CompanyAdmin',
+        scopeKind: 'WholeCompany',
+      }).expect(400);
+
+      assert.match((response.body as { message: string }).message, /cannot assign a role to yourself/i);
+    });
+
+    it('revokes a role, and refuses an assignment id from another company', async () => {
+      const created = await grant(employeeId, {
+        roleKind: 'Manager',
+        scopeKind: 'TeamSubtree',
+      }).expect(201);
+      const assignmentId = (created.body as { id: string }).id;
+
+      // An assignment that exists, but in a company this administrator is not in.
+      const foreign = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.roleAssignment.create({
+          data: {
+            tenantId: otherTenantId,
+            userId: ownerId,
+            roleKind: 'Employee',
+            scopeKind: 'OwnWork',
+            bootstrap: true,
+          },
+        }),
+      );
+
+      await as(
+        agent().delete(`/tenants/${tenantId}/access/roles/${foreign.id}`),
+        adminUboss,
+      ).expect(404);
+
+      const stillThere = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.roleAssignment.count({ where: { id: foreign.id } }),
+      );
+      assert.equal(stillThere, 1, 'another company’s assignment was removed');
+
+      await as(
+        agent().delete(`/tenants/${tenantId}/access/roles/${assignmentId}`),
+        adminUboss,
+      ).expect(200);
+
+      const gone = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.roleAssignment.count({ where: { id: assignmentId } }),
+      );
+      assert.equal(gone, 0);
+    });
+
+    it('refuses somebody without ManageAccess outright', async () => {
+      await as(
+        agent().post(`/tenants/${tenantId}/access/people/${employeeId}/roles`),
+        employeeUboss,
+      )
+        .send({ roleKind: 'Manager', scopeKind: 'TeamSubtree' })
+        .expect(403);
+    });
+
+    /*
+     * The delegation ceiling, asserted on the rule itself as well as through the route.
+     *
+     * Only a Company Admin holds `users:ManageAccess` among the built-in roles, so the interesting
+     * case — an administrator who is NOT a company administrator — cannot be built from the
+     * templates alone. The rule is what the route calls, and it is asserted directly so the
+     * ceiling is defended rather than assumed to be unreachable.
+     */
+    it('bounds what a non-administrator may delegate by what they hold', () => {
+      const roles = app.get(RoleAdministrationService);
+
+      assert.equal(
+        roles.delegationCeilingProblem({
+          granterRoles: [{ roleKind: 'CompanyAdmin', scopeKind: 'WholeCompany' }],
+          roleKind: 'Head',
+          scopeKind: 'Department',
+        }),
+        null,
+        'a company administrator may grant within their own company',
+      );
+
+      assert.match(
+        roles.delegationCeilingProblem({
+          granterRoles: [{ roleKind: 'Manager', scopeKind: 'TeamSubtree' }],
+          roleKind: 'CompanyAdmin',
+          scopeKind: 'WholeCompany',
+        }) ?? '',
+        /do not hold the Company Admin role yourself/i,
+      );
+
+      assert.match(
+        roles.delegationCeilingProblem({
+          granterRoles: [{ roleKind: 'Head', scopeKind: 'Department' }],
+          roleKind: 'Head',
+          scopeKind: 'MultipleDepartments',
+        }) ?? '',
+        /delegated downwards, never widened/i,
+      );
+    });
+
+    it('says which roles this administrator may hand out', async () => {
+      const response = await as(
+        agent().get(`/tenants/${tenantId}/access/roles`),
+        adminUboss,
+      ).expect(200);
+
+      const body = response.body as { roles: { kind: string; youMayGrant: boolean }[] };
+      assert.ok(body.roles.length >= 6, 'the catalogue is empty');
+      assert.ok(
+        body.roles.every((role) => role.youMayGrant),
+        'a company administrator was told they may not grant something in their own company',
+      );
     });
   });
 });

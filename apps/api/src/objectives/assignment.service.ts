@@ -6,7 +6,9 @@ import {
 } from '@nestjs/common';
 
 import {
+  APPROVAL_TYPE_MODULE,
   ASSIGNMENT_CHECK_LABELS,
+  FOUR_EYES_APPROVAL_KIND,
   incompleteDodFields,
   isObjectiveWorkAssignable,
   upgradeWorkflowDraft,
@@ -664,6 +666,104 @@ export class AssignmentService {
         null,
         `A step is assigned to somebody with no active membership in this company (${userId}).`,
       );
+    }
+
+    /*
+     * 4. An approval gate that names a person must name a person who can actually decide it.
+     *
+     * Naming an approver excludes everybody else on purpose — "routing it to whoever holds the role
+     * would defeat the point of naming one" — so naming somebody ineligible produces a request
+     * **nobody at all** can dispose of. Proven against the running product before this check
+     * existed: the named Employee was refused all four decisions ("Your role does not include
+     * \"Approve\" on this.") and the Head who does hold Approve was refused too ("This request
+     * names a different approver"). The work behind it could never move, and nothing said so.
+     *
+     * Fail closed, and refuse rather than repair. Silently dropping the named approver would turn
+     * a gate somebody deliberately addressed into an open one, and redirecting it to another person
+     * would put a decision in front of somebody nobody chose. Both are worse than saying no.
+     *
+     * Four things are proven about the named person, and each is proven the way the product will
+     * ask it later rather than by reading a role template:
+     *
+     *   * an **active membership** — the loop below, same rule as an assignee;
+     *   * **Approve on the governing module**, at their **scope**, through `authorize` on the row,
+     *     so policy layers and a custom role answer too;
+     *   * **separation of duties**, by handing the engine the person who will raise the request —
+     *     the assigner — so a gate addressed to the person creating it is refused here rather than
+     *     discovered when they try;
+     *   * **four eyes**, which a named approver cannot satisfy alone. A gate asking for two
+     *     distinct people while being addressed to exactly one is unsatisfiable by construction.
+     */
+    const approvalGates = input.graph.nodes.filter(
+      (node): node is AnalysisNode & { ownerUserId: string } =>
+        node.kind === 'Approval' && node.ownerUserId !== null,
+    );
+
+    // The objective's department, read once and only when a gate names somebody: the scope layer
+    // needs it to place the request, and a resource with no department fails a department grant
+    // closed.
+    const gateDepartmentId =
+      approvalGates.length === 0
+        ? null
+        : await this.prisma.runInTenantTransaction(input.scope, async () => {
+            const row = await this.prisma.client.objective.findFirst({
+              where: { id: input.objectiveId },
+              select: { departmentId: true },
+            });
+            return row?.departmentId ?? null;
+          });
+
+    for (const gate of approvalGates) {
+      if (gate.dod.approval === FOUR_EYES_APPROVAL_KIND) {
+        refuse(
+          'RequiredApprovals',
+          gate.id,
+          'This gate asks for four eyes and also names one approver. Two distinct people cannot ' +
+            'be found in one, and naming somebody excludes everybody else — so nobody could ' +
+            'satisfy it. Name nobody and let any authorised approver take it, or ask for a ' +
+            'single approval.',
+        );
+        continue;
+      }
+
+      const active = await this.prisma.runInTenantTransaction(input.scope, () =>
+        this.prisma.client.tenantMembership.findFirst({
+          where: { userId: gate.ownerUserId, accountState: 'Active' },
+        }),
+      );
+      if (active === null) {
+        refuse(
+          'Permissions',
+          gate.id,
+          'This approval gate names somebody with no active membership in this company, so ' +
+            'nobody could decide it.',
+        );
+        continue;
+      }
+
+      const approverContext = await this.authorization.contextFor(input.scope, gate.ownerUserId);
+      const decision = await this.authorization.authorize(approverContext, {
+        module: APPROVAL_TYPE_MODULE.WorkflowStepApproval,
+        action: 'Approve',
+        resource: {
+          id: gate.id,
+          ownerUserId: gate.ownerUserId,
+          // The person who assigns is the person who raises the request, which is what a
+          // NoSelfApproval control compares against.
+          createdByUserId: input.actorUserId,
+          ...(gateDepartmentId === null ? {} : { departmentId: gateDepartmentId }),
+        },
+      });
+
+      if (!decision.allowed) {
+        refuse(
+          'Permissions',
+          gate.id,
+          `This approval gate names somebody who cannot decide it: ${decision.message} Naming an ` +
+            'approver excludes everybody else, so the gate would stay open forever. Name somebody ' +
+            'who can approve it, or name nobody and leave it to the role.',
+        );
+      }
     }
 
     // 5. Missing config / connection readiness, 6. budget, 7. prohibited high-risk paths.

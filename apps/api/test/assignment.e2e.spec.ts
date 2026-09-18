@@ -492,8 +492,17 @@ describe('approve & assign and the human to-do list (e2e)', () => {
      * not who holds it, and resolving a role to people is the Approval Engine prompt's job. A
      * manager naming somebody in the editor is the other, equally real case, and it is the one
      * that has anybody to notify at this prompt.
+     *
+     * **Who gets named matters now.** This used to name `otherWorker`, an Employee, who holds no
+     * `approvals:Approve` — and naming an approver excludes everybody else, so every plan this
+     * fixture built published a gate that **nobody** could ever decide. That was an invalid
+     * workflow modelled as the normal case, and `assignment.service` now refuses it. The default is
+     * the Approver, who can really decide; `nameIneligibleApprover` keeps the old shape for the one
+     * test that asserts the refusal.
      */
     nameApprover = true,
+    /** Name somebody who cannot approve, to assert the refusal rather than rely on it. */
+    nameIneligibleApprover = false,
   } = {}): Promise<{ objectiveId: string; versionId: string; graph: WorkflowDraft }> => {
     if (withSkill) await publishSkill();
 
@@ -537,7 +546,9 @@ describe('approve & assign and the human to-do list (e2e)', () => {
           objectiveId: created.id,
           revision: draft.revision,
           nodeId: gate.id,
-          patch: { ownerUserId: otherWorkerUserId },
+          patch: {
+            ownerUserId: nameIneligibleApprover ? otherWorkerUserId : objectiveApproverId,
+          },
         });
       }
     }
@@ -852,7 +863,71 @@ describe('approve & assign and the human to-do list (e2e)', () => {
         ctx.prisma.client.notification.findMany({ where: { tenantId, kind: 'ApprovalWaiting' } }),
       );
       assert.ok(rows.length > 0);
-      assert.ok(rows.every((row) => row.recipientUserId === otherWorkerUserId));
+      assert.ok(rows.every((row) => row.recipientUserId === objectiveApproverId));
+    });
+
+    /*
+     * The gate that could never be decided.
+     *
+     * An Employee holds `approvals:View` and not `Approve`, and a named approver excludes everybody
+     * else — so this plan would publish an approval request that the named person is refused and
+     * nobody else may touch. Refused at assignment, with a message naming the node, rather than
+     * discovered by whoever eventually chases the work.
+     */
+    it('refuses a plan whose approval gate names somebody who cannot approve', async () => {
+      const { objectiveId } = await readyToAssign({ nameIneligibleApprover: true });
+
+      await assert.rejects(
+        assignment().approveAndAssign({
+          scope: scope(),
+          actorUserId: managerUserId,
+          objectiveId,
+          acceptWarnings: true,
+        }),
+        (error: Error) => /cannot decide it/i.test(error.message),
+      );
+
+      // Nothing was written: the refusal is before the transaction, not a partial publish.
+      const tasks = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.humanTask.count({ where: { tenantId, objectiveId } }),
+      );
+      assert.equal(tasks, 0, 'work was assigned despite the refusal');
+    });
+
+    /*
+     * Four eyes and one name are contradictory by construction: two distinct people cannot be
+     * found in one, and naming somebody excludes everybody else.
+     */
+    it('refuses a four-eyes gate that also names a single approver', async () => {
+      const { objectiveId, versionId } = await readyToAssign();
+
+      const draft = await workflow().open({
+        scope: scope(),
+        actorUserId: managerUserId,
+        objectiveId,
+      });
+      const gate = draft.graph.nodes.find((node) => node.kind === 'Approval');
+      assert.ok(gate !== undefined, 'the analysis produced no approval gate to test');
+
+      await workflow().editNode({
+        scope: scope(),
+        actorUserId: managerUserId,
+        objectiveId,
+        revision: draft.revision,
+        nodeId: gate.id,
+        patch: { dod: { ...gate.dod, approval: 'FourEyes' } },
+      });
+
+      await assert.rejects(
+        assignment().approveAndAssign({
+          scope: scope(),
+          actorUserId: managerUserId,
+          objectiveId,
+          versionId,
+          acceptWarnings: true,
+        }),
+        (error: Error) => /two distinct people cannot be found in one/i.test(error.message),
+      );
     });
 
     it('records the required role when the gate names no person, and notifies nobody', async () => {
