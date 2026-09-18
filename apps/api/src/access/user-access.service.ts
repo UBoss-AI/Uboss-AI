@@ -8,6 +8,7 @@ import {
 import { AuditEventService } from '../audit/audit-event.service.js';
 import { SECURITY_ACTIONS, SecurityEventPublisher } from '../auth/security-event.publisher.js';
 import { AuthorizationService } from '../authorization/authorization.service.js';
+import { ReportScopeService } from '../reports/report-scope.service.js';
 import { SeatService } from '../commercial/seat.service.js';
 import { AccessRepository, type AccessRow } from '../persistence/access.repository.js';
 import { InvitationRepository } from '../persistence/invitation.repository.js';
@@ -83,6 +84,7 @@ export class UserAccessService {
     private readonly invitations: InvitationRepository,
     private readonly seats: SeatService,
     private readonly authorization: AuthorizationService,
+    private readonly reportScope: ReportScopeService,
     private readonly auditEvents: AuditEventService,
     private readonly securityEvents: SecurityEventPublisher,
   ) {}
@@ -92,13 +94,29 @@ export class UserAccessService {
     const context = await this.authorization.contextFor(scope, actorUserId);
     await this.authorization.assertCan(context, { module: 'users', action: 'View' });
 
-    const [rows, hasRoot, seats] = await Promise.all([
+    const [rows, hasRoot, seats, reach] = await Promise.all([
       this.access.roster(scope),
       this.access.hasReportingRoot(scope),
       this.seats.positionFor(scope),
+      this.reportScope.forPeopleList({ scope, actorUserId }),
     ]);
 
-    const people = rows.map((row) => UserAccessService.toPerson(row, hasRoot));
+    /*
+     * Only the people this caller's scope reaches.
+     *
+     * `userIds: null` means whole-company, which is what a Company Admin resolves to; a Manager
+     * resolves to their reporting subtree and a Head to their departments. Without this the screen
+     * listed everybody to anybody holding `users:View`, which is every role in the product.
+     *
+     * Filtered here rather than in the query because the resolver is the one place that knows how
+     * a scope becomes a set of people, and duplicating that in SQL is how the two come to disagree.
+     */
+    const visible =
+      reach.userIds === null
+        ? rows
+        : rows.filter((row) => reach.userIds !== null && reach.userIds.includes(row.userId));
+
+    const people = visible.map((row) => UserAccessService.toPerson(row, hasRoot));
 
     // Split into the client's three tabs. A person appears in **Pending Invitations** as well as
     // their own tab, deliberately: the tab is a work queue ("who is waiting"), not a category,

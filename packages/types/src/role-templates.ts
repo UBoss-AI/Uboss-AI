@@ -111,7 +111,21 @@ export const ROLE_TEMPLATES: Record<Exclude<RoleKind, 'Custom'>, RoleTemplate> =
     defaultScope: 'OwnWork',
     permissions: {
       dashboard: READ_ONLY,
-      hierarchy: READ_ONLY,
+      // ---- CR-03 §9: a standard Employee is operations-first ----
+      //
+      // `hierarchy`, `executor`, `reports` and `profile-search` were all READ_ONLY here, so every
+      // employee arrived with the whole company's org chart, the Executor Agent screen, company
+      // Reports and cross-company Profile Search in their sidebar. The navigation was not at
+      // fault — it renders what the grants say, and the grants said all four.
+      //
+      // CR-03 names what a default Employee gets: their Dashboard, their To-do, the agents
+      // assigned to them, the approvals they are given, Workspace Chat and Settings. Reports "only
+      // if specifically granted". So the grants now say that, which also settles the direct-route
+      // question: a guard that refuses on a missing grant refuses on all four.
+      //
+      // `performance` stays. It is this person's own record rather than a company screen, and
+      // CR-03 does not list it among the things to take away.
+      //
       // ---- CR-03: `objective` and `agent-builder` are absent, and the absence is the feature ----
       //
       // Objective Optimization and Agent Builder are the two BUILDERS screens. No grant means no
@@ -129,11 +143,8 @@ export const ROLE_TEMPLATES: Record<Exclude<RoleKind, 'Custom'>, RoleTemplate> =
       // permitted is a further question — `RUN_PRECONDITIONS` lists all seven conditions, of which
       // this grant is one.
       agents: ['View', 'Comment', 'Run'],
-      executor: READ_ONLY,
       approvals: READ_ONLY,
       performance: READ_ONLY,
-      reports: READ_ONLY,
-      'profile-search': READ_ONLY,
       settings: READ_ONLY,
     },
   },

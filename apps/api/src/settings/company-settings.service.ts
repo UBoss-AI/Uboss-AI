@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable } from '@nestjs/comm
 
 import {
   SETTING_DEFINITIONS,
+  CATEGORY_VISIBILITY,
   SETTINGS_CATEGORIES,
   settingDefinition,
   validateSetting,
@@ -144,6 +145,23 @@ export class CompanySettingsService {
     let withheld = 0;
 
     for (const category of SETTINGS_CATEGORIES) {
+      /*
+       * Does this caller get the category at all?
+       *
+       * Asked before anything else, because the previous order let a category with no settings of
+       * its own through to everybody — which is how an Employee came to be offered Billing, AI
+       * Providers, Roles & Permissions and Tokens & Cost. The six personal categories have no
+       * requirement and so are unaffected.
+       */
+      const requirement = CATEGORY_VISIBILITY[category];
+      if (requirement !== undefined) {
+        const decision = await this.authorization.authorize(context, requirement);
+        if (!decision.allowed) {
+          withheld += 1;
+          continue;
+        }
+      }
+
       const settings = resolved.filter((setting) => setting.category === category);
       const note = CATEGORY_NOTES[category];
 

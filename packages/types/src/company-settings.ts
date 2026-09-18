@@ -54,6 +54,54 @@ export const SETTINGS_CATEGORIES = [
 export type SettingsCategory = (typeof SETTINGS_CATEGORIES)[number];
 
 /**
+ * What a caller must hold for a category to exist for them at all.
+ *
+ * ## Why this is separate from the per-setting permissions
+ *
+ * A category used to be withheld only when it *had* settings the caller could not read. Categories
+ * that carry no settings of their own — AI Providers, Billing, Roles & Permissions, Users & Access
+ * and the rest of the company-administration group — therefore appeared for everybody, with their
+ * explanatory note. Measured: a standard Employee was offered eighteen of the nineteen categories.
+ *
+ * Nothing leaked through them; every one read "Read only" and none carried a credential. But
+ * Tokens & Cost did show the company's allowance, used, remaining and reserved figures, and
+ * CR-03 §10 is explicit that company billing and company-wide access administration are not an
+ * Employee's to see. A category nobody may act on is also noise in the one screen the brief asks
+ * to be the best-organised area of the product.
+ *
+ * ## The six that are not listed
+ *
+ * `general`, `security`, `notifications`, `appearance`, `integrations` and `agent` have no entry,
+ * which means everyone gets them. They are the personal settings — My Profile, Login & Security,
+ * Notifications, Appearance, My Connections and My Agent Preferences — and they are CR-03's
+ * Employee baseline. Language and time zone live inside `general` (`general.timezone`) rather than
+ * in a category of their own.
+ *
+ * ## The rest are the company's
+ *
+ * Each names the grant that already governs the thing the category is about, so this adds no new
+ * authority model: it asks the same engine the routes ask, and a grant that opens the category is
+ * the grant that makes something in it usable.
+ */
+export const CATEGORY_VISIBILITY: Partial<
+  Record<SettingsCategory, { module: ModuleKey; action: Action }>
+> = {
+  organization: { module: 'hierarchy', action: 'View' },
+  users: { module: 'users', action: 'ManageAccess' },
+  roles: { module: 'roles', action: 'View' },
+  objective: { module: 'objective', action: 'View' },
+  skills: { module: 'settings', action: 'Administer' },
+  providers: { module: 'settings', action: 'Administer' },
+  tokens: { module: 'settings', action: 'Administer' },
+  schedules: { module: 'settings', action: 'Administer' },
+  knowledge: { module: 'settings', action: 'Administer' },
+  audit: { module: 'settings', action: 'Audit' },
+  billing: { module: 'settings', action: 'Administer' },
+  uboss: { module: 'settings', action: 'Administer' },
+  performance: { module: 'performance', action: 'Administer' },
+};
+
+/**
  * What kind of value a setting holds.
  *
  * A closed set, because each kind has its own validator and its own control. `enum` carries its

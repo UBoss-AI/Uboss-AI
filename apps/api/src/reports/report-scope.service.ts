@@ -71,6 +71,28 @@ export class ReportScopeService {
     });
   }
 
+  /**
+   * Which people a caller may be shown in a roster, by the same resolution.
+   *
+   * Users & Access listed every person in the company to anybody holding `users:View`, so a
+   * Manager scoped to their own team saw the Company Admin, the Head and every other department —
+   * six of six people in a six-person company. The server refused every *action* on them (403,
+   * "Your role does not include ManageAccess"), so this was disclosure rather than escalation, but
+   * a list of who works here, who reports to whom and what state their account is in is exactly
+   * the kind of thing a team-scoped role is not given.
+   *
+   * No permission is asserted here: the caller has already been required to hold `users:View`, and
+   * this answers the narrower question of *whose* rows that grant reaches.
+   */
+  async forPeopleList(input: { scope: TenantScope; actorUserId: string }): Promise<ReportScope> {
+    const context = await this.authorization.contextFor(input.scope, input.actorUserId);
+    return this.resolve({
+      scope: input.scope,
+      actorUserId: input.actorUserId,
+      scopeKind: ReportScopeService.widestScope(context.roleSummary.map((role) => role.scopeKind)),
+    });
+  }
+
   /** The dashboard's counts use the same resolution, without a report definition. */
   async forDashboard(input: { scope: TenantScope; actorUserId: string }): Promise<ReportScope> {
     const context = await this.authorization.contextFor(input.scope, input.actorUserId);

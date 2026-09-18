@@ -105,6 +105,7 @@ export type { PlatformRoleKind, PlatformRoleTemplate } from './platform-roles.js
 // permission must be identical everywhere, and per-company values must not be able to invent a
 // setting that does nothing. See `company-settings.ts`.
 export {
+  CATEGORY_VISIBILITY,
   SETTING_DEFINITIONS,
   SETTINGS_CATEGORIES,
   settingDefinition,

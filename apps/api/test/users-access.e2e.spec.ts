@@ -13,6 +13,7 @@ import { BulkOperationService } from '../src/access/bulk-operation.service.js';
 import { InvitationAccessService } from '../src/access/invitation-access.service.js';
 import { HANDOVER_DOMAINS, OffboardingService } from '../src/access/offboarding.service.js';
 import { CapabilityService } from '../src/access/capability.service.js';
+import { ReportScopeService } from '../src/reports/report-scope.service.js';
 import { UserAccessService } from '../src/access/user-access.service.js';
 import { AuditEventService } from '../src/audit/audit-event.service.js';
 import { SecurityEventService } from '../src/audit/security-event.service.js';
@@ -141,6 +142,8 @@ describe('users & access (e2e)', () => {
         PlatformRepository,
         OrganizationRepository,
         AccessRepository,
+        // Users & Access narrows its roster to the caller's scope, and this is what resolves it.
+        ReportScopeService,
         InvitationRepository,
         UserCredentialRepository,
         SessionRepository,

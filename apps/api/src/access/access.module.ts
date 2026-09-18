@@ -6,6 +6,7 @@ import { CapabilityService } from './capability.service.js';
 import { BulkOperationService } from './bulk-operation.service.js';
 import { InvitationAccessService } from './invitation-access.service.js';
 import { OffboardingService } from './offboarding.service.js';
+import { ReportsModule } from '../reports/reports.module.js';
 import { UserAccessService } from './user-access.service.js';
 
 /**
@@ -23,11 +24,13 @@ import { UserAccessService } from './user-access.service.js';
  *   * **`OrganizationModule`** for employment records and departments. A guest has none of
  *     either, by definition and by database trigger.
  *
- * All three are `@Global`, so nothing is imported here — and this module is `@Global` too,
+ * `ReportsModule` is imported for `ReportScopeService`, which decides which people a roster may
+ * contain. The other three are `@Global`, so nothing else is imported here — and this module is `@Global` too,
  * because the bulk engine will be reached from the Settings shell at Prompt 14.
  */
 @Global()
 @Module({
+  imports: [ReportsModule],
   controllers: [AccessController],
   providers: [
     AccessRepository,

@@ -5,7 +5,6 @@ import { useEffect, useId, useState } from 'react';
 
 import { cn } from '../lib/class-names';
 import { prefersReducedMotion, transition } from '../motion/motion';
-import { EmptyState } from './EmptyState';
 
 /**
  * The Company Workspace Dashboard donut.
@@ -98,15 +97,17 @@ export function DonutDashboard({
     return () => window.clearTimeout(timer);
   }, []);
 
-  if (total === 0) {
-    return (
-      <EmptyState
-        icon="grid"
-        title="Nothing in your scope yet"
-        description="Once Engine Agents are activated or work is assigned to you, they appear here."
-      />
-    );
-  }
+  /*
+   * No early return for an empty scope.
+   *
+   * This used to hand back an EmptyState instead of the chart, so a person with nothing assigned
+   * got a generic card and no donut at all — measured on a standard Employee: zero donuts on the
+   * one screen whose contract is exactly one. The lock is one donut with two categories, and zero
+   * is a truthful reading of it, not an absence of one.
+   *
+   * The explanation the empty state carried is kept, below the legend, where it says the same
+   * thing without taking the chart's place.
+   */
 
   const centre =
     hovered === 'agents'
@@ -256,6 +257,13 @@ export function DonutDashboard({
           onHighlight={(on) => setHovered(on ? 'pending' : null)}
         />
       </div>
+
+      {total === 0 ? (
+        <p className="uboss-donut-note uboss-muted">
+          Nothing is in your scope yet. Engine Agents activated for you, and work assigned to you,
+          appear here.
+        </p>
+      ) : null}
     </div>
   );
 }

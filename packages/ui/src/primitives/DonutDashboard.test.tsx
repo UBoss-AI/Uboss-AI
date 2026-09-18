@@ -66,11 +66,29 @@ describe('DonutDashboard — locked two-slice contract', () => {
     );
   });
 
-  it('renders an empty state rather than an empty chart when nothing is in scope', () => {
-    render(<DonutDashboard agents={0} pendingJobs={0} />);
+  /*
+   * This used to assert the opposite: that an empty scope replaced the chart with an empty state.
+   * CR-03 locks the Dashboard to exactly one donut with exactly two categories, and a standard
+   * Employee with nothing assigned is the commonest way to arrive on it — measured, they got zero
+   * donuts on the one screen whose contract is one. Zero is a truthful reading of the contract,
+   * not an absence of it, so the chart stays and reads 0 and 0.
+   *
+   * The sentence the empty state carried is kept, below the legend, because a new employee looking
+   * at two zeros deserves to know why.
+   */
+  it('still renders the two-category donut when nothing is in scope', () => {
+    const { container } = render(<DonutDashboard agents={0} pendingJobs={0} />);
 
-    expect(screen.getByText('Nothing in your scope yet')).toBeInTheDocument();
-    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    const chart = screen.getByRole('img');
+    expect(chart).toHaveAccessibleName('0 Agents and 0 Pending Jobs, 0 items in your scope');
+
+    // Both categories, both reading zero, both still there to be drilled into.
+    expect(screen.getByText('Agents')).toBeInTheDocument();
+    expect(screen.getByText('Pending Jobs')).toBeInTheDocument();
+    expect(container.querySelectorAll('.uboss-donut-figure')).toHaveLength(1);
+
+    // And the explanation, in its own line rather than in the chart's place.
+    expect(screen.getByText(/Nothing is in your scope yet/)).toBeInTheDocument();
   });
 
   it('still renders a visible arc for a single-item category', () => {

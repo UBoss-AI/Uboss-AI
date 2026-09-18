@@ -312,12 +312,22 @@ function UsersAccessInner() {
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                 />
-                <Button icon="file" onClick={() => setBulkOpen(true)}>
-                  Bulk import
-                </Button>
-                <Button variant="primary" icon="plus" onClick={() => setGuestOpen(true)}>
-                  Invite guest
-                </Button>
+{/*
+                  Both write to company-wide access, so both are for somebody who holds
+                  `users:ManageAccess`. They used to render for anybody who could open this screen,
+                  which is anybody with `users:View` — a Manager could press Invite guest and get a
+                  403 from a button that looked ready.
+                */}
+                {mayManageAccess ? (
+                  <>
+                    <Button icon="file" onClick={() => setBulkOpen(true)}>
+                      Bulk import
+                    </Button>
+                    <Button variant="primary" icon="plus" onClick={() => setGuestOpen(true)}>
+                      Invite guest
+                    </Button>
+                  </>
+                ) : null}
               </div>
 
               {rows.length === 0 ? (
@@ -472,7 +482,7 @@ function UsersAccessInner() {
                             </Button>
                           ) : null}
 
-                          {person.accountState === 'Active' ? (
+                          {mayManageAccess && person.accountState === 'Active' ? (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -503,7 +513,7 @@ function UsersAccessInner() {
                             </Button>
                           ) : null}
 
-                          {person.accountState !== 'Offboarded' ? (
+                          {mayManageAccess && person.accountState !== 'Offboarded' ? (
                             <Button
                               variant="danger-ghost"
                               size="sm"
