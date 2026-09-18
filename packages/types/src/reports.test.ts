@@ -141,16 +141,32 @@ describe('the ten reports', () => {
    * If a report were gated on `reports:View` alone, every role template that holds it — which is
    * all of them — could read every other module's data through Reports.
    */
-  it('would otherwise let an Employee read modules they cannot open', () => {
+  it('closes both doors on the templates as they stand', () => {
+    /*
+     * This used to assert that an Employee holds `reports:View`, and demonstrate the leak from
+     * there. CR-03 §9 took that grant away — a standard Employee is operations-first and gets
+     * company Reports only when somebody grants them — so the example now shows the first door
+     * shut rather than the second.
+     *
+     * Both doors are worth asserting, because they fail differently: the first is "you cannot
+     * open Reports at all", the second is "you can open Reports, and this particular report is
+     * still not yours".
+     */
     const employee = ROLE_TEMPLATES.Employee;
     assert.equal(
-      (employee.permissions.reports ?? []).includes('View'),
-      true,
-      'an Employee can open Reports',
+      (employee.permissions.reports ?? []).length,
+      0,
+      'a default Employee holds no reports grant — CR-03 §9',
     );
 
-    // And holds no `users` view at all, so a report sourced from it must be withheld.
-    assert.equal((employee.permissions.users ?? []).length, 0);
+    // The second door, on a role that is through the first. A Manager may open Reports, and holds
+    // `settings:View`; the two reports sourced from settings need Administer and Audit, so the
+    // source grant is what withholds them rather than the Reports grant.
+    const manager = ROLE_TEMPLATES.Manager;
+    assert.equal((manager.permissions.reports ?? []).includes('View'), true);
+    const settings = manager.permissions.settings ?? [];
+    assert.equal(settings.includes('Administer'), false);
+    assert.equal(settings.includes('Audit'), false);
   });
 
   it('keeps export as its own grant, held by Manager and above and not by Employee', () => {

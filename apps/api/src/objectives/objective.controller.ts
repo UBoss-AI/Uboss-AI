@@ -366,6 +366,29 @@ export class ObjectiveController {
    * answer both planes read. A field removed from the shared list disappears from this response
    * and from the form together, which is what makes the invariant test meaningful.
    */
+  /**
+   * The people this objective may be sent to, given who owns it.
+   *
+   * The form needs this to offer a choice that will be accepted: the same rule runs on save, and
+   * a picker listing everybody meant a Head could choose somebody and be refused afterwards.
+   */
+  @Get('responsible-owner-candidates')
+  @RequirePermission({ module: 'objective', action: 'View' })
+  async responsibleOwnerCandidates(
+    @Query('objectiveOwnerUserId') objectiveOwnerUserId = '',
+  ): Promise<unknown> {
+    if (objectiveOwnerUserId === '') {
+      // Nobody owns it yet, so there is nothing to be in the reporting line of.
+      return { candidates: [] };
+    }
+    const candidates = await this.objectives.eligibleResponsibleOwners({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
+      objectiveOwnerUserId,
+    });
+    return { candidates };
+  }
+
   @Get('form2')
   @RequirePermission({ module: 'objective', action: 'View' })
   form2(): unknown {

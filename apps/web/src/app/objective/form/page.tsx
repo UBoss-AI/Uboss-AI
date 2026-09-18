@@ -128,6 +128,16 @@ function ObjectiveFormInner() {
    */
   const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
   const [people, setPeople] = useState<{ userId: string; label: string }[]>([]);
+  /*
+   * Who this objective may be sent to, which is not everybody.
+   *
+   * The server's rule is that the Responsible Owner must be an active member and — when both they
+   * and the objective's owner have an employment record — in the same reporting line, either
+   * above or below. Offering the whole company meant a Head could pick somebody and be refused on
+   * save. This asks the server which people pass its own rule, so the list and the validation
+   * cannot disagree, and it re-asks whenever the owner changes because the answer depends on them.
+   */
+  const [sendToOptions, setSendToOptions] = useState<{ userId: string; label: string }[]>([]);
 
 
   const [reward, setReward] = useState<ObjectiveRewardPanel>(emptyReward());
@@ -171,6 +181,28 @@ function ObjectiveFormInner() {
       )
       .catch(() => setPeople([]));
   }, [tenantId]);
+
+  useEffect(() => {
+    const owner = content.objectiveOwnerUserId;
+    if (tenantId === null || owner === '') {
+      setSendToOptions([]);
+      return;
+    }
+    void objectivesApi
+      .responsibleOwnerCandidates(tenantId, owner)
+      .then((result) =>
+        setSendToOptions(
+          result.candidates.map((candidate) => ({
+            userId: candidate.userId,
+            label:
+              candidate.designation === null || candidate.designation === ''
+                ? candidate.displayName
+                : `${candidate.displayName} — ${candidate.designation}`,
+          })),
+        ),
+      )
+      .catch(() => setSendToOptions([]));
+  }, [content.objectiveOwnerUserId, tenantId]);
 
   const signedInUser = useSignedInUser(me);
 
@@ -586,17 +618,25 @@ function ObjectiveFormInner() {
           <div className="uboss-row-2">
             <div className="uboss-field">
               <label htmlFor="responsibleOwnerUserId">Responsible Owner / Send To</label>
-              {/* Who the Objective is routed to for review. §21's "selects a Responsible Manager". */}
+              {/*
+                Who the Objective is routed to for review, from the server's own eligibility rule
+                rather than from the whole company. Empty until an owner is chosen, because the
+                rule is about the owner's reporting line.
+              */}
               <select
                 id="responsibleOwnerUserId"
                 className="uboss-input"
                 aria-invalid={problemFields.has('responsibleOwnerUserId') || undefined}
                 value={content.responsibleOwnerUserId ?? ''}
-                disabled={readOnly}
+                disabled={readOnly || content.objectiveOwnerUserId === ''}
                 onChange={(event) => field('responsibleOwnerUserId', orNull(event.target.value))}
               >
-                <option value="">Nobody yet</option>
-                {people.map((person) => (
+                <option value="">
+                  {content.objectiveOwnerUserId === ''
+                    ? 'Choose the objective owner first'
+                    : 'Nobody yet'}
+                </option>
+                {sendToOptions.map((person) => (
                   <option key={person.userId} value={person.userId}>
                     {person.label}
                   </option>

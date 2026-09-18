@@ -1888,6 +1888,64 @@ export class ObjectiveService {
    * filling in its hierarchy. The audit event records `hierarchyEvaluated: false` so the gap is
    * visible rather than silent.
    */
+  /**
+   * Who this objective may be sent to, by the same rule that validates the choice.
+   *
+   * The form used to offer every person in the company for Responsible Owner / Send To, so it was
+   * possible to choose somebody the server would then refuse — "not in the same reporting line as
+   * this objective's owner". Offering a choice that cannot be taken is the dead-UI shape the brief
+   * rules out, and the fix is not a second rule: this asks
+   * `checkResponsibleOwnerWithinCurrentScope` about each candidate and keeps the ones it accepts.
+   *
+   * Slower than a query, and deliberately so. The rule involves two reporting-tree walks per
+   * candidate and lives in one place; a hand-written SQL version of it would be a second statement
+   * of the same rule, and the two would drift the first time either changed.
+   *
+   * The owner themselves is included, because the rule says so: "The objective owner is also its
+   * Responsible Owner" is an accepted answer.
+   */
+  async eligibleResponsibleOwners(input: {
+    scope: TenantScope;
+    actorUserId: string;
+    objectiveOwnerUserId: string;
+  }): Promise<{ userId: string; displayName: string; designation: string | null }[]> {
+    const context = await this.authorization.contextFor(input.scope, input.actorUserId);
+    await this.authorization.assertCan(context, { module: 'objective', action: 'View' });
+
+    return this.prisma.runInTenantTransaction(input.scope, async () => {
+      const people = await this.prisma.client.employmentRecord.findMany({
+        where: { tenantId: input.scope.tenantId },
+        select: { userId: true, designation: true },
+      });
+
+      const eligible: { userId: string; displayName: string; designation: string | null }[] = [];
+      for (const person of people) {
+        try {
+          await this.checkResponsibleOwnerWithinCurrentScope({
+            scope: input.scope,
+            objectiveOwnerUserId: input.objectiveOwnerUserId,
+            responsibleOwnerUserId: person.userId,
+          });
+        } catch {
+          // Refused by the rule — a suspended member, or somebody outside the owner's line.
+          continue;
+        }
+
+        const user = await this.prisma.client.user.findFirst({
+          where: { id: person.userId },
+          select: { displayName: true },
+        });
+        eligible.push({
+          userId: person.userId,
+          displayName: user?.displayName ?? 'Unnamed',
+          designation: person.designation,
+        });
+      }
+
+      return eligible.sort((a, b) => a.displayName.localeCompare(b.displayName));
+    });
+  }
+
   private async checkResponsibleOwnerWithinCurrentScope(input: {
     scope: TenantScope;
     objectiveOwnerUserId: string;

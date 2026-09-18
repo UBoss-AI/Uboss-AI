@@ -2429,6 +2429,12 @@ export interface Form2DefinitionView {
 }
 
 export const objectivesApi = {
+  /** Who an objective owned by this person may be sent to. The server's own routing rule. */
+  responsibleOwnerCandidates: (tenantId: string, objectiveOwnerUserId: string) =>
+    call<{ candidates: { userId: string; displayName: string; designation: string | null }[] }>(
+      `/tenants/${encodeURIComponent(tenantId)}/objectives/responsible-owner-candidates` +
+        `?objectiveOwnerUserId=${encodeURIComponent(objectiveOwnerUserId)}`,
+    ),
   form2: (tenantId: string) =>
     call<Form2DefinitionView>(`/tenants/${encodeURIComponent(tenantId)}/objectives/form2`),
 
