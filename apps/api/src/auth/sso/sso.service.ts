@@ -187,8 +187,27 @@ export class SsoService {
       };
     }
 
+    /*
+     * This callback handles an enterprise connection request, which always carries a connection
+     * and a tenant — the flow-shape constraint in the database refuses a row of this kind that
+     * does not. Since `connection_id` became nullable for social requests, that guarantee has to
+     * be stated here rather than assumed: a social request arriving at this path would mean the
+     * callback router sent it to the wrong handler, and continuing with no connection would mean
+     * completing a sign-in against configuration that was never loaded.
+     */
+    if (authRequest.flowKind !== 'EnterpriseConnection' || authRequest.connectionId === null) {
+      await this.securityEvents.recordSuspicious({
+        action: SECURITY_ACTIONS.ssoLoginFailed,
+        resourceType: 'sso_auth_request',
+        resourceId: authRequest.id,
+        summary: 'An enterprise SSO callback received a request that is not an enterprise request.',
+        metadata: { reason: 'flow_kind_mismatch', flowKind: authRequest.flowKind },
+      });
+      return { outcome: 'failed', reason: 'That sign-in could not be completed. Please start again.' };
+    }
+
     const connection = await this.prisma.runAsPlatformOperation(() =>
-      this.enterprise.findEnabledConnectionForPlatform(authRequest.connectionId),
+      this.enterprise.findEnabledConnectionForPlatform(authRequest.connectionId as string),
     );
     if (!connection) {
       return { outcome: 'failed', reason: 'That sign-in method is no longer available.' };

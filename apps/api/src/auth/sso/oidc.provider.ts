@@ -76,6 +76,58 @@ export interface FederatedIdentity {
   claims: IdTokenClaims;
 }
 
+/**
+ * The only cross-origin endpoints any provider is allowed, keyed by the issuer that may use them.
+ *
+ * ## Why this exists
+ *
+ * Endpoints used to be required to sit on the issuer's own origin, which is a good default and is
+ * still what happens for everything not listed here. It is also stricter than OpenID Connect
+ * Discovery, which never required it — and Google's published metadata does not satisfy it:
+ *
+ *     issuer         https://accounts.google.com
+ *     token_endpoint https://oauth2.googleapis.com/token
+ *     jwks_uri       https://www.googleapis.com/oauth2/v3/certs
+ *
+ * Checked live against all three providers: Microsoft and Apple are entirely same-origin and need
+ * nothing from this table. Google alone does.
+ *
+ * ## Why this is narrow rather than a relaxation
+ *
+ * Three things have to line up before a cross-origin endpoint is accepted, and all three are
+ * configuration or published fact rather than anything the document can assert:
+ *
+ *   1. the **issuer** must match this connection's configured issuer exactly. That is checked
+ *      before this table is consulted, so a hostile discovery document cannot nominate itself as
+ *      Google in order to reach these origins.
+ *   2. the **endpoint name** must be the one listed. Google may move its token endpoint to
+ *      oauth2.googleapis.com; it may not move its authorization endpoint there.
+ *   3. the **origin** must be exactly the one listed. Not a suffix match, not a subdomain — an
+ *      entry for oauth2.googleapis.com does not admit evil.oauth2.googleapis.com.
+ *
+ * So the widest thing this grants is: "a connection configured for Google's real issuer, whose
+ * discovery document Google itself served, may have its token endpoint on the one other origin
+ * Google documents." Everything else still fails closed.
+ */
+const TRUSTED_CROSS_ORIGIN_ENDPOINTS: Record<string, Partial<Record<'authorization_endpoint' | 'token_endpoint' | 'jwks_uri' | 'end_session_endpoint', readonly string[]>>> = {
+  'https://accounts.google.com': {
+    token_endpoint: ['https://oauth2.googleapis.com'],
+    jwks_uri: ['https://www.googleapis.com'],
+  },
+};
+
+/**
+ * A loopback host, which is the one place plain HTTP is acceptable.
+ *
+ * Not a convenience: an address that never leaves the machine cannot be intercepted on the wire,
+ * which is the threat TLS is there for. It is also the only way the test identity provider and a
+ * locally run IdP can work, and refusing them would mean the enterprise SSO flow had no way to be
+ * exercised outside production.
+ */
+function isLoopback(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]';
+}
+
 export class OidcError extends Error {}
 
 const HTTP_TIMEOUT_MS = 5_000;
@@ -123,10 +175,18 @@ export class OidcProvider {
       }
     }
 
-    // Keys and credentials stay with the issuer's own origin. Without this, a discovery document
-    // could point `token_endpoint` at an attacker and we would post the client secret to it.
-    this.assertSameOrigin(config.issuer, document.token_endpoint, 'token_endpoint');
-    this.assertSameOrigin(config.issuer, document.jwks_uri, 'jwks_uri');
+    /*
+     * Keys and credentials go to the issuer, or to an origin that issuer publishes for that exact
+     * endpoint. Without this a discovery document could point `token_endpoint` at an attacker and
+     * we would post the client secret to it.
+     *
+     * The authorization endpoint is checked too. It only ever receives a redirect rather than a
+     * secret, but an authorization endpoint on somebody else's origin is a phishing page wearing
+     * the provider's flow, and there is no reason to allow one.
+     */
+    this.assertEndpointAllowed(config.issuer, document.authorization_endpoint, 'authorization_endpoint');
+    this.assertEndpointAllowed(config.issuer, document.token_endpoint, 'token_endpoint');
+    this.assertEndpointAllowed(config.issuer, document.jwks_uri, 'jwks_uri');
 
     this.discoveryCache.set(config.discoveryUrl, { at: Date.now(), value: document });
     return document;
@@ -365,23 +425,57 @@ export class OidcProvider {
     return parsed;
   }
 
-  private assertSameOrigin(issuer: string, endpoint: string, name: string): void {
-    let issuerOrigin: string;
-    let endpointOrigin: string;
+  /**
+   * Where an endpoint from the discovery document is allowed to live.
+   *
+   * Two rules, in order:
+   *
+   *   * **Transport.** HTTPS, or a loopback address. Previously nothing here checked the scheme at
+   *     all — the same-origin rule was doing that job by accident, because the issuer is
+   *     configuration and a configured https issuer forced its endpoints to be https too. Once a
+   *     cross-origin endpoint is permitted at all, that accident stops protecting anything, so the
+   *     requirement is stated outright.
+   *   * **Origin.** The issuer's own origin, or one of the specific origins that issuer documents
+   *     for that specific endpoint. See TRUSTED_CROSS_ORIGIN_ENDPOINTS for why that is narrow.
+   *
+   * The refusal names what it refused and why, because the alternative is an operator staring at
+   * "sign-in unavailable" with no way to tell a misconfiguration from an attack.
+   */
+  private assertEndpointAllowed(
+    issuer: string,
+    endpoint: string,
+    name: 'authorization_endpoint' | 'token_endpoint' | 'jwks_uri' | 'end_session_endpoint',
+  ): void {
+    let issuerUrl: URL;
+    let endpointUrl: URL;
     try {
-      issuerOrigin = new URL(issuer).origin;
-      endpointOrigin = new URL(endpoint).origin;
+      issuerUrl = new URL(issuer);
+      endpointUrl = new URL(endpoint);
     } catch {
       throw new OidcError(`The discovery document's ${name} is not a valid URL.`);
     }
 
-    if (issuerOrigin !== endpointOrigin) {
+    if (endpointUrl.protocol !== 'https:' && !isLoopback(endpointUrl.hostname)) {
       throw new OidcError(
-        `The discovery document's ${name} (${endpointOrigin}) is not on the issuer's origin ` +
-          `(${issuerOrigin}). Refusing, so a discovery document cannot redirect key fetches or ` +
-          'credentials elsewhere.',
+        `The discovery document's ${name} (${endpointUrl.origin}) is not HTTPS. Refusing: an ` +
+          'authorization code, a client secret or a key set must not travel in clear text.',
       );
     }
+
+    if (endpointUrl.origin === issuerUrl.origin) {
+      return;
+    }
+
+    const permitted = TRUSTED_CROSS_ORIGIN_ENDPOINTS[issuerUrl.origin]?.[name] ?? [];
+    if (permitted.includes(endpointUrl.origin)) {
+      return;
+    }
+
+    throw new OidcError(
+      `The discovery document's ${name} (${endpointUrl.origin}) is neither on the issuer's origin ` +
+        `(${issuerUrl.origin}) nor an origin that issuer documents for ${name}. Refusing, so a ` +
+        'discovery document cannot redirect key fetches or credentials elsewhere.',
+    );
   }
 
   /** Clear the caches. Used when a connection's configuration changes. */

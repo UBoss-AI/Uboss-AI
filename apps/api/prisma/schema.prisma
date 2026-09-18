@@ -509,6 +509,7 @@ model Invitation {
 
   /// "Show me this company's outstanding invitations", newest first.
   @@index([tenantId, createdAt(sort: Desc)])
+  @@index([expiresAt])
   /// At most one live invitation per person per company is enforced in the service; this index
   /// makes that check cheap.
   @@index([tenantId, userId])
@@ -909,11 +910,48 @@ model SsoConnection {
 /// `nonce` binds the ID token to this request, and the PKCE verifier binds the
 /// authorization code to this client. Keeping them in a cookie or the URL would
 /// mean trusting the attacker-reachable side of the exchange.
+/// Which of the two sign-in arrangements a federated request belongs to.
+enum SsoFlowKind {
+  /// A company's own connection. The tenant is known before the browser leaves.
+  EnterpriseConnection
+  /// UBoss's own Google, Microsoft or Apple application. The tenant is not known until the
+  /// verified address has been matched to a membership.
+  SocialProvider
+}
+
+/// The providers UBoss registers its own applications with.
+enum SocialProviderKind {
+  Google
+  Microsoft
+  Apple
+}
+
 model SsoAuthRequest {
   id String @id @default(uuid(7)) @db.Uuid
 
-  tenantId     String @map("tenant_id") @db.Uuid
-  connectionId String @map("connection_id") @db.Uuid
+  /// Which arrangement this request belongs to.
+  ///
+  /// An enterprise connection request knows its company before the browser leaves. A social
+  /// request does not: the address comes back from Google, Microsoft or Apple, and only then can
+  /// it be matched to a person and their company.
+  flowKind SsoFlowKind @default(EnterpriseConnection) @map("flow_kind")
+
+  /// Null until identity has been verified and a membership resolved.
+  ///
+  /// Safe because the table's RLS policy compares `tenant_id` to the current tenant, and
+  /// `NULL = anything` is NULL rather than true — so a row with no tenant is invisible to every
+  /// tenant context, not merely to other tenants. It is reachable only by the platform operation
+  /// that created it. Nothing the client sends can set this.
+  tenantId     String? @map("tenant_id") @db.Uuid
+  /// A social request has no connection row: the credentials belong to UBoss, not to a company.
+  connectionId String? @map("connection_id") @db.Uuid
+
+  /// Which provider a social request was started with.
+  ///
+  /// Stored rather than re-derived at callback time, so the ID token is validated against the
+  /// issuer the request actually began with — a configuration change mid-flight must not move
+  /// which issuer is trusted for a request already in the air.
+  providerKind SocialProviderKind? @map("provider_kind")
 
   /// SHA-256 of the `state` parameter. Hashed because the plaintext travels in
   /// a URL and therefore through logs, proxies and browser history.
@@ -936,8 +974,8 @@ model SsoAuthRequest {
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  tenant     Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  connection SsoConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  tenant     Tenant?        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  connection SsoConnection? @relation(fields: [connectionId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, createdAt(sort: Desc)])
   @@map("sso_auth_requests")

@@ -899,6 +899,9 @@ describe('enterprise identity (e2e)', () => {
         allowPassword: true,
         requireSso: false,
         ssoConnections: [],
+        // Empty here because no deployment credentials are set in the test environment. Stated
+        // rather than skipped: a provider appearing unexpectedly is something this should catch.
+        socialProviders: [],
         mfaExpected: false,
       });
     });
