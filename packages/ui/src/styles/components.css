@@ -677,6 +677,22 @@
   color: #fff;
 }
 
+/*
+  The section name is an h1, so it needs the bar's type rather than a heading's.
+
+  Without this it arrives at the h1 size — 28px, 750 weight — and the top bar grows to fit it. The
+  element is a heading because it is the page's name and every screen needs exactly one; that is a
+  document-structure decision, and it should not also be a visual one.
+*/
+.uboss-ws-mark-section {
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: normal;
+  line-height: inherit;
+  margin: 0;
+  white-space: nowrap;
+}
+
 .uboss-ws-mark-pipe {
   color: var(--uboss-border);
   font-weight: 400;
@@ -896,6 +912,15 @@
   gap: 16px;
   margin-bottom: 20px;
   flex-wrap: wrap;
+}
+
+/*
+  Inside a shell the title and the trail are gone — the top bar says them — and what is left is a
+  row holding only the page's actions. It keeps the same bottom margin so the first card below it
+  does not move, and a smaller one is used when there is nothing to align the buttons against.
+*/
+.uboss-page-head--actions-only {
+  margin-bottom: 14px;
 }
 
 .uboss-page-head h1 {

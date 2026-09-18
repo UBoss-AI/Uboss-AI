@@ -1,9 +1,10 @@
 'use client';
 
 import type { MouseEvent, ReactNode } from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { cn } from '../lib/class-names';
+import { PageNameShownAboveContext } from '../lib/page-name-context';
 import type { NavGroup } from '../navigation/navigation-model';
 import type { AccountMenuItem } from './AccountMenu';
 import { Sidebar, type SidebarUser } from './Sidebar';
@@ -22,6 +23,15 @@ interface AppShellCommonProps {
   onNavigate?:
     ((key: string, href: string | undefined, event: MouseEvent<HTMLElement>) => void) | undefined;
   user: SidebarUser;
+  /**
+   * Overrides the name shown in the top bar for this screen.
+   *
+   * Normally the name is the navigation item matching `activeKey`, so the bar and the highlighted
+   * sidebar entry can never disagree. A screen that is not itself a navigation entry needs this:
+   * Notifications is reached from the bell and sets `activeKey` to `dashboard` to keep the
+   * sidebar sensible, which would otherwise have the bar calling it "Dashboard".
+   */
+  sectionLabel?: string;
   /** Role and scope pill, e.g. "Company Admin · Whole company". */
   scopeLabel?: string;
   /** Ends the session. Rendered in both the sidebar footer and the top bar, as the reference does. */
@@ -57,6 +67,7 @@ export function AppShell(props: AppShellProps) {
     activeKey,
     onNavigate,
     user,
+    sectionLabel,
     scopeLabel,
     onSignOut,
     hasNotifications,
@@ -95,6 +106,28 @@ export function AppShell(props: AppShellProps) {
     });
   };
 
+  /*
+   * The name of the section, for the top bar and for the page's h1.
+   *
+   * Taken from the navigation rather than from anything the page says, so the bar always agrees
+   * with the sidebar entry that is highlighted: one source, and the two cannot drift. It is also
+   * the short name a person recognises — the sidebar says "Hierarchy", and the screen's own
+   * heading used to say "Organization Hierarchy", which is not what anybody calls it.
+   *
+   * `undefined` when the active key matches nothing, which is a real state: a master route the
+   * layout could not place, or a screen rendered with a key that no longer exists. The bar then
+   * shows the workspace alone AND the page keeps its own heading, so nothing ends up nameless.
+   */
+  const sectionName = useMemo(() => {
+    if (sectionLabel !== undefined) return sectionLabel;
+    for (const group of groups) {
+      for (const item of group.items) {
+        if (item.key === activeKey) return item.label;
+      }
+    }
+    return undefined;
+  }, [sectionLabel, groups, activeKey]);
+
   const isMaster = props.variant === 'master';
   // The sidebar footer gives its second line to Sign out, so the role falls back to the scope
   // pill rather than disappearing from the shell.
@@ -130,6 +163,7 @@ export function AppShell(props: AppShellProps) {
         {isMaster ? (
           <TopBar
             variant="master"
+            sectionName={sectionName}
             scopeLabel={pill}
             user={user}
             onSignOut={onSignOut}
@@ -145,6 +179,7 @@ export function AppShell(props: AppShellProps) {
           <TopBar
             variant="company"
             workspaceName={props.workspaceName}
+            sectionName={sectionName}
             scopeLabel={pill}
             user={user}
             onSignOut={onSignOut}
@@ -158,7 +193,16 @@ export function AppShell(props: AppShellProps) {
           />
         )}
 
-        <main className="uboss-content">{children}</main>
+        {/*
+          The bar above is showing the page's name, so the page should not show it again.
+
+          Only true when there is actually a name up there. If the section could not be worked out
+          the flag stays false and each screen's own heading is left exactly as it was, which is
+          what keeps an unplaceable route from rendering with no name anywhere.
+        */}
+        <PageNameShownAboveContext.Provider value={sectionName !== undefined}>
+          <main className="uboss-content">{children}</main>
+        </PageNameShownAboveContext.Provider>
       </div>
     </div>
   );

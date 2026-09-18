@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { PageHeader } from '../primitives/PageHeader';
 import { COMPANY_NAV, MASTER_NAV, SETTINGS_SECTIONS } from '../navigation/navigation-model';
 import { AppShell } from './AppShell';
 import { LoginPresentation, NoPublicSignupNotice } from './LoginPresentation';
@@ -9,15 +10,44 @@ import { TopBar } from './TopBar';
 
 const user = { name: 'Priya Nair', role: 'Company Admin' };
 
-describe('TopBar — locked workspace header', () => {
-  it('shows UBOSS AI AMS | {Active Workspace Name} on company screens', () => {
-    const { container } = render(<TopBar variant="company" workspaceName="SPM Medicare" />);
+describe('TopBar — the workspace header', () => {
+  /*
+   * This used to assert 'UBOSS AI AMS | {Active Workspace Name}', which was a locked rule from
+   * the approved reference. The client replaced the product name in this slot with the name of
+   * the section, because every screen was saying its own name twice — here, and again in the
+   * heading directly below it. The workspace name is unchanged, and the product name still
+   * appears in the sidebar's header, which a test further down this file covers.
+   */
+  it('shows {Section} | {Active Workspace Name} on company screens', () => {
+    const { container } = render(
+      <TopBar variant="company" sectionName="Hierarchy" workspaceName="SPM Medicare" />,
+    );
 
     const mark = container.querySelector('.uboss-ws-mark');
     expect(mark).toBeInTheDocument();
     // Visible spacing around the pipe comes from the flex gap, so assert the format and order
     // rather than literal whitespace in textContent.
-    expect(mark?.textContent?.trim()).toMatch(/^UBOSS AI AMS\s*\|\s*SPM Medicare$/);
+    expect(mark?.textContent?.trim()).toMatch(/^Hierarchy\s*\|\s*SPM Medicare$/);
+    expect(mark?.textContent).not.toContain('UBOSS AI AMS');
+  });
+
+  it('makes the section name the page heading, because the page no longer has one', () => {
+    render(<TopBar variant="company" sectionName="Agent Builder" workspaceName="SPM Medicare" />);
+
+    // Exactly one, and it is the section. Moving the name up into the bar would otherwise leave
+    // every screen in the product with no top-level heading at all.
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Agent Builder');
+  });
+
+  it('shows the workspace alone, with no stray pipe, when the section is unknown', () => {
+    const { container } = render(<TopBar variant="company" workspaceName="SPM Medicare" />);
+
+    // A real state: an active key that matches no navigation item. The bar must not render a
+    // dangling separator, and the screen keeps its own heading — see the PageHeader tests.
+    const mark = container.querySelector('.uboss-ws-mark');
+    expect(mark?.textContent?.trim()).toBe('SPM Medicare');
+    expect(container.querySelector('.uboss-ws-mark-pipe')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument();
   });
 
   it('resolves the workspace name from context rather than hard-coding it', () => {
@@ -32,6 +62,15 @@ describe('TopBar — locked workspace header', () => {
 
     expect(screen.getByText('UBoss Master Console')).toBeInTheDocument();
     expect(screen.queryByText(/UBOSS AI AMS/)).not.toBeInTheDocument();
+  });
+
+  it('names the section on the Master Console too, in place of the console label', () => {
+    render(<TopBar variant="master" sectionName="Companies" />);
+
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Companies');
+    // The console's own name is in its sidebar. Repeating it here would be exactly the
+    // duplication the company bar has just stopped doing.
+    expect(screen.queryByText('UBoss Master Console')).not.toBeInTheDocument();
   });
 
   it('offers a sign-out control and the signed-in avatar, as the reference does', () => {
@@ -95,8 +134,7 @@ describe('TopBar — locked workspace header', () => {
 
     // The menu states who is about to act, in the menu itself. The scope also appears on the
     // bar's pill, so the assertion is scoped rather than global — and the workspace is not
-    // repeated here at all, because the header beside it already reads 'UBOSS AI AMS | SPM
-    // Medicare'.
+    // repeated here at all, because the header beside it already names it.
     const menu = screen.getByRole('menu');
     expect(within(menu).getByText('Priya Nair')).toBeInTheDocument();
     expect(within(menu).getByText('Company Admin · Whole company')).toBeInTheDocument();
@@ -168,6 +206,92 @@ describe('TopBar — locked workspace header', () => {
   });
 });
 
+describe('AppShell — the section names itself once', () => {
+  /*
+   * The bar takes the name from the navigation item matching `activeKey`, which is the same thing
+   * that highlights the sidebar. One source, so the bar and the sidebar cannot come to disagree,
+   * and the name is the short one a person recognises: the sidebar says "Hierarchy" where the
+   * screen's own heading used to say "Organization Hierarchy".
+   */
+  it('takes the top bar heading from the active navigation item', () => {
+    render(
+      <AppShell
+        variant="company"
+        workspaceName="SPM Medicare"
+        groups={COMPANY_NAV}
+        activeKey="agent-builder"
+        user={user}
+      >
+        <p>Builder content</p>
+      </AppShell>,
+    );
+
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Agent Builder');
+  });
+
+  it('suppresses the page heading below it, leaving exactly one name on the screen', () => {
+    render(
+      <AppShell
+        variant="company"
+        workspaceName="SPM Medicare"
+        groups={COMPANY_NAV}
+        activeKey="hierarchy"
+        user={user}
+      >
+        <PageHeader
+          title="Organization Hierarchy"
+          description="Reporting structure and company identity."
+          breadcrumbs={[{ label: 'Hierarchy' }]}
+        />
+        <p>Tree</p>
+      </AppShell>,
+    );
+
+    const headings = screen.getAllByRole('heading', { level: 1 });
+    expect(headings).toHaveLength(1);
+    expect(headings[0]).toHaveTextContent('Hierarchy');
+    expect(screen.queryByText('Organization Hierarchy')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Reporting structure and company identity.'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('lets a screen that is not a navigation entry name itself', () => {
+    render(
+      <AppShell
+        variant="company"
+        workspaceName="SPM Medicare"
+        groups={COMPANY_NAV}
+        // Notifications is reached from the bell and borrows Dashboard's key for the sidebar.
+        activeKey="dashboard"
+        sectionLabel="Notifications"
+        user={user}
+      >
+        <p>Notifications content</p>
+      </AppShell>,
+    );
+
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Notifications');
+  });
+
+  it('leaves the page its own heading when the section cannot be worked out', () => {
+    render(
+      <AppShell
+        variant="company"
+        workspaceName="SPM Medicare"
+        groups={COMPANY_NAV}
+        activeKey="a-key-that-no-longer-exists"
+        user={user}
+      >
+        <PageHeader title="Something" breadcrumbs={[{ label: 'Somewhere' }]} />
+      </AppShell>,
+    );
+
+    // Nothing is nameless. The bar has no name to show, so the screen keeps the one it has.
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Something');
+  });
+});
+
 describe('AppShell', () => {
   it('renders the Company Workspace shell with the locked header and its navigation', () => {
     render(
@@ -183,7 +307,7 @@ describe('AppShell', () => {
       </AppShell>,
     );
 
-    // The workspace name appears twice by design: the sidebar brand and the locked topbar mark.
+    // The workspace name appears twice by design: the sidebar brand sub-line and the top bar.
     expect(screen.getAllByText('SPM Medicare')).toHaveLength(2);
     expect(screen.getByText('Dashboard content')).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Primary' })).toBeInTheDocument();
@@ -307,7 +431,18 @@ describe('AppShell', () => {
     );
 
     expect(container.querySelector('.uboss-shell--master')).toBeInTheDocument();
-    expect(screen.getByText('UBoss Master Console')).toBeInTheDocument();
+    /*
+     * The bar names the section, here too. It used to read 'UBoss Master Console' and that moved
+     * for the same reason the company bar's product name did: the page heading below it said the
+     * same thing, and suppressing that heading while the bar showed a fixed label would have left
+     * master screens with no name for the screen at all.
+     *
+     * The console's identity is not lost — the sidebar's brand is 'UBoss' over 'Master Console',
+     * which the assertion below reads from the navigation landmark.
+     */
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Dashboard');
+    const sidebar = screen.getByRole('navigation', { name: 'Primary' });
+    expect(within(sidebar).getByText('Master Console')).toBeInTheDocument();
   });
 
   it('collapses and expands the sidebar', () => {

@@ -7,9 +7,18 @@ import { AccountMenu, type AccountMenuItem } from './AccountMenu';
 import type { SidebarUser } from './Sidebar';
 
 /**
- * Company workspaces MUST show `UBOSS AI AMS | {Active Workspace Name}` in the header
- * (locked rule). The Master Console is a separate platform control plane and shows its own
- * identity instead of a tenant name.
+ * The bar reads `{Section} | {Active Workspace Name}` on company screens.
+ *
+ * ## What changed, and why it is worth saying
+ *
+ * It used to read `UBOSS AI AMS | {Active Workspace Name}`, and that wording was a locked rule
+ * from the approved reference. The client asked for the product name to give up that slot to the
+ * name of the section the person is actually in, because every screen was announcing itself twice
+ * — once here and again in the page heading immediately below.
+ *
+ * The workspace name stays, so the bar still answers "whose data am I looking at". The product
+ * name has not left the screen either: the sidebar's header carries `UBOSS AI AMS` above the same
+ * workspace name, which is where it now lives.
  *
  * The variant is a discriminated union so it is impossible to render a company header without
  * supplying the active workspace name.
@@ -17,6 +26,14 @@ import type { SidebarUser } from './Sidebar';
 export type TopBarProps = (
   { variant: 'company'; workspaceName: string } | { variant: 'master' }
 ) & {
+  /**
+   * The section the person is in — "Dashboard", "Hierarchy", "Agent Builder".
+   *
+   * Rendered as the page's `h1`, because it is the page's name and a screen needs exactly one.
+   * Absent means the caller could not work out where it is, and the bar then shows the workspace
+   * name alone rather than an empty slot or a guess.
+   */
+  sectionName?: string | undefined;
   /** Role and scope, shown as a pill, e.g. "Company Admin · Whole company". */
   scopeLabel?: string | undefined;
   /** Unread notification indicator. Kept for the case where only "something is waiting" is known. */
@@ -59,11 +76,16 @@ export type TopBarProps = (
   className?: string | undefined;
 };
 
+/**
+ * The product name. No longer in the top bar — the sidebar's header renders it — and kept exported
+ * because that is where the tests and the design-system page name it from.
+ */
 export const COMPANY_HEADER_PREFIX = 'UBOSS AI AMS';
 export const MASTER_HEADER_LABEL = 'UBoss Master Console';
 
 export function TopBar(props: TopBarProps) {
   const {
+    sectionName,
     scopeLabel,
     hasNotifications = false,
     unreadNotifications = 0,
@@ -108,14 +130,25 @@ export function TopBar(props: TopBarProps) {
       ) : null}
 
       <div className="uboss-ws-mark">
-        {isMaster ? (
-          MASTER_HEADER_LABEL
-        ) : (
+        {/*
+          The section name is the page's heading, so it is an h1 and not a styled div.
+
+          Moving the name up here would otherwise have left every screen in the product without a
+          top-level heading at all — the page heading below it is the element being removed. There
+          is still exactly one per screen, because there is one bar per screen.
+        */}
+        {sectionName === undefined ? null : <h1 className="uboss-ws-mark-section">{sectionName}</h1>}
+
+        {isMaster && sectionName === undefined ? MASTER_HEADER_LABEL : null}
+
+        {isMaster ? null : (
           <>
-            {COMPANY_HEADER_PREFIX}
-            <span className="uboss-ws-mark-pipe" aria-hidden="true">
-              |
-            </span>
+            {/* No pipe without something on both sides of it. */}
+            {sectionName === undefined ? null : (
+              <span className="uboss-ws-mark-pipe" aria-hidden="true">
+                |
+              </span>
+            )}
             <span className="uboss-ws-mark-name">{props.workspaceName}</span>
           </>
         )}

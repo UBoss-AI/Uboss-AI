@@ -164,7 +164,14 @@ export default function NotificationCenterPage() {
       variant="company"
       workspaceName={activeWorkspace?.tenantName ?? '—'}
       groups={navGroups}
+      /*
+        This screen is reached from the bell, not from the sidebar, so it has no navigation entry
+        of its own and borrows Dashboard's key to keep the sidebar looking sensible. The top bar
+        takes its name from that key, which would have it announcing "Dashboard" while showing
+        notifications, so the name is given explicitly here.
+      */
       activeKey="dashboard"
+      sectionLabel="Notifications"
       user={signedInUser}
       accountMenu={accountMenu}
       {...(counts === undefined
