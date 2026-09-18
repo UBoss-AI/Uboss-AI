@@ -16,6 +16,7 @@ import {
 import { AuditEventService } from '../audit/audit-event.service.js';
 import { SECURITY_ACTIONS, SecurityEventPublisher } from '../auth/security-event.publisher.js';
 import { AuthorizationService } from '../authorization/authorization.service.js';
+import { ASSIGNABLE_ACCOUNT_STATES } from '../authorization/role-administration.service.js';
 import { PrismaService } from '../persistence/prisma.service.js';
 import type { TenantScope } from '../persistence/tenant-context.js';
 
@@ -192,6 +193,27 @@ export class CapabilityService {
       });
       throw new ForbiddenException(
         'You cannot change your own capabilities. Ask another administrator.',
+      );
+    }
+
+    /*
+     * The same gate a role assignment faces. A capability grant writes a Custom role, so it *is* a
+     * grant of authority — and without this it could be given to somebody suspended or offboarded,
+     * leaving authority that reinstating them would silently restore.
+     */
+    const membership = await this.prisma.runInTenantTransaction(input.scope, async () =>
+      this.prisma.client.tenantMembership.findFirst({
+        where: { tenantId: input.scope.tenantId, userId: input.subjectUserId },
+        select: { accountState: true },
+      }),
+    );
+    if (!membership) {
+      throw new BadRequestException('That person is not a member of this company.');
+    }
+    if (!ASSIGNABLE_ACCOUNT_STATES.includes(membership.accountState)) {
+      throw new BadRequestException(
+        `That person's account is ${membership.accountState}, so a capability cannot be granted ` +
+          'to them.',
       );
     }
 

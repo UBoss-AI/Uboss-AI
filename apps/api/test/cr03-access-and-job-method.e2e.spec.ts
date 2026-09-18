@@ -540,6 +540,42 @@ describe('CR-03 access, Job Method and photo (e2e)', () => {
       assert.equal(blocked, 1);
     });
 
+    /*
+     * A capability grant writes a Custom role, so it is a grant of authority and faces the same
+     * gate a role assignment does. Without it, an offboarded person could be given a capability —
+     * authority that reinstating them would silently restore. The role-assignment path refused
+     * this from the start; this path did not, which `apps/web/tmp/suspend-offboard.mjs` caught by
+     * offboarding somebody and then being allowed to grant them `OwnTasks`.
+     */
+    it('refuses a capability for somebody whose account is not assignable', async () => {
+      for (const state of ['Suspended', 'Offboarded'] as const) {
+        await ctx.prisma.runAsPlatformOperation(() =>
+          ctx.prisma.client.tenantMembership.updateMany({
+            where: { tenantId, userId: otherEmployeeId },
+            data: { accountState: state },
+          }),
+        );
+
+        await assert.rejects(
+          capabilities().grant({
+            scope: scope(),
+            actorUserId: adminId,
+            subjectUserId: otherEmployeeId,
+            capabilities: ['OwnTasks'],
+          }),
+          (error: Error) => new RegExp(`account is ${state}`, 'i').test(error.message),
+          `a capability was granted to an ${state} account`,
+        );
+      }
+
+      await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.tenantMembership.updateMany({
+          where: { tenantId, userId: otherEmployeeId },
+          data: { accountState: 'Active' },
+        }),
+      );
+    });
+
     it('is idempotent, and says what was already held', async () => {
       await capabilities().grant({
         scope: scope(),

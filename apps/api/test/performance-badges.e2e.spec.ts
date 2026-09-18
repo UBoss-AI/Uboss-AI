@@ -462,6 +462,66 @@ describe('performance score and badges (e2e)', () => {
       assert.equal(view.policyVersion, 1);
     });
 
+    /*
+     * A department-scoped role reading its OWN score.
+     *
+     * A performance record carries an owner and no department — there is no department on a score
+     * — and a `Department` grant fails closed on a resource with no department, deliberately. So
+     * asking the scope layer about one's own score refused a Head outright, and because
+     * `unavailableNavKeys` ran the same call, the Performance section vanished from a Head's
+     * sidebar altogether: a grant CR-03 gives them (`performance: View, Export`) that reached
+     * nothing. Caught by `apps/web/tmp/dead-ui-sweep.mjs` against the running product.
+     *
+     * The self case is now answered before the scope layer, as `profileFor` already did. Reading
+     * somebody else's is still scoped, which the second half asserts.
+     */
+    it('lets a department-scoped role read their own score, and not a stranger’s', async () => {
+      /*
+       * A person whose ONLY role is department-scoped, which is the real shape: Rajiv Mehta in the
+       * acceptance company holds Head and Approver and no Employee role. Leaving the Employee
+       * assignment in place would hide the defect — `authorize` asks each assignment separately,
+       * so an Employee role's OwnWork grant would answer for their own record and the Head role
+       * would never be consulted.
+       *
+       * Written outside a tenant transaction, like the other direct fixtures in this file's setup:
+       * an unscoped write under RLS is refused rather than silently ignored.
+       */
+      await ctx.prisma.runAsPlatformOperation(async () => {
+        await ctx.prisma.client.roleAssignment.deleteMany({
+          where: { tenantId, userId: peerId },
+        });
+        await ctx.prisma.client.roleAssignment.create({
+          data: {
+            tenantId,
+            userId: peerId,
+            roleKind: 'Head',
+            scopeKind: 'Department',
+            departmentIds: [departmentId],
+            grantedByUserId: adminId,
+          },
+        });
+      });
+
+      await record('OnTimeAccepted', 'T-OWN', peerId);
+
+      const own = await performance().viewFor({
+        scope: scope(),
+        actorUserId: peerId,
+        subjectUserId: peerId,
+      });
+      assert.ok(own.score > 0, 'a Head could not read their own performance');
+
+      // Somebody else's is still the scope layer's question, and a score carries no department.
+      await assert.rejects(
+        performance().viewFor({
+          scope: scope(),
+          actorUserId: peerId,
+          subjectUserId: employeeId,
+        }),
+        (error: Error) => /outside what your role covers/i.test(error.message),
+      );
+    });
+
     it('reports on-time delivery as a percentage of completed work', async () => {
       await record('OnTimeAccepted', 'T-1');
       await record('OnTimeAccepted', 'T-2');

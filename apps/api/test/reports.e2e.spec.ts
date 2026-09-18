@@ -571,12 +571,23 @@ describe('reports and the company dashboard (e2e)', () => {
       return user;
     });
 
+    /*
+     * `Head`, not `Manager`, and that is the whole construction.
+     *
+     * A Manager's `maxScope` is `TeamSubtree`, so the engine caps a Manager assignment naming
+     * `Department` down to `TeamSubtree` — and a team subtree with nobody in it still contains the
+     * manager themselves. This test used to pass only because the report scope was read from the
+     * RAW `scope_kind` on the row while the engine enforced the capped one: the two disagreed, and
+     * the disagreement is what produced the empty list. Reports now resolve against the scope the
+     * engine actually enforces, so the case has to be built with a role that really can hold
+     * `Department` — `Head`, whose ceiling is `MultipleDepartments`.
+     */
     await ctx.prisma.runInTenantTransaction(scope(), () =>
       ctx.prisma.client.roleAssignment.create({
         data: {
           tenantId,
           userId: orphan.id,
-          roleKind: 'Manager',
+          roleKind: 'Head',
           scopeKind: 'Department',
           grantedByUserId: platformId,
         },

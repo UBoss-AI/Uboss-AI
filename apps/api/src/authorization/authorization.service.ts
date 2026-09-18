@@ -26,6 +26,7 @@ import {
   type ModuleKey,
   type PermissionSet,
   type PolicyRule,
+  type PrecedenceResult,
   type ResourceDescriptor,
   type RoleKind,
   type ScopeGrant,
@@ -61,6 +62,27 @@ export interface AuthorizationContext {
   rules: readonly PolicyRule[];
   sodPolicies: readonly SodPolicy[];
   roleSummary: readonly { roleKind: RoleKind; customRoleName?: string; scopeKind: ScopeKind }[];
+  /**
+   * One entry per live role assignment, each keeping its OWN actions with its OWN scope.
+   *
+   * `granted` and `scope` above are summaries — the union of the actions and the widest of the
+   * scopes — and they are what a screen reads to decide what to draw. Deciding a request from
+   * those two summaries was a privilege-combination defect: an action granted by a narrow role
+   * was then exercised at the widest scope any *other* role happened to carry.
+   *
+   * The seed shows it without any contrivance. Kavya Nair holds Employee (`todo:EditDraft`, own
+   * work) and, while standing in as an approver, Approver (`todo:View`/`Comment`, one department).
+   * Combining them gave her `EditDraft` across the department, and she could start, block, attach
+   * evidence to and submit a task belonging to somebody else — proven in
+   * `apps/web/tmp/todo-lifecycle.mjs` before this field existed. Rajiv Mehta carries the same
+   * shape in the shipped seed (Head over one department, Approver over two), so this was never
+   * specific to a temporary grant.
+   *
+   * Scope belongs to the assignment that granted the action. `authorize` therefore asks each
+   * assignment the whole question — may THIS role do this, here — and allows the request only if
+   * one assignment answers yes on its own.
+   */
+  units: readonly { permissions: PermissionSet; scope: ScopeGrant }[];
 }
 
 export interface AuthorizeInput {
@@ -149,6 +171,7 @@ export class AuthorizationService {
         rules: [],
         sodPolicies: await this.platformSodPolicies(),
         roleSummary: [],
+        units: [{ permissions: PLATFORM_PERMISSIONS, scope: { kind: 'WholeCompany' } }],
       };
     }
 
@@ -163,6 +186,7 @@ export class AuthorizationService {
     const granted: Record<string, Action[]> = {};
     const grants: ScopeGrant[] = [];
     const roleSummary: AuthorizationContext['roleSummary'] = [];
+    const units: { permissions: PermissionSet; scope: ScopeGrant }[] = [];
 
     for (const assignment of assignments) {
       const permissions = this.permissionsFor(assignment);
@@ -180,6 +204,10 @@ export class AuthorizationService {
       const assignedScope = this.scopeGrantFor(assignment);
       if (assignedScope) {
         grants.push(assignedScope);
+        // This role's actions, kept with this role's scope. An assignment with no resolvable
+        // scope grants nothing on a resource, so it contributes no unit rather than a unit that
+        // would fall back to somebody else's reach.
+        units.push({ permissions: permissions as PermissionSet, scope: assignedScope });
       }
 
       (roleSummary as AuthorizationContext['roleSummary'][number][]).push({
@@ -201,6 +229,7 @@ export class AuthorizationService {
       rules: [...platformRules, ...this.toPolicyRules(companyRules)],
       sodPolicies: [...platformSod, ...this.toSodPolicies(companySod)],
       roleSummary,
+      units,
     };
   }
 
@@ -212,15 +241,22 @@ export class AuthorizationService {
    * request names a specific row is also subject to the scope layer, and the scope layer can
    * refuse what the module grant allowed.
    *
-   * Performance is the case that found this. `GET performance/me` asks for a resource identified
-   * only by its owner, and a department-scoped role cannot place a resource that carries no
-   * department, so the request fails closed. Everyone holds `performance:View`, so the sidebar
-   * offered the screen to a Head whose own record the engine then refused.
+   * Performance is the case that found this, and the case that has since been fixed at its root.
+   * `GET performance/me` used to ask for a resource identified only by its owner; a
+   * department-scoped role cannot place a resource carrying no department, so the request failed
+   * closed, and this method's answer was to remove Performance from a Head's sidebar. That hid a
+   * section CR-03 grants a Head (`performance: View, Export`) rather than fixing why it was
+   * refused. `PerformanceService.viewFor` now checks the self case before the scope layer — the
+   * same shape as `profileFor` — so reading one's own record needs the grant and nothing else.
    *
    * This runs the **same** `authorize` call the route runs, rather than restating the rule. A
    * second implementation of "can this person open Performance" would be a second thing to keep
    * in step, and the two would eventually disagree — which is the whole argument the navigation
-   * filter already makes about role labels.
+   * filter already makes about role labels. So the call here has lost its `resource` exactly as
+   * the route's did.
+   *
+   * It stays a list rather than becoming `[]` inline: the mechanism is what matters, and the next
+   * screen whose landing request names a row will need it.
    *
    * Presentation only, in both directions: a key listed here is refused by the route as well, and
    * a key missing here is still refused by the route if the engine changes its mind.
@@ -228,11 +264,11 @@ export class AuthorizationService {
   async unavailableNavKeys(context: AuthorizationContext): Promise<string[]> {
     const unavailable: string[] = [];
 
-    // Performance's landing request is the signed-in person's own record.
+    // Performance's landing request is the signed-in person's OWN record, which is why it carries
+    // no resource: the route does not either.
     const ownPerformance = await this.authorize(context, {
       module: 'performance',
       action: 'View',
-      resource: { id: context.userId, ownerUserId: context.userId },
     });
     if (!ownPerformance.allowed) unavailable.push('performance');
 
@@ -287,6 +323,8 @@ export class AuthorizationService {
         customRoleName: PLATFORM_ROLE_TEMPLATES[kind].label,
         scopeKind: 'WholeCompany' as ScopeKind,
       })),
+      // A platform role carries no company scope to combine, so the summary IS the unit.
+      units: [{ permissions: granted, scope: { kind: 'WholeCompany' } }],
     };
   }
 
@@ -333,6 +371,37 @@ export class AuthorizationService {
   }
 
   /**
+   * How far a person's reach extends **for one particular permission**.
+   *
+   * For a list — a roster, a report, a dashboard count — there is no single row to test, so the
+   * query is built from a scope rather than decided per row. Taking that scope from the widest
+   * role a person holds repeats the combination defect on the read side: a role that grants the
+   * module narrowly would have its rows widened by a role that grants a wider scope and not the
+   * module. So the answer is the widest scope **among the roles that actually grant this action**,
+   * and `null` when no role grants it at all.
+   */
+  scopeForPermission(
+    context: AuthorizationContext,
+    module: ModuleKey,
+    action: Action,
+  ): ScopeKind | null {
+    const reaching = context.units
+      .filter((unit) => (unit.permissions[module] ?? []).includes(action))
+      .map((unit) => unit.scope);
+
+    return reaching.length === 0 ? null : (widestGrant(reaching)?.kind ?? null);
+  }
+
+  /** The refusal for somebody no role reaches — the fail-closed answer, in one place. */
+  private noRoleRefusal(): AuthorizationDecision {
+    return {
+      allowed: false,
+      reason: 'no-role-assignment',
+      message: 'You have no role in this company yet. Ask an administrator to assign one.',
+    };
+  }
+
+  /**
    * Decide one (module, action), optionally against a resource.
    *
    * Returns a decision rather than throwing, so a caller can render a disabled control as easily
@@ -350,59 +419,106 @@ export class AuthorizationService {
     }
 
     if (context.roleSummary.length === 0 && context.userType !== 'PlatformUser') {
-      return {
-        allowed: false,
-        reason: 'no-role-assignment',
-        message: 'You have no role in this company yet. Ask an administrator to assign one.',
-      };
+      return this.noRoleRefusal();
     }
 
-    // ---- Phase 1: the five dimensions and the policy chain. ----
-    const precedence = evaluatePrecedence({
-      userType: context.userType,
-      module: input.module,
-      action: input.action,
-      grantedActions: context.granted[input.module] ?? [],
-      visibleModules: context.visibleModules,
-      assignedScope: context.scope.kind,
-      rules: context.rules,
-    });
+    /*
+     * Phases 1 and 2, asked **once per role assignment**.
+     *
+     * Each assignment answers the whole question with its own actions and its own scope, and one
+     * assignment has to answer yes on its own. Combining the union of everybody's actions with the
+     * widest of everybody's scopes — which is what reading `context.granted` and `context.scope`
+     * here used to do — let a narrow role's action be exercised at a wider role's reach. See the
+     * note on `units`.
+     *
+     * A person holding one role is unaffected: their single unit carries exactly the summary this
+     * used to read.
+     */
+    const units =
+      context.units.length > 0
+        ? context.units
+        : [{ permissions: context.granted, scope: context.scope }];
 
-    if (!precedence.allowed) {
-      return precedence.decision;
+    let refusal: AuthorizationDecision | null = null;
+    // A refusal that got as far as the row is more useful than one that stopped at the role, so
+    // the message the caller sees is the furthest any of their roles actually reached.
+    const rank = (decision: AuthorizationDecision): number =>
+      decision.reason === 'out-of-scope' || decision.reason === 'scope-unevaluable' ? 2 : 1;
+    const keep = (decision: AuthorizationDecision): void => {
+      if (refusal === null || rank(decision) > rank(refusal)) refusal = decision;
+    };
+
+    const precedenceFor = (unit: (typeof units)[number]): PrecedenceResult =>
+      evaluatePrecedence({
+        userType: context.userType,
+        module: input.module,
+        action: input.action,
+        grantedActions: unit.permissions[input.module] ?? [],
+        visibleModules: context.visibleModules,
+        assignedScope: unit.scope.kind,
+        rules: context.rules,
+      });
+
+    // ---- The coarse check: no row to test, so one role answering yes settles it. ----
+    const resource = input.resource;
+    if (!resource) {
+      for (const unit of units) {
+        const precedence = precedenceFor(unit);
+        if (precedence.allowed) return precedence.decision;
+        keep(precedence.decision);
+      }
+      return refusal ?? this.noRoleRefusal();
     }
 
-    // ---- Phase 2: this particular resource. ----
-    if (!input.resource) {
-      return precedence.decision;
+    // ---- This particular row, against each role's own reach. ----
+    let allowedBy: { precedence: PrecedenceResult; detail: string } | null = null;
+
+    for (const unit of units) {
+      const precedence = precedenceFor(unit);
+
+      if (!precedence.allowed) {
+        keep(precedence.decision);
+        continue;
+      }
+
+      const scopeOutcome = await isInScopeAsync({
+        // The scope the *policy layers* left, not the raw assignment: a layer that narrowed a
+        // manager to their own work must actually narrow the row check too, or the narrowing was
+        // decorative.
+        grant: { ...unit.scope, kind: precedence.effectiveScope },
+        resource,
+        actorUserId: context.userId,
+        tenantId: context.tenantId,
+        ...(this.hierarchy === undefined ? {} : { hierarchy: this.hierarchy }),
+      });
+
+      if (!scopeOutcome.inScope) {
+        keep({
+          allowed: false,
+          reason: scopeOutcome.reason,
+          message:
+            scopeOutcome.reason === 'scope-unevaluable'
+              ? 'This needs the reporting hierarchy, which is not available yet.'
+              : 'That is outside what your role covers.',
+          effectiveScope: precedence.effectiveScope,
+          trace: [
+            ...(precedence.decision.trace ?? []),
+            { layer: 'Scope', outcome: 'deny', detail: scopeOutcome.detail },
+          ],
+        });
+        continue;
+      }
+
+      allowedBy = { precedence, detail: scopeOutcome.detail };
+      break;
     }
 
-    const scopeOutcome = await isInScopeAsync({
-      // The scope the *policy layers* left, not the raw assignment: a layer that narrowed a
-      // manager to their own work must actually narrow the row check too, or the narrowing was
-      // decorative.
-      grant: { ...context.scope, kind: precedence.effectiveScope },
-      resource: input.resource,
-      actorUserId: context.userId,
-      tenantId: context.tenantId,
-      ...(this.hierarchy === undefined ? {} : { hierarchy: this.hierarchy }),
-    });
-
-    if (!scopeOutcome.inScope) {
-      return {
-        allowed: false,
-        reason: scopeOutcome.reason,
-        message:
-          scopeOutcome.reason === 'scope-unevaluable'
-            ? 'This needs the reporting hierarchy, which is not available yet.'
-            : 'That is outside what your role covers.',
-        effectiveScope: precedence.effectiveScope,
-        trace: [
-          ...(precedence.decision.trace ?? []),
-          { layer: 'Scope', outcome: 'deny', detail: scopeOutcome.detail },
-        ],
-      };
+    if (allowedBy === null) {
+      return refusal ?? this.noRoleRefusal();
     }
+
+    const precedence = allowedBy.precedence;
+    const scopeOutcome = { detail: allowedBy.detail };
 
     // ---- Separation of duties. Last, because it is the most specific. ----
     const sod = checkSeparationOfDuties({
@@ -413,7 +529,7 @@ export class AuthorizationService {
       action: input.action,
       module: input.module,
       actorUserId: context.userId,
-      resource: input.resource,
+      resource,
       ...(input.actingAsAgent === undefined ? {} : { actingAsAgent: input.actingAsAgent }),
     });
 
@@ -425,7 +541,7 @@ export class AuthorizationService {
         actorUserId: context.userId,
         tenantId: context.tenantId,
         resourceType: input.module,
-        resourceId: input.resource.id,
+        resourceId: resource.id,
         summary: `Blocked by a ${sod.rule} control on ${input.action}.`,
         metadata: {
           module: input.module,

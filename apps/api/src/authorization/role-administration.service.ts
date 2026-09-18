@@ -17,6 +17,21 @@ import type { TenantScope } from '../persistence/tenant-context.js';
 import { SECURITY_ACTIONS, SecurityEventPublisher } from '../auth/security-event.publisher.js';
 
 /**
+ * The account states a person can be given authority in.
+ *
+ * Exported because there are **two** ways to give somebody authority — a role assignment here, and
+ * a capability grant in `CapabilityService`, which writes a Custom role of its own — and only this
+ * one used to check. A capability granted to an offboarded person created a live role assignment:
+ * authority that reinstating them would silently restore, which is the exact outcome this rule
+ * exists to prevent. Proven against the running product in `apps/web/tmp/suspend-offboard.mjs`,
+ * which offboarded a person and was then allowed to grant them `OwnTasks`.
+ *
+ * `NotInvited` is included because that is when a role is *supposed* to be granted — see the note
+ * inside `assign` on the loop that closed on itself.
+ */
+export const ASSIGNABLE_ACCOUNT_STATES: readonly string[] = ['Active', 'InvitePending', 'NotInvited'];
+
+/**
  * Granting and revoking authority.
  *
  * Every method here changes what somebody may do, so every method here writes a security event.
@@ -99,8 +114,7 @@ export class RoleAdministrationService {
      * runs off a live session, and `NotInvited` has no credential. The role becomes effective when
      * they activate, which is the point.
      */
-    const ASSIGNABLE_STATES = ['Active', 'InvitePending', 'NotInvited'];
-    if (!ASSIGNABLE_STATES.includes(membership.accountState)) {
+    if (!ASSIGNABLE_ACCOUNT_STATES.includes(membership.accountState)) {
       throw new BadRequestException(
         `That person's account is ${membership.accountState}, so a role cannot be assigned to them.`,
       );
@@ -167,7 +181,16 @@ export class RoleAdministrationService {
       );
     }
 
-    const assignment = await this.repository.createAssignment(scope, {
+    /*
+     * The database has the last word on whether a named department exists — a trigger
+     * (`role_assignment_departments_exist`) refuses a dangling id, because "a dangling department
+     * id would silently change what this person can reach". It raises with `foreign_key_violation`
+     * and an explanation, and that explanation used to be lost: Nest turned the Prisma error into
+     * a bare 500, so an administrator who mistyped a department id was told "Internal Server
+     * Error" and had nothing to correct. The check stays in the database, where it cannot be
+     * bypassed; what is added here is telling the caller what it said.
+     */
+    const assignment = await this.createAssignmentOrExplain(scope, {
       userId: input.userId,
       roleKind: input.roleKind,
       ...(input.customRoleId === undefined ? {} : { customRoleId: input.customRoleId }),
@@ -201,6 +224,43 @@ export class RoleAdministrationService {
     });
 
     return { id: assignment.id, cappedScope: null };
+  }
+
+  /**
+   * Write the assignment, and turn the database's refusal into an answer rather than a 500.
+   *
+   * Only the department rule is translated, and only because the trigger's own message already
+   * says everything the caller needs. Anything else is rethrown untouched: swallowing unknown
+   * database errors into 400s would turn a real fault into "you typed something wrong".
+   */
+  private async createAssignmentOrExplain(
+    scope: TenantScope,
+    input: Parameters<AuthorizationRepository['createAssignment']>[1],
+  ): Promise<{ id: string }> {
+    try {
+      return await this.repository.createAssignment(scope, input);
+    } catch (error) {
+      const code = (error as { code?: string }).code ?? '';
+      // Prisma reports the trigger's `foreign_key_violation` as P2003 and does not always carry
+      // the raised text through the driver adapter, so the *shape* of the failure is matched and
+      // the reason is taken from what this call was asking for.
+      const looksLikeForeignKey =
+        code === 'P2003' ||
+        /foreign\s*key/i.test(`${error instanceof Error ? error.message : ''}${JSON.stringify((error as { meta?: unknown }).meta ?? '')}`);
+      const namesDepartments =
+        (input.scopeKind === 'Department' || input.scopeKind === 'MultipleDepartments') &&
+        (input.departmentIds ?? []).length > 0;
+
+      if (looksLikeForeignKey && namesDepartments) {
+        const named = [...(input.departmentIds ?? [])].join(', ');
+        throw new BadRequestException(
+          `A Department-scoped role assignment has to name real departments of this company. ` +
+            `Checked: ${named}. A department id that matches nothing would look like an ordinary ` +
+            `grant while reaching no resource at all.`,
+        );
+      }
+      throw error;
+    }
   }
 
   async revoke(scope: TenantScope, assignmentId: string, actorUserId: string): Promise<boolean> {

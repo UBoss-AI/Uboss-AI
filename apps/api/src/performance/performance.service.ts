@@ -354,13 +354,32 @@ export class PerformanceService {
     subjectUserId: string;
   }): Promise<PerformanceView> {
     const context = await this.authorization.contextFor(input.scope, input.actorUserId);
-    // A person may always read their own; reading somebody else's is scoped, so a Manager sees
-    // their team and an Employee sees themselves. The engine defers to the Prompt 7 answer
-    // rather than inventing a second rule.
+
+    /*
+     * A person may always read their own; reading somebody else's is scoped, so a Manager sees
+     * their team and an Employee sees themselves.
+     *
+     * The self case is checked here rather than left to the scope layer, and it has to be. The
+     * resource for a performance record carries an owner and no department — there is no
+     * department on a score — and a `Department` grant fails closed on a resource with no
+     * department, deliberately ("the resource may well belong to a department nobody has recorded
+     * yet"). So a Head, whose scope IS `Department`, was refused their own performance: the
+     * Performance section disappeared from their navigation entirely, since
+     * `unavailableNavKeys` ran the same call. Proven in `apps/web/tmp/dead-ui-sweep.mjs`, where a
+     * Head opening /performance got "That is outside what your role covers" while an Employee's
+     * opened.
+     *
+     * This is the same shape as the `profileFor` fix: the grant is required either way, and the
+     * scope question only applies to somebody else's record. Nothing is widened — reading your own
+     * record is the floor of every role, which is what the comment above always claimed.
+     */
+    const isSelf = input.subjectUserId === input.actorUserId;
     await this.authorization.assertCan(context, {
       module: 'performance',
       action: 'View',
-      resource: { id: input.subjectUserId, ownerUserId: input.subjectUserId },
+      ...(isSelf
+        ? {}
+        : { resource: { id: input.subjectUserId, ownerUserId: input.subjectUserId } }),
     });
 
     const policy = await this.activePolicy(input.scope);

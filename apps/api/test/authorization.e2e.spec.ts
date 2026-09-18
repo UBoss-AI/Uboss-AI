@@ -408,6 +408,82 @@ describe('authorization (e2e)', () => {
       await asPerson(agent().post('/test-authz/approve-objective'), managerUboss).expect(201);
     });
 
+    /*
+     * The other half of unioning, and the one that used to be wrong.
+     *
+     * Phase 1 unions deliberately: "could any of this person's roles ever do this" is a question
+     * about the person. Phase 2 is a question about one row, and it has to be asked of one role at
+     * a time — an action granted by a narrow role must not be exercised at a wider role's reach.
+     *
+     * The real case: somebody standing in as an approver for a department keeps their own Employee
+     * role. Employee grants `todo:EditDraft` over their OWN work; Approver grants only View and
+     * Comment, over the department. Deciding from the union of the actions and the widest of the
+     * scopes gave them EditDraft across the whole department, and they could start, block, attach
+     * evidence to and submit a colleague's task — which is what `apps/web/tmp/todo-lifecycle.mjs`
+     * caught against the running product before this was fixed.
+     */
+    it('does not let one role’s action borrow another role’s scope', async () => {
+      // Employee grants `todo:EditDraft` over their own work; Company Admin grants `todo:View`
+      // over the whole company and deliberately not EditDraft. Nobody's role permits editing
+      // somebody else's task, so nor should holding both.
+      await assign(managerId, { roleKind: 'Employee', scopeKind: 'OwnWork' });
+      await assign(managerId, { roleKind: 'CompanyAdmin', scopeKind: 'WholeCompany' });
+
+      const authorization = app.get(AuthorizationService);
+      const context = await authorization.contextFor(scope(), managerId);
+
+      const colleaguesTask = { id: 'task-1', ownerUserId: employeeId };
+
+      // The Company Admin role's own action still reaches company-wide: nothing was narrowed
+      // that the roles really grant.
+      const view = await authorization.authorize(context, {
+        module: 'todo',
+        action: 'View',
+        resource: colleaguesTask,
+      });
+      assert.equal(view.allowed, true, 'the Company Admin role sees the whole company');
+
+      // EditDraft came from the Employee role, which is scoped to own work.
+      const edit = await authorization.authorize(context, {
+        module: 'todo',
+        action: 'EditDraft',
+        resource: colleaguesTask,
+      });
+      assert.equal(edit.allowed, false, 'EditDraft came from a role scoped to own work only');
+      assert.equal(edit.reason, 'out-of-scope');
+
+      // And their own work is still theirs to edit, so this narrowed rather than broke it.
+      const own = await authorization.authorize(context, {
+        module: 'todo',
+        action: 'EditDraft',
+        resource: { id: 'task-2', ownerUserId: managerId },
+      });
+      assert.equal(own.allowed, true, 'their own work is still within OwnWork');
+    });
+
+    /*
+     * The database refuses a Department-scoped grant naming a department that does not exist —
+     * "a dangling department id would silently change what this person can reach" — and says so
+     * clearly. That message used to be lost: the Prisma error reached Nest unhandled and the
+     * administrator was told "Internal Server Error", with nothing to correct.
+     */
+    it('explains a department that does not exist, instead of failing with a 500', async () => {
+      const response = await assign(
+        employeeId,
+        {
+          roleKind: 'Approver',
+          scopeKind: 'Department',
+          departmentIds: ['00000000-0000-7000-8000-000000000000'],
+        },
+        400,
+      );
+
+      assert.match(
+        (response.body as { message: string }).message,
+        /real departments of this company/i,
+      );
+    });
+
     it('stops granting once an assignment has expired', async () => {
       await assign(employeeId, { roleKind: 'Employee', scopeKind: 'OwnWork' });
       await asPerson(agent().get('/test-authz/view-agents'), employeeUboss).expect(200);

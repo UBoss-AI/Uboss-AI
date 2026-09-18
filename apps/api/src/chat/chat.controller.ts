@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
   UnauthorizedException,
@@ -144,7 +145,7 @@ export class ChatController {
   @Get('conversations/:conversationId')
   async read(
     @Param('tenantId') tenantId: string,
-    @Param('conversationId') conversationId: string,
+    @Param('conversationId', ParseUUIDPipe) conversationId: string,
   ): Promise<unknown> {
     return this.chat.readConversation({
       scope: tenantScopeForPlatformOperation(tenantId),
@@ -156,7 +157,7 @@ export class ChatController {
   @Post('conversations/:conversationId/messages')
   async send(
     @Param('tenantId') tenantId: string,
-    @Param('conversationId') conversationId: string,
+    @Param('conversationId', ParseUUIDPipe) conversationId: string,
     @Body() body: SendMessageDto,
   ): Promise<unknown> {
     return this.chat.sendMessage({
@@ -174,8 +175,8 @@ export class ChatController {
   @Delete('conversations/:conversationId/messages/:messageId')
   async remove(
     @Param('tenantId') tenantId: string,
-    @Param('conversationId') conversationId: string,
-    @Param('messageId') messageId: string,
+    @Param('conversationId', ParseUUIDPipe) conversationId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
   ): Promise<unknown> {
     return this.chat.deleteMessage({
       scope: tenantScopeForPlatformOperation(tenantId),
@@ -188,7 +189,7 @@ export class ChatController {
   @Post('conversations/:conversationId/read')
   async markRead(
     @Param('tenantId') tenantId: string,
-    @Param('conversationId') conversationId: string,
+    @Param('conversationId', ParseUUIDPipe) conversationId: string,
   ): Promise<unknown> {
     return this.chat.markRead({
       scope: tenantScopeForPlatformOperation(tenantId),
@@ -201,7 +202,7 @@ export class ChatController {
   @Post('conversations/:conversationId/context')
   async addContext(
     @Param('tenantId') tenantId: string,
-    @Param('conversationId') conversationId: string,
+    @Param('conversationId', ParseUUIDPipe) conversationId: string,
     @Body() body: AddContextDto,
   ): Promise<unknown> {
     return this.chat.addContext({

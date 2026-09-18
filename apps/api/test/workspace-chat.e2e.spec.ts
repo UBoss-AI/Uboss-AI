@@ -511,6 +511,27 @@ describe('workspace chat (e2e)', () => {
         403,
       );
     });
+
+    /*
+     * A conversation id that is not an id at all.
+     *
+     * These routes carried no `ParseUUIDPipe`, so a malformed id reached the service, Prisma threw,
+     * and the caller got "Internal server error" — indistinguishable from a broken server, and
+     * noise in any log somebody is watching for real faults. A bad request is a bad request.
+     */
+    it('answers a malformed conversation id with a bad request, not a server error', async () => {
+      await asPerson(
+        agent().get(`/tenants/${tenantId}/chat/conversations/not-a-uuid`),
+        employeeUboss,
+      ).expect(400);
+
+      await asPerson(
+        agent().post(`/tenants/${tenantId}/chat/conversations/not-a-uuid/messages`),
+        employeeUboss,
+      )
+        .send({ body: 'Into a conversation that cannot exist.' })
+        .expect(400);
+    });
   });
 
   // =========================================================================

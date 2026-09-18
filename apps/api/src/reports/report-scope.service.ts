@@ -64,10 +64,23 @@ export class ReportScopeService {
       await this.authorization.assertCan(context, permission);
     }
 
+    /*
+     * The narrowest of the scopes the required permissions reach.
+     *
+     * A report sourced from a module you can only see narrowly is a narrow report, whichever
+     * permission you hold more widely: `reports:View` across the company plus `settings:View` over
+     * one department is a department's worth of rows, not the company's.
+     */
+    const reaches = permissionsForReport(input.report).map(
+      (permission) =>
+        this.authorization.scopeForPermission(context, permission.module, permission.action) ??
+        ReportScopeService.heldScope(context),
+    );
+
     return this.resolve({
       scope: input.scope,
       actorUserId: input.actorUserId,
-      scopeKind: ReportScopeService.widestScope(context.roleSummary.map((role) => role.scopeKind)),
+      scopeKind: ReportScopeService.narrowestScope(reaches),
     });
   }
 
@@ -89,7 +102,10 @@ export class ReportScopeService {
     return this.resolve({
       scope: input.scope,
       actorUserId: input.actorUserId,
-      scopeKind: ReportScopeService.widestScope(context.roleSummary.map((role) => role.scopeKind)),
+      // The roster is `users:View`, so it reaches as far as the roles granting that — and no
+      // further, however wide a role that does not grant it happens to be.
+      scopeKind: this.authorization.scopeForPermission(context, 'users', 'View') ??
+        ReportScopeService.heldScope(context),
     });
   }
 
@@ -102,7 +118,10 @@ export class ReportScopeService {
     return this.resolve({
       scope: input.scope,
       actorUserId: input.actorUserId,
-      scopeKind: ReportScopeService.widestScope(context.roleSummary.map((role) => role.scopeKind)),
+      // Every role grants `dashboard:View`, so in practice this is the widest scope the person
+      // holds — but it is now *why* it is, rather than a coincidence of holding a wide role.
+      scopeKind: this.authorization.scopeForPermission(context, 'dashboard', 'View') ??
+        ReportScopeService.heldScope(context),
     });
   }
 
@@ -129,10 +148,33 @@ export class ReportScopeService {
   /**
    * The widest scope any of this person's roles grants.
    *
-   * Two roles mean the union of what they permit, which is how the authorization engine already
-   * treats them — a person who is both an Employee and a Manager is a manager. Taking the
-   * *narrowest* would make adding a role reduce somebody's reach, which nobody expects.
+   * Two roles mean the union of what they permit — a person who is both an Employee and a Manager
+   * is a manager. Taking the *narrowest* would make adding a role reduce somebody's reach, which
+   * nobody expects.
+   *
+   * Callers pass the scopes of the roles that grant the permission being exercised, never every
+   * role the person holds: a role that grants a module narrowly must not have its rows widened by
+   * a role that grants a wider scope and not that module. `scopeForPermission` answers that.
    */
+  /**
+   * What to resolve when **no** role grants the permission being exercised.
+   *
+   * Not `OwnWork`. A person whose only grant is a malformed one — a `Department` assignment naming
+   * no department, which the service refuses but a direct database write can still produce — must
+   * reach nobody, and the department branch of `resolve` says exactly that: "a person with a
+   * department grant and no department is a configuration mistake, and the safe reading of it is an
+   * empty report." Defaulting to `OwnWork` instead handed them their own row, which
+   * `reports.e2e.spec.ts` caught with "a department grant with no department is nobody, not
+   * everybody".
+   *
+   * So the fallback is the scope they actually hold, resolved as it always was. The callers above
+   * reach this only when the permission is granted by no role at all, which their own guards
+   * normally refuse first.
+   */
+  private static heldScope(context: { roleSummary: readonly { scopeKind: ScopeKind }[] }): ScopeKind {
+    return ReportScopeService.widestScope(context.roleSummary.map((role) => role.scopeKind));
+  }
+
   private static widestScope(kinds: readonly ScopeKind[]): ScopeKind {
     const order: ScopeKind[] = [
       'SelectedResource',
@@ -150,6 +192,31 @@ export class ReportScopeService {
       }
     }
     return widest;
+  }
+
+  /**
+   * The narrowest of several reaches — for a report that needs more than one permission.
+   *
+   * Two grants mean two doors, and the rows behind the narrower one are all you may see. Taking
+   * the wider would show rows from a module the reader can only see part of.
+   */
+  private static narrowestScope(kinds: readonly ScopeKind[]): ScopeKind {
+    const order: ScopeKind[] = [
+      'SelectedResource',
+      'OwnWork',
+      'TeamSubtree',
+      'Department',
+      'MultipleDepartments',
+      'WholeCompany',
+    ];
+
+    let narrowest: ScopeKind = kinds[0] ?? 'OwnWork';
+    for (const kind of kinds) {
+      if (order.indexOf(kind) < order.indexOf(narrowest)) {
+        narrowest = kind;
+      }
+    }
+    return narrowest;
   }
 
   private async resolve(input: {

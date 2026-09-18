@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
   Post,
   Put,
   Query,
@@ -248,7 +249,7 @@ export class SkillController {
 
   @Get(':id')
   @RequirePermission({ module: 'settings', action: 'View' })
-  async view(@Param('id') id: string): Promise<unknown> {
+  async view(@Param('id', ParseUUIDPipe) id: string): Promise<unknown> {
     return this.skills.view({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -294,7 +295,7 @@ export class SkillController {
   /** Start a new draft version. The published one is untouched — that is what editing means. */
   @Post(':id/versions')
   @RequirePermission({ module: 'settings', action: 'Administer' })
-  async startDraft(@Param('id') id: string, @Body() body: StartDraftDto): Promise<unknown> {
+  async startDraft(@Param('id', ParseUUIDPipe) id: string, @Body() body: StartDraftDto): Promise<unknown> {
     return this.skills.startNewDraft({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -307,7 +308,7 @@ export class SkillController {
   @Put('versions/:versionId')
   @RequirePermission({ module: 'settings', action: 'Administer' })
   async updateDraft(
-    @Param('versionId') versionId: string,
+    @Param('versionId', ParseUUIDPipe) versionId: string,
     @Body() body: SkillChangesDto,
   ): Promise<unknown> {
     return this.skills.updateDraft({
@@ -331,7 +332,7 @@ export class SkillController {
   @Post('versions/:versionId/transition')
   @RequirePermission({ module: 'settings', action: 'View' })
   async transition(
-    @Param('versionId') versionId: string,
+    @Param('versionId', ParseUUIDPipe) versionId: string,
     @Body() body: TransitionDto,
   ): Promise<unknown> {
     return this.skills.transition({
@@ -346,7 +347,7 @@ export class SkillController {
   /** What an upgrade would affect. Reports unknown, not zero, for what it cannot count. */
   @Get('versions/:versionId/impact')
   @RequirePermission({ module: 'settings', action: 'View' })
-  async impact(@Param('versionId') versionId: string): Promise<unknown> {
+  async impact(@Param('versionId', ParseUUIDPipe) versionId: string): Promise<unknown> {
     return this.skills.impactOf({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -357,7 +358,7 @@ export class SkillController {
   /** The governance trail: every lifecycle move, with who and why. */
   @Get('versions/:versionId/history')
   @RequirePermission({ module: 'settings', action: 'View' })
-  async history(@Param('versionId') versionId: string): Promise<unknown> {
+  async history(@Param('versionId', ParseUUIDPipe) versionId: string): Promise<unknown> {
     return this.skills.historyOf({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -403,7 +404,7 @@ export class PlatformSkillController {
   @Post('versions/:versionId/transition')
   @RequirePermission({ module: 'skills', action: 'Publish' })
   async transition(
-    @Param('versionId') versionId: string,
+    @Param('versionId', ParseUUIDPipe) versionId: string,
     @Body() body: TransitionDto,
   ): Promise<unknown> {
     return this.skills.transitionPlatformVersion({
