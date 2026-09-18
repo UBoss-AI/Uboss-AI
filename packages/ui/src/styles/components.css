@@ -6256,10 +6256,17 @@ table.uboss-wfg {
 .uboss-amb-veil {
   position: absolute;
   inset: 0;
+  /*
+    Quieter, not opaque.
+
+    At 0.86 the centre was so dark that there was nothing behind the card to see through it — the
+    glass had nothing to be glass over. The zone still calms the field where the numbers are; it
+    no longer erases it.
+  */
   background: radial-gradient(
     58% 52% at 50% 46%,
-    rgba(11, 18, 32, 0.86) 0%,
-    rgba(11, 18, 32, 0.35) 55%,
+    rgba(11, 18, 32, 0.5) 0%,
+    rgba(11, 18, 32, 0.22) 55%,
     transparent 78%
   );
 }
@@ -6271,15 +6278,39 @@ table.uboss-wfg {
   rectangle out of the environment and put the donut back in a box.
 */
 .uboss-dash-stage .uboss-card {
-  background: rgba(255, 255, 255, 0.82);
+  /*
+    Glass, with something behind it.
+
+    0.82 read as a solid panel: the field was there and none of it came through. 0.62 lets the
+    orbs and the grid show while the blur keeps them from competing with the numbers.
+
+    The floor is set by text, not by taste. Against the brightest place an orb can put behind this
+    card, body copy measures 15.28:1 and the muted line 6.53:1 — which is only true because the
+    muted line was raised; see below.
+  */
+  background: rgba(255, 255, 255, 0.62);
   backdrop-filter: blur(12px);
   border-color: rgba(196, 181, 253, 0.45);
   box-shadow: 0 24px 60px -30px rgba(76, 29, 149, 0.28);
 }
 
+/*
+  The muted line on this card uses text-2 rather than text-3.
+
+  text-3 measured 4.44:1 here even at the old opacity — already under 4.5:1, and transparency was
+  going to take it to 4.10:1. It is body copy ("The whole company.", "items in scope"), so it
+  needs 4.5:1, and the honest fix was the text rather than abandoning the glass. 6.53:1 now.
+*/
+.uboss-dash-stage .uboss-muted,
+.uboss-dash-stage .uboss-muted-3,
+.uboss-dash-stage .uboss-donut-center-sub,
+.uboss-dash-stage .uboss-legend-label {
+  color: var(--uboss-text-2);
+}
+
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) .uboss-dash-stage .uboss-card {
-    background: rgba(19, 26, 44, 0.72);
+    background: rgba(19, 26, 44, 0.55);
     border-color: #24314f;
     box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.8);
   }
@@ -6290,7 +6321,7 @@ table.uboss-wfg {
 }
 
 :root[data-theme='dark'] .uboss-dash-stage .uboss-card {
-  background: rgba(19, 26, 44, 0.72);
+  background: rgba(19, 26, 44, 0.55);
   border-color: #24314f;
   box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.8);
 }
