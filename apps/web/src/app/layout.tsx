@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import '@uboss/ui/styles.css';
 import './globals.css';
 
-import { THEME_BOOT_SCRIPT } from '../lib/theme';
+import { SIDEBAR_BOOT_SCRIPT, THEME_BOOT_SCRIPT } from '../lib/theme';
 
 export const metadata: Metadata = {
   title: 'UBOSS AI AMS',
@@ -45,6 +45,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           chose Dark would see a white flash on every single navigation.
         */}
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: SIDEBAR_BOOT_SCRIPT }} />
       </head>
       <body>{children}</body>
     </html>

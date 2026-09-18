@@ -14,7 +14,8 @@
   min-height: 100vh;
 }
 
-.uboss-shell--collapsed {
+.uboss-shell--collapsed,
+:root[data-uboss-sidebar='collapsed'] .uboss-shell {
   grid-template-columns: var(--uboss-sidebar-width-collapsed) 1fr;
 }
 
@@ -343,6 +344,12 @@
   flex: 1;
   padding: 8px 8px 16px;
   scrollbar-width: thin;
+  /* Transparent until hovered, to match the WebKit rules below. */
+  scrollbar-color: transparent transparent;
+}
+
+.uboss-sidebar:hover .uboss-side-scroll,
+.uboss-side-scroll:focus-within {
   scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
 }
 
@@ -354,9 +361,22 @@
   background: transparent;
 }
 
+/*
+  Nothing drawn until the pointer is in the sidebar.
+
+  The thumb used to be painted whenever the list overflowed, which put a permanent pale bar down
+  the navigation — very visible once the sidebar is a 74px rail. It still scrolls, by wheel, by
+  keyboard and by dragging once it is under the pointer; it simply stops being a decoration.
+*/
 .uboss-side-scroll::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.16);
+  background: transparent;
   border-radius: 999px;
+  transition: background var(--uboss-motion-small) var(--uboss-ease-standard);
+}
+
+.uboss-sidebar:hover .uboss-side-scroll::-webkit-scrollbar-thumb,
+.uboss-side-scroll:focus-within::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .uboss-side-scroll:hover::-webkit-scrollbar-thumb {
@@ -516,7 +536,8 @@
 }
 
 /* Collapsed rail */
-.uboss-shell--collapsed .uboss-side-brand {
+.uboss-shell--collapsed .uboss-side-brand,
+:root[data-uboss-sidebar='collapsed'] .uboss-side-brand {
   flex-direction: column;
   gap: 10px;
   padding: 16px 0 12px;
@@ -539,37 +560,55 @@
 }
 
 .uboss-shell--collapsed .uboss-side-brand-text,
+:root[data-uboss-sidebar='collapsed'] .uboss-side-brand-text,
 .uboss-shell--collapsed .uboss-nav-label,
-.uboss-shell--collapsed .uboss-side-foot-stack {
+:root[data-uboss-sidebar='collapsed'] .uboss-nav-label,
+.uboss-shell--collapsed .uboss-side-foot-stack,
+:root[data-uboss-sidebar='collapsed'] .uboss-side-foot-stack {
   opacity: 0;
   display: none;
 }
 
-.uboss-shell--collapsed .uboss-sidebar-toggle {
+.uboss-shell--collapsed .uboss-sidebar-toggle,
+:root[data-uboss-sidebar='collapsed'] .uboss-sidebar-toggle {
   margin-left: 0;
 }
 
-.uboss-shell--collapsed .uboss-side-scroll {
+.uboss-shell--collapsed .uboss-side-scroll,
+:root[data-uboss-sidebar='collapsed'] .uboss-side-scroll {
   padding: 6px 8px 16px;
 }
 
-.uboss-shell--collapsed .uboss-nav-group {
+/*
+  A rail that fits the screen, so no scrollbar appears in it.
+
+  Collapsed, the icon list measured 752px: thirteen items with a margin each, and four dividers
+  carrying 12px above and below. On any laptop shorter than about 900px that overflowed, and a
+  6px scrollbar down a 74px rail is most of what you see. Tightened, the same list is short enough
+  that the usual window never scrolls it; a genuinely short window still can, and should.
+*/
+.uboss-shell--collapsed .uboss-nav-group,
+:root[data-uboss-sidebar='collapsed'] .uboss-nav-group {
   height: 1px;
-  margin: 12px 14px;
+  margin: 7px 14px;
   background: rgba(255, 255, 255, 0.09);
   color: transparent;
   font-size: 0;
   overflow: hidden;
 }
 
-.uboss-shell--collapsed .uboss-nav-item {
+.uboss-shell--collapsed .uboss-nav-item,
+:root[data-uboss-sidebar='collapsed'] .uboss-nav-item {
   justify-content: center;
   padding: 10px 0;
+  /* The 1px above and below is 26px across the rail, and buys nothing once the labels are gone. */
+  margin: 0;
   gap: 0;
   position: relative;
 }
 
-.uboss-shell--collapsed .uboss-nav-badge {
+.uboss-shell--collapsed .uboss-nav-badge,
+:root[data-uboss-sidebar='collapsed'] .uboss-nav-badge {
   position: absolute;
   top: 3px;
   right: 8px;
@@ -578,7 +617,8 @@
   font-size: 10px;
 }
 
-.uboss-shell--collapsed .uboss-side-foot {
+.uboss-shell--collapsed .uboss-side-foot,
+:root[data-uboss-sidebar='collapsed'] .uboss-side-foot {
   justify-content: center;
   padding: 12px 0;
 }
@@ -2932,7 +2972,8 @@ textarea.uboss-input,
    ============================================================ */
 @media (max-width: 1080px) {
   .uboss-shell,
-  .uboss-shell--collapsed {
+.uboss-shell--collapsed,
+:root[data-uboss-sidebar='collapsed'] .uboss-shell {
     grid-template-columns: 1fr;
   }
 

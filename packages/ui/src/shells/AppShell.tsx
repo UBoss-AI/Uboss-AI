@@ -1,17 +1,27 @@
 'use client';
 
 import type { MouseEvent, ReactNode } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 
 import { cn } from '../lib/class-names';
+import {
+  rememberSidebarCollapsed,
+  sidebarCollapsedFromDocument,
+} from './sidebar-preference';
 import { PageNameShownAboveContext } from '../lib/page-name-context';
 import type { NavGroup } from '../navigation/navigation-model';
 import type { AccountMenuItem } from './AccountMenu';
 import { Sidebar, type SidebarUser } from './Sidebar';
 import { TopBar } from './TopBar';
 
-/** Where the collapsed preference lives. One key for both shells: it is the same person. */
-const COLLAPSE_KEY = 'uboss.sidebar.collapsed';
+/*
+ * Before paint, not after.
+ *
+ * useLayoutEffect runs after hydration but before the browser draws, so the collapsed class is
+ * never painted in its wrong state. On the server there is nothing to lay out, and calling it
+ * there warns, so the effect falls back to the ordinary one.
+ */
+const useBeforePaint = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
 interface AppShellCommonProps {
   groups: readonly NavGroup[];
@@ -83,25 +93,23 @@ export function AppShell(props: AppShellProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Remember whether the sidebar was collapsed. Read after mount rather than in the initial state,
-  // because this component server-renders: seeding from localStorage there would hydrate a
-  // different tree than the server sent. A blocked or empty store simply leaves it expanded.
-  useEffect(() => {
-    try {
-      if (window.localStorage.getItem(COLLAPSE_KEY) === '1') setCollapsed(true);
-    } catch {
-      // Private window, or site data blocked. The preference is a convenience, not state.
-    }
+  /*
+   * Taken from the document rather than from storage.
+   *
+   * The boot script has already read storage and put the answer on <html> before anything painted,
+   * so this only has to agree with it — and it does so before the browser draws, which is what
+   * stops the sidebar opening and shutting again on every navigation. Seeding the initial state
+   * instead would hydrate a different tree than the server sent.
+   */
+  useBeforePaint(() => {
+    setCollapsed(sidebarCollapsedFromDocument());
   }, []);
 
   const toggleCollapse = () => {
     setCollapsed((value) => {
       const next = !value;
-      try {
-        window.localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0');
-      } catch {
-        // As above — the sidebar still collapses, it just will not be remembered.
-      }
+      // The attribute as well as the store, so the next screen starts in the right shape.
+      rememberSidebarCollapsed(next);
       return next;
     });
   };

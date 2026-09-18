@@ -116,6 +116,11 @@ export { Sidebar } from './shells/Sidebar';
 export type { SidebarProps, SidebarUser } from './shells/Sidebar';
 
 export { COMPANY_HEADER_PREFIX, MASTER_HEADER_LABEL, TopBar } from './shells/TopBar';
+export {
+  SIDEBAR_COLLAPSED_ATTRIBUTE,
+  SIDEBAR_COLLAPSED_STORAGE_KEY,
+  SIDEBAR_COLLAPSED_VALUE,
+} from './shells/sidebar-preference';
 export type { TopBarProps } from './shells/TopBar';
 
 export { SettingsShell } from './shells/SettingsShell';

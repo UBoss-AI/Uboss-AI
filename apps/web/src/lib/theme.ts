@@ -70,3 +70,13 @@ export function setThemeChoice(choice: ThemeChoice): void {
  * throw here would be a blank application.
  */
 export const THEME_BOOT_SCRIPT = `try{var c=localStorage.getItem('${THEME_STORAGE_KEY}');if(c==='dark'||c==='light'){document.documentElement.setAttribute('data-theme',c)}}catch(e){}`;
+
+/**
+ * The collapsed sidebar, applied before the first paint.
+ *
+ * Without it the server's HTML is always the expanded sidebar, so every navigation painted a
+ * 248px sidebar and then animated it shut — the client's words were that it "opens and closes".
+ * The same trick as the theme above, and for the same reason: a preference that decides layout has
+ * to be known before anything is drawn, not after React has mounted.
+ */
+export const SIDEBAR_BOOT_SCRIPT = `try{if(localStorage.getItem('uboss.sidebar.collapsed')==='1'){document.documentElement.setAttribute('data-uboss-sidebar','collapsed')}}catch(e){}`;
