@@ -33,6 +33,7 @@ import {
   ApiError,
   authApi,
   objectivesApi,
+  organizationApi,
   type MeResponse,
   type ObjectiveView,
 } from '../../../lib/api-client';
@@ -114,6 +115,21 @@ function ObjectiveFormInner() {
   const [objective, setObjective] = useState<ObjectiveView | null>(null);
   const [content, setContent] = useState<Form2Objective>(emptyForm2());
   const [steps, setSteps] = useState<Form2WorkflowStep[]>([blankWorkflowStep(1)]);
+
+  /*
+   * The departments and people this company actually has.
+   *
+   * Three fields on this form — Department, Objective Owner and Responsible Owner — used to be
+   * plain text inputs holding a raw id, with a comment explaining that a picker would mean a
+   * second source for the department list. The list is not duplicated here: this reads the
+   * Hierarchy module's own endpoints, which is the same source, shown. What it replaces is a form
+   * that asked a Head to type a UUID and answered "must be chosen from the list" when they did
+   * not — the approved flow is that the creator *selects* a department and a responsible manager.
+   */
+  const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
+  const [people, setPeople] = useState<{ userId: string; label: string }[]>([]);
+
+
   const [reward, setReward] = useState<ObjectiveRewardPanel>(emptyReward());
   const [rewardOpen, setRewardOpen] = useState(false);
   const [rewardNote, setRewardNote] = useState<string | null>(null);
@@ -129,6 +145,32 @@ function ObjectiveFormInner() {
 
   const tenantId =
     resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
+
+  useEffect(() => {
+    if (tenantId === null) return;
+    void organizationApi
+      .departments(tenantId)
+      .then((result) =>
+        setDepartments(
+          result.departments
+            .filter((row) => row.archivedAt === null)
+            .map((row) => ({ id: row.id, name: row.name })),
+        ),
+      )
+      .catch(() => setDepartments([]));
+
+    void organizationApi
+      .hierarchy(tenantId)
+      .then((view) =>
+        setPeople(
+          view.list.map((row) => ({
+            userId: row.userId,
+            label: row.designation === '' ? row.displayName : `${row.displayName} — ${row.designation}`,
+          })),
+        ),
+      )
+      .catch(() => setPeople([]));
+  }, [tenantId]);
 
   const signedInUser = useSignedInUser(me);
 
@@ -388,16 +430,22 @@ function ObjectiveFormInner() {
               <label htmlFor="departmentId">
                 Department <span className="uboss-field-required">*</span>
               </label>
-              {/* An id field rather than a picker: the department list is the Hierarchy module's,
-                  and inventing a second source for it here is how two lists come to disagree. */}
-              <input
+              {/* The Hierarchy module's own list, shown rather than typed. */}
+              <select
                 id="departmentId"
+                className="uboss-input"
                 aria-invalid={problemFields.has('departmentId') || undefined}
                 value={content.departmentId}
-                readOnly={readOnly}
-                placeholder="Department"
+                disabled={readOnly}
                 onChange={(event) => field('departmentId', event.target.value)}
-              />
+              >
+                <option value="">Choose a department…</option>
+                {departments.map((department) => (
+                  <option key={department.id} value={department.id}>
+                    {department.name}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -406,14 +454,21 @@ function ObjectiveFormInner() {
               <label htmlFor="objectiveOwnerUserId">
                 Objective Owner <span className="uboss-field-required">*</span>
               </label>
-              <input
+              <select
                 id="objectiveOwnerUserId"
+                className="uboss-input"
                 aria-invalid={problemFields.has('objectiveOwnerUserId') || undefined}
                 value={content.objectiveOwnerUserId}
-                readOnly={readOnly}
-                placeholder="Objective Owner"
+                disabled={readOnly}
                 onChange={(event) => field('objectiveOwnerUserId', event.target.value)}
-              />
+              >
+                <option value="">Choose the owner…</option>
+                {people.map((person) => (
+                  <option key={person.userId} value={person.userId}>
+                    {person.label}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="uboss-field">
               <label htmlFor="preparedBy">Prepared By</label>
@@ -531,13 +586,22 @@ function ObjectiveFormInner() {
           <div className="uboss-row-2">
             <div className="uboss-field">
               <label htmlFor="responsibleOwnerUserId">Responsible Owner / Send To</label>
-              <input
+              {/* Who the Objective is routed to for review. §21's "selects a Responsible Manager". */}
+              <select
                 id="responsibleOwnerUserId"
+                className="uboss-input"
                 aria-invalid={problemFields.has('responsibleOwnerUserId') || undefined}
                 value={content.responsibleOwnerUserId ?? ''}
-                readOnly={readOnly}
+                disabled={readOnly}
                 onChange={(event) => field('responsibleOwnerUserId', orNull(event.target.value))}
-              />
+              >
+                <option value="">Nobody yet</option>
+                {people.map((person) => (
+                  <option key={person.userId} value={person.userId}>
+                    {person.label}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="uboss-field">
               <label htmlFor="executionTeam">Execution Team</label>
