@@ -67,14 +67,12 @@ class FakeDiscovery {
 }
 
 const idp = new FakeDiscovery();
-let provider: OidcProvider;
 
 /** A provider with its caches empty, because a cached document would hide the next answer. */
 const fresh = (): OidcProvider => new OidcProvider();
 
 before(async () => {
   await idp.start();
-  provider = fresh();
 });
 
 after(async () => {
