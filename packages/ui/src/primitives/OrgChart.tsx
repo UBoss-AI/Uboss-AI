@@ -1,3 +1,5 @@
+import { useId } from 'react';
+
 import { cn } from '../lib/class-names';
 
 /** One node of the chart. Recursive, and the three kinds render differently. */
@@ -7,6 +9,15 @@ export interface OrgChartNode {
   name: string;
   /** Second line: "Company · 5 departments", "Department · 12 people", or a designation. */
   subtitle: string;
+  /**
+   * A person's photo, as a URL an `<image>` can load. Only meaningful on `kind: 'person'`.
+   *
+   * Absent means no photo, which is the normal case rather than an error — most people will not
+   * have uploaded one, so the avatar falls back to a silhouette and the card looks deliberate.
+   * The caller decides what counts as available: the product's photo service can also answer
+   * "stored, but the malware scan has not cleared it", and that has to render as no photo.
+   */
+  photoUrl?: string;
   children: OrgChartNode[];
 }
 
@@ -62,6 +73,19 @@ const PAD_Y = 28;
  */
 const RAIL = 58;
 const TEXT_X = RAIL + 16;
+
+/**
+ * A person's card is built differently from a department's, because a person has a face.
+ *
+ * The department keeps the wide colour band with its initials in it. A person gets a narrow stripe
+ * of the same colour — so the grouping still reads down a column — and then a round avatar on the
+ * panel, which is where the photo goes. That is the arrangement the client asked for, and it is
+ * also the only one that can hold a photograph without cropping it into a corner.
+ */
+const STRIPE = 8;
+const AVATAR_R = 21;
+const AVATAR_CX = STRIPE + 14 + AVATAR_R;
+const PERSON_TEXT_X = STRIPE + 14 + AVATAR_R * 2 + 14;
 
 /**
  * Space kept clear at the top right for the actions, on cards that have them.
@@ -206,16 +230,6 @@ function departmentColour(name: string): string {
   return readable(palette[hash % palette.length] ?? FALLBACK_COLOUR);
 }
 
-/** Initials for an avatar band: two letters, upper case. */
-function initials(name: string): string {
-  const words = name.trim().split(/ +/).filter(Boolean);
-  return words
-    .map((word) => word[0] ?? '')
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
-}
-
 /** Department initials: two words' first letters, or the first two characters. */
 function departmentInitials(name: string): string {
   const parts = name.split(/[ &]+/).filter(Boolean);
@@ -250,8 +264,8 @@ function truncate(text: string, max: number): string {
  * `org-widths.mjs` measures every name against the space its card leaves it, so the estimate is
  * checked against a real layout rather than trusted.
  */
-function nameLimit(hasActions: boolean): number {
-  const available = BOX_WIDTH - TEXT_X - (hasActions ? ACTION_LANE : 16);
+function nameLimit(hasActions: boolean, textX: number = TEXT_X): number {
+  const available = BOX_WIDTH - textX - (hasActions ? ACTION_LANE : 16);
   return Math.floor(available / 7.9);
 }
 
@@ -394,6 +408,13 @@ export function OrgChart({
   emptyMessage,
   className,
 }: OrgChartProps) {
+  /*
+   * Clip paths are referenced by id, and an id is global to the document. Two charts on one page —
+   * the design-system screen renders several — would otherwise give every avatar the same id and
+   * every photo would be clipped by the first chart's geometry.
+   */
+  const idPrefix = useId().replace(/[^a-zA-Z0-9-]/g, '');
+
   const hasPeople = root.children.some((department) => department.children.length > 0);
 
   if (!hasPeople && emptyMessage !== undefined) {
@@ -455,6 +476,7 @@ export function OrgChart({
           <OrgNode
             key={`${node.kind}-${node.id}`}
             node={node}
+            idPrefix={idPrefix}
             {...(onSelectPerson === undefined ? {} : { onSelectPerson })}
             {...(onAddReport === undefined ? {} : { onAddReport })}
             {...(onEditPerson === undefined ? {} : { onEditPerson })}
@@ -482,12 +504,15 @@ function Card({
   band,
   panel,
   stroke,
+  bandWidth = RAIL,
 }: {
   x: number;
   y: number;
   band: string;
   panel: string;
   stroke: string;
+  /** Wide for a department, a stripe for a person. */
+  bandWidth?: number;
 }) {
   return (
     <>
@@ -501,7 +526,7 @@ function Card({
         fill={band}
         filter="url(#uboss-org-shadow)"
       />
-      <path d={panelPath(x + RAIL, y, BOX_WIDTH - RAIL, BOX_HEIGHT, 0, 16)} fill={panel} />
+      <path d={panelPath(x + bandWidth, y, BOX_WIDTH - bandWidth, BOX_HEIGHT, 0, 16)} fill={panel} />
       <rect
         className="uboss-org-edge"
         x={x + 0.5}
@@ -632,8 +657,88 @@ function ActionButton({
   );
 }
 
+/**
+ * A person's avatar: their photograph, or a silhouette when there is none.
+ *
+ * ## Why the silhouette sits under the photo rather than instead of it
+ *
+ * Both are drawn, always, with the image on top. If the photo 404s, is still being scanned, or is
+ * blocked by the browser, the `<image>` simply paints nothing and the silhouette is already there
+ * — no error state, no flash of a broken-image glyph, and nothing for this component to detect.
+ * That last part matters: an `onError` handler here would have to re-render, and a chart of forty
+ * nodes re-rendering on every failed avatar is a worse problem than the one it solves.
+ *
+ * The disc is the department's colour and the silhouette is whatever can be read on it, so a
+ * person with no photo still shows which department they belong to.
+ */
+function PersonAvatar({
+  x,
+  y,
+  colour,
+  clipId,
+  photoUrl,
+  name,
+}: {
+  x: number;
+  y: number;
+  colour: string;
+  clipId: string;
+  photoUrl: string | undefined;
+  name: string;
+}) {
+  const cx = x + AVATAR_CX;
+  const cy = y + BOX_HEIGHT / 2;
+  const ink = inkOn(colour);
+
+  return (
+    <>
+      <clipPath id={clipId}>
+        <circle cx={cx} cy={cy} r={AVATAR_R} />
+      </clipPath>
+
+      <circle cx={cx} cy={cy} r={AVATAR_R} fill={colour} />
+
+      {/* Head and shoulders, both clipped to the disc, which is what gives the shoulders their
+          flat bottom edge instead of a second circle poking out below. */}
+      <g clipPath={`url(#${clipId})`}>
+        <circle cx={cx} cy={cy - 4.5} r={7.2} fill={ink} />
+        <circle cx={cx} cy={cy + 17} r={12.5} fill={ink} />
+      </g>
+
+      {photoUrl === undefined ? null : (
+        <image
+          href={photoUrl}
+          x={cx - AVATAR_R}
+          y={cy - AVATAR_R}
+          width={AVATAR_R * 2}
+          height={AVATAR_R * 2}
+          /* Fill the disc and crop, rather than squashing a portrait into a square. */
+          preserveAspectRatio="xMidYMid slice"
+          clipPath={`url(#${clipId})`}
+          /* The group already announces the person's name, so this must not repeat it. */
+          aria-hidden="true"
+        >
+          <title>{name}</title>
+        </image>
+      )}
+
+      {/* A hairline ring, so a light photo does not bleed into a light panel. */}
+      <circle
+        cx={cx}
+        cy={cy}
+        r={AVATAR_R}
+        fill="none"
+        stroke="rgba(15, 23, 42, 0.18)"
+        strokeWidth={1}
+        pointerEvents="none"
+      />
+    </>
+  );
+}
+
 function OrgNode({
   node,
+  idPrefix,
   onSelectPerson,
   onAddReport,
   onEditPerson,
@@ -641,6 +746,7 @@ function OrgNode({
   onEditDepartment,
 }: {
   node: Placed;
+  idPrefix: string;
   onSelectPerson?: (id: string) => void;
   onAddReport?: (id: string) => void;
   onEditPerson?: (id: string) => void;
@@ -775,12 +881,26 @@ function OrgNode({
           }
         : {})}
     >
-      <Card x={x} y={y} band={colour} panel="var(--uboss-surface)" stroke="var(--uboss-border)" />
-      <BandLabel x={x} y={y} colour={colour} label={initials(node.name)} fontSize={15} />
-      <text x={x + TEXT_X} y={y + 37} fill="var(--uboss-text)" fontSize={13.5} fontWeight={700}>
-        {truncate(node.name, nameLimit(actions.length > 0))}
+      <Card
+        x={x}
+        y={y}
+        band={colour}
+        panel="var(--uboss-surface)"
+        stroke="var(--uboss-border)"
+        bandWidth={STRIPE}
+      />
+      <PersonAvatar
+        x={x}
+        y={y}
+        colour={colour}
+        clipId={`${idPrefix}-avatar-${node.id}`}
+        photoUrl={node.photoUrl}
+        name={node.name}
+      />
+      <text x={x + PERSON_TEXT_X} y={y + 37} fill="var(--uboss-text)" fontSize={13.5} fontWeight={700}>
+        {truncate(node.name, nameLimit(actions.length > 0, PERSON_TEXT_X))}
       </text>
-      <text x={x + TEXT_X} y={y + 57} fill="var(--uboss-text-2)" fontSize={11}>
+      <text x={x + PERSON_TEXT_X} y={y + 57} fill="var(--uboss-text-2)" fontSize={11}>
         {truncate(node.subtitle, 34)}
       </text>
 

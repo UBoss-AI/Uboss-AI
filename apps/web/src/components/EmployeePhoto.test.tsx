@@ -36,7 +36,7 @@ vi.mock('../lib/api-client', () => ({
     `/api/tenants/${tenantId}/photos/${userId}/content`,
 }));
 
-const { EmployeePhoto } = await import('./EmployeePhoto');
+const { EmployeePhoto, toBase64 } = await import('./EmployeePhoto');
 
 const WITH_PHOTO: PhotoView = {
   userId: 'user-1',
@@ -219,5 +219,51 @@ describe('EmployeePhoto', () => {
 
     expect(await screen.findByTestId('employee-photo-initials')).toHaveTextContent('AP');
     expect(view).not.toHaveBeenCalled();
+  });
+});
+
+/*
+ * The conversion the upload depends on.
+ *
+ * It was `btoa(String.fromCharCode(...new Uint8Array(buffer)))`, which spreads every byte into one
+ * call. The server takes photos up to 2MB, so that is up to two million arguments and every engine
+ * refuses at around a hundred thousand — it threw RangeError, the component's try/catch turned that
+ * into "That photo could not be saved", and the server was never asked. A 30KB image worked and a
+ * 518KB one did not, which is why it looked like a server or a permissions problem.
+ *
+ * The sizes below are the point of the test. A small buffer passes either implementation.
+ */
+describe('toBase64', () => {
+  it('matches the platform encoder on a small buffer', () => {
+    const bytes = new Uint8Array([0, 1, 2, 250, 251, 255, 65, 66, 67]);
+    expect(toBase64(bytes)).toBe(btoa(String.fromCharCode(...bytes)));
+  });
+
+  it('encodes a realistically sized photo without blowing the stack', () => {
+    // 518KB is the size that failed in a browser; 2MB is what the server actually allows.
+    for (const size of [518 * 1024, 2 * 1024 * 1024]) {
+      const bytes = new Uint8Array(size);
+      for (let index = 0; index < size; index += 1) bytes[index] = index % 256;
+
+      const encoded = toBase64(bytes);
+      // Base64 is 4 characters per 3 bytes, rounded up to a multiple of 4.
+      expect(encoded).toHaveLength(Math.ceil(size / 3) * 4);
+
+      // And it round-trips, so the blocks are joined in the right order rather than merely being
+      // the right length.
+      const decoded = atob(encoded);
+      expect(decoded).toHaveLength(size);
+      expect(decoded.charCodeAt(0)).toBe(0);
+      expect(decoded.charCodeAt(size - 1)).toBe((size - 1) % 256);
+      // A block boundary, where a wrong join would show first.
+      expect(decoded.charCodeAt(0x8000)).toBe(0x8000 % 256);
+    }
+  });
+
+  it('is not the one-call version any more', () => {
+    // The old implementation throws on this; the assertion is that this one does not.
+    const bytes = new Uint8Array(600_000);
+    expect(() => toBase64(bytes)).not.toThrow();
+    expect(() => String.fromCharCode(...bytes)).toThrow();
   });
 });

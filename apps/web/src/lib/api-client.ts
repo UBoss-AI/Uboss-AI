@@ -5133,9 +5133,22 @@ export const myAccessApi = {
  * `settings:Export`, which a standard Employee does not hold, so every avatar in the Hierarchy
  * would be a broken image for most of the company.
  */
-export function photoContentUrl(tenantId: string, userId: string): string {
-  return (
+/**
+ * Where a person's photo bytes live.
+ *
+ * `version` should be the `storedFileId` from the photo's view. It is not read by the server — it
+ * is there so that replacing a photo changes the URL.
+ *
+ * Without it, replacing one appeared to do nothing: the address is the same before and after, the
+ * response is `Cache-Control: private, max-age=300`, and so the browser went on showing the old
+ * picture for five minutes. It also meant a request that had failed once stayed failed, which is
+ * how a fixed route can still look broken.
+ */
+export function photoContentUrl(tenantId: string, userId: string, version?: string | null): string {
+  const base =
     `${API_BASE_URL}/tenants/${encodeURIComponent(tenantId)}` +
-    `/photos/${encodeURIComponent(userId)}/content`
-  );
+    `/photos/${encodeURIComponent(userId)}/content`;
+  return version === undefined || version === null
+    ? base
+    : `${base}?v=${encodeURIComponent(version)}`;
 }

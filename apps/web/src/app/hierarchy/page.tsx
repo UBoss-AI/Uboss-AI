@@ -32,6 +32,7 @@ import {
   type HierarchyView,
   type MeResponse,
   organizationApi,
+  photoContentUrl,
   photosApi,
   type PhotoView,
 } from '../../lib/api-client';
@@ -242,10 +243,30 @@ export default function HierarchyPage() {
       return null;
     }
 
+    /*
+     * Whether this person has a photograph the chart may draw.
+     *
+     * The same three conditions the photo component applies, asked here for the same reason: a
+     * stored file whose malware scan has not cleared shows `viewable: false`, and that has to
+     * render as no photo rather than as a broken image. `photos` is keyed by user id, and a
+     * person node's id *is* their user id — the node actions already rely on that.
+     */
+    const photoFor = (userId: string): string | undefined => {
+      const photo = photos[userId];
+      if (photo === undefined || photo === null) return undefined;
+      if (!photo.viewable || photo.storedFileId === null) return undefined;
+      return tenantId === null
+        ? undefined
+        : photoContentUrl(tenantId, userId, photo.storedFileId);
+    };
+
     const toChart = (node: HierarchyView['tree']): OrgChartNode => ({
       kind: node.kind,
       id: node.id,
       name: node.name,
+      ...(node.kind === 'person' && photoFor(node.id) !== undefined
+        ? { photoUrl: photoFor(node.id) as string }
+        : {}),
       subtitle:
         node.kind === 'company'
           ? `Company · ${node.children.length} department${node.children.length === 1 ? '' : 's'}`
@@ -263,7 +284,7 @@ export default function HierarchyPage() {
       ...root,
       children: root.children.filter((child) => child.name === departmentFilter),
     };
-  }, [departmentFilter, view]);
+  }, [departmentFilter, photos, tenantId, view]);
 
   // Hiding a control the server would refuse is a courtesy, not the enforcement — every route
   // checks the permission again regardless of what this screen renders.

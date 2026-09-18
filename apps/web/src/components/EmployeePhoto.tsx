@@ -28,6 +28,30 @@ export interface EmployeePhotoProps {
   onChanged?: () => void;
 }
 
+/**
+ * Bytes to base64, a block at a time.
+ *
+ * This was `btoa(String.fromCharCode(...new Uint8Array(buffer)))`, which spreads every byte of the
+ * file into a single call. The server accepts up to 2MB, so that is up to two million arguments,
+ * and every engine refuses somewhere around a hundred thousand — it throws RangeError, which the
+ * caller's try/catch reports as "That photo could not be saved".
+ *
+ * So the client was refusing files the server would have taken, with a message that pointed
+ * nowhere. Measured: a 30KB image saved, a 518KB one did not, and the server was never asked.
+ * A real phone photo is larger than either.
+ *
+ * 32768 is comfortably inside the argument limit and large enough that a 2MB file takes 64 passes.
+ * `subarray` rather than `slice` because it is a view, so this does not copy the file again.
+ */
+export function toBase64(bytes: Uint8Array): string {
+  const BLOCK = 0x8000;
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += BLOCK) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + BLOCK));
+  }
+  return btoa(binary);
+}
+
 /** First and last initial — the same rule the server uses, so the two never disagree. */
 function initialsOf(displayName: string): string {
   const words = displayName
@@ -103,7 +127,7 @@ export function EmployeePhoto({
     setError(null);
     try {
       const buffer = await file.arrayBuffer();
-      const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+      const base64 = toBase64(new Uint8Array(buffer));
       await photosApi.upload(tenantId, userId, {
         filename: file.name,
         contentType: file.type,
@@ -146,7 +170,9 @@ export function EmployeePhoto({
           // The photo's own content route, not the generic file download: that one needs
           // `settings:Export`, which a standard Employee does not hold, so every avatar would be
           // a broken image for most of the company.
-          src={photoContentUrl(tenantId, userId)}
+          // The stored file's id, so replacing a photo replaces the picture on screen rather
+          // than leaving the cached one for five minutes.
+          src={photoContentUrl(tenantId, userId, photo?.storedFileId)}
           alt={`${displayName}'s photo`}
           data-testid="employee-photo-image"
         />

@@ -31,6 +31,14 @@ const tree: OrgChartNode = {
           subtitle: 'Operations Associate',
           children: [],
         },
+        {
+          kind: 'person',
+          id: 'user-2',
+          name: 'Rajiv Mehta',
+          subtitle: 'Head of Operations',
+          photoUrl: 'http://localhost:4000/photos/user-2/content',
+          children: [],
+        },
       ],
     },
     {
@@ -83,7 +91,7 @@ describe('OrgChart — text on a surface that does not follow the theme', () => 
   it('puts dark ink on a light department colour and light ink on a dark one', () => {
     const { container } = render(<OrgChart root={tree} />);
 
-    // Quality Assurance is #4B9C2E, Production is #7A5AF8.
+    // Quality Assurance is #4B9C2E; Production is #7A5AF8, deepened until it can take a label.
     expect(textNode(container, 'QA').getAttribute('fill')).toBe('#0b1220');
     expect(textNode(container, 'PR').getAttribute('fill')).toBe('#f8fafc');
   });
@@ -121,8 +129,9 @@ describe('OrgChart — text on a surface that does not follow the theme', () => 
       checked += 1;
     }
 
-    // A loop over nothing passes, so say how many there were meant to be.
-    expect(checked).toBe(3);
+    // A loop over nothing passes, so say how many there were meant to be. Two: the departments.
+    // People carry a photo or a silhouette rather than initials, so they have no ink to check.
+    expect(checked).toBe(2);
   });
 });
 
@@ -188,6 +197,55 @@ describe('OrgChart — node actions', () => {
     fireEvent.keyDown(action, { key: ' ' });
 
     expect(onEditDepartment).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('OrgChart — a person’s avatar', () => {
+  it('draws the photograph when there is one', () => {
+    const { container } = render(<OrgChart root={tree} />);
+
+    const images = [...container.querySelectorAll('image')];
+    expect(images).toHaveLength(1);
+    expect(images[0]?.getAttribute('href')).toBe('http://localhost:4000/photos/user-2/content');
+    // Fill the disc and crop, rather than squashing a portrait into a square.
+    expect(images[0]?.getAttribute('preserveAspectRatio')).toBe('xMidYMid slice');
+  });
+
+  it('draws a silhouette, and no image, for somebody without one', () => {
+    const only = { ...tree, children: [{ ...tree.children[0]!, children: [tree.children[0]!.children[0]!] }] };
+    const { container } = render(<OrgChart root={only} />);
+
+    expect(container.querySelectorAll('image')).toHaveLength(0);
+    // The disc plus a head and shoulders: the person node contributes three circles beyond the
+    // ring, and a department contributes none.
+    expect(container.querySelectorAll('circle').length).toBeGreaterThanOrEqual(4);
+  });
+
+  /*
+   * The silhouette is drawn for everybody, including people who have a photo, and the photo goes
+   * on top. So a photo that 404s, or has not cleared its scan, or is blocked by the browser leaves
+   * a sensible avatar behind instead of a broken-image glyph — and no error handling is needed to
+   * achieve it. This is the assertion that keeps somebody from "tidying up" that duplication.
+   */
+  it('keeps the silhouette underneath the photograph', () => {
+    const { container } = render(<OrgChart root={tree} />);
+
+    const withPhoto = [...container.querySelectorAll('g[role="treeitem"]')].find((group) =>
+      (group.getAttribute('aria-label') ?? '').startsWith('Rajiv Mehta'),
+    );
+    expect(withPhoto).toBeDefined();
+    expect(withPhoto?.querySelector('image')).not.toBeNull();
+    // Head, shoulders, disc and ring are all still there behind it.
+    expect(withPhoto?.querySelectorAll('circle').length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('scopes the clip path per chart, so two charts cannot share one', () => {
+    const { container: first } = render(<OrgChart root={tree} />);
+    const { container: second } = render(<OrgChart root={tree} />);
+
+    const idOf = (root: HTMLElement) => root.querySelector('clipPath')?.getAttribute('id') ?? '';
+    expect(idOf(first)).not.toBe('');
+    expect(idOf(first)).not.toBe(idOf(second));
   });
 });
 

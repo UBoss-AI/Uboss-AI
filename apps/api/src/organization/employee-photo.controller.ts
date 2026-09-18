@@ -83,10 +83,7 @@ export class EmployeePhotoController {
    * face and must not sit in a shared proxy.
    */
   @Get(':userId/content')
-  async content(
-    @Param('userId') userId: string,
-    @Res({ passthrough: true }) response: Response,
-  ): Promise<Buffer> {
+  async content(@Param('userId') userId: string, @Res() response: Response): Promise<void> {
     const found = await this.photos.content({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -95,7 +92,41 @@ export class EmployeePhotoController {
 
     response.setHeader('Content-Type', found.contentType);
     response.setHeader('Cache-Control', 'private, max-age=300');
-    return found.bytes;
+    /*
+     * Embeddable by the application, and by nothing else.
+     *
+     * helmet() sets `Cross-Origin-Resource-Policy: same-origin` across the API, which is the right
+     * default and was silently breaking every avatar in the product: the web app is served from a
+     * different origin to this API, so the browser refused the bytes with
+     * ERR_BLOCKED_BY_RESPONSE.NotSameOrigin and every photo rendered as nothing. It was not a
+     * permission problem and not an upload problem, which is why it looked like the photo had
+     * never saved.
+     *
+     * `same-site` rather than `cross-origin`: it admits the app's own origin, and a deployment
+     * where the two sit on one registrable domain, while still refusing a genuinely third-party
+     * page that tries to embed a colleague's face. The route's own authorization is unchanged — a
+     * caller still has to be a member of the company — and the session cookie's SameSite rules
+     * still apply, so this widens where the bytes may be *displayed*, not who may fetch them.
+     */
+    response.setHeader('Cross-Origin-Resource-Policy', 'same-site');
+    /*
+     * Written to the response, not returned.
+     *
+     * Returning the Buffer is what this used to do, and a Buffer is an object, so Nest sent it
+     * through `res.json` — the endpoint answered
+     * `{"type":"Buffer","data":[137,80,78,71,...]}` under a `Content-Type: image/png` label. So no
+     * avatar in the product has ever rendered: the browser refused the body as an opaque response
+     * (ERR_BLOCKED_BY_ORB), which looked like a permissions problem and was not. It also inflated
+     * a 518KB photo to 1.9MB on the wire, because every byte travelled as decimal digits.
+     *
+     * The service's own tests could not have caught it. They call the service, which returns the
+     * bytes correctly; the defect was entirely in how the route replied. See
+     * test/employee-photo-response.spec.ts, which fails if the return comes back.
+     *
+     * `@Res()` without `passthrough` on purpose: it tells Nest this handler owns the response, so
+     * nothing serialises anything afterwards.
+     */
+    response.end(found.bytes);
   }
 
   @Get(':userId')
