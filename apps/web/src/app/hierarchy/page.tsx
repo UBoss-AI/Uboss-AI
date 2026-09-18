@@ -146,6 +146,13 @@ export default function HierarchyPage() {
   const [copied, setCopied] = useState(false);
 
   const [departmentOpen, setDepartmentOpen] = useState(false);
+  /*
+    Null means the department form is adding; an id means it is editing that one.
+
+    One form for both, because the fields are the same two and a second modal would be the same
+    markup with a different submit — which is how the two drift apart.
+  */
+  const [editingDepartmentId, setEditingDepartmentId] = useState<string | null>(null);
   const [departmentName, setDepartmentName] = useState('');
   const [departmentCode, setDepartmentCode] = useState('');
 
@@ -294,26 +301,67 @@ export default function HierarchyPage() {
       .finally(() => setSaving(false));
   }, [form, load, tenantId]);
 
+  const closeDepartmentForm = useCallback(() => {
+    setDepartmentOpen(false);
+    setEditingDepartmentId(null);
+    setDepartmentName('');
+    setDepartmentCode('');
+  }, []);
+
+  /** Opens the department form on an existing department, with its current values in it. */
+  const editDepartment = useCallback(
+    (departmentId: string) => {
+      const department = departments.find((row) => row.id === departmentId);
+      if (department === undefined) {
+        // The chart is drawn from the same load as this list, so this means the two have gone out
+        // of step. Saying so beats opening a blank form that would rename it to nothing.
+        setError('That department is no longer in this view. Reload and try again.');
+        return;
+      }
+      setError(null);
+      setEditingDepartmentId(department.id);
+      setDepartmentName(department.name);
+      setDepartmentCode(department.code ?? '');
+      setDepartmentOpen(true);
+    },
+    [departments],
+  );
+
   const submitDepartment = useCallback(() => {
     if (!tenantId) {
       return;
     }
-    organizationApi
-      .createDepartment(tenantId, {
-        name: departmentName,
-        ...(departmentCode === '' ? {} : { code: departmentCode }),
-      })
+
+    const body = {
+      name: departmentName,
+      ...(departmentCode === '' ? {} : { code: departmentCode }),
+    };
+
+    const request =
+      editingDepartmentId === null
+        ? organizationApi.createDepartment(tenantId, body)
+        : organizationApi.updateDepartment(tenantId, editingDepartmentId, body);
+
+    request
       .then(() => {
-        setNotice(`Added the department "${departmentName}".`);
-        setDepartmentName('');
-        setDepartmentCode('');
-        setDepartmentOpen(false);
+        setNotice(
+          editingDepartmentId === null
+            ? `Added the department "${departmentName}".`
+            : `Saved the department "${departmentName}".`,
+        );
+        closeDepartmentForm();
         load();
       })
       .catch((caught: unknown) =>
-        setError(caught instanceof ApiError ? caught.message : 'Could not add that department.'),
+        setError(
+          caught instanceof ApiError
+            ? caught.message
+            : editingDepartmentId === null
+              ? 'Could not add that department.'
+              : 'Could not save that department.',
+        ),
       );
-  }, [departmentCode, departmentName, load, tenantId]);
+  }, [closeDepartmentForm, departmentCode, departmentName, editingDepartmentId, load, tenantId]);
 
   const set = <K extends keyof EmployeeForm>(key: K, value: EmployeeForm[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
@@ -426,6 +474,17 @@ export default function HierarchyPage() {
                             setEmployeeOpen(true);
                           },
                           onEditPerson: (userId: string) => router.push(`/hierarchy/${userId}`),
+                          /*
+                            The same Add Employee form the toolbar opens, with the department
+                            already chosen. Nothing new is invented here: it is one field of the
+                            existing form, filled in from the node that was pressed.
+                          */
+                          onAddToDepartment: (departmentId: string) => {
+                            setResult(null);
+                            setForm({ ...EMPTY_FORM, departmentId });
+                            setEmployeeOpen(true);
+                          },
+                          onEditDepartment: editDepartment,
                         }
                       : {})}
                     emptyMessage={
@@ -521,17 +580,17 @@ export default function HierarchyPage() {
       {/* ---- Add Department ---- */}
       <Modal
         open={departmentOpen}
-        onClose={() => setDepartmentOpen(false)}
-        title="Add Department"
+        onClose={closeDepartmentForm}
+        title={editingDepartmentId === null ? 'Add Department' : 'Edit Department'}
         footer={
           <>
-            <Button onClick={() => setDepartmentOpen(false)}>Cancel</Button>
+            <Button onClick={closeDepartmentForm}>Cancel</Button>
             <Button
               variant="primary"
               onClick={submitDepartment}
               disabled={departmentName.trim().length < 2}
             >
-              Save Department
+              {editingDepartmentId === null ? 'Save Department' : 'Save changes'}
             </Button>
           </>
         }

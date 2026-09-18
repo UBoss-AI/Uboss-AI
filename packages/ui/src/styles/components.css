@@ -3406,27 +3406,87 @@ textarea.uboss-input,
   display: block;
 }
 
-.uboss-org-node .uboss-org-card,
-.uboss-org-node text {
-  transition: all var(--uboss-motion-small) var(--uboss-ease-standard);
+/* ---------------------------------------------------------------- the card, at rest and lifted */
+
+/*
+  The border moved off the card's own rect.
+
+  A card is now a coloured band with an information panel butted against it, and the outline is a
+  separate rect drawn over both so it reads as one unbroken line. These rules used to colour
+  `.uboss-org-card`, which is the band, and after that change they would have been recolouring a
+  shape that has no stroke — a hover state that silently did nothing.
+*/
+.uboss-org-node {
+  transition:
+    transform var(--uboss-motion-small) var(--uboss-ease-standard);
 }
 
-.uboss-org-node:hover .uboss-org-card {
-  stroke: var(--uboss-blue);
-  stroke-width: 1.6;
+.uboss-org-node .uboss-org-edge {
+  transition: stroke var(--uboss-motion-small) var(--uboss-ease-standard);
 }
 
-.uboss-org-node:focus-visible .uboss-org-card {
-  stroke: var(--uboss-blue);
+/*
+  The glow is declared in both states with the same shape of filter list.
+
+  `filter` interpolates only between lists of matching length and function order, so the resting
+  state carries a drop-shadow of zero blur in a transparent colour rather than omitting it. Left
+  out, the hover would snap from one function to two instead of easing, which is the difference
+  between a glow arriving and a glow appearing.
+*/
+.uboss-org-node .uboss-org-card {
+  filter: url(#uboss-org-shadow) drop-shadow(0 0 0 rgba(109, 40, 217, 0));
+  transition: filter var(--uboss-motion-panel) var(--uboss-ease-standard);
+}
+
+.uboss-org-node--acts:hover,
+.uboss-org-node--acts:focus-within,
+.uboss-org-node:hover {
+  /* Two pixels. Enough to read as a lift against the connectors behind it, not enough to nudge
+     the eye off the row. */
+  transform: translateY(-2px);
+}
+
+.uboss-org-node:hover .uboss-org-edge,
+.uboss-org-node:focus-within .uboss-org-edge {
+  stroke: var(--uboss-ai-bright);
+}
+
+.uboss-org-node:focus-visible .uboss-org-edge {
+  stroke: var(--uboss-ai-bright);
   stroke-width: 2;
 }
 
-.uboss-org-action circle {
-  transition: all var(--uboss-motion-small) var(--uboss-ease-standard);
+/* Light keeps it soft: a violet lift rather than a light source. */
+.uboss-org-node:hover .uboss-org-card,
+.uboss-org-node:focus-within .uboss-org-card {
+  filter: url(#uboss-org-shadow) drop-shadow(0 6px 16px rgba(109, 40, 217, 0.22));
 }
 
-.uboss-org-action:hover circle {
-  filter: brightness(0.97);
+/* ---------------------------------------------------------------- actions, on hover only */
+
+/*
+  Hidden until the pointer or the keyboard arrives.
+
+  `pointer-events` is the half of this that is not about looks. A group at zero opacity still takes
+  a click, so without it there would be two invisible buttons sitting over every card's top right
+  corner — and one of them opens a form. `:focus-within` is the other half: an action that appears
+  only on hover is unreachable by keyboard, and these are the only route to editing a department
+  from the chart.
+*/
+.uboss-org-actions {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--uboss-motion-small) var(--uboss-ease-standard);
+}
+
+.uboss-org-node:hover .uboss-org-actions,
+.uboss-org-node:focus-within .uboss-org-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.uboss-org-action circle {
+  transition: fill var(--uboss-motion-small) var(--uboss-ease-standard);
 }
 
 .uboss-org-action--add:hover circle {
@@ -3435,6 +3495,69 @@ textarea.uboss-input,
 
 .uboss-org-action--edit:hover circle {
   fill: #e7edf5;
+}
+
+.uboss-org-action:focus-visible circle {
+  stroke: var(--uboss-ai-bright);
+  stroke-width: 2;
+}
+
+/* ---------------------------------------------------------------- dark: the glow is a light source */
+
+/*
+  Both routes to the theme, because tokens.css keeps two copies and one of them is always the one
+  somebody forgets.
+*/
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .uboss-org-node:hover .uboss-org-card,
+  :root:not([data-theme='light']) .uboss-org-node:focus-within .uboss-org-card {
+    filter: url(#uboss-org-shadow) drop-shadow(0 0 12px rgba(167, 139, 250, 0.55));
+  }
+
+  :root:not([data-theme='light']) .uboss-org-action--add:hover circle {
+    fill: #1e2a4a;
+  }
+
+  :root:not([data-theme='light']) .uboss-org-action--edit:hover circle {
+    fill: #1b2030;
+  }
+}
+
+:root[data-theme='dark'] .uboss-org-node:hover .uboss-org-card,
+:root[data-theme='dark'] .uboss-org-node:focus-within .uboss-org-card {
+  filter: url(#uboss-org-shadow) drop-shadow(0 0 12px rgba(167, 139, 250, 0.55));
+}
+
+:root[data-theme='dark'] .uboss-org-action--add:hover circle {
+  fill: #1e2a4a;
+}
+
+:root[data-theme='dark'] .uboss-org-action--edit:hover circle {
+  fill: #1b2030;
+}
+
+/* ---------------------------------------------------------------- reduced motion */
+
+/*
+  The reveal still happens, it just stops being a movement. Removing the transition rather than
+  shortening it, because a held opening frame is what made the sign-in card appear blank for half
+  a second once already.
+*/
+@media (prefers-reduced-motion: reduce) {
+  .uboss-org-node,
+  .uboss-org-node .uboss-org-card,
+  .uboss-org-node .uboss-org-edge,
+  .uboss-org-actions,
+  .uboss-org-action circle {
+    transition: none;
+  }
+
+  .uboss-org-node:hover,
+  .uboss-org-node--acts:hover,
+  .uboss-org-node--acts:focus-within {
+    /* No lift. The border and the glow still say which card is under the pointer. */
+    transform: none;
+  }
 }
 
 /* The empty tree. A company with departments and nobody recorded is a real
