@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
-import { Banner, Button, FormField, LoginPresentation, NoPublicSignupNotice } from '@uboss/ui';
+import { Banner, Button, FormField, LoginPresentation } from '@uboss/ui';
 
 import { ApiError, authApi } from '../../lib/api-client';
 
@@ -160,7 +160,7 @@ export default function AccessHelpPage() {
 
           <div className="uboss-auth-links">
             <Link href="/login" className="uboss-link">
-              Back to sign in
+              Back to login
             </Link>
           </div>
         </form>
@@ -172,7 +172,7 @@ export default function AccessHelpPage() {
   return (
     <LoginPresentation>
       <form onSubmit={handleRequest} noValidate>
-        <h1>Access help</h1>
+        <h1>Forgot password</h1>
         <p className="uboss-login-card-sub">
           Enter your work email and we will send a password reset link.
         </p>
@@ -208,32 +208,20 @@ export default function AccessHelpPage() {
           {requestState.kind === 'submitting' ? 'Sending…' : 'Send reset link'}
         </Button>
 
-        <div className="uboss-section-label">Other problems</div>
+        {/*
+          One question, one answer, one way back.
 
-        <div className="uboss-kv">
-          <span className="uboss-kv-key">Never activated your account</span>
-          <span className="uboss-kv-value">
-            <Link href="/activate" className="uboss-link">
-              Use your invitation link
-            </Link>
-          </span>
-        </div>
-        <div className="uboss-kv">
-          <span className="uboss-kv-key">Invitation expired or lost</span>
-          <span className="uboss-kv-value">Ask your administrator to resend it</span>
-        </div>
-        <div className="uboss-kv">
-          <span className="uboss-kv-key">Account locked</span>
-          <span className="uboss-kv-value">Wait for the lockout to pass, or reset above</span>
-        </div>
-
+          This carried a list of three other problems — never activated, invitation expired,
+          account locked — and the provisioning notice. All of it was true and none of it was what
+          somebody who clicked "Forgot password" came here for; a page that answers four questions
+          answers the asked one less clearly. /activate is unchanged and reachable, and an
+          invitation email carries its own link, which is how anybody activating actually arrives.
+        */}
         <div className="uboss-auth-links">
           <Link href="/login" className="uboss-link">
-            Back to sign in
+            Back to login
           </Link>
         </div>
-
-        <NoPublicSignupNotice />
       </form>
     </LoginPresentation>
   );

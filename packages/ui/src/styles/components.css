@@ -6574,3 +6574,29 @@ table.uboss-wfg {
   flex-direction: column;
   gap: 8px;
 }
+
+/*
+  A label with something opposite it.
+
+  Used for "Password" with "Forgot password" at the far end. `baseline` rather than `center` so the
+  two sit on the same line of text regardless of their sizes — centring them makes the smaller one
+  look slightly high, which is the kind of thing nobody can name but everybody sees.
+*/
+.uboss-field-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.uboss-field-label-row label {
+  /* The label keeps its own margin rules; the row must not add a second one. */
+  margin-bottom: 0;
+}
+
+.uboss-field-aside {
+  font-size: var(--uboss-font-size-xs);
+  font-weight: 600;
+  white-space: nowrap;
+  flex: none;
+}

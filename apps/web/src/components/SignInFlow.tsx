@@ -693,7 +693,20 @@ export function SignInFlow({ plane }: SignInFlowProps) {
         </FormField>
 
         {showPassword ? (
-          <FormField label="Password" required>
+          <FormField
+            label="Password"
+            required
+            /*
+              Opposite the Password label, because that is where somebody who cannot get in is
+              already looking. It used to sit below the form as "Forgot password / Access help" —
+              two destinations in one link, under the thing they had already given up on.
+            */
+            labelAside={
+              <Link href="/access-help" className="uboss-link uboss-field-aside">
+                Forgot password
+              </Link>
+            }
+          >
             {/* No default value: a password field must never carry a prefilled credential. */}
             {(props) => (
               <input
@@ -792,20 +805,14 @@ export function SignInFlow({ plane }: SignInFlowProps) {
         ) : null}
 
         {/*
-          One link, not two.
+          Nothing below the form.
 
-          "Activate invitation" was a convenience: an invitation email carries its own link with
-          the token in it, which is the path anybody activating actually uses. /activate is
-          unchanged and still reachable — only the shortcut from this page is gone, so the form
-          ends with the one thing somebody stuck here actually needs.
+          "Forgot password" has moved up beside the Password label. The provisioning notice is gone
+          from this screen: it explains that nobody can sign themselves up, which is a thing a
+          person needs when they are looking for a way in — and this page no longer offers one, so
+          the sentence was answering a question the screen had stopped raising. It still appears on
+          /activate and /access-help, which are where somebody without an account actually lands.
         */}
-        <div className="uboss-auth-links">
-          <Link href="/access-help" className="uboss-link">
-            Forgot password / Access help
-          </Link>
-        </div>
-
-        <NoPublicSignupNotice />
       </form>
     </LoginPresentation>
   );
