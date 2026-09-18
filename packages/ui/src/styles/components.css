@@ -39,6 +39,20 @@
   flex-direction: column;
   min-width: 0;
   background: var(--uboss-bg);
+  /*
+    The workspace is where a full-bleed background gets cut off.
+
+    This element is exactly the region beside the sidebar and below the top bar, so anything that
+    wants to reach both edges of the workspace can overhang as far as it likes and be trimmed
+    here. The Dashboard's ambience is the one thing that does; see .uboss-dash-amb.
+
+    `clip` rather than `hidden` on purpose, and on one axis only: `hidden` would force the other
+    axis into a scroll container, whereas `overflow-x: clip` beside `overflow-y: visible` creates
+    no scroller at all. So vertical overhang still works — a menu can open past the bottom of the
+    workspace, and a fixed dialog is not clipped by this at all because nothing here makes this
+    element a containing block for fixed positioning.
+  */
+  overflow-x: clip;
 }
 
 /*
@@ -160,6 +174,16 @@
 
 .uboss-content {
   padding: 22px 24px 60px;
+  /*
+    The vertical padding again, as a number something else can read.
+
+    The Dashboard stage sizes itself to fill the workspace, which means subtracting this padding
+    from the viewport. That subtraction used to be the literal 82px, correct here and wrong at the
+    narrower breakpoint below, where the padding drops to 18/48 and the stage came out 16px short —
+    a strip of plain background under the field at the bottom of the screen. Declaring it beside
+    the padding is the only arrangement where changing one cannot silently leave the other behind.
+  */
+  --uboss-content-pad-y: 82px;
   max-width: var(--uboss-content-max-width);
   width: 100%;
   margin: 0 auto;
@@ -2918,6 +2942,7 @@ textarea.uboss-input,
 
   .uboss-content {
     padding: 18px 16px 48px;
+    --uboss-content-pad-y: 66px;
   }
 }
 
@@ -6011,12 +6036,14 @@ table.uboss-wfg {
   position: relative;
   isolation: isolate;
   /*
-    The layer bleeds sideways past the content padding so there is no hard edge, and that bleed was
-    widening the page by 4px — a scrollbar appearing on a screen whose content fits. Clipping here
-    keeps the bleed (the layer still reaches past the padding, it just cannot extend the document)
-    and the sideways scroll goes.
+    No clip here any more. It used to be, to stop the sideways bleed widening the page by 4px, and
+    that worked — but it also meant the layer could never get past the stage, and the stage lives
+    inside a column capped at 1440px and centred. On a 1902px screen that left 103px of bare shell
+    down each side of the field: the background stopped short of the screen on both sides.
+
+    The clip moved up to .uboss-main, which is the workspace itself, so the layer can now overhang
+    the column and still not extend the document.
   */
-  overflow-x: clip;
   /*
     The stage fills the workspace, not just its content.
 
@@ -6025,17 +6052,33 @@ table.uboss-wfg {
     card-sized rectangle the brief rules out, just a larger one. The viewport minus the top bar and
     the content's own padding is the region a person actually sees as "the dashboard".
   */
-  min-height: calc(100vh - var(--uboss-topbar-height) - 82px);
+  min-height: calc(100vh - var(--uboss-topbar-height) - var(--uboss-content-pad-y));
 }
 
 .uboss-dash-amb {
   position: absolute;
-  /* Bleeds past the content padding on every side, so there is no hard edge anywhere. */
-  inset: -32px -28px -60px;
+  /*
+    Sideways: far enough to always reach the workspace edges, and trimmed there by .uboss-main.
+
+    A fixed bleed cannot do this. The content column is capped at 1440px and centred, so the gap
+    between the column and the workspace edge is 0 on a 1440px screen and grows without limit on
+    a wider one — 103px each side at 1902px, 460px at 2560px. Any single number is either too
+    small on a wide screen (the bare strips this replaces) or overhangs on a narrow one. 50vw is
+    always more than half the workspace, so it always reaches, and the clip on the workspace makes
+    the excess free.
+
+    Vertically it bleeds past the content's own padding, which is what keeps the field from ending
+    in a hard line above the bottom of the screen.
+  */
+  top: -32px;
+  right: -50vw;
+  bottom: -60px;
+  left: -50vw;
   z-index: 0;
   pointer-events: none;
   overflow: hidden;
-  border-radius: 18px;
+  /* No radius: the layer's corners are off-screen now, and a rounded edge at the workspace
+     boundary would read as a panel rather than as the environment. */
 }
 
 /* Everything the person came for sits above it, in normal flow. */
@@ -6279,17 +6322,29 @@ table.uboss-wfg {
 */
 .uboss-dash-stage .uboss-card {
   /*
-    Glass, with something behind it.
+    Glass, with something behind it — and the blur is the number that decides whether that is true.
 
-    0.82 read as a solid panel: the field was there and none of it came through. 0.62 lets the
-    orbs and the grid show while the blur keeps them from competing with the numbers.
+    Lowering the alpha twice did not work, and measuring the render said why. Shooting the card
+    with the field present and again with it removed, and diffing, gives the field's visible
+    contribution in luminance levels. At 12px of blur it was: mean 2.5, PEAK 3.9, against 66 in
+    the open field beside the card. The mean was a uniform tone shift — the region read slightly
+    different from the page and showed no structure — and lines and nodes are peaks, so peak is
+    what decides whether a person sees a field at all.
 
-    The floor is set by text, not by taste. Against the brightest place an orb can put behind this
-    card, body copy measures 15.28:1 and the muted line 6.53:1 — which is only true because the
-    muted line was raised; see below.
+    Changing one thing at a time found the culprit. Alpha 0.55 -> 0.20 moved peak 3.9 -> 6.7;
+    removing the quiet zone entirely moved it to 5.7. Blur 12px -> 0 moved it to 31.8. A 0.7px
+    line at 0.16 opacity averaged over a 12px radius is gone, whatever the alpha in front of it
+    is, which is why the card looked solid at every opacity tried.
+
+    So: 2px, which still frosts what is behind (the field softens, the nodes bloom) while leaving
+    structure legible. Peak through the card is 24.9 in dark, 17.6 in light.
+
+    The floor is set by text, not by taste, and was re-measured against the worst backdrop pixel
+    anywhere inside the card: body copy 14.42:1 and the muted line 6.16:1 in light, 13.61:1 and
+    8.43:1 in dark. The muted line only clears 4.5:1 because it was raised; see below.
   */
-  background: rgba(255, 255, 255, 0.62);
-  backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.36);
+  backdrop-filter: blur(2px);
   border-color: rgba(196, 181, 253, 0.45);
   box-shadow: 0 24px 60px -30px rgba(76, 29, 149, 0.28);
 }
@@ -6310,7 +6365,8 @@ table.uboss-wfg {
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) .uboss-dash-stage .uboss-card {
-    background: rgba(19, 26, 44, 0.55);
+    /* Lower than light: the field is brighter than this tint, so less of it goes further. */
+    background: rgba(19, 26, 44, 0.26);
     border-color: #24314f;
     box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.8);
   }
@@ -6321,7 +6377,8 @@ table.uboss-wfg {
 }
 
 :root[data-theme='dark'] .uboss-dash-stage .uboss-card {
-  background: rgba(19, 26, 44, 0.55);
+  /* Lower than light: the field is brighter than this tint, so less of it goes further. */
+  background: rgba(19, 26, 44, 0.26);
   border-color: #24314f;
   box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.8);
 }
@@ -6338,7 +6395,14 @@ table.uboss-wfg {
      constellation become clutter at this size, where the content already fills the screen.
   */
   .uboss-dash-amb {
-    inset: -20px -16px -40px;
+    /*
+      Still edge to edge sideways — there is no centred column to escape at this width, but the
+      clip makes the overhang harmless and one rule is better than two. The bottom bleed is 48px
+      because that is this width's content padding, and at -40px the field stopped 24px short of
+      the bottom of the screen.
+    */
+    top: -20px;
+    bottom: -48px;
   }
 
   .uboss-amb-orb--3 {
