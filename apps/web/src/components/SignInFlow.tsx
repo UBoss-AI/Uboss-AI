@@ -75,6 +75,19 @@ type Step =
  *
  * There is **no public company signup** anywhere.
  */
+/**
+ * The three providers, in a fixed order.
+ *
+ * Listed here rather than driven by what the server returns, so the row is the same shape
+ * whatever is configured — buttons that appear and disappear as credentials are added would move
+ * the sign-in control under somebody's cursor.
+ */
+const SOCIAL_PROVIDERS = [
+  { kind: 'google', label: 'Continue with Google' },
+  { kind: 'apple', label: 'Continue with Apple' },
+  { kind: 'microsoft', label: 'Continue with Microsoft' },
+] as const;
+
 export interface SignInFlowProps {
   /**
    * Which plane this front door leads to.
@@ -713,34 +726,45 @@ export function SignInFlow({ plane }: SignInFlowProps) {
           </p>
         ) : null}
 
-        {showPassword && (ssoConnections.length > 0 || socialProviders.length > 0) ? (
-          <div className="uboss-or">or</div>
-        ) : null}
+        {showPassword ? <div className="uboss-or">or</div> : null}
 
-        {socialProviders.length > 0 ? (
+        {showPassword ? (
           /*
-           * One button per provider this deployment can actually complete a sign-in with.
+           * Google, Microsoft and Apple, always offered.
            *
-           * Pressing one starts the real authorization redirect. It never creates an account:
-           * there is no public signup in UBoss, and an address arriving from Google still has to
-           * belong to an invited, active identity or the sign-in is refused. Anyone can obtain a
-           * Google account, and that must not be a way into somebody's company.
+           * A provider this deployment holds credentials for is live: pressing it starts the real
+           * authorization redirect. One it does not is **visibly disabled and says why** — the
+           * same treatment the enterprise SSO button already had here, and the distinction that
+           * matters: a control that looks ready and is not is a lie, while one that is plainly
+           * greyed out with a reason is information.
+           *
+           * None of them ever creates an account. There is no public signup in UBoss, and that
+           * does not stop being true because the identity arrived from Google — the returned
+           * address must already belong to an invited, active person or the sign-in is refused.
+           * Anyone can obtain a Google account, and that must not be a way into someone's company.
            */
           <div className="uboss-provider-row">
-            {socialProviders.map((provider) => (
-              <ProviderButton
-                key={provider.kind}
-                kind={provider.kind}
-                label={provider.displayName}
-                onClick={() => void startSocial(provider.kind)}
-                disabled={busy}
-              />
-            ))}
+            {SOCIAL_PROVIDERS.map(({ kind, label }) => {
+              const configured = socialProviders.find((provider) => provider.kind === kind);
+              return (
+                <ProviderButton
+                  key={kind}
+                  kind={kind}
+                  label={configured?.displayName ?? label}
+                  disabled={busy || configured === undefined}
+                  {...(configured === undefined
+                    ? { title: `${label.replace('Continue with ', '')} sign-in is not set up for this deployment yet.` }
+                    : {})}
+                  {...(configured === undefined ? {} : { onClick: () => void startSocial(kind) })}
+                />
+              );
+            })}
           </div>
         ) : null}
 
+        {/* A company's own enterprise connection, when it has one, beneath the three. */}
         {ssoConnections.length > 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="uboss-provider-row">
             {ssoConnections.map((connection) => (
               /*
                * One button per connection the company has actually configured, wearing that
@@ -765,28 +789,19 @@ export function SignInFlow({ plane }: SignInFlowProps) {
               />
             ))}
           </div>
-        ) : (
-          <>
-            <div className="uboss-or">or</div>
-            {/* Honestly disabled until this address's domain has an enabled connection: a button
-                that looks like it authenticates and does not is worse than one that is greyed out. */}
-            <Button
-              block
-              icon="shield"
-              disabled
-              title="Enterprise sign-in is configured per company"
-            >
-              Continue with enterprise SSO
-            </Button>
-          </>
-        )}
+        ) : null}
 
+        {/*
+          One link, not two.
+
+          "Activate invitation" was a convenience: an invitation email carries its own link with
+          the token in it, which is the path anybody activating actually uses. /activate is
+          unchanged and still reachable — only the shortcut from this page is gone, so the form
+          ends with the one thing somebody stuck here actually needs.
+        */}
         <div className="uboss-auth-links">
           <Link href="/access-help" className="uboss-link">
             Forgot password / Access help
-          </Link>
-          <Link href="/activate" className="uboss-link">
-            Activate invitation
           </Link>
         </div>
 
