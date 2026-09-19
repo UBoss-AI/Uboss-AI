@@ -73,6 +73,29 @@ export abstract class ProviderAdapter {
 }
 
 /**
+ * The user turn a provider will accept, for a call whose context is empty.
+ *
+ * A stage that has nothing to classify passes an empty list, and `context.join('
+')` makes that
+ * an empty string. The mock never minded. Anthropic does:
+ *
+ *     400 — "messages.0: user messages must have non-empty content"
+ *
+ * Confirmed against the live API, and proven end to end: an objective analysis on a draft whose
+ * steps are all human work completed three stages against Claude and then failed at *Identifying
+ * AI work*, because there were no AI steps to send. The gateway fell back, found nothing at the
+ * same capability, and recorded the run `Unroutable` — a real objective that cannot be analysed.
+ *
+ * So an empty context becomes an explicit statement that it is empty. That is a transport
+ * concern and not a business rule: the instruction still says what to do, and "there are none"
+ * is what an empty list means. Inventing filler content would be the alternative, and it would
+ * put words in the model's input that nothing in the product said.
+ */
+export function userTurnFor(context: string): string {
+  return context.trim() === '' ? '(none)' : context;
+}
+
+/**
  * The adapter that ships: deterministic, offline, and honest about it.
  *
  * Kept from Prompt 20's `MockModelGateway` rather than replaced, and for the reason recorded
@@ -180,7 +203,7 @@ export class AnthropicProviderAdapter extends ProviderAdapter {
         model: call.providerModelRef,
         max_tokens: call.maxTokens,
         system: call.instruction,
-        messages: [{ role: 'user', content: call.context }],
+        messages: [{ role: 'user', content: userTurnFor(call.context) }],
       },
       readOutput: (payload) => {
         const content = (payload as { content?: { type?: string; text?: string }[] }).content ?? [];
@@ -248,7 +271,7 @@ export class OpenAiProviderAdapter extends ProviderAdapter {
         max_completion_tokens: call.maxTokens,
         messages: [
           { role: 'system', content: call.instruction },
-          { role: 'user', content: call.context },
+          { role: 'user', content: userTurnFor(call.context) },
         ],
       },
       readOutput: (payload) => {
@@ -340,7 +363,7 @@ export class CustomProviderAdapter extends ProviderAdapter {
         model: config.modelId,
         max_tokens: call.maxTokens,
         instruction: call.instruction,
-        input: call.context,
+        input: userTurnFor(call.context),
       },
       readOutput: (payload) =>
         typeof (payload as { output?: unknown }).output === 'string'

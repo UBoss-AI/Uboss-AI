@@ -817,7 +817,7 @@ describe('company provisioning (e2e)', () => {
 
   // =========================================================================
   describe('the outbox', () => {
-    it('is visible to platform support and reports that no dispatcher runs', async () => {
+    it('is visible to platform support and reports that nothing will deliver it', async () => {
       await provision();
       const response = await as(agent().get('/platform/provisioning/outbox'), supportUboss).expect(
         200,
@@ -830,10 +830,17 @@ describe('company provisioning (e2e)', () => {
       };
       assert.equal(body.counts['Pending'], 1);
       assert.equal(body.messages.length, 1);
-      // The honest state: rows accumulate because email delivery is a later prompt. Claiming
-      // otherwise would leave an operator wondering why a customer never activated.
+      /*
+       * The honest state, and it has to say *why*.
+       *
+       * The note used to read "no dispatcher is implemented yet". One is: it consumes
+       * `notification.email` and skips every other topic, so an operator who learns the
+       * dispatcher exists would reasonably expect these rows to drain, and they never will. The
+       * assertion is on the two facts an operator acts on rather than on the sentence.
+       */
       assert.equal(body.dispatcher.running, false);
-      assert.match(body.dispatcher.note, /notifications module/i);
+      assert.match(body.dispatcher.note, /nothing consumes company.activation_invitation/i);
+      assert.match(body.dispatcher.note, /reissuing their invitation/i);
     });
 
     it('claims, delivers and dead-letters', async () => {

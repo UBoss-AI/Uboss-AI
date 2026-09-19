@@ -156,26 +156,55 @@ export class HumanTaskService {
     });
   }
 
-  /** The client's **Start**. */
+  /**
+   * The client's **Start** — and, from `WaitingApproval`, its **Resume**.
+   *
+   * ## Reopening withdraws the approval the submission raised
+   *
+   * The lifecycle lets a person pull work back out of `WaitingApproval` ("submitted too early"),
+   * and the approval that submission raised used to stay `Pending` in the approver's queue with
+   * nothing on it to say the work had been withdrawn. Proven against the running product: an
+   * approver signed off a submission that no longer stood, three minutes after it was pulled
+   * back, and the queue showed two identical requests for one piece of work once it was
+   * resubmitted. Each reopen added another approval the task could never finish without.
+   *
+   * So a reopen withdraws them. `Cancelled`, not deleted — the request, its reason and who caused
+   * it stay readable, which is the whole point of an approval trail. A request that has already
+   * been decided is never touched: the `status: 'Pending'` in the write's own `where` is what
+   * guarantees it, including against a decision that lands between the read and the write.
+   */
   async start(input: {
     scope: TenantScope;
     actorUserId: string;
     taskId: string;
   }): Promise<HumanTaskView> {
-    return this.mutate(input, (row) => {
-      this.assertMove(row.status as HumanTaskStatus, 'InProgress');
-      return {
-        data: {
-          status: 'InProgress',
-          ...(row.startedAt === null ? { startedAt: new Date() } : {}),
-          // Resuming clears the blocker: a task cannot be in progress and blocked at once, and
-          // leaving a stale reason on it would misreport why work stopped.
-          blockedReason: null,
-        },
-        action: 'todo.task_started',
-        summary: `Started "${row.title}".`,
-      };
-    });
+    return this.mutate(
+      input,
+      (row) => {
+        this.assertMove(row.status as HumanTaskStatus, 'InProgress');
+        return {
+          data: {
+            status: 'InProgress',
+            ...(row.startedAt === null ? { startedAt: new Date() } : {}),
+            // Resuming clears the blocker: a task cannot be in progress and blocked at once, and
+            // leaving a stale reason on it would misreport why work stopped.
+            blockedReason: null,
+          },
+          action: 'todo.task_started',
+          summary: `Started "${row.title}".`,
+        };
+      },
+      async (row) => {
+        // Only a reopen withdraws anything. Starting a task that was merely Assigned or Blocked
+        // has no submission behind it and nothing to withdraw.
+        if (row.status !== 'WaitingApproval') return;
+        await this.withdrawPendingApprovals({
+          tenantId: input.scope.tenantId,
+          task: row,
+          actorUserId: input.actorUserId,
+        });
+      },
+    );
   }
 
   /** The client's **Blocked reason**. */
@@ -359,6 +388,16 @@ export class HumanTaskService {
             tenantId: input.scope.tenantId,
             type: 'OutputApproval',
             status: 'Pending',
+            /*
+             * Stamped with the submission's own instant rather than left to the database default.
+             *
+             * `reconcileApprovalOutcome` decides which requests belong to the *current*
+             * submission by comparing this against the task's `submittedAt`, and both are set to
+             * the same `now` here. Letting the default `now()` stand would compare an application
+             * clock against a database clock, and a few milliseconds of skew either way would
+             * silently drop a request out of its own submission.
+             */
+            createdAt: now,
             title: `Output approval: ${row.title}`,
             detail:
               `${row.objective.code}: "${row.title}" was submitted and needs a ` +
@@ -453,14 +492,41 @@ export class HumanTaskService {
         return { changed: false, status: (row?.status ?? 'Cancelled') as HumanTaskStatus };
       }
 
-      const governing = await this.prisma.client.approvalRequest.findMany({
+      /*
+       * Only the current submission's approvals govern the task.
+       *
+       * A reopen withdraws the pending ones (see `withdrawPendingApprovals`), but a request that
+       * was already *settled* before the reopen cannot be touched — its decision record is
+       * immutable. A rejection from a submission that was withdrawn two revisions ago would
+       * otherwise block the task for ever, because this requires every governing request to be
+       * `Approved`. So the set is narrowed to the requests raised for the submission now on the
+       * table: `submit` stamps both the task's `submittedAt` and the request's `createdAt` with
+       * the same instant, which is what makes this comparison exact rather than a race.
+       */
+      const all = await this.prisma.client.approvalRequest.findMany({
         where: {
           tenantId: input.scope.tenantId,
           subjectType: 'HumanTask',
           subjectId: input.taskId,
+          // A withdrawn request governs nothing, whenever it was raised.
+          status: { not: 'Cancelled' },
         },
-        select: { id: true, status: true },
+        select: { id: true, status: true, createdAt: true },
       });
+
+      const submittedAt = row.submittedAt;
+      const thisSubmission =
+        submittedAt === null
+          ? []
+          : all.filter((request) => request.createdAt.getTime() >= submittedAt.getTime());
+
+      /*
+       * The fallback is deliberate and narrow: rows written before this stamping existed carry a
+       * database `createdAt` a hair either side of the task's `submittedAt`, and excluding them
+       * would leave those tasks unable to finish. It applies only when *nothing* belongs to the
+       * current submission, so it can never widen a set that was correctly narrowed.
+       */
+      const governing = thisSubmission.length > 0 ? thisSubmission : all;
 
       // A task parked at WaitingApproval with no approval governing it is a data problem, not a
       // task to finish. Left alone rather than completed on the strength of an absence.
@@ -523,6 +589,15 @@ export class HumanTaskService {
       action: string;
       summary: string;
     },
+    /**
+     * Work that must commit with the transition, given the row **as it was before** it.
+     *
+     * Only `start` uses it, and only to withdraw the approvals a reopened submission left behind.
+     * It runs inside the same transaction as the status change on purpose: a task that is back in
+     * progress while its old approval is still decidable is exactly the state this exists to
+     * prevent, and two transactions would leave a window where it is true.
+     */
+    alsoInTransaction?: (row: TaskRowWithChildren) => Promise<void>,
   ): Promise<HumanTaskView> {
     const context = await this.authorization.contextFor(input.scope, input.actorUserId);
     await this.authorization.assertCan(context, { module: 'todo', action: 'EditDraft' });
@@ -536,6 +611,10 @@ export class HumanTaskService {
         where: { id: row.id },
         data: { ...outcome.data, version: { increment: 1 } },
       });
+
+      if (alsoInTransaction !== undefined) {
+        await alsoInTransaction(row);
+      }
 
       await this.auditEvents.appendWithinCurrentScope(input.scope.tenantId, {
         action: outcome.action,
@@ -552,6 +631,84 @@ export class HumanTaskService {
       });
 
       return this.viewOf(await this.load(input.taskId));
+    });
+  }
+
+  /**
+   * Withdraw every approval still waiting on a submission that has been pulled back.
+   *
+   * ## Why this is written here rather than in `ApprovalService`
+   *
+   * `ApprovalService` depends on this service — `decide` calls `reconcileApprovalOutcome` to
+   * finish the task a decision unblocks — so a dependency the other way would be a cycle. The
+   * to-do side already owns the creation of an `OutputApproval` in `submit`, and withdrawing one
+   * is the same seam: both belong to the submission lifecycle rather than to the approval queue.
+   *
+   * ## Why a cancellation names an actor
+   *
+   * `a_settled_approval_names_who_decided_it` requires every non-`Pending` row to carry
+   * `decidedByUserId` and `decidedAt`. That is the right constraint — an approval that changed
+   * state with nobody attached is unauditable — so a withdrawal is attributed to the person who
+   * pulled the work back, which is who caused it. The note and the audit event both say it was
+   * withdrawn rather than decided, so nothing reads this as an approval or a rejection. No
+   * decision record is appended, because a withdrawal is not one of the four decisions.
+   *
+   * Nothing here re-implements separation of duties, and nothing needs to: withdrawing is not
+   * deciding, so `NoSelfApproval` and `FourEyes` are untouched. The person who reopens their own
+   * work withdraws their own request, which is the same act as not having submitted it.
+   */
+  private async withdrawPendingApprovals(input: {
+    tenantId: string;
+    task: { id: string; title: string };
+    actorUserId: string;
+  }): Promise<void> {
+    const pending = await this.prisma.client.approvalRequest.findMany({
+      where: {
+        tenantId: input.tenantId,
+        subjectType: 'HumanTask',
+        subjectId: input.task.id,
+        status: 'Pending',
+      },
+      select: { id: true, title: true, approverRoleKind: true, namedApproverUserId: true },
+    });
+
+    if (pending.length === 0) return;
+
+    const now = new Date();
+    const withdrawn = await this.prisma.client.approvalRequest.updateMany({
+      where: {
+        id: { in: pending.map((request) => request.id) },
+        // Re-checked in the write, not only in the read above. A decision landing in between
+        // must win: a settled approval record is never modified.
+        status: 'Pending',
+      },
+      data: {
+        status: 'Cancelled',
+        decidedByUserId: input.actorUserId,
+        decidedAt: now,
+        decisionNote:
+          'Withdrawn, not decided: the work was pulled back to In progress, so the submission ' +
+          'this was raised for no longer stands. Submitting the revised work raises a fresh ' +
+          'request.',
+        version: { increment: 1 },
+      },
+    });
+
+    await this.auditEvents.appendWithinCurrentScope(input.tenantId, {
+      action: 'todo.approvals_withdrawn',
+      resourceType: 'human_task',
+      resourceId: input.task.id,
+      actorUserId: input.actorUserId,
+      resourceRef: input.task.title,
+      summary:
+        `Withdrew ${withdrawn.count} approval request(s) waiting on "${input.task.title}": ` +
+        'the work was reopened, so the submission they were raised for no longer stands.',
+      metadata: {
+        taskId: input.task.id,
+        withdrawnCount: withdrawn.count,
+        // Named, so the trail answers "which request vanished from my queue, and why".
+        approvalRequestIds: pending.map((request) => request.id).join(','),
+      },
     });
   }
 

@@ -494,7 +494,29 @@ export class ProviderService {
     });
   }
 
-  /** Point a logical profile at a model, at a given preference. */
+  /**
+   * Point a logical profile at a model, at a given preference.
+   *
+   * ## Why this clears before it writes
+   *
+   * It only ever inserted, and two partial unique indexes made that unusable. Every one of the
+   * five profiles already holds a route at preference 0, so `setRoute` on any of them raised
+   * P2002 and surfaced as a **500 Internal server error** — proven against the running product in
+   * `apps/web/tmp/anthropic-wire.mjs`, where pointing AGENT_FAST at a live Anthropic model
+   * returned 500 and the routing was unchanged. There is no delete route either, so the Routing
+   * screen could not change a routing decision at all once one had been made.
+   *
+   * "Set" means *this model answers this profile at this preference*, so two existing rows have
+   * to give way, one per index:
+   *
+   *   • `one_model_per_platform_profile_preference` — whatever held this slot is replaced;
+   *   • `one_route_per_platform_profile_and_model` — this model, if it already answered this
+   *     profile at some other preference, is moved rather than duplicated.
+   *
+   * Both deletions and the insert happen in one transaction, so a profile is never momentarily
+   * routed nowhere. Scoped by `tenantId` exactly as the indexes are: a company override never
+   * disturbs the platform default, and vice versa.
+   */
   async setRoute(input: {
     actorUserId: string;
     tenantId: string | null;
@@ -523,6 +545,24 @@ export class ProviderService {
         );
       }
 
+      // The scope the partial indexes use. `tenantId: null` is the platform default row, and
+      // Prisma writes that as `IS NULL`, which is what the `WHERE tenant_id IS NULL` index means.
+      const scopeWhere = { tenantId: input.tenantId, profile: input.profile };
+
+      const displaced = await this.prisma.client.logicalModelRoute.findMany({
+        where: {
+          ...scopeWhere,
+          OR: [{ preference: input.preference }, { providerModelId: input.providerModelId }],
+        },
+        select: { id: true, providerModelId: true, preference: true },
+      });
+
+      if (displaced.length > 0) {
+        await this.prisma.client.logicalModelRoute.deleteMany({
+          where: { id: { in: displaced.map((route) => route.id) } },
+        });
+      }
+
       await this.prisma.client.logicalModelRoute.create({
         data: {
           profile: input.profile,
@@ -532,12 +572,24 @@ export class ProviderService {
         },
       });
 
+      const replaced = displaced.filter((route) => route.providerModelId !== input.providerModelId);
+
       await this.audit(input.tenantId, {
         action: 'providers.route_set',
         resourceId: input.providerModelId,
         actorUserId: input.actorUserId,
-        summary: `${input.profile} may now be answered at preference ${input.preference}.`,
-        metadata: { profile: input.profile, preference: input.preference },
+        summary:
+          `${input.profile} is now answered at preference ${input.preference}` +
+          (replaced.length === 0
+            ? '.'
+            : `, replacing ${replaced.length} route(s) that held it.`),
+        metadata: {
+          profile: input.profile,
+          preference: input.preference,
+          // Which routing decision was overwritten, so the trail answers "what did it used to
+          // do" rather than only "what does it do now".
+          replacedProviderModelIds: replaced.map((route) => route.providerModelId).join(','),
+        },
       });
     });
 

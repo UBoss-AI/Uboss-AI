@@ -511,14 +511,88 @@ describe('performance score and badges (e2e)', () => {
       });
       assert.ok(own.score > 0, 'a Head could not read their own performance');
 
-      // Somebody else's is still the scope layer's question, and a score carries no department.
+      /*
+       * And the department they head.
+       *
+       * This assertion used to say the opposite, on the premise that "a score carries no
+       * department". It carries none of its own — but the person it is about has one, and that
+       * is the department the grant names. With the owner alone on the resource the Department
+       * rule failed closed on *every* subject, so `performance: View` at `Department` scope was
+       * an unreachable grant: proven against the running product, where the Head of Operations
+       * was refused Aman Singh of Operations.
+       */
+      await record('OnTimeAccepted', 'T-DEPT', employeeId);
+      const inDepartment = await performance().viewFor({
+        scope: scope(),
+        actorUserId: peerId,
+        subjectUserId: employeeId,
+      });
+      assert.ok(
+        inDepartment.score > 0,
+        'a Head could not read the performance of somebody in the department they head',
+      );
+
+      // Somebody in another department is still refused — the grant names one department, and
+      // reaching further is the escalation this rule exists to stop.
+      const outsider = await ctx.prisma.runAsPlatformOperation(async () => {
+        const user = await ctx.users.createForPlatform({
+          ubossUniqueId: 'UB-POUT-0001',
+          email: 'outsider@perf.example',
+          displayName: 'Performance Outsider',
+        });
+        await ctx.prisma.client.tenantMembership.create({
+          data: { tenantId, userId: user.id, accountState: 'Active' },
+        });
+        const elsewhere = await ctx.prisma.client.department.create({
+          data: { tenantId, name: 'Customer Operations', code: 'CUS' },
+        });
+        await ctx.prisma.client.employmentRecord.create({
+          data: {
+            tenantId,
+            userId: user.id,
+            employeeId: 'P-005',
+            designation: 'Customer Operations Executive',
+            departmentId: elsewhere.id,
+          },
+        });
+        return user;
+      });
+
       await assert.rejects(
         performance().viewFor({
           scope: scope(),
           actorUserId: peerId,
-          subjectUserId: employeeId,
+          subjectUserId: outsider.id,
         }),
         (error: Error) => /outside what your role covers/i.test(error.message),
+        'a department grant reached a department it does not name',
+      );
+
+      /*
+       * And somebody with no employment record at all is refused too, which is the fail-closed
+       * half of the same rule: no department on the resource means a Department grant cannot
+       * match it. Losing this would turn "we do not know where they work" into "everybody".
+       */
+      const unplaced = await ctx.prisma.runAsPlatformOperation(async () => {
+        const user = await ctx.users.createForPlatform({
+          ubossUniqueId: 'UB-PUNP-0001',
+          email: 'unplaced@perf.example',
+          displayName: 'Performance Unplaced',
+        });
+        await ctx.prisma.client.tenantMembership.create({
+          data: { tenantId, userId: user.id, accountState: 'Active' },
+        });
+        return user;
+      });
+
+      await assert.rejects(
+        performance().viewFor({
+          scope: scope(),
+          actorUserId: peerId,
+          subjectUserId: unplaced.id,
+        }),
+        (error: Error) => /outside what your role covers/i.test(error.message),
+        'a person with no recorded department was reached by a department grant',
       );
     });
 

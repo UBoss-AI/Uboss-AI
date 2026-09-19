@@ -454,6 +454,76 @@ describe('company settings (e2e)', () => {
       );
     });
 
+    /*
+     * The three states, asserted together and named, because they were argued about.
+     *
+     *   NO VIEW      → hidden, and the direct read denied
+     *   VIEW ONLY    → visible, values readable, nothing editable
+     *   EDIT/MANAGE  → visible and editable
+     *
+     * For a while the middle state was implemented as "hidden too", on the reading that a
+     * settings screen should carry only what a person can act on. That is a defensible product,
+     * but it is not this one: an Employee's read grant is supposed to reach the personal
+     * categories and show them their values. Written as one test so the rule cannot drift back a
+     * state at a time.
+     */
+    it('hides what may not be read, shows what may only be read, and opens what may be changed', async () => {
+      const employeeView = await settings().viewFor(scope(), employeeId);
+      const adminView = await settings().viewFor(scope(), adminId);
+
+      const keysOf = (view: { categories: { key: string }[] }) =>
+        new Set(view.categories.map((category) => category.key));
+      const employeeCategories = keysOf(employeeView);
+      const adminCategories = keysOf(adminView);
+
+      // ---- NO VIEW: hidden ----
+      for (const companyOnly of ['billing', 'tokens', 'providers', 'roles', 'audit']) {
+        assert.equal(
+          employeeCategories.has(companyOnly),
+          false,
+          `an Employee was offered "${companyOnly}", which is the company's to administer`,
+        );
+        assert.ok(adminCategories.has(companyOnly), `an administrator lost "${companyOnly}"`);
+      }
+      assert.ok(employeeView.withheldCategories > 0, 'and the count says how many were withheld');
+
+      // ---- VIEW ONLY: visible, readable, not editable ----
+      const employeeSettings = employeeView.categories.flatMap((category) => category.settings);
+      assert.ok(employeeSettings.length > 0, 'an Employee reads their personal settings');
+      assert.ok(
+        employeeSettings.every((setting) => setting.editable === false),
+        'and can change none of them',
+      );
+      assert.ok(
+        employeeSettings.every((setting) => setting.value !== undefined),
+        'the values are readable, not blanked out',
+      );
+      // The screen is told, per category, that there is nothing to save here.
+      assert.ok(
+        employeeView.categories.every((category) => category.anyEditable === false),
+        'no category offers an Employee a save',
+      );
+
+      // ---- EDIT: visible and editable ----
+      const adminSettings = adminView.categories.flatMap((category) => category.settings);
+      assert.ok(
+        adminSettings.some((setting) => setting.editable),
+        'an administrator can change something',
+      );
+
+      // ---- and the middle state is not enforcement ----
+      await assert.rejects(
+        () =>
+          settings().update({
+            scope: scope(),
+            actorUserId: employeeId,
+            values: { 'general.display_name': 'Renamed by an Employee' },
+          }),
+        /You cannot change/i,
+        'a disabled control is a courtesy; the server is the boundary',
+      );
+    });
+
     it('is not authorized by hidden navigation', async () => {
       // The category list is the full information architecture regardless of who asks — the
       // enforcement is the per-setting check, not what the sidebar shows.

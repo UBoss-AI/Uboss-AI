@@ -125,10 +125,10 @@ export class ProvisioningController {
   /**
    * The outbox, for the Master Console to show.
    *
-   * Worth exposing rather than hiding: **no dispatcher runs yet** (email is Prompt 28), so
-   * activation invitations accumulate as `Pending`. A platform operator who provisioned a
-   * company needs to be able to see that the invitation is queued and undelivered, rather than
-   * assuming it was sent and wondering why the customer never activated.
+   * Worth exposing rather than hiding: activation invitations accumulate as `Pending` and
+   * nothing drains them. A platform operator who provisioned a company needs to be able to see
+   * that the invitation is queued and undelivered, rather than assuming it was sent and
+   * wondering why the customer never activated.
    */
   @Get('outbox')
   @RequirePermission({ module: 'support', action: 'View' })
@@ -158,11 +158,14 @@ export class ProvisioningController {
         payload: message.payload,
       })),
       dispatcher: {
+        // Still false, and for two reasons rather than one: nothing runs this on a timer, and
+        // the dispatcher that exists does not handle this topic at all.
         running: false,
         note:
-          'No dispatcher is implemented yet — email delivery is the notifications module. ' +
-          'Messages accumulate as Pending, which is the honest state rather than a claim that ' +
-          'mail is being sent.',
+          'The notifications dispatcher handles notification emails only. Nothing consumes ' +
+          'company.activation_invitation, so these rows stay Pending however often it runs, ' +
+          'and no mail provider is configured in any case. An initial administrator is ' +
+          'activated by reissuing their invitation, which returns the one-time token once.',
       },
     };
   }

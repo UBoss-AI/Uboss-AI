@@ -357,29 +357,50 @@ export class PerformanceService {
 
     /*
      * A person may always read their own; reading somebody else's is scoped, so a Manager sees
-     * their team and an Employee sees themselves.
+     * their team and a Head sees their department.
      *
-     * The self case is checked here rather than left to the scope layer, and it has to be. The
-     * resource for a performance record carries an owner and no department — there is no
-     * department on a score — and a `Department` grant fails closed on a resource with no
-     * department, deliberately ("the resource may well belong to a department nobody has recorded
-     * yet"). So a Head, whose scope IS `Department`, was refused their own performance: the
-     * Performance section disappeared from their navigation entirely, since
-     * `unavailableNavKeys` ran the same call. Proven in `apps/web/tmp/dead-ui-sweep.mjs`, where a
-     * Head opening /performance got "That is outside what your role covers" while an Employee's
-     * opened.
+     * ## The self case is checked here, not left to the scope layer
      *
-     * This is the same shape as the `profileFor` fix: the grant is required either way, and the
-     * scope question only applies to somebody else's record. Nothing is widened — reading your own
-     * record is the floor of every role, which is what the comment above always claimed.
+     * A `Department` grant fails closed on a resource with no department, deliberately ("the
+     * resource may well belong to a department nobody has recorded yet"). So a Head, whose scope
+     * IS `Department`, was refused their **own** performance, and the Performance section
+     * disappeared from their navigation entirely because `unavailableNavKeys` runs the same call.
+     * Proven in `apps/web/tmp/dead-ui-sweep.mjs`. Reading your own record is the floor of every
+     * role, so it asks the permission and not the scope.
+     *
+     * ## And the subject's department is supplied, because otherwise the grant reaches nobody
+     *
+     * With the owner alone on the resource, the same fail-closed rule then refused a Head *every*
+     * other record too — including the people in the department they head. The Head template
+     * grants `performance: ['View', 'Export']` at `Department` scope, and a grant that can never
+     * match any subject is not a narrow grant, it is an unreachable one: proven against the
+     * running product in `apps/web/tmp/f5-head-performance.mjs`, where the Head of Operations was
+     * refused Aman Singh of Operations with "That is outside what your role covers".
+     *
+     * A score carries no department of its own. The person it is about does, and that is the
+     * department the Head was granted, so it is read here and put on the resource — the same
+     * thing `ApprovalService` does with a requester's department. This supplies a fact the
+     * existing scope rule needs; it does not add a rule. A subject with no employment record
+     * still carries no department and a `Department` grant still fails closed on them.
      */
     const isSelf = input.subjectUserId === input.actorUserId;
+    const subjectDepartmentId = isSelf
+      ? null
+      : ((await this.organization.findEmployment(input.scope, input.subjectUserId))
+          ?.departmentId ?? null);
+
     await this.authorization.assertCan(context, {
       module: 'performance',
       action: 'View',
       ...(isSelf
         ? {}
-        : { resource: { id: input.subjectUserId, ownerUserId: input.subjectUserId } }),
+        : {
+            resource: {
+              id: input.subjectUserId,
+              ownerUserId: input.subjectUserId,
+              ...(subjectDepartmentId === null ? {} : { departmentId: subjectDepartmentId }),
+            },
+          }),
     });
 
     const policy = await this.activePolicy(input.scope);

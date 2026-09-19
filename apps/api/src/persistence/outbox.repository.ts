@@ -47,13 +47,16 @@ export const OUTBOX_MAX_ATTEMPTS = 8;
  * The reader methods do scope themselves, because they are ordinary reads with no such
  * constraint.
  *
- * ## No dispatcher exists yet
+ * ## Not every topic has a consumer
  *
- * Email delivery is the notifications module (Prompt 28). Rows accumulate as `Pending`, the
- * Master Console can see them, and `claimDue`/`markDelivered`/`markFailed` exist and are tested
- * so the dispatcher is a consumer of a working queue rather than a queue plus a dispatcher
- * written together and never exercised separately. Saying "mail is being sent" when nothing
- * sends it would be the alternative.
+ * `NotificationDispatcherService` consumes `notification.email`. It is the only consumer, so a
+ * row on any other topic — `company.activation_invitation` among them — accumulates as
+ * `Pending` for ever and is counted as `skipped` if a run happens to claim it. That is
+ * reported rather than hidden: the Master Console can see the rows, and a growing skipped count
+ * is how somebody discovers a topic that produces and never consumes.
+ *
+ * Even the handled topic sends nothing by default: the email adapter logs. Saying "mail is
+ * being sent" when nothing sends it would be the alternative.
  */
 @Injectable()
 export class OutboxRepository {

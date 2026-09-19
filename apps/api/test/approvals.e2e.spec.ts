@@ -2393,6 +2393,206 @@ describe('approval engine, delegation and four-eyes (e2e)', () => {
       assert.ok(stillPending > 0, 'an approval is still outstanding');
     });
 
+    /*
+     * Reopening withdraws the approval the submission raised — the approved F3 decision.
+     *
+     * The lifecycle lets a person pull work back out of WaitingApproval, and the request that
+     * submission raised used to stay Pending in the approver's queue with nothing on it to say
+     * the work had been withdrawn. Proven against the running product: an approver signed off a
+     * submission that had been pulled back three minutes earlier, and a resubmission then left
+     * two identical requests governing one task, each of which had to be approved before it
+     * could ever finish. Every reopen added another.
+     */
+    it('withdraws the pending approval when the work is pulled back', async () => {
+      const { taskId, approvalId } = await taskAwaitingApproval();
+
+      await tasks().start({ scope: scope(), actorUserId: workerUserId, taskId });
+
+      assert.equal((await statusOf(taskId)).status, 'InProgress', 'the work is back in progress');
+
+      const request = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.approvalRequest.findFirstOrThrow({
+          where: { id: approvalId },
+          select: { status: true, decidedByUserId: true, decidedAt: true, decisionNote: true },
+        }),
+      );
+
+      assert.equal(request.status, 'Cancelled', 'the request no longer waits on withdrawn work');
+      // Kept, not deleted: the trail has to answer "what happened to the thing in my queue".
+      assert.equal(request.decidedByUserId, workerUserId, 'attributed to whoever pulled it back');
+      assert.ok(request.decidedAt, 'and to when');
+      assert.match(request.decisionNote ?? '', /withdrawn, not decided/i);
+
+      const trail = await ctx.prisma.runInTenantTransaction(scope(), () =>
+        ctx.prisma.client.auditEvent.findMany({
+          where: { tenantId, action: 'todo.approvals_withdrawn', resourceId: taskId },
+        }),
+      );
+      assert.equal(trail.length, 1, 'the withdrawal is on the record');
+    });
+
+    it('refuses a decision on a withdrawn request', async () => {
+      const { taskId, approvalId } = await taskAwaitingApproval();
+      await tasks().start({ scope: scope(), actorUserId: workerUserId, taskId });
+
+      // The approver's queue still shows it until they reload; deciding it must not work.
+      await assert.rejects(
+        () =>
+          approvals().decide({
+            scope: scope(),
+            actorUserId: managerUserId,
+            approvalId,
+            decision: 'Approve',
+            note: 'Approving something that was withdrawn.',
+          }),
+        (error: Error) => /already|cancelled|not pending/i.test(error.message),
+      );
+
+      assert.equal((await statusOf(taskId)).status, 'InProgress', 'and the task is unaffected');
+    });
+
+    it('raises a fresh approval for the revised work, and finishes on that one alone', async () => {
+      const { taskId, approvalId: original } = await taskAwaitingApproval();
+
+      await tasks().start({ scope: scope(), actorUserId: workerUserId, taskId });
+      await tasks().addEvidence({
+        scope: scope(),
+        actorUserId: workerUserId,
+        taskId,
+        description: 'Corrected: the two missing branches are now included.',
+        reference: 'branch-ops/week-38-v2',
+      });
+      const resubmitted = await tasks().submit({
+        scope: scope(),
+        actorUserId: workerUserId,
+        taskId,
+      });
+      assert.equal(resubmitted.status, 'WaitingApproval');
+
+      const requests = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.approvalRequest.findMany({
+          where: { subjectType: 'HumanTask', subjectId: taskId },
+          orderBy: { createdAt: 'asc' },
+          select: { id: true, status: true },
+        }),
+      );
+      assert.equal(requests.length, 2, 'the withdrawn one is kept, not replaced in place');
+      assert.equal(requests[0]?.id, original);
+      assert.equal(requests[0]?.status, 'Cancelled');
+      assert.equal(requests[1]?.status, 'Pending', 'and the revised work has its own');
+
+      // One decision, on the new request only, finishes the task. Before this, the withdrawn one
+      // counted against it and the task could never complete.
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: managerUserId,
+        approvalId: requests[1]?.id ?? '',
+        decision: 'Approve',
+        note: 'The corrected list matches the template.',
+      });
+
+      const after = await statusOf(taskId);
+      assert.equal(after.status, 'Completed', 'the revised work finished on its own approval');
+      assert.ok(after.completedAt);
+    });
+
+    it('is not blocked by a rejection from a submission that was withdrawn', async () => {
+      /*
+       * A settled record is never modified, so a rejection survives a reopen — and every
+       * governing request has to be Approved before a task finishes. Without scoping the set to
+       * the current submission, that old rejection would block the task for ever: the exact
+       * "stuck task" this decision exists to prevent, arriving by the one door the withdrawal
+       * cannot close.
+       */
+      const { taskId, approvalId } = await taskAwaitingApproval();
+
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: managerUserId,
+        approvalId,
+        decision: 'Reject',
+        note: 'Two branches are missing from the list.',
+      });
+      assert.equal((await statusOf(taskId)).status, 'WaitingApproval', 'a rejection parks it');
+
+      await tasks().start({ scope: scope(), actorUserId: workerUserId, taskId });
+      await tasks().addEvidence({
+        scope: scope(),
+        actorUserId: workerUserId,
+        taskId,
+        description: 'Both missing branches added.',
+        reference: 'branch-ops/week-38-v3',
+      });
+      await tasks().submit({ scope: scope(), actorUserId: workerUserId, taskId });
+
+      const fresh = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.approvalRequest.findFirstOrThrow({
+          where: { subjectType: 'HumanTask', subjectId: taskId, status: 'Pending' },
+          select: { id: true },
+        }),
+      );
+
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: managerUserId,
+        approvalId: fresh.id,
+        decision: 'Approve',
+        note: 'The corrected list is complete.',
+      });
+
+      assert.equal(
+        (await statusOf(taskId)).status,
+        'Completed',
+        'an old rejection must not block the submission that replaced it',
+      );
+
+      // And it is still there to read.
+      const rejected = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.approvalRequest.findFirstOrThrow({
+          where: { id: approvalId },
+          select: { status: true, decisionNote: true },
+        }),
+      );
+      assert.equal(rejected.status, 'Rejected', 'a settled decision is never rewritten');
+      assert.match(rejected.decisionNote ?? '', /missing/i);
+    });
+
+    it('withdraws only on a reopen, not on every Start', async () => {
+      /*
+       * Resuming from Blocked is the other way a task reaches In progress, and it has no
+       * submission behind it. Proving the withdrawal is confined to the WaitingApproval edge
+       * rather than firing on every Start — which would be a sweep over an approval queue run by
+       * a routine button.
+       *
+       * (In progress cannot be started again at all — that edge does not exist — so Blocked is
+       * how this case is reached.)
+       */
+      const { taskId } = await taskAwaitingApproval();
+
+      await tasks().start({ scope: scope(), actorUserId: workerUserId, taskId });
+      const afterReopen = await ctx.prisma.runInTenantTransaction(scope(), () =>
+        ctx.prisma.client.auditEvent.count({
+          where: { tenantId, action: 'todo.approvals_withdrawn', resourceId: taskId },
+        }),
+      );
+      assert.equal(afterReopen, 1, 'the reopen withdrew once');
+
+      await tasks().block({
+        scope: scope(),
+        actorUserId: workerUserId,
+        taskId,
+        reason: 'Waiting on the branch file.',
+      });
+      await tasks().start({ scope: scope(), actorUserId: workerUserId, taskId });
+
+      const afterResume = await ctx.prisma.runInTenantTransaction(scope(), () =>
+        ctx.prisma.client.auditEvent.count({
+          where: { tenantId, action: 'todo.approvals_withdrawn', resourceId: taskId },
+        }),
+      );
+      assert.equal(afterResume, 1, 'resuming from Blocked withdraws nothing');
+    });
+
     it('is not completed by reconciliation alone while the approval is still pending', async () => {
       // The Executor may observe and reconcile; it must never stand in for the approver. Calling
       // the reconciliation directly, with the request still Pending, must change nothing.

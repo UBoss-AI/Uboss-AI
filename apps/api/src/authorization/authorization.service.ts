@@ -371,7 +371,7 @@ export class AuthorizationService {
   }
 
   /**
-   * How far a person's reach extends **for one particular permission**.
+   * How far a person's reach extends **for one particular permission** — kind and departments.
    *
    * For a list — a roster, a report, a dashboard count — there is no single row to test, so the
    * query is built from a scope rather than decided per row. Taking that scope from the widest
@@ -379,17 +379,49 @@ export class AuthorizationService {
    * module narrowly would have its rows widened by a role that grants a wider scope and not the
    * module. So the answer is the widest scope **among the roles that actually grant this action**,
    * and `null` when no role grants it at all.
+   *
+   * It returns the departments too, and there is no kind-only variant on purpose: a caller given
+   * only the kind has to find the departments somewhere, and the only other place to find them is
+   * the reader's employment record.
+   *
+   * A list is built from a scope rather than decided row by row, so the scope has to carry its
+   * own departments. Deriving them from the reader's employment record instead was a same-tenant
+   * exposure: somebody granted one department was shown the department they happen to work in.
+   * Proven against the running product — a person granted `Head` over Customer Operations was
+   * served the whole of Operations, five people including their own Head and Manager, because
+   * that is where their employment record sits.
+   *
+   * The departments come only from the assignments that grant this action, so a wide department
+   * grant on a module somebody cannot open contributes nothing. An empty list is nobody, never
+   * everybody — a `Department` grant naming no department reaches no rows, which is the
+   * fail-closed reading of a misconfiguration.
    */
-  scopeForPermission(
+  reachForPermission(
     context: AuthorizationContext,
     module: ModuleKey,
     action: Action,
-  ): ScopeKind | null {
-    const reaching = context.units
-      .filter((unit) => (unit.permissions[module] ?? []).includes(action))
-      .map((unit) => unit.scope);
+  ): { kind: ScopeKind; departmentIds: readonly string[] } | null {
+    const reaching = context.units.filter((unit) =>
+      (unit.permissions[module] ?? []).includes(action),
+    );
+    if (reaching.length === 0) {
+      return null;
+    }
 
-    return reaching.length === 0 ? null : (widestGrant(reaching)?.kind ?? null);
+    const kind = widestGrant(reaching.map((unit) => unit.scope))?.kind;
+    if (kind === undefined) {
+      return null;
+    }
+
+    const departmentIds = [
+      ...new Set(
+        reaching
+          .filter((unit) => unit.scope.kind === 'Department' || unit.scope.kind === 'MultipleDepartments')
+          .flatMap((unit) => [...(unit.scope.departmentIds ?? [])]),
+      ),
+    ];
+
+    return { kind, departmentIds };
   }
 
   /** The refusal for somebody no role reaches — the fail-closed answer, in one place. */

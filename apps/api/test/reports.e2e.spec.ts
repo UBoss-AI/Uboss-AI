@@ -609,6 +609,104 @@ describe('reports and the company dashboard (e2e)', () => {
     assert.deepEqual(body.rows, [], 'an empty scope must produce an empty report, not all of them');
   });
 
+  it('reaches the department a grant names, not the one the reader works in', async () => {
+    /*
+     * The escalation this guards, reproduced against the running product before it was fixed.
+     *
+     *   • The reader is employed in Operations, alongside four colleagues.
+     *   • Their only department grant is `Head` over **Customer Operations**, where one other
+     *     person works and they do not.
+     *
+     * The departments were read from the reader's employment record, so the grant's own
+     * departments were decorative: a person granted one department was served the department they
+     * happen to sit in — their own Head, Manager and colleagues — and nobody noticed because in
+     * every ordinary case the two answers agree. They disagree here on purpose, in both
+     * directions: the department granted must appear, and the department worked in must not.
+     */
+    const customerOperations = await ctx.prisma.runInTenantTransaction(scope(), () =>
+      ctx.prisma.client.department.create({ data: { tenantId, name: 'Customer Operations' } }),
+    );
+
+    const cast = await ctx.prisma.runAsPlatformOperation(async () => {
+      const make = async (unique: string, email: string, name: string) => {
+        const user = await ctx.users.createForPlatform({
+          ubossUniqueId: unique,
+          email,
+          displayName: name,
+        });
+        await ctx.prisma.client.tenantMembership.create({
+          data: { tenantId, userId: user.id, accountState: 'Active' },
+        });
+        return user;
+      };
+      return {
+        reader: await make('UB-RPDH-0001', 'head@reports.example', 'Department Head'),
+        colleague: await make('UB-RPDC-0001', 'elsewhere@reports.example', 'Elsewhere'),
+      };
+    });
+
+    await ctx.prisma.runInTenantTransaction(scope(), async () => {
+      await ctx.prisma.client.employmentRecord.create({
+        data: {
+          tenantId,
+          userId: cast.reader.id,
+          employeeId: 'E-5',
+          // Operations — the department the old code would have served them.
+          departmentId,
+          designation: 'Tester',
+        },
+      });
+      await ctx.prisma.client.employmentRecord.create({
+        data: {
+          tenantId,
+          userId: cast.colleague.id,
+          employeeId: 'E-6',
+          departmentId: customerOperations.id,
+          designation: 'Tester',
+        },
+      });
+      await ctx.prisma.client.roleAssignment.create({
+        data: {
+          tenantId,
+          userId: cast.reader.id,
+          roleKind: 'Head',
+          scopeKind: 'Department',
+          departmentIds: [customerOperations.id],
+          grantedByUserId: platformId,
+        },
+      });
+    });
+
+    const resolver = app.get(ReportScopeService);
+
+    const roster = await resolver.forPeopleList({ scope: scope(), actorUserId: cast.reader.id });
+    assert.deepEqual(
+      roster.userIds,
+      [cast.colleague.id],
+      'the roster is the granted department, and only it',
+    );
+    assert.deepEqual(roster.departmentIds, [customerOperations.id]);
+    assert.equal(
+      roster.userIds?.includes(adminId),
+      false,
+      'the reader’s own department must not arrive with the grant',
+    );
+
+    const counts = await resolver.forDashboard({ scope: scope(), actorUserId: cast.reader.id });
+    assert.deepEqual(
+      counts.userIds,
+      [cast.colleague.id],
+      'and the dashboard resolves the same way, through a different permission',
+    );
+
+    // Over HTTP, on a report a Head may read: one row, and it is not the administrator's.
+    await seedApproval(adminId);
+    await seedApproval(cast.colleague.id);
+
+    const report = await reportFor(cast.reader.ubossUniqueId, 'ApprovalAging');
+    assert.equal(report.rows.length, 1, 'one department’s worth of rows, not the company’s');
+  });
+
   // -------------------------------------------------------------------------
   // Export is its own permission
   // -------------------------------------------------------------------------

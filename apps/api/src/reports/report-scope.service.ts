@@ -73,14 +73,20 @@ export class ReportScopeService {
      */
     const reaches = permissionsForReport(input.report).map(
       (permission) =>
-        this.authorization.scopeForPermission(context, permission.module, permission.action) ??
-        ReportScopeService.heldScope(context),
+        this.authorization.reachForPermission(context, permission.module, permission.action) ?? {
+          kind: ReportScopeService.heldScope(context),
+          departmentIds: [],
+        },
     );
+    const narrowest = ReportScopeService.narrowestScope(reaches.map((reach) => reach.kind));
 
     return this.resolve({
       scope: input.scope,
       actorUserId: input.actorUserId,
-      scopeKind: ReportScopeService.narrowestScope(reaches),
+      scopeKind: narrowest,
+      // The departments the granting assignments name, intersected across the required
+      // permissions: a report needing two grants reaches only where both reach.
+      departmentIds: ReportScopeService.commonDepartments(reaches),
     });
   }
 
@@ -104,8 +110,10 @@ export class ReportScopeService {
       actorUserId: input.actorUserId,
       // The roster is `users:View`, so it reaches as far as the roles granting that — and no
       // further, however wide a role that does not grant it happens to be.
-      scopeKind: this.authorization.scopeForPermission(context, 'users', 'View') ??
-        ReportScopeService.heldScope(context),
+      ...ReportScopeService.reachOf(
+        this.authorization.reachForPermission(context, 'users', 'View'),
+        context,
+      ),
     });
   }
 
@@ -120,8 +128,10 @@ export class ReportScopeService {
       actorUserId: input.actorUserId,
       // Every role grants `dashboard:View`, so in practice this is the widest scope the person
       // holds — but it is now *why* it is, rather than a coincidence of holding a wide role.
-      scopeKind: this.authorization.scopeForPermission(context, 'dashboard', 'View') ??
-        ReportScopeService.heldScope(context),
+      ...ReportScopeService.reachOf(
+        this.authorization.reachForPermission(context, 'dashboard', 'View'),
+        context,
+      ),
     });
   }
 
@@ -146,17 +156,6 @@ export class ReportScopeService {
   // -------------------------------------------------------------------------
 
   /**
-   * The widest scope any of this person's roles grants.
-   *
-   * Two roles mean the union of what they permit — a person who is both an Employee and a Manager
-   * is a manager. Taking the *narrowest* would make adding a role reduce somebody's reach, which
-   * nobody expects.
-   *
-   * Callers pass the scopes of the roles that grant the permission being exercised, never every
-   * role the person holds: a role that grants a module narrowly must not have its rows widened by
-   * a role that grants a wider scope and not that module. `scopeForPermission` answers that.
-   */
-  /**
    * What to resolve when **no** role grants the permission being exercised.
    *
    * Not `OwnWork`. A person whose only grant is a malformed one — a `Department` assignment naming
@@ -175,6 +174,18 @@ export class ReportScopeService {
     return ReportScopeService.widestScope(context.roleSummary.map((role) => role.scopeKind));
   }
 
+  /**
+   * The widest scope any of this person's roles grants.
+   *
+   * Two roles mean the union of what they permit — a person who is both an Employee and a Manager
+   * is a manager. Taking the *narrowest* would make adding a role reduce somebody's reach, which
+   * nobody expects.
+   *
+   * Used only for the fallback above, over the roles a person actually holds. The reach of one
+   * permission is a different question, and `AuthorizationService.reachForPermission` answers it:
+   * a role that grants a module narrowly must not have its rows widened by a role that grants a
+   * wider scope and not that module.
+   */
   private static widestScope(kinds: readonly ScopeKind[]): ScopeKind {
     const order: ScopeKind[] = [
       'SelectedResource',
@@ -219,10 +230,55 @@ export class ReportScopeService {
     return narrowest;
   }
 
+  /**
+   * One permission's reach, in the shape `resolve` takes.
+   *
+   * `null` means no role grants this permission at all, and the fallback is the scope they do
+   * hold, naming no departments — so a person whose only department grant is on some *other*
+   * module reaches nobody here rather than reaching their own department.
+   */
+  private static reachOf(
+    reach: { kind: ScopeKind; departmentIds: readonly string[] } | null,
+    context: { roleSummary: readonly { scopeKind: ScopeKind }[] },
+  ): { scopeKind: ScopeKind; departmentIds: readonly string[] } {
+    if (reach === null) {
+      return { scopeKind: ReportScopeService.heldScope(context), departmentIds: [] };
+    }
+    return { scopeKind: reach.kind, departmentIds: reach.departmentIds };
+  }
+
+  /**
+   * The departments *every* required permission reaches — for a report that needs more than one.
+   *
+   * Intersection, to match `narrowestScope`: two doors, and only the rows behind both. Reaches
+   * that name no department at all (a `WholeCompany` or `TeamSubtree` grant) are not a
+   * constraint and are left out of the intersection rather than emptying it; when the narrowest
+   * kind is a department kind, at least one reach names departments, and those are the ones that
+   * count.
+   */
+  private static commonDepartments(
+    reaches: readonly { departmentIds: readonly string[] }[],
+  ): readonly string[] {
+    const naming = reaches.filter((reach) => reach.departmentIds.length > 0);
+    const first = naming[0];
+    if (first === undefined) {
+      return [];
+    }
+    return first.departmentIds.filter((id) =>
+      naming.every((reach) => reach.departmentIds.includes(id)),
+    );
+  }
+
   private async resolve(input: {
     scope: TenantScope;
     actorUserId: string;
     scopeKind: ScopeKind;
+    /**
+     * The departments the *granting* assignments name. Required, not optional: a caller that
+     * forgot it would silently resolve to nobody, and a caller that could omit it would
+     * eventually be written to omit it.
+     */
+    departmentIds: readonly string[];
   }): Promise<ReportScope> {
     const description = SCOPE_DESCRIPTIONS[input.scopeKind];
 
@@ -239,7 +295,15 @@ export class ReportScopeService {
 
       case 'Department':
       case 'MultipleDepartments': {
-        const departments = await this.departmentsOf(input.scope, input.actorUserId);
+        /*
+         * The departments the grant names — never the reader's own.
+         *
+         * Reading them from the employment record was the escalation: a grant naming one
+         * department served whichever department the reader happens to work in, so a Head granted
+         * Customer Operations was shown the whole of Operations, and the person granted the
+         * department they already work in never noticed because the two answers agreed.
+         */
+        const departments = [...input.departmentIds];
         const userIds = await this.usersInDepartments(input.scope, departments);
         return { kind: input.scopeKind, userIds, departmentIds: departments, description };
       }
@@ -272,16 +336,6 @@ export class ReportScopeService {
           description,
         };
     }
-  }
-
-  private async departmentsOf(scope: TenantScope, userId: string): Promise<string[]> {
-    const records = await this.prisma.runInTenantTransaction(scope, () =>
-      this.prisma.client.employmentRecord.findMany({
-        where: { tenantId: scope.tenantId, userId },
-        select: { departmentId: true },
-      }),
-    );
-    return [...new Set(records.map((record) => record.departmentId))];
   }
 
   private async usersInDepartments(

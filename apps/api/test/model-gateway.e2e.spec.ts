@@ -29,6 +29,7 @@ import {
   PROVIDER_ADAPTERS,
   ProviderAdapter,
   ProviderNotConfiguredError,
+  userTurnFor,
 } from '../src/model-gateway/provider-adapter.js';
 import { ProviderController } from '../src/model-gateway/provider.controller.js';
 import { ProviderService } from '../src/model-gateway/provider.service.js';
@@ -40,6 +41,7 @@ import { OrganizationRepository } from '../src/persistence/organization.reposito
 import { OutboxRepository } from '../src/persistence/outbox.repository.js';
 import { PlatformRepository } from '../src/persistence/platform.repository.js';
 import { PrismaService } from '../src/persistence/prisma.service.js';
+import { tenantScopeForPlatformOperation } from '../src/persistence/tenant-context.js';
 import { TenantRepository } from '../src/persistence/tenant.repository.js';
 import { UserRepository } from '../src/persistence/user.repository.js';
 import { ActorResolver, DevHeaderActorResolver } from '../src/request-context/actor-resolver.js';
@@ -521,6 +523,124 @@ describe('provider profiles and the model gateway (e2e)', () => {
       await assert.rejects(() => callGateway('OBJECTIVE_PLANNER'), ProviderNotConfiguredError);
     });
 
+    it('changes a routing decision rather than failing on the slot already being taken', async () => {
+      /*
+       * `setRoute` only inserted, and two partial unique indexes made that unusable:
+       * `(profile, preference)` and `(profile, provider_model_id)`. Every profile is seeded with
+       * a route at preference 0, so setting one raised P2002 and surfaced as a **500**, with no
+       * delete route to recover with — a routing decision, once made, could not be changed.
+       * Proven against the running product in `apps/web/tmp/anthropic-wire.mjs`.
+       */
+      const before = await providers().viewProfile('AGENT_FAST', null);
+      assert.ok(before.routes.length > 0, 'the fixture must start with a route to replace');
+
+      // The slot preference 0 already holds. This must replace it, not collide with it.
+      await providers().setRoute({
+        actorUserId: platformOwnerId,
+        tenantId: null,
+        profile: 'AGENT_FAST',
+        providerModelId: REASONING_MODEL,
+        preference: 0,
+      });
+
+      const after = await providers().viewProfile('AGENT_FAST', null);
+      const atZero = after.routes.filter((candidate) => candidate.preference === 0);
+      assert.equal(atZero.length, 1, 'one model per slot, still');
+      assert.equal(atZero[0]?.providerModelId, REASONING_MODEL, 'the slot now holds the new model');
+
+      // Setting the same model again is idempotent rather than a second row.
+      await providers().setRoute({
+        actorUserId: platformOwnerId,
+        tenantId: null,
+        profile: 'AGENT_FAST',
+        providerModelId: REASONING_MODEL,
+        preference: 0,
+      });
+      const twice = await providers().viewProfile('AGENT_FAST', null);
+      assert.equal(
+        twice.routes.filter((candidate) => candidate.preference === 0).length,
+        1,
+        'setting the same route twice must not duplicate it',
+      );
+
+      // A model already answering this profile is *moved*, not duplicated — the second index.
+      await providers().setRoute({
+        actorUserId: platformOwnerId,
+        tenantId: null,
+        profile: 'AGENT_FAST',
+        providerModelId: REASONING_MODEL,
+        preference: 2,
+      });
+      const moved = await providers().viewProfile('AGENT_FAST', null);
+      const forModel = moved.routes.filter(
+        (candidate) => candidate.providerModelId === REASONING_MODEL,
+      );
+      assert.equal(forModel.length, 1, 'one route per model per profile, still');
+      assert.equal(forModel[0]?.preference, 2, 'and it moved to the preference asked for');
+
+      /*
+       * The trail says what was overwritten, not only what is there now — asserted on a
+       * **company** route, because a platform-plane change has no company to attribute itself to
+       * and is logged rather than written to `audit_events`. That is pre-existing and deliberate;
+       * asserting an audit row for the platform case would be asserting something the product
+       * does not claim.
+       */
+      const byok = await providers().createProfile({
+        actorUserId: platformOwnerId,
+        tenantId,
+        kind: 'Mock',
+        mode: 'CompanyBYOK',
+        label: 'Route replacement trail',
+      });
+      const first = await providers().addModel({
+        actorUserId: platformOwnerId,
+        providerProfileId: byok.id,
+        providerModelRef: 'theirs-one',
+        capability: 'byok-v1',
+      });
+      const second = await providers().addModel({
+        actorUserId: platformOwnerId,
+        providerProfileId: byok.id,
+        providerModelRef: 'theirs-two',
+        capability: 'byok-v1',
+      });
+
+      await providers().setRoute({
+        actorUserId: platformOwnerId,
+        tenantId,
+        profile: 'AGENT_STANDARD',
+        providerModelId: first.id,
+        preference: 0,
+      });
+      await providers().setRoute({
+        actorUserId: platformOwnerId,
+        tenantId,
+        profile: 'AGENT_STANDARD',
+        providerModelId: second.id,
+        preference: 0,
+      });
+
+      const companyView = await providers().viewProfile('AGENT_STANDARD', tenantId);
+      const slot = companyView.routes.filter((route) => route.preference === 0);
+      assert.equal(slot.length, 1, 'a company slot holds one model too');
+      assert.equal(slot[0]?.providerModelId, second.id, 'and the second grant displaced the first');
+
+      const events = await ctx.prisma.runInTenantTransaction(tenantScopeForPlatformOperation(tenantId), () =>
+        ctx.prisma.client.auditEvent.findMany({
+          where: { tenantId, action: 'providers.route_set' },
+          orderBy: { occurredAt: 'desc' },
+          take: 5,
+        }),
+      );
+      assert.ok(events.length > 0, 'a company routing change must be audited');
+      const named = events.some((event) => {
+        const metadata = event.metadata as Record<string, unknown> | null;
+        const replaced = metadata?.['replacedProviderModelIds'];
+        return typeof replaced === 'string' && replaced.includes(first.id);
+      });
+      assert.ok(named, 'the audit trail must name the route that was displaced');
+    });
+
     it('records an unroutable call so the gap is visible rather than silent', async () => {
       await ctx.prisma.runAsPlatformOperation(() =>
         ctx.prisma.client.logicalModelRoute.deleteMany({ where: { profile: 'EXECUTOR' } }),
@@ -538,6 +658,33 @@ describe('provider profiles and the model gateway (e2e)', () => {
   // -------------------------------------------------------------------------
   // 4. Company BYOK
   // -------------------------------------------------------------------------
+
+  describe('the request a provider is actually sent', () => {
+    /*
+     * A stage with nothing to classify sends an empty context, and every real provider rejects an
+     * empty user turn. Anthropic is explicit about it:
+     *
+     *     400 — "messages.0: user messages must have non-empty content"
+     *
+     * Found by wiring a live key: an objective analysis on a draft whose steps were all human
+     * work ran three stages against Claude and then failed at *Identifying AI work*, because
+     * there were no AI steps to send. Asserted on the shared helper rather than by calling a
+     * provider, so it holds without a credential and without a network.
+     */
+    it('never sends an empty user turn, whatever the caller passes', () => {
+      assert.equal(userTurnFor(''), '(none)');
+      assert.equal(userTurnFor('   '), '(none)');
+      assert.equal(userTurnFor(['', ''].join('\n')), '(none)');
+    });
+
+    it('passes real context through untouched', () => {
+      assert.equal(userTurnFor('Check the branch files'), 'Check the branch files');
+      // Not trimmed: the caller joined these lines on purpose and the shape is part of the input.
+      const joined = ['one', 'two'].join('\n');
+      assert.equal(userTurnFor(joined), joined);
+      assert.equal(userTurnFor(' leading and trailing '), ' leading and trailing ');
+    });
+  });
 
   describe('company modes', () => {
     it('lets a company BYOK profile override the platform default outright', async () => {

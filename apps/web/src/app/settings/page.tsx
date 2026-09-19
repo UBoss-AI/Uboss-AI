@@ -11,7 +11,7 @@ import {
   CardHeader,
   DataTable,
   FormField,
-  PageHeader,
+  Modal,
   SETTINGS_SECTIONS,
   SettingsShell,
   SkeletonText,
@@ -227,6 +227,28 @@ export default function CompanySettingsPage() {
       .finally(() => setSaving(false));
   }, [draft, load, reason, tenantId]);
 
+  /**
+   * Leaving the dialog.
+   *
+   * The same unsaved-change guard the category switch uses, for the same reason: closing with a
+   * half-filled panel discards it, and the browser's `beforeunload` cannot speak for an in-app
+   * navigation. Back is preferred over a fixed route so Settings returns you where you were; the
+   * dashboard is the fallback for somebody who opened `/settings` directly and has no history.
+   */
+  const close = useCallback(() => {
+    if (
+      dirty &&
+      !window.confirm('You have unsaved changes on this panel. Leaving now discards them. Continue?')
+    ) {
+      return;
+    }
+    if (window.history.length > 1) {
+      router.back();
+      return;
+    }
+    router.push('/dashboard');
+  }, [dirty, router]);
+
   const switchCategory = useCallback(
     (key: string) => {
       if (
@@ -332,12 +354,25 @@ export default function CompanySettingsPage() {
         void authApi.logout().finally(() => window.location.assign('/login'));
       }}
     >
-      <PageHeader
-        title="Settings"
-        description="Company configuration, scoped to what your role permits."
-        breadcrumbs={[{ label: 'Settings' }, { label: activeSection?.label ?? '' }]}
-      />
+      {/*
+        Settings opens as a dialog over the workspace rather than as a page beside the sidebar.
 
+        The client's reading, and it is the right one: Settings is somewhere you *go into* and
+        come back from, not a destination you browse. A dialog says that — the workspace stays
+        visible behind it, dimmed and blurred by the existing `.uboss-overlay` scrim, and closing
+        returns you to where you were rather than to a blank page.
+
+        `Modal` is reused rather than re-built: it already traps focus, closes on Escape, dismisses
+        on a backdrop click and never on a click inside. The only addition is a width — a settings
+        dialog carries a navigation column beside its panel, which the 720px wide modifier cannot
+        hold.
+      */}
+      <Modal
+        open
+        onClose={close}
+        title="Settings"
+        className="uboss-modal--settings"
+      >
       {error ? <Banner tone="danger">{error}</Banner> : null}
       {notice ? <Banner tone="ok">{notice}</Banner> : null}
 
@@ -466,24 +501,36 @@ export default function CompanySettingsPage() {
                       </Banner>
                     ) : null}
 
-                    <div className="uboss-actions">
-                      <Button
-                        variant="primary"
-                        disabled={!dirty || saving || (materialDirty && reason.trim().length < 5)}
-                        onClick={save}
-                      >
-                        {saving ? 'Saving…' : 'Save changes'}
-                      </Button>
-                      <Button
-                        disabled={!dirty || saving}
-                        onClick={() => {
-                          setDraft({});
-                          setReason('');
-                        }}
-                      >
-                        Discard
-                      </Button>
-                    </div>
+                    {/*
+                      No Save on a panel where nothing is yours to change.
+
+                      The buttons were always rendered and merely disabled — correct in behaviour,
+                      because a read-only panel can never become dirty, but it offered a Head, a
+                      Manager and an Employee a permanently dead Save beside a "Read only" badge.
+                      The approved rule for a view-only setting is "controls disabled, no Save
+                      action", so the row goes rather than sitting there greyed out for ever. The
+                      server refuses the write either way; this is what the screen says about it.
+                    */}
+                    {category?.anyEditable ? (
+                      <div className="uboss-actions">
+                        <Button
+                          variant="primary"
+                          disabled={!dirty || saving || (materialDirty && reason.trim().length < 5)}
+                          onClick={save}
+                        >
+                          {saving ? 'Saving…' : 'Save changes'}
+                        </Button>
+                        <Button
+                          disabled={!dirty || saving}
+                          onClick={() => {
+                            setDraft({});
+                            setReason('');
+                          }}
+                        >
+                          Discard
+                        </Button>
+                      </div>
+                    ) : null}
                   </>
                 )}
 
@@ -608,6 +655,7 @@ export default function CompanySettingsPage() {
           </SettingsShell>
         </>
       )}
+      </Modal>
     </RoutedAppShell>
   );
 }

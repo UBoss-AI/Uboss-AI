@@ -2337,6 +2337,22 @@ textarea.uboss-input,
   width: min(720px, 94vw);
 }
 
+/*
+  The Settings dialog.
+
+  Wider than `--wide` because it is not a form: it carries a 250px navigation column beside its
+  panel, and at 720px the panel had less room than the list next to it. Tall, too — a settings
+  panel is a list of controls and a dialog that shows four of them makes people scroll to find
+  the one they came for.
+
+  `min(1120px, 95vw)` rather than a fixed width so the whole thing still fits a 1024 screen, and
+  the shell's own responsive rule collapses the two columns below 768.
+*/
+.uboss-modal--settings {
+  width: min(1120px, 95vw);
+  max-height: 90vh;
+}
+
 @keyframes uboss-pop {
   from {
     transform: translateY(6px);
