@@ -192,18 +192,21 @@ model Tenant {
   knowledgeSources     KnowledgeSource[]
   knowledgeSourceFiles KnowledgeSourceFile[]
   knowledgePolicy      CompanyKnowledgePolicy?
-  exits              CompanyExit[]
-  supportTickets     SupportTicket[]
-  supportTicketNotes SupportTicketNote[]
+  exits                CompanyExit[]
+  supportTickets       SupportTicket[]
+  supportTicketNotes   SupportTicketNote[]
 
   idempotencyRecords IdempotencyRecord[]
 
   // ---- Prompt 40A (CR-03) ----
-  employeePhotos      EmployeePhoto[]
+  employeePhotos       EmployeePhoto[]
   engineAgentOperators EngineAgentOperator[]
-  jobMethods          JobMethod[]
-  jobMethodImports    JobMethodImport[]
-  chatConversations   ChatConversation[]
+  jobMethods           JobMethod[]
+  jobMethodImports     JobMethodImport[]
+  chatConversations    ChatConversation[]
+
+  /// Which Industry Packs this company is entitled to. See `TenantSkillPack`.
+  skillPacks TenantSkillPack[]
 
   /// The Master Console filters companies by lifecycle state.
   @@index([lifecycleState])
@@ -2332,14 +2335,14 @@ model ServiceAlert {
   /// **The postmortem.** Required before a P0 or P1 may be resolved — §30 lists it as part of the
   /// incident, and the whole value of a severity scale is that the serious ones are treated
   /// differently. A P2 may close on its mitigation note alone.
-  postmortem           String?   @db.Text
-  postmortemAt         DateTime? @map("postmortem_at") @db.Timestamptz(6)
-  postmortemByUserId   String?   @map("postmortem_by_user_id") @db.Uuid
+  postmortem         String?   @db.Text
+  postmortemAt       DateTime? @map("postmortem_at") @db.Timestamptz(6)
+  postmortemByUserId String?   @map("postmortem_by_user_id") @db.Uuid
 
   /// Tickets that turned out to be about this incident.
   tickets SupportTicket[]
 
-  timeline        IncidentTimelineEntry[]
+  timeline          IncidentTimelineEntry[]
   correctiveActions CorrectiveAction[]
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -3882,9 +3885,9 @@ model Connection {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  toolGrants ConnectionToolGrant[]
+  toolGrants       ConnectionToolGrant[]
   knowledgeSources KnowledgeSource[]
-  checks     ConnectionCheck[]
+  checks           ConnectionCheck[]
 
   @@unique([tenantId, id])
   /// One connection per connector, environment and owner. A second identical one is almost
@@ -4054,6 +4057,22 @@ model Skill {
   /// Which industry, for a pack. Null otherwise.
   industry String? @db.VarChar(80)
 
+  /// The business function this Skill belongs to — "Executive & Strategy", "Quality & Compliance".
+  ///
+  /// Its own column rather than `SkillVersion.category`, and for two reasons: the catalogue's
+  /// department names run to 65 characters where `category` is a closed nine-value vocabulary of
+  /// 40, and a department does not change between versions. The Skill Catalog filters on it, so
+  /// it is a column rather than a key in a JSON blob.
+  ///
+  /// Null for a Skill a company authored without one.
+  department String? @db.VarChar(120)
+
+  /// What kind of work this Skill does — "Analyst / Scorer", "Validator / Auditor".
+  ///
+  /// Kept verbatim from the source catalogue beside the `category` it was mapped onto, so the
+  /// mapping stays inspectable rather than being the only surviving record of it.
+  archetype String? @db.VarChar(60)
+
   /// Accountable person. Null for a platform Skill, whose owner is UBoss.
   ownerUserId String? @map("owner_user_id") @db.Uuid
 
@@ -4082,6 +4101,9 @@ model Skill {
   @@index([tenantId, layer])
   @@index([layer, industry])
   @@index([clonedFromSkillId])
+  /// The Skill Catalog's own filters: four hundred rows browsed by function and by kind.
+  @@index([layer, department])
+  @@index([layer, archetype])
   @@map("skills")
 }
 
@@ -4131,9 +4153,19 @@ model SkillVersion {
   validation      String @db.VarChar(2000)
   failureHandling String @map("failure_handling") @db.VarChar(2000)
 
-  requiresApproval    Boolean           @default(true) @map("requires_approval")
-  autonomy            SkillAutonomyKind @default(ProposeForApproval)
-  evidenceRequirement String            @map("evidence_requirement") @db.VarChar(2000)
+  requiresApproval Boolean           @default(true) @map("requires_approval")
+  autonomy         SkillAutonomyKind @default(ProposeForApproval)
+
+  /// The autonomy word the source catalogue used, kept beside the enum it was mapped onto.
+  ///
+  /// The mapping is lossy on purpose and fails closed: a catalogue's "A1 — Read / analyze" and
+  /// "A2 — Draft / recommend" both become `SuggestOnly`, and "A3 — Write only after approval"
+  /// and "A4 — Human authority required" both become `ProposeForApproval`. Nothing in an
+  /// imported catalogue authorises acting without approval, so nothing maps to `ActThenReport`
+  /// or `FullyAutonomous`. Recording the original makes that reading checkable instead of
+  /// something a reader has to take on trust.
+  sourceAutonomy      String? @map("source_autonomy") @db.VarChar(60)
+  evidenceRequirement String  @map("evidence_requirement") @db.VarChar(2000)
 
   // ---- Provenance and governance trail ----
   creationMode        SkillCreationModeKind @default(Manual) @map("creation_mode")
@@ -4167,6 +4199,50 @@ model SkillVersion {
   @@index([tenantId, status])
   @@index([skillId, status])
   @@map("skill_versions")
+}
+
+/// Which Industry Packs a company is entitled to.
+///
+/// ## Why an entitlement row rather than copies
+///
+/// `UbossVerified` and `IndustryPack` Skills are platform-owned: one canonical row each, with
+/// `tenant_id IS NULL`, which `skill_layer_matches_its_owner` already insists on. Copying four
+/// hundred of them into every company would make the catalogue a thing that drifts — a fix to a
+/// Verified Skill would have to be replayed into every tenant, and the copies would answer
+/// differently depending on when a company was provisioned.
+///
+/// So the catalogue is shared and the *entitlement* is per company. Row-level security already
+/// lets every tenant read a `tenant_id IS NULL` Skill, which is right for the Universal layer —
+/// every company gets those. It is not right for an Industry Pack: a healthcare company has no
+/// business browsing the defence pack. This table is what narrows it, applied in the service
+/// rather than in RLS, because "may read the catalogue" and "is entitled to this pack" are
+/// different questions and only the second one varies by company.
+///
+/// CompanyCustom Skills are unaffected: they carry a real `tenant_id` and RLS isolates them.
+model TenantSkillPack {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  tenantId String @map("tenant_id") @db.Uuid
+
+  /// Matches `Skill.industry` exactly. A string rather than a foreign key because the industry
+  /// vocabulary belongs to the catalogue, which is platform data a company cannot edit.
+  industry String @db.VarChar(80)
+
+  /// Who turned it on, and why. Platform staff enable a pack; it is a commercial act.
+  enabledByUserId String?  @map("enabled_by_user_id") @db.Uuid
+  enabledAt       DateTime @default(now()) @map("enabled_at") @db.Timestamptz(6)
+  reason          String   @db.VarChar(1000)
+
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  rowVersion Int      @default(1) @map("row_version")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// One row per pack per company. Enabling twice is the same fact, not two.
+  @@unique([tenantId, industry])
+  @@index([industry])
+  @@map("tenant_skill_packs")
 }
 
 /// Every lifecycle move, append-only.
@@ -5633,7 +5709,7 @@ model EngineAgent {
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
   version         Int      @default(1) @map("row_version")
 
-  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant      Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   versions    EngineAgentVersion[]
   operators   EngineAgentOperator[]
   assignments AiWorkAssignment[]
@@ -6963,13 +7039,13 @@ model StoredFile {
   contentHash String? @map("content_hash") @db.VarChar(64)
 
   /// From `FILE_SCAN_STATES`.
-  scanState  String    @default("Pending") @map("scan_state") @db.VarChar(20)
-  scannedAt  DateTime? @map("scanned_at") @db.Timestamptz(6)
+  scanState            String    @default("Pending") @map("scan_state") @db.VarChar(20)
+  scannedAt            DateTime? @map("scanned_at") @db.Timestamptz(6)
   /// What the scanner said. Free text: it names a product UBoss does not own.
-  scanResult String?   @map("scan_result") @db.VarChar(500)
+  scanResult           String?   @map("scan_result") @db.VarChar(500)
   /// **False for the mock scanner.** The same rule as `produced_by_real_model`: a compliance
   /// report must never present an unscanned file as scanned by a real product.
-  scannedByRealScanner Boolean? @map("scanned_by_real_scanner")
+  scannedByRealScanner Boolean?  @map("scanned_by_real_scanner")
 
   /// From `DATA_CLASSIFICATIONS`.
   classification String @default("Internal") @db.VarChar(20)
@@ -6980,17 +7056,17 @@ model StoredFile {
 
   /// **A legal hold beats everything** — retention, and an explicit request from an administrator.
   /// A hold that could be overridden by the policy it was placed against would not be one.
-  onLegalHold      Boolean   @default(false) @map("on_legal_hold")
-  legalHoldReason  String?   @map("legal_hold_reason") @db.VarChar(500)
-  legalHoldPlacedAt DateTime? @map("legal_hold_placed_at") @db.Timestamptz(6)
-  legalHoldPlacedByUserId String? @map("legal_hold_placed_by_user_id") @db.Uuid
+  onLegalHold             Boolean   @default(false) @map("on_legal_hold")
+  legalHoldReason         String?   @map("legal_hold_reason") @db.VarChar(500)
+  legalHoldPlacedAt       DateTime? @map("legal_hold_placed_at") @db.Timestamptz(6)
+  legalHoldPlacedByUserId String?   @map("legal_hold_placed_by_user_id") @db.Uuid
 
   uploadedByUserId String   @map("uploaded_by_user_id") @db.Uuid
   uploadedAt       DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(6)
 
-  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(6)
-  deletedReason String?   @map("deleted_reason") @db.VarChar(500)
-  deletedByUserId String? @map("deleted_by_user_id") @db.Uuid
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
+  deletedReason   String?   @map("deleted_reason") @db.VarChar(500)
+  deletedByUserId String?   @map("deleted_by_user_id") @db.Uuid
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -7130,7 +7206,7 @@ model CompanyKnowledgePolicy {
   defaultRetentionAction String @default("DeleteContent") @map("default_retention_action") @db.VarChar(30)
 
   /// The two ceilings §22 asks for. Export is within the company; egress leaves it.
-  exportCeiling String @default("Confidential") @map("export_ceiling") @db.VarChar(20)
+  exportCeiling         String @default("Confidential") @map("export_ceiling") @db.VarChar(20)
   /// **Nothing above `Internal` leaves the company by default.** The strictest default here:
   /// too strict costs a settings change, too loose costs a confidential document in somebody
   /// else's system.
@@ -7145,7 +7221,6 @@ model CompanyKnowledgePolicy {
 
   @@map("company_knowledge_policies")
 }
-
 
 /// A support ticket.
 ///
@@ -7171,11 +7246,11 @@ model SupportTicket {
   body    String @db.VarChar(8000)
 
   /// From `SUPPORT_TICKET_KINDS`.
-  kind String @db.VarChar(30)
+  kind     String @db.VarChar(30)
   /// From `SUPPORT_PRIORITIES`. The company's view of urgency, deliberately not an incident P-level.
   priority String @default("Normal") @db.VarChar(20)
   /// From `SUPPORT_TICKET_STATES`.
-  state String @default("New") @db.VarChar(30)
+  state    String @default("New") @db.VarChar(30)
 
   /// Who raised it. A person in the company, never a platform operator: a ticket an operator
   /// invented on a customer's behalf would put words in their mouth.
@@ -7232,7 +7307,7 @@ model SupportTicketNote {
   /// True for an operational note between UBoss people; false for a reply the company sees.
   isInternal Boolean @default(true) @map("is_internal")
 
-  authorUserId String  @map("author_user_id") @db.Uuid
+  authorUserId     String  @map("author_user_id") @db.Uuid
   /// True when the author is UBoss rather than the company. Recorded rather than derived,
   /// because a person can leave the platform and the note still has to say who side it came from.
   authorIsOperator Boolean @default(false) @map("author_is_operator")
@@ -7247,7 +7322,6 @@ model SupportTicketNote {
   @@index([tenantId, supportTicketId, createdAt])
   @@map("support_ticket_notes")
 }
-
 
 /// A company's exit from UBoss — Prompt 38.
 ///
@@ -7283,10 +7357,10 @@ model CompanyExit {
 
   /// Who asked. A platform operator or a company administrator — both are legitimate, and which
   /// it was matters, so it is recorded rather than inferred.
-  requestedByUserId String   @map("requested_by_user_id") @db.Uuid
-  requestedAt       DateTime @default(now()) @map("requested_at") @db.Timestamptz(6)
+  requestedByUserId   String   @map("requested_by_user_id") @db.Uuid
+  requestedAt         DateTime @default(now()) @map("requested_at") @db.Timestamptz(6)
   /// True when the company asked to leave rather than UBoss ending the contract.
-  requestedByCustomer Boolean @default(false) @map("requested_by_customer")
+  requestedByCustomer Boolean  @default(false) @map("requested_by_customer")
 
   /// **Never the requester.** A check constraint refuses it: ending a customer's contract and
   /// approving that decision are two people, the same rule as break-glass and every other
@@ -7302,31 +7376,31 @@ model CompanyExit {
   retentionDays Int @default(30) @map("retention_days")
 
   /// The three dates, computed once at approval.
-  readOnlyFrom          DateTime? @map("read_only_from") @db.Timestamptz(6)
-  retentionFrom         DateTime? @map("retention_from") @db.Timestamptz(6)
-  deletionEligibleFrom  DateTime? @map("deletion_eligible_from") @db.Timestamptz(6)
+  readOnlyFrom         DateTime? @map("read_only_from") @db.Timestamptz(6)
+  retentionFrom        DateTime? @map("retention_from") @db.Timestamptz(6)
+  deletionEligibleFrom DateTime? @map("deletion_eligible_from") @db.Timestamptz(6)
 
   /// When the export package was last produced, and how many rows it carried. The package itself
   /// is not stored: it is generated on request and handed to the customer.
-  exportedAt      DateTime? @map("exported_at") @db.Timestamptz(6)
-  exportedByUserId String?  @map("exported_by_user_id") @db.Uuid
-  exportedRowCount Int?     @map("exported_row_count")
+  exportedAt       DateTime? @map("exported_at") @db.Timestamptz(6)
+  exportedByUserId String?   @map("exported_by_user_id") @db.Uuid
+  exportedRowCount Int?      @map("exported_row_count")
 
   /// The deletion certificate — step 7. Written by the deletion itself.
-  deletedAt          DateTime? @map("deleted_at") @db.Timestamptz(6)
-  deletedByUserId    String?   @map("deleted_by_user_id") @db.Uuid
+  deletedAt         DateTime? @map("deleted_at") @db.Timestamptz(6)
+  deletedByUserId   String?   @map("deleted_by_user_id") @db.Uuid
   /// How many rows were removed, per table, as recorded at the time. **The evidence.** A
   /// certificate that said only "deleted" would be unfalsifiable; this can be read against the
   /// classification and checked.
-  deletionManifest   Json?     @map("deletion_manifest")
-  deletedRowCount    Int?      @map("deleted_row_count")
+  deletionManifest  Json?     @map("deletion_manifest")
+  deletedRowCount   Int?      @map("deleted_row_count")
   /// How many rows were deliberately kept, and under which disposition.
-  preservedRowCount  Int?      @map("preserved_row_count")
+  preservedRowCount Int?      @map("preserved_row_count")
 
-  cancelledAt       DateTime? @map("cancelled_at") @db.Timestamptz(6)
-  cancelledByUserId String?   @map("cancelled_by_user_id") @db.Uuid
+  cancelledAt        DateTime? @map("cancelled_at") @db.Timestamptz(6)
+  cancelledByUserId  String?   @map("cancelled_by_user_id") @db.Uuid
   /// Required on a cancellation: stopping an exit is as consequential as starting one.
-  cancellationReason String?  @map("cancellation_reason") @db.VarChar(1000)
+  cancellationReason String?   @map("cancellation_reason") @db.VarChar(1000)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -7338,7 +7412,6 @@ model CompanyExit {
   @@index([state, deletionEligibleFrom])
   @@map("company_exits")
 }
-
 
 /// One entry in an incident's timeline — Prompt 39.
 ///
@@ -7596,7 +7669,7 @@ model JobMethod {
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
   version         Int      @default(1) @map("row_version")
 
-  tenant  Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant  Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   rows    JobMethodRow[]
   imports JobMethodImport[]
 
@@ -7663,7 +7736,7 @@ model JobMethodImport {
   tenantId    String @map("tenant_id") @db.Uuid
   jobMethodId String @map("job_method_id") @db.Uuid
 
-  filename String @db.VarChar(400)
+  filename    String @db.VarChar(400)
   /// SHA-256 of the uploaded bytes, so the same file resubmitted is recognisable.
   contentHash String @map("content_hash") @db.Char(64)
 
@@ -7722,7 +7795,7 @@ model ChatConversation {
 
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  tenant       Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   participants ChatParticipant[]
   messages     ChatMessage[]
   contextRefs  ChatContextRefRow[]

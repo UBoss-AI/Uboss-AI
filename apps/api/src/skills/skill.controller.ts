@@ -20,6 +20,7 @@ import {
   IsUUID,
   Matches,
   MaxLength,
+  Max,
   Min,
   MinLength,
   ValidateNested,
@@ -173,12 +174,54 @@ export class CatalogueQueryDto {
   @IsOptional() @IsIn(SKILL_LAYERS) layer?: SkillLayer;
   @IsOptional() @IsIn(SKILL_CATEGORIES) category?: SkillCategory;
 
+  /*
+   * Free text rather than a closed list, and deliberately: the catalogue carries fifty
+   * departments and twelve archetypes that arrived with it, and pinning them into an enum here
+   * would mean a catalogue update could not add one without a code change. An unknown value
+   * matches nothing, which is the safe failure.
+   */
+  @IsOptional() @IsString() @MaxLength(120) department?: string;
+  @IsOptional() @IsString() @MaxLength(60) archetype?: string;
+  @IsOptional() @IsString() @MaxLength(160) search?: string;
+
   @IsOptional()
   @Transform(({ value }: { value: unknown }) =>
     value === undefined ? undefined : value === true || value === 'true',
   )
   @IsBoolean()
   publishedOnly?: boolean;
+}
+
+/** What the Agent Builder's Skill picker may narrow by. */
+export class BuilderSkillQueryDto {
+  @IsOptional() @IsString() @MaxLength(160) search?: string;
+  @IsOptional() @IsString() @MaxLength(120) department?: string;
+}
+
+/** What the Master Console's Skill Catalog browses by. */
+export class PlatformCatalogueQueryDto {
+  @IsOptional() @IsIn(SKILL_LAYERS) layer?: SkillLayer;
+  @IsOptional() @IsString() @MaxLength(80) industry?: string;
+  @IsOptional() @IsString() @MaxLength(120) department?: string;
+  @IsOptional() @IsString() @MaxLength(60) archetype?: string;
+  @IsOptional() @IsString() @MaxLength(160) search?: string;
+
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) skip?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(200) take?: number;
+}
+
+/** Entitling a company to an Industry Pack, or withdrawing it. */
+export class PackEntitlementDto {
+  @IsString() @MinLength(1) @MaxLength(80) industry!: string;
+
+  @Transform(({ value }: { value: unknown }) => value === true || value === 'true')
+  @IsBoolean()
+  enabled!: boolean;
+
+  @IsString()
+  @MinLength(5, { message: 'reason must say why this company is being given or losing a pack.' })
+  @MaxLength(1000)
+  reason!: string;
 }
 
 export class CreatePlatformSkillDto extends CreateSkillDto {
@@ -235,15 +278,44 @@ export class SkillController {
     };
   }
 
+  /**
+   * The governed catalogue, for a company administrator.
+   *
+   * `Administer`, and that is a tightening from `View`. The Settings → Skills category has
+   * always required `settings:Administer` to appear, so an Employee reaching the same four
+   * hundred governed Skills through this route was the screen and the route disagreeing. The
+   * service asserts it again — this guard is the floor, not the decision.
+   */
   @Get()
-  @RequirePermission({ module: 'settings', action: 'View' })
+  @RequirePermission({ module: 'settings', action: 'Administer' })
   async catalogue(@Query() query: CatalogueQueryDto): Promise<unknown> {
     return this.skills.catalogueFor({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
       ...(query.layer === undefined ? {} : { layer: query.layer }),
       ...(query.category === undefined ? {} : { category: query.category }),
+      ...(query.department === undefined ? {} : { department: query.department }),
+      ...(query.archetype === undefined ? {} : { archetype: query.archetype }),
+      ...(query.search === undefined ? {} : { search: query.search }),
       ...(query.publishedOnly === undefined ? {} : { publishedOnly: query.publishedOnly }),
+    });
+  }
+
+  /**
+   * What an Agent Builder may attach to a step.
+   *
+   * Gated on Agent Builder rather than on Settings, because that is whose screen it is: CR-03
+   * gives a standard Employee no Agent Builder at all, so this does not hand them a second way
+   * into the catalogue. The service returns published, entitled Skills only.
+   */
+  @Get('for-builder')
+  @RequirePermission({ module: 'agent-builder', action: 'EditDraft' })
+  async forBuilder(@Query() query: BuilderSkillQueryDto): Promise<unknown> {
+    return this.skills.availableToBuilder({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
+      ...(query.search === undefined ? {} : { search: query.search }),
+      ...(query.department === undefined ? {} : { department: query.department }),
     });
   }
 
@@ -398,6 +470,67 @@ export class PlatformSkillController {
       name: body.name,
       ...(body.industry === undefined ? {} : { industry: body.industry }),
       content: body.content,
+    });
+  }
+
+  /**
+   * The platform catalogue — four hundred governed Skills, browsed and filtered.
+   *
+   * `skills:View`: reading what UBoss publishes is not the same authority as publishing it, and
+   * an operator who curates the catalogue is not always the one who signs a Skill off.
+   */
+  @Get()
+  @RequirePermission({ module: 'skills', action: 'View' })
+  async catalogue(@Query() query: PlatformCatalogueQueryDto): Promise<unknown> {
+    return this.skills.platformCatalogue({
+      ...(query.layer === undefined ? {} : { layer: query.layer }),
+      ...(query.industry === undefined ? {} : { industry: query.industry }),
+      ...(query.department === undefined ? {} : { department: query.department }),
+      ...(query.archetype === undefined ? {} : { archetype: query.archetype }),
+      ...(query.search === undefined ? {} : { search: query.search }),
+      ...(query.skip === undefined ? {} : { skip: query.skip }),
+      ...(query.take === undefined ? {} : { take: query.take }),
+    });
+  }
+
+  /** The values worth filtering by, counted, so the screen never offers an empty filter. */
+  @Get('facets')
+  @RequirePermission({ module: 'skills', action: 'View' })
+  async facets(): Promise<unknown> {
+    return this.skills.platformCatalogueFacets();
+  }
+
+  /** Which Industry Packs one company holds, and which it could be given. */
+  @Get('companies/:tenantId/packs')
+  @RequirePermission({ module: 'skills', action: 'View' })
+  async packs(@Param('tenantId', ParseUUIDPipe) tenantId: string): Promise<unknown> {
+    return this.skills.packsForCompany(tenantId);
+  }
+
+  /**
+   * Give a company an Industry Pack, or take it away.
+   *
+   * `skills:Administer` rather than `View`: this changes what a company is sold and what its
+   * builders can reach, so reading the catalogue is not enough.
+   *
+   * Not `Publish`, and that is not a relaxation — **no platform role can hold `skills:Publish`**.
+   * `PLATFORM_PERMISSIONS` grants View, Comment, Create, EditDraft, Export, Administer and Audit
+   * across every platform module, and `Publish` is not among them, so a route guarded on it can
+   * never be called by anybody. Found by calling this one as a Platform Owner and getting 403.
+   * `Administer` is the strongest grant that exists here, and it is the right weight.
+   */
+  @Post('companies/:tenantId/packs')
+  @RequirePermission({ module: 'skills', action: 'Administer' })
+  async setPack(
+    @Param('tenantId', ParseUUIDPipe) tenantId: string,
+    @Body() body: PackEntitlementDto,
+  ): Promise<unknown> {
+    return this.skills.setPackEntitlement({
+      actorUserId: this.currentUserId(),
+      tenantId,
+      industry: body.industry,
+      enabled: body.enabled,
+      reason: body.reason,
     });
   }
 

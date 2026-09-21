@@ -243,6 +243,29 @@ export interface SkillRule {
   when: string;
   /** What the Skill does when it holds. */
   then: string;
+
+  // ---- Provenance, present only on a rule imported from a governed catalogue ----
+  //
+  // All optional, so a rule somebody authored in the product is unchanged and the validator
+  // still asks only for the two halves. They exist because an imported catalogue says more
+  // about a rule than IF and THEN — which gate it belongs to, what evidence it demands, what
+  // state a failure leaves the work in — and dropping that on the way in would make the
+  // imported rule a weaker thing than the one the client approved.
+
+  /** The rule's own identifier in the source catalogue, e.g. `R-0001`. */
+  ruleId?: string;
+  /** Which gate this rule is: `Trigger / Scope`, `Input Completeness`, and so on. */
+  conditionType?: string;
+  /** How hard a stop it is, in the catalogue's words — `Critical`, `High`. */
+  priority?: string;
+  /** What must be on hand for the rule to be satisfied. */
+  evidenceRequired?: string;
+  /** Where the work lands when the rule is not satisfied — `BLOCKED or ROUTED`, `DRAFT`. */
+  failureState?: string;
+  /** Whether a person has to decide: `Yes`, `No`, `As needed`. */
+  humanGate?: string;
+  /** The standards this rule was drawn from, e.g. `SRC-004; SRC-005`. */
+  sourceIds?: string;
 }
 
 /** One numbered step. Ordered prose, because a procedure is read by a person. */

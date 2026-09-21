@@ -321,6 +321,19 @@ export const TABLE_DISPOSITION: Record<string, Disposition> = {
   executor_exception_events: 'Content',
   executor_expectations: 'Content',
   skills: 'Content',
+  /*
+   * Content, not Accountability.
+   *
+   * An entitlement row says which Industry Packs this company was sold. It is a fact about a
+   * commercial arrangement, and the arrangement itself lives in the subscription and the audit
+   * trail — which are what a later question about "what did they pay for" reads. The row here is
+   * the working state that made the catalogue narrower, and a company that has exited has no
+   * catalogue to narrow.
+   *
+   * Nothing is lost by deleting it: the Skills themselves are platform-owned and untouched, and
+   * every enable and withdrawal was audited when it happened.
+   */
+  tenant_skill_packs: 'Content',
   skill_versions: 'Content',
   skill_transitions: 'Content',
   skill_candidates: 'Content',

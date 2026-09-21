@@ -880,6 +880,10 @@ export class CompanyExitService {
       'skill_candidates',
       'skill_transitions',
       'skill_versions',
+      // Before `skills`, though it has no foreign key to one: the order in this list is read as
+      // the order things are removed in, and taking a company's entitlements away before its
+      // Skills keeps that reading true.
+      'tenant_skill_packs',
       'skills',
       'objective_workflow_steps',
       'objective_workflow_drafts',

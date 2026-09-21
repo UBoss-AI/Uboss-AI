@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -191,6 +192,131 @@ export class AgentBuilderService {
    * validated against its closed vocabulary — the screen offers a select, but the route is what
    * protects the data.
    */
+  /**
+   * Add or replace the Skills attached to a piece of assigned AI work.
+   *
+   * ## Automatic matching is not replaced by this
+   *
+   * The objective analysis still proposes Skills, and what it proposed is what a builder opens.
+   * This is the override: a person who knows the work can swap a matched Skill for a better one,
+   * or attach one the analysis did not find. What they cannot do is reach past a control, and
+   * every control the automatic path goes through is re-applied here rather than assumed:
+   *
+   *   • **Permission** — `agent-builder:EditDraft`, asserted here as well as on the route, and
+   *     then `assertMayTouch` for this particular assignment. A standard Employee holds no Agent
+   *     Builder grant at all, so this is not a second door into the catalogue.
+   *   • **Tenant** — the version ids are resolved inside this company's scope, so a
+   *     `CompanyCustom` Skill belonging to another company simply does not resolve.
+   *   • **Entitlement** — an Industry Pack Skill is refused unless this company holds the pack.
+   *   • **Lifecycle** — only a `Published` version may be attached. A draft is refused by name,
+   *     because "why can I see it but not pick it" is the question that follows otherwise.
+   *   • **Already live** — refused once the work is running on an Engine Agent, exactly as
+   *     `saveSetup` refuses: changing a live agent is a new version of that agent.
+   *
+   * ## What is pinned
+   *
+   * A **version** id, not a Skill id. The agent keeps running that version when a newer one is
+   * published, which is the whole point of pinning — an upgrade is a separate, deliberate act
+   * with its own impact analysis.
+   */
+  async setSkills(input: {
+    scope: TenantScope;
+    actorUserId: string;
+    assignmentId: string;
+    skillVersionIds: string[];
+  }): Promise<AgentBuilderView> {
+    const context = await this.authorization.contextFor(input.scope, input.actorUserId);
+    await this.authorization.assertCan(context, { module: 'agent-builder', action: 'EditDraft' });
+
+    if (new Set(input.skillVersionIds).size !== input.skillVersionIds.length) {
+      throw new BadRequestException('The same Skill version is listed twice.');
+    }
+
+    return this.prisma.runInTenantTransaction(input.scope, async () => {
+      const assignment = await this.loadAssignment(input.assignmentId);
+      await this.assertMayTouch(context, assignment, 'EditDraft');
+
+      if (assignment.engineAgentId !== null) {
+        throw new ConflictException(
+          'This work is already running on an Engine Agent. Changing which Skills it uses is a ' +
+            'new version of that agent, not an edit to the setup that created it.',
+        );
+      }
+
+      if (input.skillVersionIds.length > 0) {
+        const versions = await this.prisma.client.skillVersion.findMany({
+          where: { id: { in: input.skillVersionIds } },
+          include: { skill: true },
+        });
+
+        const found = new Set(versions.map((version) => version.id));
+        const missing = input.skillVersionIds.filter((id) => !found.has(id));
+        if (missing.length > 0) {
+          // Not found and not-ours are the same answer on purpose: saying "that belongs to
+          // another company" would confirm it exists.
+          throw new NotFoundException(
+            `No Skill version you can use: ${missing.join(', ')}.`,
+          );
+        }
+
+        const packs = await this.prisma.client.tenantSkillPack.findMany({
+          where: { tenantId: input.scope.tenantId },
+          select: { industry: true },
+        });
+        const entitled = new Set(packs.map((pack) => pack.industry));
+
+        for (const version of versions) {
+          if (version.status !== 'Published') {
+            throw new ConflictException(
+              `"${version.skill.name}" is ${version.status}, not Published. Work may only ` +
+                'reference an approved and published Skill version.',
+            );
+          }
+          if (
+            version.skill.layer === 'IndustryPack' &&
+            !entitled.has(version.skill.industry ?? '')
+          ) {
+            throw new ForbiddenException(
+              `"${version.skill.name}" belongs to the ${version.skill.industry} Industry Pack, ` +
+                'which this company is not entitled to.',
+            );
+          }
+        }
+      }
+
+      const prefill = this.prefillOf(assignment);
+      const before = prefill.skillVersionIds;
+
+      await this.prisma.client.aiWorkAssignment.update({
+        where: { id: assignment.id },
+        data: {
+          setupPrefill: {
+            ...prefill,
+            skillVersionIds: input.skillVersionIds,
+          } as unknown as object,
+        },
+      });
+
+      await this.auditEvents.appendWithinCurrentScope(input.scope.tenantId, {
+        action: 'agent-builder.skills_changed',
+        resourceType: 'objective-assignment',
+        resourceId: assignment.id,
+        actorUserId: input.actorUserId,
+        summary:
+          `Attached Skills changed by hand: ${before.length} → ${input.skillVersionIds.length}.`,
+        metadata: {
+          assignmentId: assignment.id,
+          from: before.join(','),
+          to: input.skillVersionIds.join(','),
+          // The record that says this was a person's choice rather than the analysis's.
+          chosenManually: true,
+        },
+      });
+
+      return this.viewOf(input.scope, await this.loadAssignment(input.assignmentId));
+    });
+  }
+
   async saveSetup(input: {
     scope: TenantScope;
     actorUserId: string;

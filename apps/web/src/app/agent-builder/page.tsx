@@ -30,6 +30,7 @@ import { useJustBecameTrue } from '../../lib/use-just-became-true';
 import { useAccountMenu } from '../../lib/use-account-menu';
 import { useSignedInUser } from '../../lib/use-signed-in-user';
 import { RoutedAppShell } from '../../components/RoutedAppShell';
+import { SkillPicker } from '../../components/SkillPicker';
 import {
   forgetWorkspace,
   readRememberedWorkspace,
@@ -89,6 +90,7 @@ function AgentBuilderInner() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pickingSkills, setPickingSkills] = useState(false);
 
   const tenantId =
     resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
@@ -402,16 +404,35 @@ function AgentBuilderInner() {
                     : selected.prefill.ownerUserId.slice(0, 8)}
                 </span>
               </div>
+              {/*
+                Attached Skills, and the one control on this panel that is not read-only.
+
+                The rest of this card is what the objective decided and a builder may not contradict.
+                Which Skills do the work is different: the analysis proposes them, and somebody who
+                knows the work may swap one. The server re-checks published, entitled, this-company
+                and not-yet-live on save, so the button cannot widen anything — and it is absent
+                once the work is running, because changing a live agent is a new version of it.
+              */}
               <div className="uboss-kv">
                 <span className="uboss-kv-key">Attached Skills</span>
                 <span className="uboss-kv-value uboss-mono">
                   {selected.prefill.skillVersionIds.length === 0 ? (
-                    <span className="uboss-muted-3">None approved yet</span>
+                    <span className="uboss-muted-3">None matched yet</span>
                   ) : (
                     selected.prefill.skillVersionIds.map((id) => id.slice(0, 8)).join(', ')
                   )}
                 </span>
               </div>
+              {selected.engineAgent === null && tenantId !== null ? (
+                <div className="uboss-actions" style={{ marginTop: 6, marginBottom: 10 }}>
+                  <Button disabled={busy} onClick={() => setPickingSkills(true)}>
+                    <Icon name="plus" size={15} />
+                    {selected.prefill.skillVersionIds.length === 0
+                      ? 'Add Skill'
+                      : 'Add or replace Skills'}
+                  </Button>
+                </div>
+              ) : null}
               <div className="uboss-kv">
                 <span className="uboss-kv-key">Approval required</span>
                 <span className="uboss-kv-value">
@@ -598,6 +619,29 @@ function AgentBuilderInner() {
           assignedToLabel={assignedToLabel}
           canImport={can(myAccess, 'agent-builder', 'EditDraft')}
           onImported={() => void load()}
+        />
+      )}
+
+      {/*
+        The Skill picker. Mounted beside the panel rather than inside it so closing the drawer
+        never unmounts the card behind it mid-save.
+      */}
+      {selected === null || tenantId === null ? null : (
+        <SkillPicker
+          tenantId={tenantId}
+          attached={selected.prefill.skillVersionIds}
+          open={pickingSkills}
+          onClose={() => setPickingSkills(false)}
+          onSave={async (skillVersionIds) => {
+            const updated = await agentBuilderApi.setSkills(
+              tenantId,
+              selected.assignmentId,
+              skillVersionIds,
+            );
+            setSelected(updated);
+            setNotice('Attached Skills updated. The versions shown are pinned.');
+            void load();
+          }}
         />
       )}
     </RoutedAppShell>

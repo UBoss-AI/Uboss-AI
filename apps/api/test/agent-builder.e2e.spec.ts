@@ -1188,4 +1188,270 @@ describe('agent builder and engine agent activation (e2e)', () => {
       }
     });
   });
+
+  // =========================================================================
+  // Adding or replacing a Skill by hand.
+  //
+  // The objective analysis still matches Skills automatically; this is the builder's override.
+  // Every control the automatic path goes through is re-applied on the manual one, and these are
+  // the tests that say so: published only, entitled only, this company only, and refused once
+  // the work is live. What a manual choice changes is WHICH approved Skill is used — never
+  // whether approval, status, entitlement or tenancy applied.
+  // =========================================================================
+  describe('adding and replacing Skills by hand', () => {
+    /** A second published company Skill, so there is something to swap TO. */
+    const secondSkill = async () => {
+      const content = {
+        purpose: 'Check a drafted matrix against the index it came from.',
+        category: 'Review' as const,
+        whenToUse: 'After a GSPR matrix is drafted.',
+        whenNotToUse: 'Never as the only check before release.',
+        inputs: [{ name: 'Matrix', description: 'The drafted matrix.', required: true }],
+        rules: [{ when: 'A requirement has no evidence', then: 'Flag it' }],
+        steps: [{ order: 1, instruction: 'Compare each row against the index.' }],
+        allowedToolCategories: ['Read'],
+        outputSchema: '{"type":"object"}',
+        validation: 'Every row is accounted for.',
+        failureHandling: 'Stop and report the gap.',
+        requiresApproval: true,
+        autonomy: 'ProposeForApproval' as const,
+        evidenceRequirement: 'The comparison table.',
+      };
+      const created = await skills().createCompanySkill({
+        scope: scope(),
+        actorUserId: skillAdminId,
+        key: 'gspr-checker',
+        name: 'GSPR matrix checker',
+        content,
+        creationMode: 'Manual',
+      });
+      const versionId = created.openDraft?.id ?? created.versions[0]?.id ?? '';
+      for (const to of ['Review', 'Approved', 'Published'] as const) {
+        await skills().transition({
+          scope: scope(),
+          actorUserId: to === 'Approved' ? skillApproverId : skillAdminId,
+          versionId,
+          to,
+          ...(to === 'Published' ? {} : { reason: 'Fixture.' }),
+        });
+      }
+      return { skill: created, versionId };
+    };
+
+    it('replaces the matched Skill with one the builder chose, and pins that version', async () => {
+      const { assignmentId } = await assignedAiWork();
+      const before = await builder().view({ scope: scope(), actorUserId: workerUserId, assignmentId });
+      const matched = before.prefill.skillVersionIds;
+
+      const { versionId } = await secondSkill();
+
+      const after = await builder().setSkills({
+        scope: scope(),
+        actorUserId: workerUserId,
+        assignmentId,
+        skillVersionIds: [versionId],
+      });
+
+      assert.deepEqual(after.prefill.skillVersionIds, [versionId], 'the chosen version is what is attached');
+      assert.notDeepEqual(after.prefill.skillVersionIds, matched, 'and it replaced what was matched');
+
+      // A version id, not a Skill id: that is what pinning means.
+      const pinned = await ctx.prisma.runInTenantTransaction(scope(), () =>
+        ctx.prisma.client.skillVersion.findFirstOrThrow({
+          where: { id: versionId },
+          select: { versionNumber: true, status: true },
+        }),
+      );
+      assert.equal(pinned.status, 'Published');
+      assert.equal(pinned.versionNumber, 1);
+    });
+
+    it('adds a Skill alongside the matched one rather than only replacing', async () => {
+      const { assignmentId } = await assignedAiWork();
+      const before = await builder().view({ scope: scope(), actorUserId: workerUserId, assignmentId });
+      const { versionId } = await secondSkill();
+
+      const after = await builder().setSkills({
+        scope: scope(),
+        actorUserId: workerUserId,
+        assignmentId,
+        skillVersionIds: [...before.prefill.skillVersionIds, versionId],
+      });
+
+      assert.equal(after.prefill.skillVersionIds.length, before.prefill.skillVersionIds.length + 1);
+      assert.ok(after.prefill.skillVersionIds.includes(versionId));
+    });
+
+    it('refuses a draft version, because approval would otherwise be optional', async () => {
+      const { assignmentId } = await assignedAiWork();
+
+      const draft = await skills().createCompanySkill({
+        scope: scope(),
+        actorUserId: skillAdminId,
+        key: 'not-approved-yet',
+        name: 'Not approved yet',
+        content: {
+          purpose: 'A Skill nobody has approved.',
+          category: 'Analysis' as const,
+          whenToUse: 'Never, yet.',
+          whenNotToUse: 'Anywhere.',
+          inputs: [],
+          rules: [],
+          // A step, because the validator asks for one: "a capability with no procedure is a wish".
+          steps: [{ order: 1, instruction: 'Do the check this Skill exists to do.' }],
+          allowedToolCategories: [],
+          outputSchema: '{}',
+          validation: 'None.',
+          failureHandling: 'Stop.',
+          requiresApproval: true,
+          autonomy: 'SuggestOnly' as const,
+          evidenceRequirement: 'None.',
+        },
+        creationMode: 'Manual',
+      });
+      const draftVersionId = draft.openDraft?.id ?? draft.versions[0]?.id ?? '';
+
+      await assert.rejects(
+        () =>
+          builder().setSkills({
+            scope: scope(),
+            actorUserId: workerUserId,
+            assignmentId,
+            skillVersionIds: [draftVersionId],
+          }),
+        /not Published/i,
+      );
+    });
+
+    it('refuses an Industry Pack the company is not entitled to', async () => {
+      const { assignmentId } = await assignedAiWork();
+
+      const pack = await skills().createPlatformSkill({
+        actorUserId: platformOwnerId,
+        layer: 'IndustryPack',
+        industry: 'Aerospace',
+        key: 'pack-aerospace-check',
+        name: 'Aerospace check',
+        content: {
+          purpose: 'An Industry Pack Skill.',
+          category: 'Review' as const,
+          whenToUse: 'Aerospace work.',
+          whenNotToUse: 'Anything else.',
+          inputs: [],
+          rules: [],
+          // A step, because the validator asks for one: "a capability with no procedure is a wish".
+          steps: [{ order: 1, instruction: 'Do the check this Skill exists to do.' }],
+          allowedToolCategories: [],
+          outputSchema: '{}',
+          validation: 'Checked.',
+          failureHandling: 'Stop.',
+          requiresApproval: true,
+          autonomy: 'SuggestOnly' as const,
+          evidenceRequirement: 'The check.',
+        },
+      });
+      for (const to of ['Review', 'Approved', 'Published'] as const) {
+        await skills().transitionPlatformVersion({
+          actorUserId: platformOwnerId,
+          versionId: pack.versionId,
+          to,
+        });
+      }
+
+      await assert.rejects(
+        () =>
+          builder().setSkills({
+            scope: scope(),
+            actorUserId: workerUserId,
+            assignmentId,
+            skillVersionIds: [pack.versionId],
+          }),
+        /not entitled/i,
+      );
+
+      // Entitle the company, and the same pick is permitted — so the refusal was the
+      // entitlement and nothing else.
+      await skills().setPackEntitlement({
+        actorUserId: platformOwnerId,
+        tenantId,
+        industry: 'Aerospace',
+        enabled: true,
+        reason: 'Bought the aerospace pack.',
+      });
+
+      const after = await builder().setSkills({
+        scope: scope(),
+        actorUserId: workerUserId,
+        assignmentId,
+        skillVersionIds: [pack.versionId],
+      });
+      assert.deepEqual(after.prefill.skillVersionIds, [pack.versionId]);
+    });
+
+    it('refuses a Skill version id from another company', async () => {
+      const { assignmentId } = await assignedAiWork();
+
+      // A real version id, belonging to a company this actor is not in. It must read as "no
+      // such Skill" rather than "that is someone else's", which would confirm it exists.
+      const theirs = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.skillVersion.findFirst({
+          where: { tenantId: { not: null, notIn: [tenantId] } },
+          select: { id: true },
+        }),
+      );
+
+      if (theirs !== null) {
+        await assert.rejects(
+          () =>
+            builder().setSkills({
+              scope: scope(),
+              actorUserId: workerUserId,
+              assignmentId,
+              skillVersionIds: [theirs.id],
+            }),
+          /No Skill version you can use/i,
+        );
+      }
+    });
+
+    it('refuses once the work is already running on an Engine Agent', async () => {
+      const { assignmentId } = await assignedAiWork();
+      await answerEverything(assignmentId);
+      await builder().activate({ scope: scope(), actorUserId: workerUserId, assignmentId });
+
+      const { versionId } = await secondSkill();
+      await assert.rejects(
+        () =>
+          builder().setSkills({
+            scope: scope(),
+            actorUserId: workerUserId,
+            assignmentId,
+            skillVersionIds: [versionId],
+          }),
+        /already running/i,
+      );
+    });
+
+    it('records that the choice was a person’s, not the matcher’s', async () => {
+      const { assignmentId } = await assignedAiWork();
+      const { versionId } = await secondSkill();
+
+      await builder().setSkills({
+        scope: scope(),
+        actorUserId: workerUserId,
+        assignmentId,
+        skillVersionIds: [versionId],
+      });
+
+      const events = await ctx.prisma.runInTenantTransaction(scope(), () =>
+        ctx.prisma.client.auditEvent.findMany({
+          where: { tenantId, action: 'agent-builder.skills_changed', resourceId: assignmentId },
+        }),
+      );
+      assert.equal(events.length, 1);
+      const metadata = events[0]?.metadata as Record<string, unknown> | null;
+      assert.equal(metadata?.['chosenManually'], true);
+      assert.equal(metadata?.['to'], versionId);
+    });
+  });
 });

@@ -2245,6 +2245,10 @@ export interface SkillRow {
   key: string;
   name: string;
   industry: string | null;
+  /** The business function it belongs to. The catalogue is browsed by this. */
+  department: string | null;
+  /** What kind of work it does, in the source catalogue's own words. */
+  archetype: string | null;
   ownerUserId: string | null;
   /** False for a platform Skill: it can be used or cloned here, never edited. */
   editableHere: boolean;
@@ -2252,6 +2256,59 @@ export interface SkillRow {
   publishedVersion: SkillVersionRow | null;
   openDraft: SkillVersionRow | null;
   versions: SkillVersionRow[];
+}
+
+/** One Skill an Agent Builder may pick, already through entitlement and status. */
+export interface BuilderSkillRow {
+  skillId: string;
+  /** The published version. Picking a Skill pins this, not "whatever is published later". */
+  versionId: string;
+  key: string;
+  name: string;
+  layer: string;
+  industry: string | null;
+  department: string | null;
+  archetype: string | null;
+  category: string;
+  purpose: string;
+  whenToUse: string;
+  whenNotToUse: string;
+  autonomy: string;
+  requiresApproval: boolean;
+  versionNumber: number;
+}
+
+/** One row of the platform catalogue, as the Master Console lists it. */
+export interface PlatformSkillRow {
+  id: string;
+  key: string;
+  name: string;
+  layer: string;
+  industry: string | null;
+  department: string | null;
+  archetype: string | null;
+  status: string | null;
+  versionNumber: number | null;
+  category: string | null;
+  autonomy: string | null;
+  /** The source catalogue's own autonomy word, kept beside the enum it mapped onto. */
+  sourceAutonomy: string | null;
+  purpose: string | null;
+  ruleCount: number;
+  /** How many companies hold this pack. `-1` for a Universal Skill, which every company has. */
+  entitledCompanies: number;
+}
+
+export interface PlatformSkillFacets {
+  layers: { value: string; count: number }[];
+  departments: { value: string; count: number }[];
+  archetypes: { value: string; count: number }[];
+  industries: { value: string; count: number }[];
+}
+
+export interface CompanyPackView {
+  packs: { industry: string; enabledAt: string; reason: string; skillCount: number }[];
+  available: { industry: string; skillCount: number }[];
 }
 
 export interface SkillImpact {
@@ -2287,7 +2344,14 @@ export const skillsApi = {
 
   catalogue: (
     tenantId: string,
-    filter: { layer?: string; category?: string; publishedOnly?: boolean } = {},
+    filter: {
+      layer?: string;
+      category?: string;
+      department?: string;
+      archetype?: string;
+      search?: string;
+      publishedOnly?: boolean;
+    } = {},
   ) => {
     const query = new URLSearchParams();
     for (const [key, value] of Object.entries(filter)) {
@@ -2298,6 +2362,25 @@ export const skillsApi = {
     const suffix = query.size === 0 ? '' : `?${query.toString()}`;
     return call<{ skills: SkillRow[]; note: string }>(
       `/tenants/${encodeURIComponent(tenantId)}/skills${suffix}`,
+    );
+  },
+
+  /**
+   * What an Agent Builder may attach to a step.
+   *
+   * A different route from `catalogue`, not a filter on it: the catalogue is the administrator's
+   * governed view and needs `settings:Administer`, while this is gated on Agent Builder and
+   * returns published, entitled Skills only. One route serving both would have to relax to the
+   * weaker permission.
+   */
+  forBuilder: (tenantId: string, filter: { search?: string; department?: string } = {}) => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(filter)) {
+      if (value !== undefined && value !== '') query.set(key, String(value));
+    }
+    const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+    return call<{ skills: BuilderSkillRow[]; note: string }>(
+      `/tenants/${encodeURIComponent(tenantId)}/skills/for-builder${suffix}`,
     );
   },
 
@@ -3099,6 +3182,21 @@ export const agentBuilderApi = {
       `/tenants/${encodeURIComponent(tenantId)}/agent-builder/${encodeURIComponent(assignmentId)}`,
     ),
 
+  /**
+   * Add or replace the Skills attached to this work.
+   *
+   * The whole list, because "add" and "replace" are the same write: a set sent as a delta is how
+   * two people editing at once lose one of the changes. The server re-applies every control the
+   * automatic matching goes through.
+   */
+  setSkills: (tenantId: string, assignmentId: string, skillVersionIds: string[]) =>
+    call<AgentBuilderView>(
+      `/tenants/${encodeURIComponent(tenantId)}/agent-builder/${encodeURIComponent(
+        assignmentId,
+      )}/skills`,
+      { method: 'PUT', body: JSON.stringify({ skillVersionIds }) },
+    ),
+
   /** One answer at a time; a patch never blanks a field it does not carry. */
   saveSetup: (tenantId: string, assignmentId: string, patch: Partial<AgentExecutionSetupView>) =>
     call<AgentBuilderView>(
@@ -3631,6 +3729,45 @@ export interface ProviderTestResultView {
   latencyMs: number | null;
   detail: string;
 }
+
+/**
+ * The platform Skill catalogue, for the Master Console.
+ *
+ * Separate from `skillsApi`, which is a company's view of what it may use. These routes are
+ * platform-only and see every `UbossVerified` and `IndustryPack` Skill — and no company's
+ * custom ones, which belong to that company rather than to the catalogue.
+ */
+export const platformSkillsApi = {
+  catalogue: (
+    filter: {
+      layer?: string;
+      industry?: string;
+      department?: string;
+      archetype?: string;
+      search?: string;
+      skip?: number;
+      take?: number;
+    } = {},
+  ) => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(filter)) {
+      if (value !== undefined && value !== '') query.set(key, String(value));
+    }
+    const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+    return call<{ total: number; skills: PlatformSkillRow[] }>(`/platform/skills${suffix}`);
+  },
+
+  facets: () => call<PlatformSkillFacets>('/platform/skills/facets'),
+
+  packsFor: (tenantId: string) =>
+    call<CompanyPackView>(`/platform/skills/companies/${encodeURIComponent(tenantId)}/packs`),
+
+  setPack: (tenantId: string, body: { industry: string; enabled: boolean; reason: string }) =>
+    call<{ industry: string; enabled: boolean }>(
+      `/platform/skills/companies/${encodeURIComponent(tenantId)}/packs`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+};
 
 export const providersApi = {
   meta: () => call<ProvidersMetaView>('/platform/providers/meta'),

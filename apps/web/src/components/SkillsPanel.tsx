@@ -97,9 +97,27 @@ export function SkillsPanel({ tenantId, mayAdminister }: SkillsPanelProps) {
 
   const [transitionReason, setTransitionReason] = useState('');
 
+  /*
+   * Filters, because the catalogue is four hundred Skills now.
+   *
+   * This panel was written when a company had a handful of its own, and an unfiltered table of
+   * four hundred governed capabilities is not a catalogue anybody can use. Search and department
+   * go to the server, which already narrows by entitlement; the layer tabs are applied here
+   * because the rows are in hand and switching between them should not re-fetch.
+   */
+  const [search, setSearch] = useState('');
+  const [department, setDepartment] = useState('');
+  const [layer, setLayer] = useState('');
+
   const load = useCallback(() => {
     setError(null);
-    void Promise.all([skillsApi.catalogue(tenantId), skillsApi.meta(tenantId)])
+    void Promise.all([
+      skillsApi.catalogue(tenantId, {
+        ...(search.trim() === '' ? {} : { search: search.trim() }),
+        ...(department === '' ? {} : { department }),
+      }),
+      skillsApi.meta(tenantId),
+    ])
       .then(([catalogue, meta]) => {
         setSkills(catalogue.skills);
         setNote(catalogue.note);
@@ -108,7 +126,7 @@ export function SkillsPanel({ tenantId, mayAdminister }: SkillsPanelProps) {
       .catch((caught: unknown) =>
         setError(caught instanceof ApiError ? caught.message : 'Could not load the Skills.'),
       );
-  }, [tenantId]);
+  }, [tenantId, search, department]);
 
   useEffect(load, [load]);
 
@@ -152,6 +170,7 @@ export function SkillsPanel({ tenantId, mayAdminister }: SkillsPanelProps) {
   );
 
   const rows = (skills ?? []).filter((skill) => {
+    if (layer !== '' && skill.layer !== layer) return false;
     if (tab === 'custom') {
       return skill.layer === 'CompanyCustom';
     }
@@ -161,6 +180,15 @@ export function SkillsPanel({ tenantId, mayAdminister }: SkillsPanelProps) {
     }
     return true;
   });
+
+  /** The departments present in what came back, so the filter cannot offer an empty result. */
+  const departments = [
+    ...new Set(
+      (skills ?? [])
+        .map((skill) => skill.department)
+        .filter((value): value is string => value !== null && value !== ''),
+    ),
+  ].sort();
 
   /** The version a row is really about: the draft if there is one, otherwise the live version. */
   const leading = (skill: SkillRow): SkillVersionRow | null =>
@@ -293,6 +321,68 @@ export function SkillsPanel({ tenantId, mayAdminister }: SkillsPanelProps) {
         <CardHeader title="Skill library & governance" />
         <CardBody>
           <SegmentedControl label="Skill views" options={TABS} value={tab} onChange={setTab} />
+
+          {/*
+            Filters, because this is a four-hundred-row catalogue.
+
+            Search and department are asked of the server, which has already narrowed the list to
+            what this company is entitled to — the Universal layer, the Industry Packs it holds,
+            and its own. Layer is applied here: the rows are already in hand and flipping between
+            them should not cost a round trip.
+          */}
+          <div className="uboss-grid-3" style={{ marginTop: 12, marginBottom: 12 }}>
+            <FormField label="Search" hint="Skill name">
+              {(wiring) => (
+                <input
+                  {...wiring}
+                  className="uboss-input"
+                  type="search"
+                  value={search}
+                  placeholder="reconciliation, forecast…"
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              )}
+            </FormField>
+
+            <FormField label="Department">
+              {(wiring) => (
+                <select
+                  {...wiring}
+                  className="uboss-input"
+                  value={department}
+                  onChange={(event) => setDepartment(event.target.value)}
+                >
+                  <option value="">All departments</option>
+                  {departments.map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </FormField>
+
+            <FormField label="Layer">
+              {(wiring) => (
+                <select
+                  {...wiring}
+                  className="uboss-input"
+                  value={layer}
+                  onChange={(event) => setLayer(event.target.value)}
+                >
+                  <option value="">Every layer</option>
+                  <option value="UbossVerified">UBoss Verified</option>
+                  <option value="IndustryPack">Industry Pack</option>
+                  <option value="CompanyCustom">Our own</option>
+                </select>
+              )}
+            </FormField>
+          </div>
+
+          <p className="uboss-muted" style={{ marginBottom: 10 }}>
+            {rows.length} of {(skills ?? []).length} Skill{rows.length === 1 ? '' : 's'} available
+            to this company. An Industry Pack appears only where the company is entitled to it.
+          </p>
 
           <DataTable
             caption="Every Skill this company can use, with its lifecycle status"

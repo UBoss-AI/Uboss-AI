@@ -839,7 +839,15 @@ describe('skills catalogue and governance (e2e)', () => {
     it('makes a published platform Skill readable by every company', async () => {
       await publishPlatformSkill();
 
-      const here = await skills().catalogueFor({ scope: scope(), actorUserId: employeeId });
+      /*
+       * Read by each company's administrator, not by an employee.
+       *
+       * The property under test is "a Verified Skill reaches every company", which is about the
+       * Skill's ownership and not about who may browse. Browsing the governed catalogue is now
+       * settings:Administer — see the Employee test below — so reading it as an employee would
+       * fail for a reason that has nothing to do with platform visibility.
+       */
+      const here = await skills().catalogueFor({ scope: scope(), actorUserId: adminId });
       const there = await skills().catalogueFor({
         scope: otherScope(),
         // The other company's **own** member. Passing this company's employee would be refused
@@ -1070,6 +1078,8 @@ describe('skills catalogue and governance (e2e)', () => {
     });
 
     it('serves the vocabulary and the catalogue over HTTP', async () => {
+      // The vocabulary stays at settings:View: knowing which lifecycle states exist is not
+      // company configuration, and a screen needs the labels before it knows what it may show.
       const meta = await as(
         agent().get(`/tenants/${tenantId}/skills/catalogue-meta`),
         employeeUboss,
@@ -1082,17 +1092,32 @@ describe('skills catalogue and governance (e2e)', () => {
       assert.match(meta.body.note, /governed capability, not a template/i);
 
       await createSkill();
-      const catalogue = await as(agent().get(`/tenants/${tenantId}/skills`), employeeUboss).expect(
+      // The catalogue itself is the administrator's: four hundred governed Skills with their
+      // triggers, exclusions and failure states are company configuration.
+      const catalogue = await as(agent().get(`/tenants/${tenantId}/skills`), adminUboss).expect(
         200,
       );
       assert.equal(catalogue.body.skills.length, 1);
       assert.match(catalogue.body.note, /not templates/i);
     });
 
-    it('lets an employee read and not author', async () => {
+    it('refuses an employee the governed catalogue, and authoring with it', async () => {
+      /*
+       * This asserted that an employee could read a Skill and not author one, on the reading that
+       * "an employee needs to know what capabilities exist". The client has since decided the
+       * other way, and the screen already agreed with them: the Settings → Skills category has
+       * always required settings:Administer to appear, so the route was the only thing letting an
+       * employee at the list. Four hundred governed Skills with their triggers, exclusions and
+       * failure states are company configuration.
+       *
+       * An employee who needs a Skill in order to build an agent reaches it through Agent
+       * Builder's own picker, which is gated on Agent Builder and returns published, entitled
+       * Skills only — and a standard Employee holds no Agent Builder grant at all.
+       */
       const skill = await createSkill();
 
-      await as(agent().get(`/tenants/${tenantId}/skills/${skill.id}`), employeeUboss).expect(200);
+      await as(agent().get(`/tenants/${tenantId}/skills/${skill.id}`), employeeUboss).expect(403);
+      await as(agent().get(`/tenants/${tenantId}/skills`), employeeUboss).expect(403);
 
       await as(agent().post(`/tenants/${tenantId}/skills`), employeeUboss)
         .send({
@@ -1102,6 +1127,9 @@ describe('skills catalogue and governance (e2e)', () => {
           content: CONTENT,
         })
         .expect(403);
+
+      // And the administrator still can, so this is a boundary rather than a breakage.
+      await as(agent().get(`/tenants/${tenantId}/skills/${skill.id}`), adminUboss).expect(200);
     });
 
     it('runs the whole lifecycle over HTTP', async () => {
@@ -1241,6 +1269,196 @@ describe('skills catalogue and governance (e2e)', () => {
       const metadata = event?.metadata as Record<string, unknown> | null;
       assert.equal(metadata?.['publishedVersionUnchanged'], true);
       assert.equal(metadata?.['supersedesVersion'], 1);
+    });
+  });
+
+  // =========================================================================
+  // The platform catalogue and who is entitled to it.
+  //
+  // A UBoss Verified Skill and an Industry Pack are both platform-owned — one canonical row each,
+  // tenant_id IS NULL, which skill_layer_matches_its_owner insists on. Row-level security
+  // lets every company read them, which is right for the Universal layer and wrong for a pack.
+  // tenant_skill_packs is what narrows it, and these are the tests that say so.
+  // =========================================================================
+  describe('platform catalogue and pack entitlement', () => {
+    /** A published Industry Pack Skill for one industry. */
+    const publishPack = async (industry: string, key: string, name = 'Pack skill') => {
+      const created = await skills().createPlatformSkill({
+        actorUserId: ownerId,
+        layer: 'IndustryPack',
+        industry,
+        key,
+        name,
+        content: CONTENT,
+      });
+      for (const to of ['Review', 'Approved', 'Published'] as const) {
+        await skills().transitionPlatformVersion({
+          actorUserId: ownerId,
+          versionId: created.versionId,
+          to,
+        });
+      }
+      return created;
+    };
+
+    it('shows a Universal Skill to a company that has enabled no pack at all', async () => {
+      await publishPlatformSkill('universal-everyone-gets-this');
+
+      const view = await skills().catalogueFor({ scope: scope(), actorUserId: adminId });
+      const keys = view.skills.map((skill) => skill.key);
+
+      assert.ok(
+        keys.includes('universal-everyone-gets-this'),
+        'the Universal layer is what every company gets',
+      );
+    });
+
+    it('withholds an Industry Pack until the company is entitled to it', async () => {
+      await publishPack('Healthcare', 'pack-healthcare-screen');
+
+      const before = await skills().catalogueFor({ scope: scope(), actorUserId: adminId });
+      assert.ok(
+        !before.skills.some((skill) => skill.key === 'pack-healthcare-screen'),
+        'a pack nobody granted must not appear',
+      );
+
+      await skills().setPackEntitlement({
+        actorUserId: ownerId,
+        tenantId,
+        industry: 'Healthcare',
+        enabled: true,
+        reason: 'Sold with the healthcare plan.',
+      });
+
+      const after = await skills().catalogueFor({ scope: scope(), actorUserId: adminId });
+      assert.ok(
+        after.skills.some((skill) => skill.key === 'pack-healthcare-screen'),
+        'and appears once it is',
+      );
+    });
+
+    it('does not hand one company another company’s pack', async () => {
+      await publishPack('Defence', 'pack-defence-screen');
+      await skills().setPackEntitlement({
+        actorUserId: ownerId,
+        tenantId: otherTenantId,
+        industry: 'Defence',
+        enabled: true,
+        reason: 'The other company bought it.',
+      });
+
+      const mine = await skills().catalogueFor({ scope: scope(), actorUserId: adminId });
+      assert.ok(
+        !mine.skills.some((skill) => skill.key === 'pack-defence-screen'),
+        'entitlement is per company, not per platform',
+      );
+    });
+
+    it('withdraws a pack again', async () => {
+      await publishPack('Retail', 'pack-retail-screen');
+      await skills().setPackEntitlement({
+        actorUserId: ownerId,
+        tenantId,
+        industry: 'Retail',
+        enabled: true,
+        reason: 'Trial.',
+      });
+      await skills().setPackEntitlement({
+        actorUserId: ownerId,
+        tenantId,
+        industry: 'Retail',
+        enabled: false,
+        reason: 'Trial ended.',
+      });
+
+      const view = await skills().catalogueFor({ scope: scope(), actorUserId: adminId });
+      assert.ok(!view.skills.some((skill) => skill.key === 'pack-retail-screen'));
+    });
+
+    it('refuses to entitle a company to a pack that does not exist', async () => {
+      await assert.rejects(
+        () =>
+          skills().setPackEntitlement({
+            actorUserId: ownerId,
+            tenantId,
+            industry: 'Underwater Basket Weaving',
+            enabled: true,
+            reason: 'A pack nobody wrote.',
+          }),
+        /No Industry Pack exists/i,
+      );
+    });
+
+    it('needs a reason, because an entitlement nobody can review is not one', async () => {
+      await publishPack('Logistics', 'pack-logistics-screen');
+      await assert.rejects(
+        () =>
+          skills().setPackEntitlement({
+            actorUserId: ownerId,
+            tenantId,
+            industry: 'Logistics',
+            enabled: true,
+            reason: 'ok',
+          }),
+        /needs a reason/i,
+      );
+    });
+
+    it('refuses the governed catalogue to an Employee', async () => {
+      /*
+       * A tightening, and deliberate. Four hundred governed Skills with their triggers,
+       * exclusions and failure states are company configuration, and the Settings → Skills
+       * category has always needed settings:Administer to appear — so an Employee reaching
+       * the same list through the service was the screen and the route disagreeing.
+       */
+      await assert.rejects(
+        () => skills().catalogueFor({ scope: scope(), actorUserId: employeeId }),
+        (error: Error) => /Administer|does not include/i.test(error.message),
+      );
+    });
+
+    it('keeps one company’s custom Skill out of another’s catalogue', async () => {
+      const own = await skills().createCompanySkill({
+        scope: scope(),
+        actorUserId: adminId,
+        key: 'ours-alone',
+        name: 'Ours alone',
+        content: CONTENT,
+        creationMode: 'Manual',
+      });
+      assert.ok(own.id);
+
+      const theirs = await skills().catalogueFor({
+        scope: otherScope(),
+        actorUserId: otherMemberId,
+      });
+      assert.ok(
+        !theirs.skills.some((skill) => skill.key === 'ours-alone'),
+        'a company custom Skill is that company’s',
+      );
+    });
+
+    it('lists the platform catalogue for an operator, with its facets', async () => {
+      await publishPlatformSkill('verified-in-the-catalogue');
+      await publishPack('Mining', 'pack-mining-screen');
+
+      const listed = await skills().platformCatalogue({ take: 200 });
+      const keys = listed.skills.map((skill) => skill.key);
+
+      assert.ok(listed.total >= 2);
+      assert.ok(keys.includes('verified-in-the-catalogue'));
+      assert.ok(keys.includes('pack-mining-screen'));
+      // A company's own Skill is not part of the catalogue an operator curates.
+      assert.ok(!keys.includes('ours-alone'));
+
+      const onlyPacks = await skills().platformCatalogue({ layer: 'IndustryPack', take: 200 });
+      assert.ok(
+        onlyPacks.skills.every((skill) => skill.layer === 'IndustryPack'),
+        'the layer filter separates the two promises',
+      );
+
+      const facets = await skills().platformCatalogueFacets();
+      assert.ok(facets.layers.length > 0, 'the filters come from the data, not a hard-coded list');
     });
   });
 });

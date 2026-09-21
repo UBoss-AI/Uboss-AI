@@ -10,6 +10,8 @@ import {
 } from '@nestjs/common';
 import {
   Allow,
+  ArrayMaxSize,
+  IsArray,
   IsIn,
   IsOptional,
   IsString,
@@ -53,6 +55,21 @@ export class AgentSetupPatchDto {
   @IsOptional() @IsString() @MaxLength(300) whereWorkHappens?: string | null;
   @IsOptional() @IsString() @MaxLength(300) outputDestination?: string | null;
   @IsOptional() @IsIn(MISSING_DATA_BEHAVIOURS) missingDataBehaviour?: MissingDataBehaviour | null;
+}
+
+/**
+ * Which Skill versions this work uses.
+ *
+ * The whole list, not a delta: "add" and "replace" are the same write from the server's side,
+ * and a patch API for a set is how two builders editing at once silently lose one of the
+ * changes. Twenty is a ceiling nobody legitimate reaches — a step needing more than that is a
+ * step that should have been split.
+ */
+export class SetAgentSkillsDto {
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsUUID('all', { each: true })
+  skillVersionIds!: string[];
 }
 
 export class SaveAgentSetupDto {
@@ -162,6 +179,27 @@ export class AgentBuilderController {
       actorUserId: this.currentUserId(),
       assignmentId,
       patch: body.patch,
+    });
+  }
+
+  /**
+   * Add or replace the Skills attached to this work.
+   *
+   * The automatic matching still runs and still proposes; this is the builder's override. Every
+   * control the automatic path goes through is re-applied in the service — published only,
+   * entitled only, this company only, and refused once the work is live.
+   */
+  @Put(':assignmentId/skills')
+  @RequirePermission({ module: 'agent-builder', action: 'EditDraft' })
+  async setSkills(
+    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
+    @Body() body: SetAgentSkillsDto,
+  ): Promise<unknown> {
+    return this.builder.setSkills({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
+      assignmentId,
+      skillVersionIds: body.skillVersionIds,
     });
   }
 

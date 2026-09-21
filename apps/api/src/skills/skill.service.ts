@@ -55,6 +55,10 @@ export interface SkillView {
   key: string;
   name: string;
   industry: string | null;
+  /** The business function it belongs to. The catalogue is browsed by this. */
+  department: string | null;
+  /** What kind of work it does, in the source catalogue's own words. */
+  archetype: string | null;
   /** Null for a platform Skill, whose owner is UBoss. */
   ownerUserId: string | null;
   /** True when this company owns it and may therefore author it. */
@@ -128,34 +132,70 @@ export class SkillService {
   // -------------------------------------------------------------------------
 
   /**
-   * The catalogue as one company sees it: platform Skills plus its own.
+   * Which industries this company is entitled to see an Industry Pack for.
    *
-   * `settings:View`, because Skills & AI is a Settings category. Reading the catalogue is not a
-   * privileged act — an employee needs to know what capabilities exist to understand what an
-   * agent is doing — and only **authoring** is gated.
+   * Row-level security lets every tenant read a platform Skill, which is right for the Universal
+   * layer and wrong for a pack: a healthcare company has no business browsing the defence one.
+   * The policy cannot express that, because "may read the catalogue" is true for everybody and
+   * "is entitled to this pack" varies by company. So it is asked here, once, and applied as a
+   * filter.
+   *
+   * An empty set is nobody's packs, never everybody's — the `in: []` below matches no row.
+   */
+  private async entitledIndustries(scope: TenantScope): Promise<string[]> {
+    const packs = await this.prisma.client.tenantSkillPack.findMany({
+      where: { tenantId: scope.tenantId },
+      select: { industry: true },
+    });
+    return packs.map((pack) => pack.industry);
+  }
+
+  /**
+   * The governed catalogue, as a company administrator browses it.
+   *
+   * `settings:Administer`, not `settings:View`, and that is a tightening. Four hundred governed
+   * Skills with their triggers, exclusions and failure states are the company's configuration,
+   * and CR-03 puts company configuration behind administration — the Settings → Skills category
+   * has always required `settings:Administer` to appear, so an Employee reaching the same list
+   * through the API was the screen and the route disagreeing. Somebody who needs Skills in order
+   * to build an agent uses `availableToBuilder`, which is gated on Agent Builder instead.
    */
   async catalogueFor(input: {
     scope: TenantScope;
     actorUserId: string;
     layer?: SkillLayer | undefined;
     category?: SkillCategory | undefined;
+    department?: string | undefined;
+    archetype?: string | undefined;
+    search?: string | undefined;
     /** Only what work may actually reference. */
     publishedOnly?: boolean | undefined;
   }): Promise<{ skills: SkillView[]; note: string }> {
     const context = await this.authorization.contextFor(input.scope, input.actorUserId);
-    await this.authorization.assertCan(context, { module: 'settings', action: 'View' });
+    await this.authorization.assertCan(context, { module: 'settings', action: 'Administer' });
 
-    const mayAuthor = (
-      await this.authorization.authorize(context, { module: 'settings', action: 'Administer' })
-    ).allowed;
+    const mayAuthor = true;
 
     return this.prisma.runInTenantTransaction(input.scope, async () => {
-      // RLS returns platform rows (`tenant_id IS NULL`) **and** this company's, which is exactly
-      // what "a Verified Skill is available to every company" means. No `OR` is needed here; the
-      // policy is the filter.
+      const industries = await this.entitledIndustries(input.scope);
+
+      // RLS returns platform rows (`tenant_id IS NULL`) **and** this company's. The `OR` below
+      // narrows the platform half: every company gets the Universal layer, and a pack only where
+      // the company is entitled to it.
       const skills = await this.prisma.client.skill.findMany({
         where: {
           ...(input.layer === undefined ? {} : { layer: input.layer }),
+          ...(input.department === undefined ? {} : { department: input.department }),
+          ...(input.archetype === undefined ? {} : { archetype: input.archetype }),
+          ...(input.search === undefined || input.search.trim() === ''
+            ? {}
+            : { name: { contains: input.search.trim(), mode: 'insensitive' as const } }),
+          OR: [
+            { layer: 'UbossVerified' },
+            // RLS has already confined this arm to this company's own rows.
+            { layer: 'CompanyCustom' },
+            { layer: 'IndustryPack', industry: { in: industries } },
+          ],
         },
         orderBy: [{ layer: 'asc' }, { name: 'asc' }],
       });
@@ -190,6 +230,117 @@ export class SkillService {
           'Skills are governed capabilities, not templates: a published version cannot be ' +
           'edited, and an authorised change creates a new draft that must be approved before any ' +
           'work uses it.',
+      };
+    });
+  }
+
+  /**
+   * The Skills an Agent Builder may attach to a step.
+   *
+   * ## A different question from the catalogue, so a different door
+   *
+   * `catalogueFor` is the administrator's governed view: every layer, every status, the whole
+   * configuration. This is what somebody *building* an agent may choose from, and the three
+   * narrowings are the point:
+   *
+   *   • **Published only.** A draft has not been approved, and a Skill an agent could reference
+   *     before approval would make the review optional.
+   *   • **Entitled only.** The same pack rule the catalogue uses — a manual pick must not reach a
+   *     pack the company does not have.
+   *   • **Agent Builder's own permission.** CR-03 gives a standard Employee no Agent Builder at
+   *     all, so this control does not appear for them; it is not a second way in through Skills.
+   *
+   * Choosing by hand therefore cannot widen anything. It changes *which* approved Skill is used,
+   * never whether approval, status, entitlement or tenancy applied — those are decided here, and
+   * the caller receives a list that has already been through them.
+   */
+  async availableToBuilder(input: {
+    scope: TenantScope;
+    actorUserId: string;
+    search?: string | undefined;
+    department?: string | undefined;
+  }): Promise<{
+    skills: {
+      skillId: string;
+      versionId: string;
+      key: string;
+      name: string;
+      layer: string;
+      industry: string | null;
+      department: string | null;
+      archetype: string | null;
+      category: string;
+      purpose: string;
+      whenToUse: string;
+      whenNotToUse: string;
+      autonomy: string;
+      requiresApproval: boolean;
+      versionNumber: number;
+    }[];
+    note: string;
+  }> {
+    const context = await this.authorization.contextFor(input.scope, input.actorUserId);
+    await this.authorization.assertCan(context, { module: 'agent-builder', action: 'EditDraft' });
+
+    return this.prisma.runInTenantTransaction(input.scope, async () => {
+      const industries = await this.entitledIndustries(input.scope);
+
+      const skills = await this.prisma.client.skill.findMany({
+        where: {
+          // A Skill with nothing published has nothing an agent may reference.
+          publishedVersionId: { not: null },
+          ...(input.department === undefined ? {} : { department: input.department }),
+          ...(input.search === undefined || input.search.trim() === ''
+            ? {}
+            : { name: { contains: input.search.trim(), mode: 'insensitive' as const } }),
+          OR: [
+            { layer: 'UbossVerified' },
+            { layer: 'CompanyCustom' },
+            { layer: 'IndustryPack', industry: { in: industries } },
+          ],
+        },
+        orderBy: [{ name: 'asc' }],
+        take: 200,
+      });
+
+      const versions = await this.prisma.client.skillVersion.findMany({
+        where: {
+          id: { in: skills.map((skill) => skill.publishedVersionId ?? '') },
+          // Asserted again rather than trusted from the pointer: `published_version_id` is a
+          // convenience, and a row that had been deprecated underneath it must not be offered.
+          status: 'Published',
+        },
+      });
+      const byId = new Map(versions.map((version) => [version.id, version]));
+
+      return {
+        skills: skills.flatMap((skill) => {
+          const version = byId.get(skill.publishedVersionId ?? '');
+          if (version === undefined) return [];
+          return [
+            {
+              skillId: skill.id,
+              versionId: version.id,
+              key: skill.key,
+              name: skill.name,
+              layer: skill.layer,
+              industry: skill.industry,
+              department: skill.department,
+              archetype: skill.archetype,
+              category: version.category,
+              purpose: version.purpose,
+              whenToUse: version.whenToUse,
+              whenNotToUse: version.whenNotToUse,
+              autonomy: version.autonomy,
+              requiresApproval: version.requiresApproval,
+              versionNumber: version.versionNumber,
+            },
+          ];
+        }),
+        note:
+          'Published Skills this company is entitled to. Choosing one by hand pins the version ' +
+          'shown; it does not change what the Skill is allowed to do, which its own approval and ' +
+          'autonomy decide.',
       };
     });
   }
@@ -811,6 +962,238 @@ export class SkillService {
    * cannot reach this: the RLS `WITH CHECK` refuses the write even if a route were somehow
    * reachable, which is the belt to this brace.
    */
+  /**
+   * The whole platform catalogue, for the Master Console.
+   *
+   * Runs as a platform operation, so it sees every `tenant_id IS NULL` row and no company's
+   * custom Skills — which is the right half: a platform operator curates what UBoss publishes,
+   * and a company's own Skills are that company's, not part of the catalogue they administer.
+   *
+   * Paged, because four hundred rows with their content is not a response anybody wants by
+   * accident. The filters are the ones the catalogue is actually browsed by.
+   */
+  async platformCatalogue(input: {
+    layer?: SkillLayer | undefined;
+    industry?: string | undefined;
+    department?: string | undefined;
+    archetype?: string | undefined;
+    status?: string | undefined;
+    search?: string | undefined;
+    skip?: number | undefined;
+    take?: number | undefined;
+  }): Promise<{
+    total: number;
+    skills: {
+      id: string;
+      key: string;
+      name: string;
+      layer: string;
+      industry: string | null;
+      department: string | null;
+      archetype: string | null;
+      status: string | null;
+      versionNumber: number | null;
+      category: string | null;
+      autonomy: string | null;
+      sourceAutonomy: string | null;
+      purpose: string | null;
+      ruleCount: number;
+      entitledCompanies: number;
+    }[];
+  }> {
+    return this.prisma.runAsPlatformOperation(async () => {
+      const where = {
+        tenantId: null,
+        ...(input.layer === undefined ? {} : { layer: input.layer }),
+        ...(input.industry === undefined ? {} : { industry: input.industry }),
+        ...(input.department === undefined ? {} : { department: input.department }),
+        ...(input.archetype === undefined ? {} : { archetype: input.archetype }),
+        ...(input.search === undefined || input.search.trim() === ''
+          ? {}
+          : {
+              OR: [
+                { name: { contains: input.search.trim(), mode: 'insensitive' as const } },
+                { key: { contains: input.search.trim(), mode: 'insensitive' as const } },
+              ],
+            }),
+      };
+
+      const total = await this.prisma.client.skill.count({ where });
+      const skills = await this.prisma.client.skill.findMany({
+        where,
+        orderBy: [{ layer: 'asc' }, { name: 'asc' }],
+        skip: input.skip ?? 0,
+        take: Math.min(input.take ?? 50, 200),
+      });
+
+      const versions = await this.prisma.client.skillVersion.findMany({
+        where: { skillId: { in: skills.map((skill) => skill.id) } },
+        orderBy: { versionNumber: 'desc' },
+      });
+
+      // How many companies are entitled to each pack, so an operator can see what turning one
+      // off would take away. Universal Skills reach every company by definition, reported as
+      // null rather than as a number that would be a different kind of fact.
+      const packs = await this.prisma.client.tenantSkillPack.groupBy({
+        by: ['industry'],
+        _count: { _all: true },
+      });
+      const entitled = new Map(packs.map((pack) => [pack.industry, pack._count._all]));
+
+      return {
+        total,
+        skills: skills.map((skill) => {
+          const mine = versions.filter((version) => version.skillId === skill.id);
+          const current =
+            mine.find((version) => version.id === skill.publishedVersionId) ?? mine[0] ?? null;
+          const rules = Array.isArray(current?.rules) ? current.rules : [];
+          return {
+            id: skill.id,
+            key: skill.key,
+            name: skill.name,
+            layer: skill.layer,
+            industry: skill.industry,
+            department: skill.department,
+            archetype: skill.archetype,
+            status: current?.status ?? null,
+            versionNumber: current?.versionNumber ?? null,
+            category: current?.category ?? null,
+            autonomy: current?.autonomy ?? null,
+            sourceAutonomy: current?.sourceAutonomy ?? null,
+            purpose: current?.purpose ?? null,
+            ruleCount: rules.length,
+            entitledCompanies:
+              skill.layer === 'IndustryPack' ? (entitled.get(skill.industry ?? '') ?? 0) : -1,
+          };
+        }),
+      };
+    });
+  }
+
+  /** The values the catalogue can be filtered by, counted — so a filter never offers an empty set. */
+  async platformCatalogueFacets(): Promise<{
+    layers: { value: string; count: number }[];
+    departments: { value: string; count: number }[];
+    archetypes: { value: string; count: number }[];
+    industries: { value: string; count: number }[];
+  }> {
+    return this.prisma.runAsPlatformOperation(async () => {
+      const facet = async (column: 'layer' | 'department' | 'archetype' | 'industry') => {
+        const rows = await this.prisma.client.skill.groupBy({
+          by: [column],
+          where: { tenantId: null },
+          _count: { _all: true },
+        });
+        return rows
+          .filter((row) => row[column] !== null)
+          .map((row) => ({ value: String(row[column]), count: row._count._all }))
+          .sort((a, b) => a.value.localeCompare(b.value));
+      };
+
+      return {
+        layers: await facet('layer'),
+        departments: await facet('department'),
+        archetypes: await facet('archetype'),
+        industries: await facet('industry'),
+      };
+    });
+  }
+
+  /** Which Industry Packs a company holds, for the Master Console's company view. */
+  async packsForCompany(tenantId: string): Promise<{
+    packs: { industry: string; enabledAt: string; reason: string; skillCount: number }[];
+    available: { industry: string; skillCount: number }[];
+  }> {
+    return this.prisma.runAsPlatformOperation(async () => {
+      const held = await this.prisma.client.tenantSkillPack.findMany({
+        where: { tenantId },
+        orderBy: { industry: 'asc' },
+      });
+      const counts = await this.prisma.client.skill.groupBy({
+        by: ['industry'],
+        where: { tenantId: null, layer: 'IndustryPack' },
+        _count: { _all: true },
+      });
+      const sizeOf = new Map<string, number>(
+        counts
+          .filter((row): row is typeof row & { industry: string } => row.industry !== null)
+          .map((row) => [row.industry, row._count._all]),
+      );
+      const heldIndustries = new Set(held.map((pack) => pack.industry));
+
+      return {
+        packs: held.map((pack) => ({
+          industry: pack.industry,
+          enabledAt: pack.enabledAt.toISOString(),
+          reason: pack.reason,
+          skillCount: sizeOf.get(pack.industry) ?? 0,
+        })),
+        available: [...sizeOf.entries()]
+          .filter(([industry]) => !heldIndustries.has(industry))
+          .map(([industry, skillCount]) => ({ industry: String(industry), skillCount }))
+          .sort((a, b) => a.industry.localeCompare(b.industry)),
+      };
+    });
+  }
+
+  /**
+   * Entitle a company to an Industry Pack, or withdraw it.
+   *
+   * A commercial act, so it is platform-only and it states a reason. Withdrawing does not touch
+   * anything the company built while entitled: an agent already pinned to a pack Skill keeps
+   * running, because breaking live work on a billing change would be a worse failure than a
+   * company briefly retaining a Skill it no longer pays for. What it stops is *choosing* it
+   * again — the picker and the catalogue both read this table.
+   */
+  async setPackEntitlement(input: {
+    actorUserId: string;
+    tenantId: string;
+    industry: string;
+    enabled: boolean;
+    reason: string;
+  }): Promise<{ industry: string; enabled: boolean }> {
+    if (input.reason.trim().length < 5) {
+      throw new BadRequestException(
+        'Enabling or withdrawing an Industry Pack needs a reason: it changes what a company is ' +
+          'sold and what its builders can reach.',
+      );
+    }
+
+    return this.prisma.runAsPlatformOperation(async () => {
+      const known = await this.prisma.client.skill.findFirst({
+        where: { tenantId: null, layer: 'IndustryPack', industry: input.industry },
+        select: { id: true },
+      });
+      if (known === null) {
+        throw new NotFoundException(
+          `No Industry Pack exists for "${input.industry}". Entitling a company to a pack that ` +
+            'does not exist would be an entitlement to nothing.',
+        );
+      }
+
+      if (input.enabled) {
+        await this.prisma.client.tenantSkillPack.upsert({
+          where: {
+            tenantId_industry: { tenantId: input.tenantId, industry: input.industry },
+          },
+          create: {
+            tenantId: input.tenantId,
+            industry: input.industry,
+            enabledByUserId: input.actorUserId,
+            reason: input.reason.trim(),
+          },
+          update: { reason: input.reason.trim(), enabledByUserId: input.actorUserId },
+        });
+      } else {
+        await this.prisma.client.tenantSkillPack.deleteMany({
+          where: { tenantId: input.tenantId, industry: input.industry },
+        });
+      }
+
+      return { industry: input.industry, enabled: input.enabled };
+    });
+  }
+
   async createPlatformSkill(input: {
     actorUserId: string;
     layer: SkillLayer;
@@ -1096,6 +1479,8 @@ export class SkillService {
       key: skill.key,
       name: skill.name,
       industry: skill.industry,
+      department: skill.department,
+      archetype: skill.archetype,
       ownerUserId: skill.ownerUserId,
       // A company may author only its own. Both halves matter: the layer decides ownership, the
       // permission decides whether this person may act on it.
