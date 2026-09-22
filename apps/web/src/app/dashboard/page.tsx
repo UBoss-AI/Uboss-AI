@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import {
   Banner,
+  Button,
   Card,
   CardBody,
   DashboardAmbience,
@@ -153,7 +154,42 @@ export default function DashboardPage(): React.JSX.Element {
                 The legend, not a KPI. Without it a manager and an employee see two different
                 numbers with no way to tell why they differ.
               */}
-                <p className="uboss-muted">{counts.scope}</p>
+                <p className="uboss-dash-scope">{counts.scope}</p>
+
+                {/*
+                Why the dashboard is this small, said on the dashboard.
+
+                It is the reference's own sentence, and it was the one thing missing: without it a
+                screen holding a single donut reads as unfinished, and the first question in a demo
+                is "where is everything else". With it the same screen reads as a decision. The
+                modules named here are real and reachable from the navigation.
+              */}
+                <p className="uboss-dash-note">
+                  Your permission-scoped snapshot. Select a slice to drill into the list it counts.
+                  Reports, budgets and KPIs live in their own modules — not here.
+                </p>
+
+                {/*
+                A zero is a starting point, not a gap.
+
+                Aarohan has no activated Engine Agent, so half the donut is empty — and an empty
+                half with nothing said about it looks like something failed to load. This names the
+                one act that fills it and links to where that act happens. It appears only while
+                the count is nought, so a company with agents never sees it.
+
+                No new data: this is rendered from the count the contract already returns.
+              */}
+                {counts.agents === 0 ? (
+                  <div className="uboss-dash-next">
+                    <span>
+                      No Engine Agents yet. One is built from an approved objective, in Agent
+                      Builder.
+                    </span>
+                    <Button variant="ghost" onClick={() => router.push('/agent-builder')}>
+                      Open Agent Builder
+                    </Button>
+                  </div>
+                ) : null}
               </>
             )}
           </CardBody>

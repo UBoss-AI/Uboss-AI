@@ -3644,6 +3644,63 @@ textarea.uboss-input,
   fill: #1b2030;
 }
 
+/*
+  The dashboard's two sentences and its one next step.
+
+  Both constrained to a readable column and centred, because the card is the width of the
+  workspace: a line of prose running 1300px is a line nobody finishes. 52ch is the measure
+  everything else in this product uses for body copy.
+*/
+/*
+  The scope, the note and the next step are one block under the donut.
+
+  The scope line used to be plain muted body copy, which left-aligned it against a card the width
+  of the workspace while the two lines under it were centred — three sentences about the same
+  thing, arranged as though they were unrelated. Grouping them is the whole fix; the scope keeps
+  its own weight because it is the one that answers "why is my number different from yours".
+
+  All three are held to a readable column, because the card is as wide as the workspace and a line
+  of prose running 1300px is a line nobody finishes. 52ch is the measure everything else in this
+  product uses for body copy.
+*/
+.uboss-dash-scope,
+.uboss-dash-note,
+.uboss-dash-next {
+  max-width: 52ch;
+  margin-inline: auto;
+  text-align: center;
+}
+
+.uboss-dash-scope {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--uboss-text-2);
+}
+
+.uboss-dash-note {
+  margin-top: 18px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--uboss-text-3);
+}
+
+/*
+  The next step sits apart from the note above it, with a rule between them: one is an explanation
+  that is always true, the other is a thing to do that will stop being offered. Running them
+  together would make the permanent sentence look temporary.
+*/
+.uboss-dash-next {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--uboss-border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--uboss-text-2);
+}
+
 /* ---------------------------------------------------------------- reduced motion */
 
 /*
@@ -6359,43 +6416,160 @@ table.uboss-wfg {
   opacity: 0.03;
 }
 
+/*
+  Light gets a wash of its own.
+
+  Dark had a field — a navy radial behind the constellation — and Light had nothing but the orbs,
+  which is why the two themes did not feel like the same product. Measured before changing it: the
+  orbs were there and drifting all along, at 426, 378 and 292px. They were simply invisible.
+  Lavender at 55% behind a 46px blur, over #f8fafc, is lavender you cannot see, and two of the
+  three sat mostly off the canvas (`top: -120px`, `bottom: -110px`) so what little showed was a
+  sliver at the edge.
+
+  So Light is not being given an ambience. It is being given the one it already had, visibly: a
+  cool wash from the top, and the orbs moved onto the canvas and darkened enough to register.
+*/
+.uboss-dash-amb {
+  background: radial-gradient(120% 85% at 50% -12%, #eef2ff 0%, #f6f8fc 46%, #f8fafc 100%);
+}
+
 .uboss-amb-orb {
   position: absolute;
   border-radius: 50%;
-  filter: blur(46px);
-  opacity: 0.55;
-  /* Promoted once, then only transform changes — the blur is never recomputed per frame. */
+  /*
+    Under 28px on purpose. A wider Gaussian on three stacked layers is fill-rate expensive and
+    drops frames on a low-end laptop, and the softness beyond this point is not visible anyway
+    once the orb is behind a veil and a card.
+  */
+  filter: blur(26px);
   will-change: transform;
 }
 
+/*
+  Every orb keeps its hue and gains a mid-stop.
+
+  A two-stop radial fades to nothing almost immediately, so most of the circle was already
+  transparent before the blur widened it further. The middle stop is what gives it a body to see.
+
+  The positions left percentages behind because the layer deliberately bleeds 50vw past the stage on both sides so it always reaches the
+  workspace edge, which makes it roughly 2900px wide on a 1600px screen — and turns a percentage
+  into a trap. `left: 6%` reads as "near the left of the dashboard" and resolves to 174px from the
+  layer's left edge, which is 626px off the left of the screen. Two of the three orbs were parked
+  outside the viewport for exactly that reason, which is most of why Light looked bare.
+
+  `calc(50% - …)` is measured from the middle of the layer, and the middle of the layer is the
+  middle of the stage. It stays true at any width.
+*/
 .uboss-amb-orb--1 {
-  width: 420px;
-  height: 420px;
-  top: -120px;
-  left: 4%;
-  background: radial-gradient(circle at 35% 35%, #c4b5fd, rgba(196, 181, 253, 0) 68%);
+  width: 460px;
+  height: 460px;
+  top: -40px;
+  left: calc(50% - 560px);
+  opacity: 0.5;
+  background: radial-gradient(
+    circle at 38% 36%,
+    #a78bfa 0%,
+    rgba(167, 139, 250, 0.42) 42%,
+    rgba(167, 139, 250, 0) 72%
+  );
   animation: uboss-amb-drift-1 var(--uboss-motion-ambient-drift-1) var(--uboss-ease-standard)
     infinite alternate;
 }
 
 .uboss-amb-orb--2 {
-  width: 360px;
-  height: 360px;
-  top: 40px;
-  right: 6%;
-  background: radial-gradient(circle at 60% 40%, #a5f3fc, rgba(165, 243, 252, 0) 68%);
+  width: 400px;
+  height: 400px;
+  top: 90px;
+  right: calc(50% - 540px);
+  opacity: 0.42;
+  background: radial-gradient(
+    circle at 58% 42%,
+    #22d3ee 0%,
+    rgba(34, 211, 238, 0.34) 44%,
+    rgba(34, 211, 238, 0) 74%
+  );
   animation: uboss-amb-drift-2 var(--uboss-motion-ambient-drift-2) var(--uboss-ease-standard)
     infinite alternate;
 }
 
 .uboss-amb-orb--3 {
-  width: 300px;
-  height: 300px;
-  bottom: -110px;
-  left: 38%;
-  background: radial-gradient(circle at 50% 50%, #ddd6fe, rgba(221, 214, 254, 0) 70%);
+  width: 340px;
+  height: 340px;
+  bottom: -40px;
+  left: calc(50% - 300px);
+  opacity: 0.4;
+  background: radial-gradient(
+    circle at 50% 50%,
+    #818cf8 0%,
+    rgba(129, 140, 248, 0.3) 46%,
+    rgba(129, 140, 248, 0) 74%
+  );
   animation: uboss-amb-drift-3 var(--uboss-motion-ambient-drift-3) var(--uboss-ease-standard)
     infinite alternate;
+}
+
+/*
+  Film grain over the whole field.
+
+  This is the one line that stops a gradient looking cheap. A large smooth blend of two or three
+  colours reads as a stock background; the same blend under a few percent of noise reads as a
+  surface. It costs nothing at runtime — an inline SVG turbulence rasterised once and tiled — and
+  it is the last layer, so it sits over the wash, the orbs and the constellation alike.
+
+  `baseFrequency` is high enough that the grain is fine rather than blotchy at 1x, and the tile is
+  160px so the repeat is never visible against the orbs' 400px scale.
+*/
+.uboss-dash-amb::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
+}
+
+/*
+  A ring that breathes behind the donut.
+
+  The only motion on this screen that sits near the data, and it is deliberately not data: a slow
+  expanding ring says "this is live" without claiming a number. It is centred on the donut by
+  sitting in the same place the quiet zone does, and it is the first thing the reduced-motion
+  branch below switches off.
+*/
+.uboss-amb-pulse {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 260px;
+  height: 260px;
+  margin: -130px 0 0 -130px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  /*
+    Faint on purpose. At half opacity the ring was legible as a ring — a second circle round the
+    donut that a reader could take for part of the chart. What this layer is for is the sense that
+    something is running, and that survives at a fifth of the strength while the misreading does
+    not.
+  */
+  color: rgba(124, 58, 237, 0.22);
+  opacity: 0;
+  pointer-events: none;
+  animation: uboss-amb-pulse var(--uboss-motion-ambient-ring) var(--uboss-ease-standard) infinite;
+}
+
+@keyframes uboss-amb-pulse {
+  0% {
+    transform: scale(0.72);
+    opacity: 0;
+  }
+  35% {
+    opacity: 0.42;
+  }
+  100% {
+    transform: scale(1.55);
+    opacity: 0;
+  }
 }
 
 /* translate3d, so the compositor owns it and the main thread is not asked every frame. */
@@ -6714,6 +6888,17 @@ table.uboss-wfg {
   .uboss-nn-line--hot,
   .uboss-nn-dot--live {
     animation: none !important;
+  }
+
+  /*
+    The pulse goes entirely rather than freezing.
+
+    An orb held still is still a wash; a ring held still is a stray circle drawn round the donut,
+    which reads as a control or a boundary. Anything whose only purpose is the movement is removed
+    when the movement is, and this is the one layer on this screen that qualifies.
+  */
+  .uboss-amb-pulse {
+    display: none;
   }
 
   .uboss-nn-dot--live {

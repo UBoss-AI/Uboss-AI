@@ -379,6 +379,12 @@
   --uboss-motion-ambient-pulse: 5.5s;
   --uboss-motion-ambient-flow: 7s;
   --uboss-motion-ambient-flow-slow: 9s;
+  /*
+   * The single ring behind the Dashboard donut. Slower than the field's own pulse above, because
+   * it sits next to the numbers rather than behind them: it has to register as presence without
+   * ever pulling the eye off a count.
+   */
+  --uboss-motion-ambient-ring: 7.5s;
   /* The three signature curves on the sign-in panel, each slower than the last. */
   --uboss-motion-ambient-sig-1: 9s;
   --uboss-motion-ambient-sig-2: 12s;

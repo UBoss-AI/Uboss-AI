@@ -155,6 +155,19 @@ export function DashboardAmbience() {
         numbers sit. Atmosphere behind data has to get out of the way of the data.
       */}
       <div className="uboss-amb-veil" />
+
+      {/*
+        One slow ring behind the donut.
+
+        The only motion on this screen that sits near the numbers, and the reason it is allowed to
+        is that it carries none: it says "this workspace is live" without implying a count, a rate
+        or a direction. A spinner would imply work in progress that may not exist; a ring that
+        breathes every seven seconds implies only presence.
+
+        Removed outright under `prefers-reduced-motion` rather than frozen — held still it is just
+        a circle drawn round the donut, which reads as a boundary.
+      */}
+      <div className="uboss-amb-pulse" />
     </div>
   );
 }
