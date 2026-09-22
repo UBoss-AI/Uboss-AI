@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
-import { OrgChart, type OrgChartNode } from './OrgChart';
+import { departmentColour, departmentSkin, OrgChart, type OrgChartNode } from './OrgChart';
 
 /*
  * The chart had no tests, and two of the things it got wrong were the kind only a test holds
@@ -83,27 +83,36 @@ describe('OrgChart — text on a surface that does not follow the theme', () => 
   });
 
   /*
-   * A department's colour is its identity and does not change with the theme, so the initials on
-   * it must not either — and a single fixed choice cannot serve the whole palette. Light ink on
-   * #4B9C2E measured 3.45:1; dark ink on #7A5AF8 is no better. The two cases below are the two
-   * ends of that, and they must come out differently.
+   * The band is no longer the department's colour — it is that colour at 16% over the card, so
+   * what the initials sit on is a pale tint in Light and a deep one in Dark. Two backgrounds, two
+   * inks, and the component cannot tell which one it is drawing on: it hands both to CSS as custom
+   * properties and CSS chooses. So this asserts the node carries both, and that they differ, which
+   * is the thing a single hardcoded ink could never do.
    */
-  it('puts dark ink on a light department colour and light ink on a dark one', () => {
+  it('hands the card an ink for each theme rather than one fixed ink', () => {
     const { container } = render(<OrgChart root={tree} />);
 
-    // Quality Assurance is #4B9C2E; Production is #7A5AF8, deepened until it can take a label.
-    expect(textNode(container, 'QA').getAttribute('fill')).toBe('#0b1220');
-    expect(textNode(container, 'PR').getAttribute('fill')).toBe('#f8fafc');
+    const dept = container.querySelector('.uboss-org-node--dept') as SVGGElement;
+    const light = dept.style.getPropertyValue('--uboss-org-ink-l');
+    const dark = dept.style.getPropertyValue('--uboss-org-ink-d');
+
+    expect(light).toMatch(/^#[0-9a-f]{6}$/);
+    expect(dark).toMatch(/^#[0-9a-f]{6}$/);
+    expect(light).not.toBe(dark);
+
+    // And the initials draw whichever one CSS resolved, rather than a colour of their own.
+    expect(textNode(container, 'QA').getAttribute('fill')).toBe('var(--uboss-org-ink)');
   });
 
   /*
-   * Read off the render rather than from a list of colours, so this covers whatever the component
-   * actually drew — including the deepening step, which exists because one palette entry could not
-   * carry a label at any ink. A hard-coded pair would have gone on passing after that broke.
+   * Measured from the helper the component draws with, not from a list of colours, so it covers
+   * the stepping loop as well — the part that exists because a palette entry that is legible on
+   * one theme's tint is not automatically legible on the other's.
+   *
+   * This checks both themes, which the previous version could not: it read the band and the ink
+   * off the rendered attributes, and only one theme's values were ever there to read.
    */
-  it('clears 4.5:1 for every initial it draws, whatever the colour', () => {
-    const { container } = render(<OrgChart root={tree} />);
-
+  it('clears 4.5:1 on both themes, for every colour the palette can produce', () => {
     const lin = (channel: number): number =>
       channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
     const luminance = (hex: string): number => {
@@ -111,27 +120,72 @@ describe('OrgChart — text on a surface that does not follow the theme', () => 
       const at = (offset: number) => lin(Number.parseInt(value.slice(offset, offset + 2), 16) / 255);
       return 0.2126 * at(0) + 0.7152 * at(2) + 0.0722 * at(4);
     };
+    const ratio = (a: string, b: string): number => {
+      const x = luminance(a);
+      const y = luminance(b);
+      return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+    };
+
+    // The five the client named, plus enough unnamed ones to reach every entry of the fallback
+    // palette the hash picks from.
+    const names = [
+      'Executive',
+      'Regulatory Affairs',
+      'Exports & Tenders',
+      'Quality Assurance',
+      'Production',
+      'Finance',
+      'General',
+      'Customer Operations',
+      'Management',
+      'Operations',
+      'Legal',
+      'People',
+      'Supply Chain',
+    ];
 
     let checked = 0;
-    for (const item of container.querySelectorAll('g[role="treeitem"]')) {
-      // The band is the card rect; the initials are the first text in the group.
-      const band = item.querySelector('.uboss-org-card')?.getAttribute('fill') ?? '';
-      const ink = item.querySelector('text')?.getAttribute('fill') ?? '';
-      // The company band is a gradient reference, and its inks are asserted above.
-      if (!band.startsWith('#') || !ink.startsWith('#')) continue;
-
-      const a = luminance(ink);
-      const b = luminance(band);
-      const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
-      expect(ratio, `${item.querySelector('text')?.textContent} on ${band}`).toBeGreaterThanOrEqual(
-        4.5,
-      );
-      checked += 1;
+    for (const name of names) {
+      const skin = departmentSkin(departmentColour(name));
+      for (const [theme, pair] of Object.entries(skin)) {
+        expect(ratio(pair.ink, pair.band), `${name} initials, ${theme}`).toBeGreaterThanOrEqual(
+          4.5,
+        );
+        checked += 1;
+      }
     }
 
-    // A loop over nothing passes, so say how many there were meant to be. Two: the departments.
-    // People carry a photo or a silhouette rather than initials, so they have no ink to check.
-    expect(checked).toBe(2);
+    // A loop over nothing passes, so say how many there were meant to be: two themes each.
+    expect(checked).toBe(names.length * 2);
+  });
+
+  /*
+   * The one assumption the ink maths makes, held still.
+   *
+   * `departmentSkin` composites the band over the surface a card is drawn on, and it has to know
+   * what that surface is — so it carries #ffffff and #171821 as literals. Both were read off the
+   * running page before they were written down. But a literal copied out of a stylesheet is a
+   * silent coupling: change `--uboss-surface` in tokens.css and every contrast figure above goes
+   * on passing while being measured against a background that is no longer there.
+   *
+   * So the copy is checked against the original. If this fails, the fix is to update the two
+   * literals in `departmentSkin` — not to relax this.
+   */
+  it('composites the band over the surface the theme actually uses', () => {
+    const tokens = readFileSync(join(process.cwd(), 'src/styles/tokens.css'), 'utf8');
+
+    // Light is the first declaration; Dark restates it, which is why both copies are checked.
+    const declarations = [...tokens.matchAll(/^ *--uboss-surface: *([^;]+);/gm)].map((match) =>
+      (match[1] ?? '').trim().toLowerCase(),
+    );
+
+    expect(declarations.length).toBeGreaterThanOrEqual(2);
+    for (const value of declarations) {
+      expect(['#fff', '#ffffff', '#171821']).toContain(value);
+    }
+    // Both ends must actually be present, or one theme could have quietly become the other.
+    expect(declarations.some((value) => value === '#fff' || value === '#ffffff')).toBe(true);
+    expect(declarations).toContain('#171821');
   });
 });
 
@@ -218,13 +272,29 @@ describe('OrgChart — taking something away', () => {
     expect(screen.queryByRole('button', { name: /Delete/i })).not.toBeInTheDocument();
   });
 
-  it('offers Offboard on a person, and calls back with their id', () => {
-    const onOffboardPerson = vi.fn();
-    render(<OrgChart root={tree} onOffboardPerson={onOffboardPerson} />);
+  /*
+   * Offboarding is not on the node any more, and this is the check that it stays off.
+   *
+   * It was never done here — the handler navigated to Settings → Users & Access — but it sat as a
+   * third disc in a hover cluster, 6px from Edit, which is the arrangement that puts a
+   * consequential act one slip away from an ordinary one. It lives on the person's own page now,
+   * where there is room to say what it does before somebody does it.
+   *
+   * A person keeps two actions, both of which add: a direct report, and an edit.
+   */
+  it('offers nothing that takes a person away, whatever the caller passes', () => {
+    const { container } = render(
+      <OrgChart root={tree} onAddReport={vi.fn()} onEditPerson={vi.fn()} onSelectPerson={vi.fn()} />,
+    );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Offboard Kavya Nair' }));
+    expect(screen.queryByRole('button', { name: /Offboard/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Remove|Delete/i })).not.toBeInTheDocument();
 
-    expect(onOffboardPerson).toHaveBeenCalledWith('user-1');
+    // Two, not three: the person's card has no third slot to mis-click into.
+    const person = container.querySelector(
+      '.uboss-org-node:not(.uboss-org-node--dept):not(.uboss-org-node--company)',
+    );
+    expect(person?.querySelectorAll('.uboss-org-action')).toHaveLength(2);
   });
 
   it('shows neither when the caller did not pass the handler', () => {
@@ -233,6 +303,32 @@ describe('OrgChart — taking something away', () => {
     // A control that cannot act should not be on the node at all, disabled or otherwise.
     expect(screen.queryByRole('button', { name: /Archive/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Offboard/i })).not.toBeInTheDocument();
+  });
+
+  /*
+   * The gap is the safeguard, so it is the thing to assert. Colour is not: the archive disc is
+   * grey until the pointer is on it, which is deliberate, and a test that looked for red would be
+   * asserting the arrangement this change was made to get rid of.
+   */
+  it('puts more air before the archive action than between the two that build', () => {
+    const { container } = render(
+      <OrgChart
+        root={tree}
+        onAddToDepartment={vi.fn()}
+        onEditDepartment={vi.fn()}
+        onArchiveDepartment={vi.fn()}
+      />,
+    );
+
+    const dept = container.querySelector('.uboss-org-node--dept') as SVGGElement;
+    const centres = [...dept.querySelectorAll('.uboss-org-action circle')]
+      .map((circle) => Number(circle.getAttribute('cx')))
+      .sort((a, b) => a - b);
+
+    expect(centres).toHaveLength(3);
+    const buildGap = (centres[1] as number) - (centres[0] as number);
+    const archiveGap = (centres[2] as number) - (centres[1] as number);
+    expect(archiveGap).toBeGreaterThan(buildGap);
   });
 
   it('keeps every name inside the card once a third action is there', () => {

@@ -3605,6 +3605,43 @@ textarea.uboss-input,
   fill: #e7edf5;
 }
 
+/*
+  Archive is grey until somebody reaches for it.
+
+  It used to be drawn in danger red at rest, sitting 6px from Edit — the same 6px that separated
+  Add from Edit. A permanent red disc beside two neutral ones is a colour the eye stops reading
+  after the second visit, and the spacing gave a slip nowhere to land. So the red arrives on hover,
+  which is the moment it means something, and the disc itself stands off by ACTION_SEPARATION.
+
+  It is `color` rather than a fill and a stroke, because the ring and the glyph are both drawn in
+  currentColor and have to turn together.
+*/
+.uboss-org-action--archive {
+  color: var(--uboss-text-3);
+  transition: color var(--uboss-motion-small) var(--uboss-ease-standard);
+}
+
+.uboss-org-action--archive:hover,
+.uboss-org-action--archive:focus-visible {
+  color: var(--uboss-danger);
+}
+
+.uboss-org-action--archive:hover circle {
+  fill: var(--uboss-danger-050);
+}
+
+/*
+  Which of the department's two inks the initials use.
+
+  The band is the department's colour at 16% over the card, so what the initials sit on is a pale
+  tint in Light and a deep one in Dark — two different backgrounds needing two different inks, and
+  SVG cannot ask which one it is on. Both are computed from the department's own colour in
+  `departmentInk` and arrive as custom properties on the node; this picks one.
+*/
+.uboss-org-node--dept {
+  --uboss-org-ink: var(--uboss-org-ink-l);
+}
+
 .uboss-org-action:focus-visible circle {
   stroke: var(--uboss-ai-bright);
   stroke-width: 2;
@@ -3617,6 +3654,10 @@ textarea.uboss-input,
   somebody forgets.
 */
 @media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .uboss-org-node--dept {
+    --uboss-org-ink: var(--uboss-org-ink-d);
+  }
+
   :root:not([data-theme='light']) .uboss-org-node:hover .uboss-org-card,
   :root:not([data-theme='light']) .uboss-org-node:focus-within .uboss-org-card {
     filter: url(#uboss-org-shadow) drop-shadow(0 0 12px rgba(167, 139, 250, 0.55));
@@ -3629,6 +3670,10 @@ textarea.uboss-input,
   :root:not([data-theme='light']) .uboss-org-action--edit:hover circle {
     fill: #1b2030;
   }
+}
+
+:root[data-theme='dark'] .uboss-org-node--dept {
+  --uboss-org-ink: var(--uboss-org-ink-d);
 }
 
 :root[data-theme='dark'] .uboss-org-node:hover .uboss-org-card,

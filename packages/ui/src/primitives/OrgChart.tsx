@@ -51,14 +51,6 @@ export interface OrgChartProps {
    * collect the reason the server requires.
    */
   onArchiveDepartment?: (id: string) => void;
-  /**
-   * The offboard action on a person node. Omit to hide it.
-   *
-   * Also not a delete: offboarding keeps the membership row and marks it, because somebody who
-   * left still has work, approvals and an audit trail attached to them. It needs a different
-   * permission from the rest of this chart (`users:ManageAccess`), which is the caller's to check.
-   */
-  onOffboardPerson?: (id: string) => void;
   /** Shown instead of the chart when a company has departments but nobody recorded. */
   emptyMessage?: string;
   className?: string;
@@ -117,8 +109,10 @@ const PERSON_TEXT_X = STRIPE + 14 + AVATAR_R * 2 + 14;
  */
 function actionLane(count: number): number {
   // The rightmost circle is inset 26, each further one is 30 to its left, and 12 for the radius
-  // plus 8 of air before the text starts.
-  return count === 0 ? 16 : 46 + (count - 1) * 30;
+  // plus 8 of air before the text starts. A third action is always the destructive one, which
+  // stands off by ACTION_SEPARATION, so the lane has to grow by the same amount or the name
+  // reaches under it.
+  return count === 0 ? 16 : 46 + (count - 1) * 30 + (count >= 3 ? ACTION_SEPARATION : 0);
 }
 
 /**
@@ -236,7 +230,7 @@ function readable(colour: string): string {
  * is to be told apart from each other, which a single hue cannot do — whereas the chart's own
  * chrome (the mark, the add-person glyph) belongs to the product and follows the tokens.
  */
-function departmentColour(name: string): string {
+export function departmentColour(name: string): string {
   const named = DEPARTMENT_COLOURS[name];
   if (named !== undefined) {
     return readable(named);
@@ -251,6 +245,88 @@ function departmentColour(name: string): string {
 }
 
 /** Department initials: two words' first letters, or the first two characters. */
+/**
+ * How much of the department's colour the band carries.
+ *
+ * The band used to be the colour itself: 58 by 84 of full-strength orange or green, which is a
+ * sixth of the card spent on two letters. It was the loudest thing on the screen in Light and it
+ * glowed in Dark, where a saturated slab against a near-black card is brighter than any of the
+ * content. A tint says the same thing — this card belongs to that department — at a fraction of
+ * the weight, which is what the client asked for and what every current org chart does.
+ *
+ * It is drawn as the colour at this opacity over the card's own surface rather than as a
+ * pre-mixed colour, so the composite follows the theme without the component having to know which
+ * theme it is in. That is the whole reason it is an opacity and not a lighter hex.
+ */
+const BAND_TINT = 0.16;
+
+/**
+ * The initials' ink, for each theme, given the department's colour.
+ *
+ * The band is a tint and therefore nearly the page behind it, so the initials cannot be white or
+ * near-black — they have to be the department's own colour, at whatever lightness clears 4.5:1
+ * against that theme's tint. This is the one thing the opacity trick cannot do for itself: SVG
+ * has no way to ask what it is sitting on.
+ *
+ * It returns the band as well as the ink, because the two only mean anything together: the guard
+ * has to measure one against the other, and a test that recomputed the composite itself would be
+ * measuring its own arithmetic rather than the component's.
+ *
+ * Exported because it is the guard's only way in. Reading the ink off the rendered attribute used
+ * to be enough when it was a hex; now it is a custom property whose value depends on the theme,
+ * and a test that read the attribute would be reading the word "var".
+ */
+export function departmentSkin(colour: string): {
+  light: { band: string; ink: string };
+  dark: { band: string; ink: string };
+} {
+  const step = (hex: string, towards: number): string => {
+    const value = hex.replace('#', '');
+    const channel = (offset: number): string => {
+      const current = Number.parseInt(value.slice(offset, offset + 2), 16);
+      return Math.round(current + (towards - current) * 0.12)
+        .toString(16)
+        .padStart(2, '0');
+    };
+    return `#${channel(0)}${channel(2)}${channel(4)}`;
+  };
+
+  const contrast = (a: string, b: string): number => {
+    const x = luminance(a);
+    const y = luminance(b);
+    return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+  };
+
+  /** The tint as it composites over a surface, which is what the ink actually sits on. */
+  const over = (surface: string): string => {
+    const s = surface.replace('#', '');
+    const c = colour.replace('#', '');
+    const channel = (offset: number): string =>
+      Math.round(
+        Number.parseInt(c.slice(offset, offset + 2), 16) * BAND_TINT +
+          Number.parseInt(s.slice(offset, offset + 2), 16) * (1 - BAND_TINT),
+      )
+        .toString(16)
+        .padStart(2, '0');
+    return `#${channel(0)}${channel(2)}${channel(4)}`;
+  };
+
+  /* Walk the colour toward black on a light tint and toward white on a dark one, 12% at a time,
+     and stop the moment it is legible. Capped, because a colour that cannot get there in this
+     many steps has hit the end of the range and one more step will not save it. */
+  const pair = (surface: string, towards: number): { band: string; ink: string } => {
+    const band = over(surface);
+    let current = colour;
+    for (let i = 0; i < 20 && contrast(current, band) < 4.5; i += 1) {
+      current = step(current, towards);
+    }
+    return { band, ink: current };
+  };
+
+  // The two surfaces a card is drawn on, as `--uboss-surface` resolves in each theme.
+  return { light: pair('#ffffff', 0), dark: pair('#171821', 255) };
+}
+
 function departmentInitials(name: string): string {
   const parts = name.split(/[ &]+/).filter(Boolean);
   return (
@@ -426,7 +502,6 @@ export function OrgChart({
   onAddToDepartment,
   onEditDepartment,
   onArchiveDepartment,
-  onOffboardPerson,
   emptyMessage,
   className,
 }: OrgChartProps) {
@@ -505,7 +580,6 @@ export function OrgChart({
             {...(onAddToDepartment === undefined ? {} : { onAddToDepartment })}
             {...(onEditDepartment === undefined ? {} : { onEditDepartment })}
             {...(onArchiveDepartment === undefined ? {} : { onArchiveDepartment })}
-            {...(onOffboardPerson === undefined ? {} : { onOffboardPerson })}
           />
         ))}
       </svg>
@@ -529,6 +603,7 @@ function Card({
   panel,
   stroke,
   bandWidth = RAIL,
+  bandOpacity,
 }: {
   x: number;
   y: number;
@@ -537,7 +612,15 @@ function Card({
   stroke: string;
   /** Wide for a department, a stripe for a person. */
   bandWidth?: number;
+  /**
+   * Draw the band as a wash over the card's surface instead of as the colour itself.
+   *
+   * A department passes this; a person's 8px stripe and the company's logo band do not, because
+   * neither is large enough to shout and the stripe is the only thing grouping a column.
+   */
+  bandOpacity?: number;
 }) {
+  const washed = bandOpacity !== undefined;
   return (
     <>
       <rect
@@ -547,9 +630,22 @@ function Card({
         width={BOX_WIDTH}
         height={BOX_HEIGHT}
         rx={16}
-        fill={band}
+        fill={washed ? panel : band}
         filter="url(#uboss-org-shadow)"
       />
+      {/*
+        The wash, over the surface rather than instead of it, which is what lets one opacity serve
+        both themes: the same 16% of green is a pale mint on white and a deep moss on near-black,
+        and the component never has to ask which it is in.
+      */}
+      {washed ? (
+        <path
+          className="uboss-org-band"
+          d={panelPath(x, y, bandWidth, BOX_HEIGHT, 16, 0)}
+          fill={band}
+          fillOpacity={bandOpacity}
+        />
+      ) : null}
       <path d={panelPath(x + bandWidth, y, BOX_WIDTH - bandWidth, BOX_HEIGHT, 0, 16)} fill={panel} />
       <rect
         className="uboss-org-edge"
@@ -566,17 +662,23 @@ function Card({
   );
 }
 
-/** The initials in the coloured band, whose ink comes from the band's own colour. */
+/**
+ * The initials in the band.
+ *
+ * The ink used to be derived here, from the band colour, by `inkOn`. It cannot be any more: the
+ * band is now a wash whose result depends on the theme, so the two possible inks are computed by
+ * `departmentInk` and handed to CSS, and this draws whichever one CSS resolved.
+ */
 function BandLabel({
   x,
   y,
-  colour,
+  ink,
   label,
   fontSize,
 }: {
   x: number;
   y: number;
-  colour: string;
+  ink: string;
   label: string;
   fontSize: number;
 }) {
@@ -584,7 +686,7 @@ function BandLabel({
     <text
       x={x + RAIL / 2}
       y={y + BOX_HEIGHT / 2 + fontSize * 0.36}
-      fill={inkOn(colour)}
+      fill={ink}
       fontSize={fontSize}
       fontWeight={800}
       textAnchor="middle"
@@ -595,23 +697,49 @@ function BandLabel({
   );
 }
 
-/** What the hover tooltip says. Neither of the last two is called Delete, because neither is. */
-const ACTION_TITLES: Record<'add' | 'edit' | 'archive' | 'offboard', string> = {
+/**
+ * What the hover tooltip says. The last one is not called Delete, because it is not one.
+ *
+ * Offboard used to be here. It is on the person's own page now: it needs its own permission, an
+ * impact assessment and a successor when the person has reports, and none of that belongs behind
+ * a 24px disc that appears on hover.
+ */
+const ACTION_TITLES: Record<'add' | 'edit' | 'archive', string> = {
   add: 'Add',
   edit: 'Edit',
   archive: 'Archive',
-  offboard: 'Offboard',
 };
 
 const ACTION_R = 12;
 const ACTION_GAP = 30;
 const ACTION_RIGHT_INSET = 26;
+/**
+ * Extra air between the destructive action and the two that build.
+ *
+ * Measured before choosing it: all three circles sat 6px apart, edge to edge, so Archive was
+ * exactly as close to Edit as Edit was to Add. Three identical discs in a row, one of which takes
+ * something away, is a misclick waiting to be reported as a bug — and the standing guidance on
+ * destructive actions is to separate them and space them, not to rely on the colour alone.
+ */
+const ACTION_SEPARATION = 10;
 /** Vertically in the top half, clear of the subtitle so that line keeps the card's full width. */
 const ACTION_CY = 26;
 
-/** Where a slot sits, counting right to left, so slot 0 is the rightmost. */
-function actionCx(x: number, slot: number): number {
-  return x + BOX_WIDTH - ACTION_RIGHT_INSET - slot * ACTION_GAP;
+/**
+ * Where a slot sits, counting right to left, so slot 0 is the rightmost.
+ *
+ * `detached` pushes the building actions further left, away from the destructive one that keeps
+ * the right-hand slot. It is the gap that does the work here, not the position: whichever end it
+ * sits at, what matters is that the pointer has to travel to reach it.
+ */
+function actionCx(x: number, slot: number, detached = false): number {
+  return (
+    x +
+    BOX_WIDTH -
+    ACTION_RIGHT_INSET -
+    slot * ACTION_GAP -
+    (detached ? ACTION_SEPARATION : 0)
+  );
 }
 
 /**
@@ -635,11 +763,12 @@ function ActionButton({
   x: number;
   y: number;
   slot: number;
-  kind: 'add' | 'edit' | 'archive' | 'offboard';
+  kind: 'add' | 'edit' | 'archive';
   label: string;
   onActivate: () => void;
 }) {
-  const cx = actionCx(x, slot);
+  const destructive = kind === 'archive';
+  const cx = actionCx(x, slot, !destructive);
   const cy = y + ACTION_CY;
 
   return (
@@ -666,19 +795,25 @@ function ActionButton({
         cx={cx}
         cy={cy}
         r={ACTION_R}
+        /*
+          The destructive one is neutral at rest and turns danger under the pointer, which is the
+          arrangement the guidance asks for: red is a warning at the moment of reaching, not a
+          decoration the eye stops seeing. It is drawn in currentColor so one CSS rule flips the
+          ring and the glyph together — see `.uboss-org-act--danger` in components.css.
+        */
         fill={
           kind === 'add'
             ? 'var(--uboss-blue-050)'
             : kind === 'edit'
               ? 'var(--uboss-bg-2)'
-              : 'var(--uboss-danger-050)'
+              : 'var(--uboss-surface)'
         }
         stroke={
           kind === 'add'
             ? 'var(--uboss-blue-100)'
             : kind === 'edit'
               ? 'var(--uboss-border)'
-              : 'var(--uboss-danger)'
+              : 'currentColor'
         }
       />
       {kind === 'add' ? (
@@ -697,15 +832,22 @@ function ActionButton({
           strokeLinejoin="round"
         />
       ) : kind === 'archive' ? (
-        /* A box with its lid on: put away, still there. Not a bin. */
-        <g stroke="var(--uboss-danger)" strokeWidth={1.4} fill="none" strokeLinejoin="round">
-          <path d={`M${cx - 5.5} ${cy - 4} h11 v3 h-11 z`} />
-          <path d={`M${cx - 4.3} ${cy - 1} h8.6 v5.5 h-8.6 z`} />
-          <path d={`M${cx - 1.8} ${cy + 1.5} h3.6`} strokeLinecap="round" />
+        /*
+          An arrow going down into a tray: filed away, still there.
+
+          The previous glyph was a box with its lid on, which is the right idea and the wrong
+          drawing — at a 24px disc the lid reads as the rim of a bin, and the client read it as
+          one. The arrow is what carries the meaning here: nothing is being emptied, something is
+          being put somewhere. The tray is open at the top for the same reason.
+        */
+        <g stroke="currentColor" strokeWidth={1.5} fill="none" strokeLinecap="round">
+          <path d={`M${cx} ${cy - 5.5} v6.4`} />
+          <path d={`M${cx - 2.6} ${cy - 1.6} l2.6 2.6 2.6 -2.6`} strokeLinejoin="round" />
+          <path d={`M${cx - 5.4} ${cy + 2.6} v2.9 h10.8 v-2.9`} strokeLinejoin="round" />
         </g>
       ) : (
         /* Somebody leaving through a door, rather than a person being erased. */
-        <g stroke="var(--uboss-danger)" strokeWidth={1.4} fill="none" strokeLinecap="round">
+        <g stroke="currentColor" strokeWidth={1.4} fill="none" strokeLinecap="round">
           <path d={`M${cx + 0.5} ${cy - 5} h-5 v10 h5`} strokeLinejoin="round" />
           <path d={`M${cx + 5.5} ${cy} h-5.5 m5.5 0 l-2.3 -2.4 m2.3 2.4 l-2.3 2.4`} />
         </g>
@@ -802,7 +944,6 @@ function OrgNode({
   onAddToDepartment,
   onEditDepartment,
   onArchiveDepartment,
-  onOffboardPerson,
 }: {
   node: Placed;
   idPrefix: string;
@@ -812,7 +953,6 @@ function OrgNode({
   onAddToDepartment?: (id: string) => void;
   onEditDepartment?: (id: string) => void;
   onArchiveDepartment?: (id: string) => void;
-  onOffboardPerson?: (id: string) => void;
 }) {
   const x = node.x - BOX_WIDTH / 2;
   const y = node.y - BOX_HEIGHT / 2;
@@ -875,20 +1015,48 @@ function OrgNode({
           },
     ].filter((entry) => entry !== null);
 
+    const skin = departmentSkin(colour);
+
     return (
       <g
-        className={cn('uboss-org-node', actions.length > 0 && 'uboss-org-node--acts')}
+        className={cn(
+          'uboss-org-node',
+          'uboss-org-node--dept',
+          actions.length > 0 && 'uboss-org-node--acts',
+        )}
         role="treeitem"
         aria-label={`${node.name}. ${node.subtitle}`}
+        /*
+          Both inks travel as custom properties and CSS picks one, because an SVG fill cannot ask
+          what theme it is in and the right ink here depends on it. Set on the node rather than in
+          the stylesheet because the value is the department's own colour, which the stylesheet
+          has no way to know.
+        */
+        style={{
+          ['--uboss-org-ink-l' as string]: skin.light.ink,
+          ['--uboss-org-ink-d' as string]: skin.dark.ink,
+        }}
       >
         <Card
           x={x}
           y={y}
           band={colour}
-          panel="var(--uboss-bg-2)"
+          bandOpacity={BAND_TINT}
+          /*
+            The surface, not `--uboss-bg-2`. A department card in the grey one sat visibly duller
+            than the white person cards below it, which read as though departments were disabled.
+            They are the structure; they should not look like the faded part of it.
+          */
+          panel="var(--uboss-surface)"
           stroke="var(--uboss-border)"
         />
-        <BandLabel x={x} y={y} colour={colour} label={departmentInitials(node.name)} fontSize={16} />
+        <BandLabel
+          x={x}
+          y={y}
+          ink="var(--uboss-org-ink)"
+          label={departmentInitials(node.name)}
+          fontSize={16}
+        />
         <text x={x + TEXT_X} y={y + 37} fill="var(--uboss-text)" fontSize={14} fontWeight={750}>
           {truncate(node.name, nameLimit(actions.length))}
         </text>
@@ -928,13 +1096,6 @@ function OrgNode({
     onEditPerson === undefined
       ? null
       : { kind: 'edit' as const, label: `Edit ${node.name}`, onActivate: () => onEditPerson(node.id) },
-    onOffboardPerson === undefined
-      ? null
-      : {
-          kind: 'offboard' as const,
-          label: `Offboard ${node.name}`,
-          onActivate: () => onOffboardPerson(node.id),
-        },
   ].filter((entry) => entry !== null);
 
   return (

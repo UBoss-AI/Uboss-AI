@@ -557,19 +557,6 @@ export default function HierarchyPage() {
                           onArchiveDepartment: askToArchive,
                         }
                       : {})}
-                    {...(mayManageAccess
-                      ? {
-                          /*
-                            Offboarding lives in Settings and Users & Access, and this takes you
-                            there with that person open. It is not rebuilt here: it needs the
-                            impact assessment, a successor when the person has direct reports, and
-                            a reason — a second copy of those rules would be a second place for
-                            them to drift.
-                          */
-                          onOffboardPerson: (userId: string) =>
-                            router.push(`/settings/users?offboard=${encodeURIComponent(userId)}`),
-                        }
-                      : {})}
                     emptyMessage={
                       view.employeeCount === 0
                         ? 'No employees recorded yet. Use Add Employee to build the reporting structure — nobody is invited by adding them here.'

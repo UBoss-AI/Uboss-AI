@@ -117,7 +117,14 @@ describe('motion tokens resolve', () => {
   );
 
   /** Custom properties set inline by a component rather than declared in a stylesheet. */
-  const setInJs = new Set(['--uboss-arc', '--uboss-row', '--uboss-nn-delay']);
+  const setInJs = new Set([
+    '--uboss-arc',
+    '--uboss-row',
+    '--uboss-nn-delay',
+    // A department's two inks: computed from its own colour, which no stylesheet can know.
+    '--uboss-org-ink-l',
+    '--uboss-org-ink-d',
+  ]);
 
   const referenced = sheets.flatMap(({ name, css }) =>
     css.split('\n').flatMap((line, index) =>

@@ -117,6 +117,11 @@ export default function EmployeeProfilePage() {
   const access = useMyAccess();
   // Your own photo is yours — the rule the photo service applies, asked here the same way.
   const isSelf = access?.userId === userId;
+  /*
+   * Offboarding needs its own permission, not the one that lets somebody edit the structure.
+   * Checked here as well as by the server, so the control is absent rather than refused.
+   */
+  const mayManageAccess = can(access, 'users', 'ManageAccess');
 
   useEffect(() => {
     authApi
@@ -467,6 +472,40 @@ export default function EmployeeProfilePage() {
               </ul>
             </CardBody>
           </Card>
+
+          {/*
+            Offboarding, at the foot of the person it concerns.
+
+            It used to be a third disc in the chart's hover cluster, six pixels from Edit. Nothing
+            about it belongs there: it is the one act on this screen with a consequence, it needs a
+            permission the rest of the chart does not, and a hover cluster gives a slip nowhere to
+            land. Here it is reached deliberately, on the page that already says who the person is
+            and what they would be leaving.
+
+            It still does not offboard anybody. Settings → Users & Access owns that, because it
+            needs the impact assessment, a successor when the person has direct reports, and a
+            reason. This is the way in, and it says so rather than implying otherwise.
+          */}
+          {mayManageAccess && !isSelf ? (
+            <Card>
+              <CardBody>
+                <div className="uboss-section-label">Leaving the company</div>
+                <p className="uboss-muted-3">
+                  Offboarding keeps this person&apos;s record, their work and their approvals — it
+                  marks the employment as ended rather than removing anybody. Users &amp; Access
+                  collects the successor and the reason before anything is applied.
+                </p>
+                <Button
+                  variant="danger"
+                  onClick={() =>
+                    router.push(`/settings/users?offboard=${encodeURIComponent(userId)}`)
+                  }
+                >
+                  Offboard {profile?.displayName ?? 'this employee'}
+                </Button>
+              </CardBody>
+            </Card>
+          ) : null}
         </div>
       )}
 
