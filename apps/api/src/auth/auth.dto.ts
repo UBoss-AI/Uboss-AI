@@ -23,6 +23,24 @@ export class LoginDto {
   @MinLength(1, { message: 'Enter your password.' })
   @MaxLength(256)
   password!: string;
+
+  /*
+   * The captcha, when the deployment asks one.
+   *
+   * Both optional here and **required by the service** when the captcha is on. The validation
+   * pipe cannot know whether it is on — that is configuration the DTO has no access to — and a
+   * required field would break every deployment that leaves it off. So the shape is permissive
+   * and the control is where it can see the setting.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(400)
+  captchaToken?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(16)
+  captchaAnswer?: string;
 }
 
 export class ActivateInvitationDto {

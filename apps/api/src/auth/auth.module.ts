@@ -15,6 +15,7 @@ import { LoginService } from './login.service.js';
 import { MfaLoginService } from './mfa-login.service.js';
 import { MfaService } from './mfa.service.js';
 import { PasswordResetService } from './password-reset.service.js';
+import { CaptchaService } from './captcha.service.js';
 import { PasswordService } from './password.service.js';
 import { ScimController } from './scim/scim.controller.js';
 import { ScimService } from './scim/scim.service.js';
@@ -57,6 +58,7 @@ import { SsoService } from './sso/sso.service.js';
       provide: DNS_TXT_RESOLVER,
       useFactory: () => new NodeDnsTxtResolver(),
     },
+    CaptchaService,
     PasswordService,
     SecurityEventPublisher,
     SessionService,
@@ -76,6 +78,7 @@ import { SsoService } from './sso/sso.service.js';
   exports: [
     AUTH_CONFIG,
     SecretBox,
+    CaptchaService,
     PasswordService,
     SecurityEventPublisher,
     SessionService,

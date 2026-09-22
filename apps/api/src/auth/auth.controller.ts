@@ -31,6 +31,7 @@ import {
   PreviewInvitationDto,
   RequestPasswordResetDto,
 } from './auth.dto.js';
+import { CaptchaService } from './captcha.service.js';
 import {
   BackchannelLogoutDto,
   ConfirmMfaEnrolmentDto,
@@ -102,7 +103,28 @@ export class AuthController {
     private readonly policies: AuthenticationPolicyService,
     private readonly sso: SsoService,
     private readonly users: UserRepository,
+    private readonly captcha: CaptchaService,
   ) {}
+
+  /**
+   * A verification question, if this deployment asks one.
+   *
+   * Answers `{ enabled: false }` when it does not, so the sign-in screen can ask once and
+   * render nothing rather than having the setting duplicated in the client. Anonymous by
+   * necessity: it is needed before anybody has signed in.
+   */
+  @Get('captcha')
+  @AllowAnonymous()
+  captchaChallenge(): { enabled: boolean; token?: string; question?: string; expiresInSeconds?: number } {
+    const challenge = this.captcha.issue();
+    if (challenge === null) return { enabled: false };
+    return {
+      enabled: true,
+      token: challenge.token,
+      question: challenge.question,
+      expiresInSeconds: challenge.expiresInSeconds,
+    };
+  }
 
   @Post('login')
   @AllowAnonymous()
@@ -112,6 +134,15 @@ export class AuthController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
+    /*
+     * The captcha first, before the credentials are looked at.
+     *
+     * Order matters: checking it afterwards would leave the password check — and its lockout
+     * counter — reachable without answering, which is the thing the captcha exists to put a cost
+     * on. A no-op when the captcha is off.
+     */
+    this.captcha.verify({ token: body.captchaToken, answer: body.captchaAnswer });
+
     const result = await this.logins.login(body.email, body.password, originFrom(request));
 
     if (result.outcome === 'locked') {

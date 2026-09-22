@@ -2869,6 +2869,57 @@ textarea.uboss-input,
   margin-bottom: 26px;
 }
 
+/*
+ * The sign-in verification question.
+ *
+ * One row: the question, the answer field, and a way to ask for another. The question takes its
+ * own weight because it is the thing being read, and the field is narrow because the answer is
+ * two digits — a full-width input would suggest a sentence was wanted.
+ */
+.uboss-captcha {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.uboss-captcha-question {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.uboss-captcha input {
+  width: 96px;
+  flex: 0 0 auto;
+}
+
+/*
+ * The terms acknowledgement.
+ *
+ * A label wrapping the box and the sentence, so the whole line is the hit target rather than a
+ * 13-pixel square. `align-items: flex-start` because the sentence wraps to two lines on a phone
+ * and a centred box then floats beside the middle of the text.
+ */
+.uboss-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 14px 0 16px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--uboss-text-2);
+  cursor: pointer;
+}
+
+.uboss-consent input[type='checkbox'] {
+  margin-top: 2px;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
 .uboss-or {
   display: flex;
   align-items: center;

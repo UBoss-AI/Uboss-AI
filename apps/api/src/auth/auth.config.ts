@@ -97,6 +97,25 @@ export interface AuthConfig {
    * an intercepted code is usable in.
    */
   totpWindowSteps: number;
+  // ---- The sign-in captcha ----
+
+  /**
+   * Whether a sign-in asks a verification question.
+   *
+   * **Off by default**, and that is deliberate rather than timid: a captcha switched on by
+   * surprise blocks every automated sign-in a deployment has — acceptance runs, health probes,
+   * a rehearsal — and finding that out at the worst moment is how a safety control ends up
+   * switched off for good. A deployment that wants it says so.
+   */
+  captchaEnabled: boolean;
+  /**
+   * How long one question stays answerable.
+   *
+   * Long enough to read it and type an answer, short enough that a captured token is worth
+   * little. The expiry is signed into the token, so this is the real lifetime and not a hint.
+   */
+  captchaExpirySeconds: number;
+
   /** Issuer shown in the authenticator app. */
   totpIssuer: string;
   /** How long a company has to publish the DNS record proving it controls a domain. */
@@ -141,6 +160,8 @@ export function loadAuthConfig(): AuthConfig {
     mfaMaxAttempts: positiveInt('AUTH_MFA_MAX_ATTEMPTS', 5),
     totpWindowSteps: positiveInt('AUTH_TOTP_WINDOW_STEPS', 1),
     totpIssuer: process.env['AUTH_TOTP_ISSUER'] ?? 'UBoss',
+    captchaEnabled: process.env['AUTH_CAPTCHA_ENABLED'] === 'true',
+    captchaExpirySeconds: positiveInt('AUTH_CAPTCHA_EXPIRY_SECONDS', 300),
     domainVerificationExpiryHours: positiveInt('AUTH_DOMAIN_VERIFICATION_EXPIRY_HOURS', 168),
     ssoAuthRequestMinutes: positiveInt('AUTH_SSO_REQUEST_MINUTES', 10),
     publicApiBaseUrl: origin('AUTH_PUBLIC_API_BASE_URL', 'http://localhost:4000'),

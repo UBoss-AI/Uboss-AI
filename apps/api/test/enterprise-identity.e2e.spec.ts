@@ -22,6 +22,7 @@ import { LoginService } from '../src/auth/login.service.js';
 import { MfaLoginService } from '../src/auth/mfa-login.service.js';
 import { MfaService } from '../src/auth/mfa.service.js';
 import { PasswordResetService } from '../src/auth/password-reset.service.js';
+import { CaptchaService } from '../src/auth/captcha.service.js';
 import { PasswordService } from '../src/auth/password.service.js';
 import { ScimController } from '../src/auth/scim/scim.controller.js';
 import { ScimService } from '../src/auth/scim/scim.service.js';
@@ -171,6 +172,7 @@ describe('enterprise identity (e2e)', () => {
         EnterpriseIdentityRepository,
         ProvisioningRepository,
         TenantMembershipRepository,
+        CaptchaService,
         PasswordService,
         AuditTrailRepository,
         SecurityEventService,

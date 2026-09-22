@@ -21,6 +21,7 @@ import { MfaRepository } from '../src/persistence/mfa.repository.js';
 import { AuthController } from '../src/auth/auth.controller.js';
 import { InvitationController } from '../src/auth/invitation.controller.js';
 import { InvitationService } from '../src/auth/invitation.service.js';
+import { CaptchaService } from '../src/auth/captcha.service.js';
 import { LoginService } from '../src/auth/login.service.js';
 import { PasswordResetService } from '../src/auth/password-reset.service.js';
 import { PasswordService } from '../src/auth/password.service.js';
@@ -129,6 +130,7 @@ describe('authentication (e2e)', () => {
         PasswordResetRepository,
         SessionRepository,
         AuditEventRepository,
+        CaptchaService,
         PasswordService,
         AuditTrailRepository,
         SecurityEventService,
@@ -1115,6 +1117,158 @@ describe('authentication (e2e)', () => {
 
       // Activation signs in from a previously unseen location, which is the new-device hook.
       assert.ok(seen.includes('security.new_device_sign_in'), `saw ${JSON.stringify(seen)}`);
+    });
+  });
+
+  // =========================================================================
+  // The sign-in captcha.
+  //
+  // It is off by default, so the first test is that the flow is untouched — a control nobody
+  // asked for must not change anybody's sign-in. The rest turn it on and drive the real service,
+  // because a captcha asserted only against a stub is a captcha nobody has checked.
+  // =========================================================================
+  describe('the sign-in captcha', () => {
+    it('asks nothing and changes nothing while it is off', async () => {
+      const meta = await agent().get('/auth/captcha').expect(200);
+      assert.equal(meta.body.enabled, false);
+      assert.equal(meta.body.question, undefined, 'no question is issued while it is off');
+
+      const issued = await issueInvitation();
+      await agent()
+        .post('/auth/invitations/activate')
+        .send({ token: issued.activationToken, password: GOOD_PASSWORD })
+        .expect(200);
+
+      // No captcha fields at all, and sign-in works exactly as before.
+      await agent()
+        .post('/auth/login')
+        .send({ email: 'invitee@auth.example', password: GOOD_PASSWORD })
+        .expect(200);
+    });
+
+    describe('once it is turned on', () => {
+      /*
+       * The service is asked directly rather than through a rebuilt application.
+       *
+       * `AUTH_CAPTCHA_ENABLED` is read when the config is loaded, and the module here was built
+       * once in `before`. Standing a second application up to flip one flag would double the
+       * suite's slowest step; asking the service is the same code path the controller calls, and
+       * the controller's own wiring is covered by the off-by-default test above.
+       */
+      const enabled = () =>
+        new CaptchaService({ ...loadAuthConfig(), captchaEnabled: true, captchaExpirySeconds: 300 });
+
+      it('issues a question a person can answer, and accepts the answer', () => {
+        const service = enabled();
+        const challenge = service.issue();
+
+        assert.ok(challenge, 'a question is issued once it is on');
+        assert.match(challenge.question, /What is \d+ [×+] \d+\?/);
+
+        // Solve it the way a person would, from the question itself.
+        const [, left, operator, right] =
+          challenge.question.match(/What is (\d+) ([×+]) (\d+)\?/) ?? [];
+        const answer =
+          operator === '×' ? Number(left) * Number(right) : Number(left) + Number(right);
+
+        // No throw is the pass: verify refuses rather than returning false.
+        service.verify({ token: challenge.token, answer: String(answer) });
+      });
+
+      it('refuses a wrong answer', () => {
+        const service = enabled();
+        const challenge = service.issue();
+        assert.ok(challenge);
+
+        assert.throws(
+          () => service.verify({ token: challenge.token, answer: '-1' }),
+          /not right/i,
+        );
+      });
+
+      it('refuses a missing answer', () => {
+        const service = enabled();
+        const challenge = service.issue();
+        assert.ok(challenge);
+
+        assert.throws(() => service.verify({ token: challenge.token }), /Answer the verification/i);
+        assert.throws(() => service.verify({ answer: '4' }), /Answer the verification/i);
+      });
+
+      it('refuses a tampered token, so the expiry cannot be edited', () => {
+        const service = enabled();
+        const challenge = service.issue();
+        assert.ok(challenge);
+
+        const parts = challenge.token.split('.');
+        assert.equal(parts.length, 3, 'answer hash, expiry and signature');
+
+        // A far-future expiry, signed with the original signature.
+        const forged = [
+          parts[0],
+          Buffer.from(String(Date.now() + 86_400_000), 'utf8').toString('base64url'),
+          parts[2],
+        ].join('.');
+
+        assert.throws(() => service.verify({ token: forged, answer: '4' }), /expired/i);
+      });
+
+      it('refuses an expired question', () => {
+        const service = new CaptchaService({
+          ...loadAuthConfig(),
+          captchaEnabled: true,
+          // Already over by the time it is answered.
+          captchaExpirySeconds: -1,
+        });
+        const challenge = service.issue();
+        assert.ok(challenge);
+
+        assert.throws(() => service.verify({ token: challenge.token, answer: '4' }), /expired/i);
+      });
+
+      it('carries the answer as a hash, not as something a browser could read', () => {
+        const service = enabled();
+        const challenge = service.issue();
+        assert.ok(challenge);
+
+        const [, left, operator, right] =
+          challenge.question.match(/What is (\d+) ([×+]) (\d+)\?/) ?? [];
+        const answer = String(
+          operator === '×' ? Number(left) * Number(right) : Number(left) + Number(right),
+        );
+
+        /*
+         * The token travels to a browser, so the answer must not be readable from it.
+         *
+         * The first version of this decoded the hash as UTF-8 and looked for the answer as a
+         * substring — which flaked, and deserved to: thirty-two random bytes read as text
+         * contain a given one- or two-digit string often enough to fail a suite now and then.
+         * It was testing the wrong thing anyway. What matters is that the segment is a full
+         * SHA-256 rather than the answer in any encoding, and that is a fixed, checkable fact:
+         * 32 bytes is 43 base64url characters, which no two-digit number can be.
+         */
+        const answerSegment = challenge.token.split('.')[0] ?? '';
+        assert.equal(answerSegment.length, 43, 'the answer segment is a full SHA-256, not a number');
+        assert.ok(!challenge.token.includes(answer), 'and the answer appears nowhere verbatim');
+
+        // Two questions with the same answer still hash identically — the hash is keyed, not
+        // salted — so what stops an attacker is that they cannot compute it, which the signature
+        // test above covers. Asserting anything about a second service instance here would prove
+        // nothing: both read the same deployment key.
+      });
+
+      it('does not reuse one question’s signature for another', () => {
+        const service = enabled();
+        const first = service.issue();
+        const second = service.issue();
+        assert.ok(first);
+        assert.ok(second);
+
+        // Two questions, two signatures — otherwise one solved token would answer all of them.
+        if (first.question !== second.question) {
+          assert.notEqual(first.token, second.token);
+        }
+      });
     });
   });
 });

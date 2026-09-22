@@ -1242,7 +1242,23 @@ export const authApi = {
    * Discriminates the three possible successful responses. The API returns 200 for all of them —
    * a company requiring SSO is not a credential error, and a 401 would make the browser show one.
    */
-  login: async (email: string, password: string): Promise<LoginOutcome> => {
+  /**
+   * The verification question, when this deployment asks one.
+   *
+   * Asked once by the sign-in screen. `{ enabled: false }` is the answer when the captcha is
+   * off, so the setting lives in one place — the server — rather than being duplicated here
+   * where it could disagree.
+   */
+  captcha: () =>
+    call<{ enabled: boolean; token?: string; question?: string; expiresInSeconds?: number }>(
+      '/auth/captcha',
+    ),
+
+  login: async (
+    email: string,
+    password: string,
+    captcha?: { token: string; answer: string },
+  ): Promise<LoginOutcome> => {
     const body = await call<
       | LoginResponse
       | {
@@ -1259,7 +1275,18 @@ export const authApi = {
           ssoConnections: SsoConnectionSummary[];
           message: string;
         }
-    >('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+    >('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        email,
+        password,
+        // Omitted entirely when there is no captcha: the body is whitelisted server-side, and
+        // sending empty strings would be sending an answer of "".
+        ...(captcha === undefined
+          ? {}
+          : { captchaToken: captcha.token, captchaAnswer: captcha.answer }),
+      }),
+    });
 
     if ('mfaRequired' in body) {
       return { kind: 'mfa-required', ...body };

@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import {
   Banner,
   Button,
   FormField,
   LoginPresentation,
+  Modal,
   NoPublicSignupNotice,
   SkeletonText,
   ProviderButton,
@@ -112,6 +113,46 @@ export function SignInFlow({ plane }: SignInFlowProps) {
   const [ssoError, setSsoError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  /*
+   * The terms tick and the verification question.
+   *
+   * The tick is always here and always required. It is an acknowledgement at the door, which is
+   * what the client asked for — and it is honest about being a screen control: the API does not
+   * require it, so nothing here should be read as a legal record of acceptance. Recording that
+   * per sign-in is a schema change and a separate decision.
+   *
+   * The captcha is the opposite: the question and the answer are both the server's, and the
+   * server refuses a sign-in whose answer is wrong. It appears only when the deployment has
+   * turned it on, which is why `captcha` starts as `null` and the screen renders nothing until
+   * the first answer comes back.
+   */
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
+
+  const [captcha, setCaptcha] = useState<{ token: string; question: string } | null>(null);
+  const [captchaAnswer, setCaptchaAnswer] = useState('');
+
+  /** Ask once whether this deployment wants a question, and for the first one if it does. */
+  const refreshCaptcha = useCallback(async () => {
+    try {
+      const issued = await authApi.captcha();
+      setCaptcha(
+        issued.enabled && issued.token !== undefined && issued.question !== undefined
+          ? { token: issued.token, question: issued.question }
+          : null,
+      );
+      setCaptchaAnswer('');
+    } catch {
+      // A failure here must not block sign-in: if the question cannot be fetched, the server is
+      // the thing that decides whether one was needed, and it will say so on the attempt.
+      setCaptcha(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshCaptcha();
+  }, [refreshCaptcha]);
+
   // A failed federated sign-in comes back as a redirect carrying a short reason.
   useEffect(() => {
     const reason = new URLSearchParams(window.location.search).get('ssoError');
@@ -162,7 +203,11 @@ export function SignInFlow({ plane }: SignInFlowProps) {
     setStep({ kind: 'submitting' });
 
     try {
-      const outcome = await authApi.login(email, password);
+      const outcome = await authApi.login(
+        email,
+        password,
+        captcha === null ? undefined : { token: captcha.token, answer: captchaAnswer },
+      );
 
       if (outcome.kind === 'signed-in') {
         setStep({
@@ -198,6 +243,16 @@ export function SignInFlow({ plane }: SignInFlowProps) {
             },
       );
     } catch (error) {
+      /*
+       * A new question on every failure, and that is not politeness.
+       *
+       * The token carries its own answer, so one that has been sent once has been seen once. If a
+       * wrong password left the same question up, an attacker would solve it once and reuse the
+       * token for every attempt afterwards — the captcha would cost them a single answer for an
+       * unlimited run. Replacing it makes each attempt cost one.
+       */
+      void refreshCaptcha();
+
       // The API answers identically for a wrong password and an unknown address, so this message
       // is shown as received rather than being second-guessed here.
       setStep({
@@ -727,8 +782,93 @@ export function SignInFlow({ plane }: SignInFlowProps) {
           </div>
         )}
 
+        {/*
+          The verification question, when this deployment asks one.
+
+          Both the question and the answer are the server's: it signs the question, and it refuses
+          the sign-in if the answer is wrong. Nothing here decides whether the answer was right,
+          which is why there is no tick or cross beside the field — a captcha whose verdict the
+          browser renders is a captcha the browser could be told to pass.
+
+          Arithmetic rather than a distorted image, so a screen reader can read it out and nobody
+          needs a mouse to solve it.
+        */}
+        {showPassword && captcha !== null ? (
+          <FormField
+            label="Verification"
+            required
+            hint="A short check that a person is signing in."
+          >
+            {(props) => (
+              <div className="uboss-captcha">
+                <span className="uboss-captcha-question" aria-hidden="false">
+                  {captcha.question}
+                </span>
+                <input
+                  {...props}
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={captchaAnswer}
+                  placeholder="Answer"
+                  onChange={(event) => setCaptchaAnswer(event.target.value)}
+                  disabled={submitting}
+                />
+                <button
+                  type="button"
+                  className="uboss-link"
+                  onClick={() => void refreshCaptcha()}
+                  disabled={submitting}
+                >
+                  New question
+                </button>
+              </div>
+            )}
+          </FormField>
+        ) : null}
+
+        {/*
+          The terms tick.
+
+          Above the button and never pre-ticked: a box that arrives already checked is not an
+          acknowledgement of anything. The label carries the link, so reading the terms does not
+          mean losing what has been typed — the dialog opens over this screen.
+        */}
         {showPassword ? (
-          <Button type="submit" variant="primary" block disabled={submitting}>
+          <label className="uboss-consent">
+            <input
+              type="checkbox"
+              checked={acceptedTerms}
+              disabled={submitting}
+              onChange={(event) => setAcceptedTerms(event.target.checked)}
+            />
+            <span>
+              I agree to the{' '}
+              <button
+                type="button"
+                className="uboss-link"
+                onClick={() => setShowTerms(true)}
+              >
+                Terms &amp; Conditions
+              </button>{' '}
+              and the acceptable-use policy.
+            </span>
+          </label>
+        ) : null}
+
+        {showPassword ? (
+          <Button
+            type="submit"
+            variant="primary"
+            block
+            disabled={submitting || !acceptedTerms}
+            /*
+              Why the button is disabled rather than the tick being checked on submit: a person
+              who presses a live button and is then told off has been misled by the button. One
+              that is plainly not ready, next to the thing that makes it ready, is information.
+            */
+            title={acceptedTerms ? undefined : 'Accept the Terms & Conditions to sign in'}
+          >
             {submitting ? 'Signing in…' : 'Sign In'}
           </Button>
         ) : null}
@@ -814,6 +954,61 @@ export function SignInFlow({ plane }: SignInFlowProps) {
           /activate and /access-help, which are where somebody without an account actually lands.
         */}
       </form>
+
+      {/*
+        The terms, over the sign-in card rather than away from it.
+
+        A link that navigated would discard a typed email and password, and somebody who read the
+        terms would be punished for it. The dialog also means the tick and the thing it refers to
+        are on the same screen, which is the only way the tick means anything.
+
+        The text is deliberately short and deliberately generic. A real agreement is a legal
+        document the client supplies and a lawyer writes; what belongs here is the acknowledgement
+        and a place to put it. Inventing clauses would be worse than leaving the placeholder
+        visible, because an invented clause reads as though somebody approved it.
+      */}
+      <Modal
+        open={showTerms}
+        onClose={() => setShowTerms(false)}
+        title="Terms &amp; Conditions"
+      >
+        <p>
+          UBoss is an enterprise workforce and operations platform licensed to your company. By
+          signing in you acknowledge that you are using it on your company's behalf and under its
+          policies.
+        </p>
+        <p>
+          <b>Acceptable use.</b> Your account is yours alone. Do not share your password, and do
+          not attempt to reach data, objectives, agents or people outside the access your role
+          grants you. Every action you take is recorded against your name in an audit trail your
+          company can read.
+        </p>
+        <p>
+          <b>AI-assisted work.</b> UBoss drafts, analyses and proposes. A draft is not a decision:
+          work that commits your company is approved by a person, and you remain accountable for
+          what you approve.
+        </p>
+        <p>
+          <b>Your company's terms govern.</b> This acknowledgement does not replace the agreement
+          between your company and UBoss, or your own employment terms. Where they differ, they
+          take precedence over this summary.
+        </p>
+        <Banner tone="info">
+          Your company administrator can tell you which policies apply to your account.
+        </Banner>
+        <div className="uboss-actions" style={{ marginTop: 14 }}>
+          <Button
+            variant="primary"
+            onClick={() => {
+              setAcceptedTerms(true);
+              setShowTerms(false);
+            }}
+          >
+            I agree
+          </Button>
+          <Button onClick={() => setShowTerms(false)}>Close</Button>
+        </div>
+      </Modal>
     </LoginPresentation>
   );
 }
