@@ -373,6 +373,74 @@ export class ObjectiveService {
     return this.viewOf(loaded.objective, loaded.versions, loaded.reward);
   }
 
+  /**
+   * The readable names behind an objective's stored ids, for the downloadable workbook.
+   *
+   * ## Why the file carries names and not ids
+   *
+   * A department and an owner are stored as UUIDs. Sending one out to be filled in by a person is
+   * sending something nobody can read, nobody can check and nobody can correct — and the file is
+   * going to somebody outside the product. The name goes out; the name comes back; resolving it
+   * against the company is the caller's job, exactly as it is for a typed form.
+   *
+   * Null where nothing is set. An empty string in the file is "not filled in", which is the truth.
+   */
+  async workbookNames(input: {
+    scope: TenantScope;
+    actorUserId: string;
+    objectiveId: string;
+  }): Promise<{
+    departmentName?: string | undefined;
+    ownerName?: string | undefined;
+    responsibleOwnerName?: string | undefined;
+  }> {
+    const context = await this.authorization.contextFor(input.scope, input.actorUserId);
+    const loaded = await this.load(input.scope, input.objectiveId);
+    await this.assertOnResource(context, loaded.objective, 'View');
+
+    const version = loaded.versions.find((row) => row.status === 'Draft') ?? loaded.versions[0];
+    if (version === undefined) return {};
+
+    // The version's own columns. Form 2's fields are stored as columns, not as a JSON blob.
+    const content = {
+      departmentId: version.departmentId,
+      objectiveOwnerUserId: version.objectiveOwnerUserId,
+      responsibleOwnerUserId: version.responsibleOwnerUserId,
+    };
+
+    const [department, owner, responsible] = await this.prisma.runInTenantTransaction(
+      input.scope,
+      async () => [
+        content.departmentId === undefined
+          ? null
+          : await this.prisma.client.department.findFirst({
+              where: { tenantId: input.scope.tenantId, id: content.departmentId },
+              select: { name: true },
+            }),
+        content.objectiveOwnerUserId === undefined
+          ? null
+          : await this.prisma.client.user.findUnique({
+              where: { id: content.objectiveOwnerUserId },
+              select: { displayName: true },
+            }),
+        content.responsibleOwnerUserId == null
+          ? null
+          : await this.prisma.client.user.findUnique({
+              where: { id: content.responsibleOwnerUserId },
+              select: { displayName: true },
+            }),
+      ],
+    );
+
+    return {
+      ...(department?.name === undefined ? {} : { departmentName: department.name }),
+      ...(owner?.displayName === undefined ? {} : { ownerName: owner.displayName }),
+      ...(responsible?.displayName === undefined
+        ? {}
+        : { responsibleOwnerName: responsible.displayName }),
+    };
+  }
+
   // -------------------------------------------------------------------------
   // Authoring
   // -------------------------------------------------------------------------

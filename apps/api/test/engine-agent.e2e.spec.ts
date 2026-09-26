@@ -23,6 +23,7 @@ import { EngineAgentController } from '../src/agents/engine-agent.controller.js'
 import { EngineAgentService } from '../src/agents/engine-agent.service.js';
 import { ApprovalService } from '../src/approvals/approval.service.js';
 import { HumanTaskService } from '../src/tasks/human-task.service.js';
+import { WorkReleaseService } from '../src/tasks/work-release.service.js';
 import { AuditEventService } from '../src/audit/audit-event.service.js';
 import { SecurityEventService } from '../src/audit/security-event.service.js';
 import { AUTH_CONFIG, loadAuthConfig } from '../src/auth/auth.config.js';
@@ -180,6 +181,7 @@ describe('engine agent registry and versioning (e2e)', () => {
         // `activateVersion` verifies, so the registry cannot be tested without it.
         ApprovalService,
         HumanTaskService,
+        WorkReleaseService,
         TenantContextService,
         Reflector,
         ReportingHierarchyResolver,
@@ -340,9 +342,19 @@ describe('engine agent registry and versioning (e2e)', () => {
         });
       }
 
-      // CR-03 (Prompt 40A): builder access is no longer part of the Employee default, so it is
-      // granted explicitly here. See `grantBuilderAccess` for why this is the existing mechanism
-      // rather than a new one.
+      /*
+       * Builder access, granted by name rather than inherited from a role.
+       *
+       * Two rules put it here. CR-03 took it out of the Employee template, and the client's
+       * 2026-09-25 rule took it out of Manager and Head as well: the model is that the Admin builds
+       * Agents and everybody else operates them, with anything more granted explicitly. So these
+       * personas are given it the way a real Admin would give it, through the mechanism the product
+       * already ships — which also means these tests exercise that mechanism rather than assuming a
+       * role default that no longer exists.
+       *
+       * The reach is granted with the capability and no wider: an employee over their own work, a
+       * manager over their team, a head over their department.
+       */
       for (const userId of [workerUserId, otherWorkerUserId]) {
         await grantBuilderAccess(ctx, {
           tenantId,
@@ -350,6 +362,23 @@ describe('engine agent registry and versioning (e2e)', () => {
           grantedByUserId: platformOwnerId,
         });
       }
+
+      await grantBuilderAccess(ctx, {
+        tenantId,
+        userId: managerUserId,
+        grantedByUserId: platformOwnerId,
+        scopeKind: 'TeamSubtree',
+        canPublish: true,
+      });
+
+      await grantBuilderAccess(ctx, {
+        tenantId,
+        userId: objectiveApproverId,
+        grantedByUserId: platformOwnerId,
+        scopeKind: 'Department',
+        canPublish: true,
+        departmentIds: [departmentId],
+      });
 
       // A Head, for the approve step and for the Form 3 read.
       await ctx.prisma.client.roleAssignment.create({

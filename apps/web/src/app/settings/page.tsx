@@ -394,6 +394,23 @@ export default function CompanySettingsPage() {
             </Banner>
           ) : null}
 
+          {/*
+            A separate sentence, because it is a separate fact.
+
+            These are not withheld from anybody. They are company administration, and this screen
+            leaves them out for somebody who cannot change them rather than listing policy they
+            can only look at. Saying "your role cannot read it" here would be untrue, and a
+            refusal a person can catch out is worse than no message at all.
+          */}
+          {view.administrativeCategories > 0 ? (
+            <Banner tone="info">
+              {view.administrativeCategories} further categor
+              {view.administrativeCategories === 1 ? 'y holds' : 'ies hold'} company administration
+              only, so {view.administrativeCategories === 1 ? 'it is' : 'they are'} not listed
+              here. Nothing is hidden from you that you could act on.
+            </Banner>
+          ) : null}
+
           <SettingsShell
             sections={sections}
             activeKey={active}
@@ -584,6 +601,11 @@ export default function CompanySettingsPage() {
                 {/*
                   Skills & AI, matching the reference panel. A platform Skill is shown as not
                   editable here; the only path to your own version is Clone.
+
+                  No longer reachable: `skills` was taken out of SETTINGS_SECTIONS, so the sidebar
+                  does not offer it and `?section=skills` is not honoured either. Kept mounted on
+                  purpose. The panel still works, and restoring the section is one line — deleting
+                  it would make that one line a rewrite for no gain today.
                 */}
                 {active === 'skills' && tenantId !== null ? (
                   <SkillsPanel tenantId={tenantId} mayAdminister={mayAdministerAnything} />

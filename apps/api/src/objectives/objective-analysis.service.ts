@@ -153,6 +153,21 @@ export class ObjectiveAnalysisService {
     actorUserId: string;
     objectiveId: string;
     versionId?: string | undefined;
+    /**
+     * Whether to wait for the pipeline before answering.
+     *
+     * **The HTTP layer passes `false`.** The whole pipeline takes the better part of a minute, and
+     * holding an HTTP request open for that long is wrong twice over: any proxy or load balancer
+     * between the browser and the API will give up first — which is exactly what happened, the
+     * caller seeing a 500 for a run that had in fact started and would go on to succeed — and it
+     * contradicts what this screen already promises, that the analysis is a durable job you can
+     * walk away from. The run row is committed before the pipeline begins, so returning early
+     * hands back something real that the screen polls.
+     *
+     * Defaults to `true` so every in-process caller keeps a deterministic answer. A test that
+     * starts an analysis and asserts on the workflow it produced should not have to poll for it.
+     */
+    awaitCompletion?: boolean | undefined;
   }): Promise<AnalysisRunView> {
     const context = await this.authorization.contextFor(input.scope, input.actorUserId);
     await this.authorization.assertCan(context, { module: 'objective', action: 'EditDraft' });
@@ -265,7 +280,15 @@ export class ObjectiveAnalysisService {
       };
     });
 
-    await this.runPipeline({
+    /*
+     * Not awaited when the caller asked not to wait.
+     *
+     * Safe to leave running because `runPipeline` never throws: it catches its own failure and
+     * writes the reason onto the run, which is the same row the screen is polling. So a failure
+     * after this point is reported in the place somebody is already looking, rather than being
+     * lost to an unhandled rejection.
+     */
+    const pipeline = this.runPipeline({
       scope: input.scope,
       actorUserId: input.actorUserId,
       runId: prepared.runId,
@@ -277,6 +300,17 @@ export class ObjectiveAnalysisService {
       expectedFinalResult: prepared.version.expectedFinalResult,
       steps: prepared.steps,
     });
+
+    if (input.awaitCompletion === false) {
+      // Queued, and really queued: the row is committed and the stages will be written onto it.
+      return this.view({
+        scope: input.scope,
+        actorUserId: input.actorUserId,
+        runId: prepared.runId,
+      });
+    }
+
+    await pipeline;
 
     return this.view({
       scope: input.scope,
@@ -721,6 +755,28 @@ export class ObjectiveAnalysisService {
       } else {
         previousId = stepNodeId;
       }
+    }
+
+    /*
+     * The order the chain describes, written where the product actually enforces it.
+     *
+     * The edges above say what follows what, and until this existed that was the only place it was
+     * said. `Approve & Assign` does not read edges — it copies each node's `dod.dependencies` onto
+     * the task it creates, and `WorkReleaseService` reads those to decide what may start. So a plan
+     * the analysis generated had empty dependencies, every task arrived `Assigned` at once, and the
+     * sequence the diagram drew was enforced only if somebody re-typed it by hand in the editor.
+     *
+     * Projected from the edges rather than written beside them, so there is still one source of
+     * truth for the order: change an edge in the editor and the dependency follows.
+     *
+     * The Goal is excluded. It is a label rather than work, nothing ever completes it, and a step
+     * waiting on it would wait for ever.
+     */
+    for (const node of state.nodes) {
+      if (node.kind === 'Goal') continue;
+      node.dod.dependencies = state.edges
+        .filter((edge) => edge.toNodeId === node.id && edge.fromNodeId !== 'goal')
+        .map((edge) => edge.fromNodeId);
     }
 
     const draft: WorkflowDraft = {

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -8,9 +9,11 @@ import {
   Post,
   Put,
   Query,
+  Res,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Type } from 'class-transformer';
+import type { Response } from 'express';
 import {
   Allow,
   ArrayMaxSize,
@@ -65,6 +68,7 @@ import {
 } from '@uboss/types';
 
 import { RequirePermission } from '../authorization/authorization.decorators.js';
+import { ObjectiveWorkbook } from './objective-workbook.js';
 import { actorUserId } from '../request-context/authenticated-actor.js';
 import { getActor } from '../request-context/request-context.js';
 import { TenantScoped } from '../tenancy/tenancy.decorators.js';
@@ -343,6 +347,14 @@ export class ListObjectivesDto {
  * with the objective's department and owner, so a manager cannot reach another department's
  * objective by knowing its id.
  */
+export class ParseObjectiveWorkbookDto {
+  /** The workbook, base64-encoded. An Objective file is a few tens of kilobytes. */
+  @IsString()
+  @MinLength(8)
+  @MaxLength(12_000_000)
+  file!: string;
+}
+
 @Controller('tenants/:tenantId/objectives')
 @TenantScoped()
 export class ObjectiveController {
@@ -453,6 +465,35 @@ export class ObjectiveController {
     });
   }
 
+  /**
+   * The blank form, for an objective that does not exist yet.
+   *
+   * The client's rule has two halves and only one was built: "If Objective is blank, download a
+   * blank supported Objective template. If Admin already filled some/all of it, download Excel
+   * containing the current values." The second half is `:objectiveId/workbook`; this is the first.
+   * Without it, the Download button on a new objective was disabled and said "save the draft
+   * first" — which is the product telling somebody to do the thing they were trying to avoid by
+   * taking the form away to fill in.
+   *
+   * **Declared above `:objectiveId`**, or the router reads "workbook-template" as an objective id
+   * and refuses it as a malformed UUID.
+   */
+  @Get('workbook-template')
+  @RequirePermission({ module: 'objective', action: 'View' })
+  async downloadWorkbookTemplate(@Res() response: Response): Promise<void> {
+    const buffer = await ObjectiveWorkbook.toBuffer({});
+
+    response.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    response.setHeader(
+      'Content-Disposition',
+      'attachment; filename="objective template.xlsx"',
+    );
+    response.send(buffer);
+  }
+
   @Get(':objectiveId')
   @RequirePermission({ module: 'objective', action: 'View' })
   async view(@Param('objectiveId', ParseUUIDPipe) objectiveId: string): Promise<unknown> {
@@ -461,6 +502,95 @@ export class ObjectiveController {
       actorUserId: this.currentUserId(),
       objectiveId,
     });
+  }
+
+  /**
+   * The Objective as a spreadsheet — with whatever has been filled in so far.
+   *
+   * ## Why this is not a blank template
+   *
+   * The client's rule is explicit: a blank objective downloads a template, and a partly filled one
+   * downloads **its current values**. A download that was always empty would make every trip out of
+   * UBoss a decision to retype everything already entered, which is why the feature would go unused.
+   *
+   * Reading it needs `objective:View` — the same permission as looking at the objective on screen,
+   * because a file of it is the same information in a different shape.
+   */
+  @Get(':objectiveId/workbook')
+  @RequirePermission({ module: 'objective', action: 'View' })
+  async downloadWorkbook(
+    @Param('objectiveId', ParseUUIDPipe) objectiveId: string,
+    @Res() response: Response,
+  ): Promise<void> {
+    const scope = this.tenantContext.requireScope();
+    const view = await this.objectives.view({
+      scope,
+      actorUserId: this.currentUserId(),
+      objectiveId,
+    });
+
+    /*
+     * The draft if there is one, otherwise the live version.
+     *
+     * A download is for filling in, and the draft is the thing being filled. Falling back to the
+     * live version means an objective with nothing open still comes down carrying what it says,
+     * rather than as a blank form that looks like the work was lost.
+     */
+    const version = view.openDraft ?? view.activeVersion;
+    const names = await this.objectives.workbookNames({
+      scope,
+      actorUserId: this.currentUserId(),
+      objectiveId,
+    });
+
+    const buffer = await ObjectiveWorkbook.toBuffer({
+      ...(version === null ? {} : { objective: version.content, steps: version.steps }),
+      ...names,
+    });
+
+    response.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    response.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${view.code} objective.xlsx"`,
+    );
+    response.send(buffer);
+  }
+
+  /**
+   * Read a filled-in Objective workbook. **Saves nothing.**
+   *
+   * Returns what the file says and what could not be understood, so the screen can show it and a
+   * person can confirm. The client's rule — "do NOT silently destroy existing data" — is honoured
+   * by this endpoint having no ability to write at all; applying is the ordinary draft save, which
+   * is the caller's next step and the caller's decision.
+   *
+   * `objective:EditDraft`, because the only reason to read a file like this is to put it into a
+   * draft, and somebody who cannot edit one has nothing to do with the answer.
+   */
+  @Post(':objectiveId/workbook/parse')
+  @RequirePermission({ module: 'objective', action: 'EditDraft' })
+  async parseWorkbook(
+    @Param('objectiveId', ParseUUIDPipe) objectiveId: string,
+    @Body() body: ParseObjectiveWorkbookDto,
+  ): Promise<unknown> {
+    // The objective is loaded first so an upload against one this person cannot reach is refused
+    // before its file is read at all.
+    await this.objectives.view({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
+      objectiveId,
+    });
+
+    try {
+      return await ObjectiveWorkbook.parse(Buffer.from(body.file, 'base64'));
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : 'That file could not be read as a spreadsheet.',
+      );
+    }
   }
 
   @Put(':objectiveId/draft')
@@ -727,6 +857,15 @@ export class ObjectiveController {
       actorUserId: this.currentUserId(),
       objectiveId,
       ...(body.versionId === undefined ? {} : { versionId: body.versionId }),
+      /*
+       * Answer as soon as the run exists, not when it finishes.
+       *
+       * The pipeline runs for the better part of a minute. Holding the request open for that long
+       * means whatever sits between the browser and this process times out and the person is told
+       * their run failed when it is running perfectly well. The screen polls `GET .../analysis`
+       * and shows the stages as they are written, which is what it was built to do.
+       */
+      awaitCompletion: false,
     });
   }
 

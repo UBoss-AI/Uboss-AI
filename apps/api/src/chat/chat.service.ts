@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -8,6 +9,7 @@ import {
 
 import {
   CHAT_CONTEXT_TYPES,
+  departmentWorkshopTitle,
   directConversationKey,
   MAX_SEARCH_RESULTS,
   mentionHandles,
@@ -22,6 +24,7 @@ import {
 } from '@uboss/types';
 
 import { AuditEventService } from '../audit/audit-event.service.js';
+import { AuthorizationService } from '../authorization/authorization.service.js';
 import { PrismaService } from '../persistence/prisma.service.js';
 import type { TenantScope } from '../persistence/tenant-context.js';
 import { ChatContextService } from './chat-context.service.js';
@@ -69,6 +72,8 @@ export class ChatService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditEventService,
     private readonly context: ChatContextService,
+    /// Whether somebody outside a department may look into its workshop. One engine answers that.
+    private readonly authorization: AuthorizationService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -82,6 +87,174 @@ export class ChatService {
    * two people who message each other at the same instant converge on one row rather than creating
    * two and each seeing half the history.
    */
+  /**
+   * Open a department's Workshop, creating it the first time somebody asks for it.
+   *
+   * ## Why membership is reconciled on every open rather than set once
+   *
+   * A workshop's members are whoever works in the department. That is not a list somebody typed —
+   * it changes when a person transfers in or out — so a membership captured at creation would
+   * quietly leave a leaver reading the department's conversation and a joiner locked out of it.
+   * Each open adds whoever is now employed there and marks whoever is not as having left.
+   *
+   * `leftAt` rather than deleting the row: somebody who was in the department last quarter really
+   * did say the things they said, and the record of who could see them is part of the history.
+   *
+   * ## Who may open one
+   *
+   * Anybody employed in the department, plus anybody whose `chat` grant reaches it. The client's
+   * rule that "only Admin creates/manages official groups/workshops" is about *creating groups*;
+   * a department's own workshop is not created by a decision, it exists because the department
+   * exists. Creating it lazily here means no company has to be migrated into having them.
+   */
+  async openDepartmentWorkshop(input: {
+    scope: TenantScope;
+    actorUserId: string;
+    departmentId: string;
+  }): Promise<{ id: string; created: boolean }> {
+    /*
+     * Built before the transaction, deliberately.
+     *
+     * `contextFor` refuses to run inside a tenant transaction — it needs to escalate to a platform
+     * operation to read what it reads, and escalating from inside one is exactly what the
+     * persistence layer forbids. So the context is built here and only the cheap `authorize` call
+     * happens below, where it needs the department.
+     */
+    const context = await this.authorization.contextFor(input.scope, input.actorUserId);
+
+    return this.prisma.runInTenantTransaction(input.scope, async () => {
+      const department = await this.prisma.client.department.findFirst({
+        where: { tenantId: input.scope.tenantId, id: input.departmentId },
+        select: { id: true, name: true, archivedAt: true },
+      });
+      if (department === null) {
+        throw new NotFoundException('There is no such department you can see.');
+      }
+
+      /*
+       * Who is in the department now.
+       *
+       * Read from employment rather than from role assignments: a role says what somebody may do,
+       * and this question is about where they work.
+       */
+      const employed = await this.prisma.client.employmentRecord.findMany({
+        where: {
+          tenantId: input.scope.tenantId,
+          departmentId: department.id,
+          endedAt: null,
+        },
+        select: { userId: true },
+      });
+      const members = new Set(employed.map((row) => row.userId));
+
+      if (!members.has(input.actorUserId)) {
+        /*
+         * Somebody outside the department.
+         *
+         * Allowed only if their reach already covers it. Asked of `hierarchy` because there is no
+         * `chat` module — chat is gated by "are these people colleagues", which is the wrong
+         * question here — and because `hierarchy:View` on a department *is* the question: may this
+         * person see this part of the company. An Admin holds it company-wide and a Head holds it
+         * over their own departments, which is exactly who the client says may look in.
+         *
+         * Asked of the engine rather than answered here. "Is this an admin?" written in a service
+         * is a second permission engine, and it will disagree with the first one eventually.
+         */
+        const allowed = await this.authorization.authorize(context, {
+          module: 'hierarchy',
+          action: 'View',
+          resource: { id: department.id, departmentId: department.id },
+        });
+        if (!allowed.allowed) {
+          throw new ForbiddenException(
+            `${department.name} is not a department you work in, and your access does not reach it.`,
+          );
+        }
+        // They may look in, and looking in means being in it while they are.
+        members.add(input.actorUserId);
+      }
+
+      if (department.archivedAt !== null && members.size === 0) {
+        throw new ConflictException(
+          `${department.name} is archived and has nobody in it, so its workshop has no members.`,
+        );
+      }
+
+      const title = departmentWorkshopTitle(department.name);
+
+      const existing = await this.prisma.client.chatConversation.findFirst({
+        where: {
+          tenantId: input.scope.tenantId,
+          kind: 'DepartmentWorkshop',
+          departmentId: department.id,
+        },
+        select: { id: true },
+      });
+
+      const conversation =
+        existing ??
+        (await this.prisma.client.chatConversation.create({
+          data: {
+            tenantId: input.scope.tenantId,
+            kind: 'DepartmentWorkshop',
+            title,
+            departmentId: department.id,
+            createdByUserId: input.actorUserId,
+          },
+          select: { id: true },
+        }));
+
+      // The name follows the department, so renaming a department does not leave a workshop
+      // named after something that no longer exists.
+      if (existing !== null) {
+        await this.prisma.client.chatConversation.updateMany({
+          where: { tenantId: input.scope.tenantId, id: conversation.id, title: { not: title } },
+          data: { title },
+        });
+      }
+
+      const current = await this.prisma.client.chatParticipant.findMany({
+        where: { tenantId: input.scope.tenantId, conversationId: conversation.id },
+        select: { userId: true, leftAt: true },
+      });
+      const byUser = new Map(current.map((row) => [row.userId, row]));
+
+      for (const userId of members) {
+        const row = byUser.get(userId);
+        if (row === undefined) {
+          await this.prisma.client.chatParticipant.create({
+            data: {
+              tenantId: input.scope.tenantId,
+              conversationId: conversation.id,
+              userId,
+            },
+          });
+        } else if (row.leftAt !== null) {
+          // Somebody who came back. Their old messages are still theirs.
+          await this.prisma.client.chatParticipant.updateMany({
+            where: { tenantId: input.scope.tenantId, conversationId: conversation.id, userId },
+            data: { leftAt: null },
+          });
+        }
+      }
+
+      for (const row of current) {
+        if (row.leftAt === null && !members.has(row.userId)) {
+          await this.prisma.client.chatParticipant.updateMany({
+            where: {
+              tenantId: input.scope.tenantId,
+              conversationId: conversation.id,
+              userId: row.userId,
+            },
+            data: { leftAt: new Date() },
+          });
+        }
+      }
+
+      return { id: conversation.id, created: existing === null };
+    });
+  }
+
   async startConversation(input: {
     scope: TenantScope;
     actorUserId: string;
@@ -96,6 +269,41 @@ export class ChatService {
       ...(input.title === undefined ? {} : { title: input.title }),
     });
     if (problems.length > 0) throw new BadRequestException(problems.join(' '));
+
+    /*
+     * A Group is an official company structure, so an administrator creates it.
+     *
+     * Anybody could before: the route checked that the participants were colleagues and nothing
+     * else, so any employee could mint a company Group and put whoever they liked in it. The
+     * client's rule is that Admin decides who participates, and a group somebody assembled
+     * themselves is not that.
+     *
+     * `users:ManageAccess` rather than a role name. Only Company Admin holds it today, which is
+     * the default the client asked for — and an administrator can grant it to somebody else,
+     * which is the explicit path the client asked to keep. A service that asked "is this an
+     * admin?" would be a second permission engine, and it would disagree with the first one
+     * eventually.
+     *
+     * Direct conversations are deliberately not gated. Two colleagues talking is not company
+     * structure, and the client asks for Admin to be able to start one *easily* rather than for
+     * everybody else to be stopped.
+     *
+     * Built before the transaction: `contextFor` cannot run inside one.
+     */
+    if (input.kind === 'Group') {
+      const context = await this.authorization.contextFor(input.scope, input.actorUserId);
+      const allowed = await this.authorization.authorize(context, {
+        module: 'users',
+        action: 'ManageAccess',
+      });
+      if (!allowed.allowed) {
+        throw new ForbiddenException(
+          'Groups are created by an administrator, who decides who belongs to them. You can ' +
+            'still message a colleague directly, and you can ask for a group in your department ' +
+            'workshop.',
+        );
+      }
+    }
 
     await this.assertAllAreColleagues(input.scope, input.participantUserIds);
 
@@ -173,6 +381,7 @@ export class ChatService {
           id: true,
           kind: true,
           title: true,
+          departmentId: true,
           lastMessageAt: true,
           participants: { where: { leftAt: null }, select: { userId: true } },
           messages: {
@@ -183,11 +392,41 @@ export class ChatService {
         orderBy: { lastMessageAt: 'desc' },
       });
 
+      /*
+       * The people, named, in one lookup.
+       *
+       * A conversation list carrying only user ids cannot render a direct conversation — the
+       * screen has to say who it is with. The shape already promised names and the projection did
+       * not send them, so every client was either resolving them some other way or showing none.
+       *
+       * Fetched separately rather than included: a participant row has a user id and no relation
+       * to follow, because `User` is global and there is no same-tenant key to join on.
+       */
+      const everybody = [
+        ...new Set(
+          conversations.flatMap((conversation) =>
+            conversation.participants.map((row) => row.userId),
+          ),
+        ),
+      ];
+      const named = await this.prisma.client.user.findMany({
+        where: { id: { in: everybody } },
+        select: { id: true, displayName: true },
+      });
+      const nameOf = new Map(named.map((row) => [row.id, row.displayName]));
+
       return conversations.map((conversation) => ({
         id: conversation.id,
         kind: conversation.kind as ConversationKind,
         title: conversation.title,
+        departmentId: conversation.departmentId,
         participantUserIds: conversation.participants.map((row) => row.userId),
+        participants: conversation.participants.map((row) => ({
+          userId: row.userId,
+          // A name that will not resolve shows as an em dash rather than as a user id: an id is
+          // not a person, and printing one tells the reader nothing they can use.
+          displayName: nameOf.get(row.userId) ?? '—',
+        })),
         lastMessageAt: conversation.lastMessageAt?.toISOString() ?? null,
         unread: unreadCount({
           messages: conversation.messages.map((message) => ({

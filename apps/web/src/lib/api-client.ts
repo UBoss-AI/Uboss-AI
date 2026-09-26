@@ -10,7 +10,9 @@ import type {
   Form2FieldDefinition,
   Form2Objective,
   Form2Section,
+  AgentObjectiveContext,
   Form2WorkflowStep,
+  JobMethodRow,
   ObjectiveRewardPanel,
   AnalysisNodeKind,
   AnalysisRunStatus,
@@ -40,6 +42,8 @@ import type {
   MissingDataBehaviour,
   AgingBucket,
   ApprovalRequestType,
+  AgentTestRunView,
+  OrchestrationView,
 } from '@uboss/types';
 const API_BASE_URL = process.env['NEXT_PUBLIC_API_BASE_URL'] ?? 'http://localhost:4000';
 
@@ -1039,6 +1043,131 @@ export interface LifecycleView {
  * company that could set its own ceiling would make the ceiling a preference rather than a
  * contract. The platform methods live on `platformApi`.
  */
+/**
+ * Billing, as the screens read it.
+ *
+ * Every money field is in minor units and an integer, because that is how the payment provider
+ * reports it and how the API stores it. Nothing in the browser divides by a hundred except
+ * `formatMinor` at the moment of display.
+ */
+export interface BillingConnection {
+  connected: boolean;
+  /** 'test' or 'live', read from the secret key's own prefix. Null when there is no key. */
+  mode: string | null;
+  /** Which environment variables are missing. Platform console only. */
+  missing?: string[];
+  publishableKey?: string | null;
+  /** What to tell an operator, when it is not connected. Platform console only. */
+  reason?: string | null;
+}
+
+export interface BillingInvoiceRow {
+  id: string;
+  number: string | null;
+  /** The provider's word, verbatim: draft, open, paid, uncollectible, void. */
+  status: string;
+  amountDueMinor: number;
+  amountPaidMinor: number;
+  currency: string;
+  periodStart: string | null;
+  periodEnd: string | null;
+  paidAt: string | null;
+  dueAt: string | null;
+  hostedInvoiceUrl: string | null;
+  invoicePdfUrl: string | null;
+  lastPaymentError: string | null;
+}
+
+export interface BillingPlanRow {
+  id: string;
+  code: string;
+  name: string;
+  active: boolean;
+  priceMinor: number | null;
+  currency: string;
+  published: boolean;
+  stripeProductId: string | null;
+  stripeMonthlyPriceId: string | null;
+  stripeAnnualPriceId: string | null;
+  publishedAt: string | null;
+  /** The plan's price changed after it was published, so the provider still charges the old one. */
+  priceStale: boolean;
+  publishedPriceMinor: number | null;
+}
+
+export interface BillingCompanyRow {
+  tenantId: string;
+  tenantName: string;
+  planName: string;
+  planCode: string;
+  state: string;
+  billingState: string;
+  billingCycle: string;
+  currency: string;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  /** The provider's own status word, beside this product's translation of it. */
+  stripeStatus: string | null;
+  stripeCurrentPeriodEnd: string | null;
+  stripeSyncedAt: string | null;
+  invoicesPaid: number;
+  paidMinor: number;
+}
+
+export interface BillingDeliveryRow {
+  id: string;
+  type: string;
+  livemode: boolean;
+  occurredAt: string;
+  receivedAt: string;
+  processedAt: string | null;
+  tenantId: string | null;
+  outcome: string | null;
+  detail: string | null;
+}
+
+/** A company paying for itself. */
+export const billingApi = {
+  connection: (tenantId: string) =>
+    call<BillingConnection>(`/tenants/${encodeURIComponent(tenantId)}/billing/connection`),
+
+  invoices: (tenantId: string) =>
+    call<{ invoices: BillingInvoiceRow[] }>(
+      `/tenants/${encodeURIComponent(tenantId)}/billing/invoices`,
+    ),
+
+  /**
+   * Begin a payment. Returns the provider's own page to navigate to.
+   *
+   * A full navigation rather than a fetch: the provider needs to own the next page, and a card
+   * form rendered inside an iframe of somebody else's application is how a customer learns not to
+   * trust one.
+   */
+  checkout: (tenantId: string, cycle: 'Monthly' | 'Annual') =>
+    call<{ url: string }>(`/tenants/${encodeURIComponent(tenantId)}/billing/checkout`, {
+      method: 'POST',
+      body: JSON.stringify({ cycle }),
+    }),
+
+  portal: (tenantId: string) =>
+    call<{ url: string }>(`/tenants/${encodeURIComponent(tenantId)}/billing/portal`, {
+      method: 'POST',
+    }),
+};
+
+/** Billing & Payments, in the platform console. */
+export const platformBillingApi = {
+  connection: () => call<BillingConnection>('/platform/billing/connection'),
+  plans: () => call<{ plans: BillingPlanRow[] }>('/platform/billing/plans'),
+  companies: () => call<{ companies: BillingCompanyRow[] }>('/platform/billing/companies'),
+  deliveries: () => call<{ deliveries: BillingDeliveryRow[] }>('/platform/billing/deliveries'),
+  publishPlan: (planId: string) =>
+    call<{ productId: string; monthlyPriceId: string | null; annualPriceId: string | null }>(
+      `/platform/billing/plans/${encodeURIComponent(planId)}/publish`,
+      { method: 'POST' },
+    ),
+};
+
 export const commercialApi = {
   position: (tenantId: string) =>
     call<CommercialPosition>(`/tenants/${encodeURIComponent(tenantId)}/commercial/position`),
@@ -1470,6 +1599,8 @@ export interface HierarchyView {
   identifiersVisible: boolean;
   /** Whether this caller may change the structure. The server is still authoritative. */
   mayAdminister: boolean;
+  /** Whether this person may edit the company's Vision and Mission — `settings:Administer`. */
+  mayEditIdentity: boolean;
 }
 
 export interface AddEmployeeResult {
@@ -1716,6 +1847,12 @@ export const accessApi = {
     call<{
       directReports: number;
       roleAssignments: number;
+      /** Work assigned to them that has not finished. */
+      openTasks: number;
+      objectivesOwned: number;
+      agentsOwned: number;
+      /** Approvals waiting on this person by name, which would otherwise wait forever. */
+      approvalsPending: number;
       successorRequired: boolean;
       domains: { key: string; label: string; status: string; arrivesWith?: string }[];
       note: string;
@@ -1753,6 +1890,51 @@ export const accessApi = {
     call<{ operationId: string; cancelled: boolean }>(
       `/tenants/${encodeURIComponent(tenantId)}/access/bulk/${encodeURIComponent(operationId)}/cancel`,
       { method: 'POST' },
+    ),
+
+  /**
+   * The hierarchy import template, downloaded as a real file.
+   *
+   * Fetched rather than linked, because the endpoint needs the session cookie and a plain anchor
+   * to another origin does not carry one. The blob is handed to the browser the same way the
+   * chart export is.
+   */
+  downloadHierarchyTemplate: async (tenantId: string): Promise<void> => {
+    const response = await fetch(
+      `${API_BASE_URL}/tenants/${encodeURIComponent(tenantId)}/access/bulk/hierarchy-template`,
+      { credentials: 'include' },
+    );
+    if (!response.ok) {
+      throw new ApiError(
+        'The import template could not be prepared. You may not administer this hierarchy.',
+        response.status,
+      );
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'UBoss hierarchy import template.xlsx';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  },
+
+  /** What the template asks for, so a screen can say it before anybody downloads. */
+  hierarchyTemplateColumns: (tenantId: string) =>
+    call<{ columns: { heading: string; required: boolean; note: string }[] }>(
+      `/tenants/${encodeURIComponent(tenantId)}/access/bulk/hierarchy-template/columns`,
+    ),
+
+  /** Validate a filled-in hierarchy workbook. **Applies nothing.** */
+  validateHierarchyWorkbook: (
+    tenantId: string,
+    body: { file: string; sourceFileName?: string },
+  ) =>
+    call<BulkPreview>(
+      `/tenants/${encodeURIComponent(tenantId)}/access/bulk/hierarchy/validate`,
+      { method: 'POST', body: JSON.stringify(body) },
     ),
 
   bulkOperations: (tenantId: string) =>
@@ -1812,6 +1994,8 @@ export interface SettingsView {
   categories: SettingsCategoryView[];
   /** How many the caller may not read. Stated, so a shorter sidebar is explicable. */
   withheldCategories: number;
+  /** Left out as company administration rather than withheld by permission. */
+  administrativeCategories: number;
 }
 
 /**
@@ -2538,7 +2722,81 @@ export interface Form2DefinitionView {
   note: string;
 }
 
+/** One thing an uploaded Objective workbook got wrong. */
+export interface WorkbookProblem {
+  where: string;
+  field: string;
+  /** Three different facts, never merged into "error". */
+  kind: 'Missing' | 'Invalid' | 'Unmapped';
+  detail: string;
+}
+
+export interface ParsedObjectiveWorkbook {
+  /** Only what the file carried. Absent is not empty. */
+  objective: Record<string, string | undefined>;
+  steps: Record<string, unknown>[];
+  problems: WorkbookProblem[];
+}
+
 export const objectivesApi = {
+  /**
+   * Download the Objective as a spreadsheet, carrying whatever is filled in.
+   *
+   * Fetched rather than linked: the endpoint needs the session cookie, and a plain anchor to the
+   * API does not carry one.
+   */
+  /**
+   * The blank form, for an objective nobody has saved yet.
+   *
+   * The client's rule is that a blank objective downloads a blank template — the whole point of
+   * taking the form away is to fill it in somewhere else, and "save the draft first" asks somebody
+   * to do the work before they can avoid doing it here.
+   */
+  downloadWorkbookTemplate: async (tenantId: string): Promise<void> => {
+    const response = await fetch(
+      `${API_BASE_URL}/tenants/${encodeURIComponent(tenantId)}/objectives/workbook-template`,
+      { credentials: 'include' },
+    );
+    if (!response.ok) {
+      throw new ApiError('The blank Objective template could not be prepared.', response.status);
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'objective template.xlsx';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  },
+
+  downloadWorkbook: async (tenantId: string, objectiveId: string, code: string): Promise<void> => {
+    const response = await fetch(
+      `${API_BASE_URL}/tenants/${encodeURIComponent(tenantId)}/objectives/${encodeURIComponent(objectiveId)}/workbook`,
+      { credentials: 'include' },
+    );
+    if (!response.ok) {
+      throw new ApiError('That Objective could not be prepared as a spreadsheet.', response.status);
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${code} objective.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  },
+
+  /** Read a filled-in workbook. **Saves nothing** — the caller shows it and a person confirms. */
+  parseWorkbook: (tenantId: string, objectiveId: string, file: string) =>
+    call<ParsedObjectiveWorkbook>(
+      `/tenants/${encodeURIComponent(tenantId)}/objectives/${encodeURIComponent(objectiveId)}/workbook/parse`,
+      { method: 'POST', body: JSON.stringify({ file }) },
+    ),
+
   /** Who an objective owned by this person may be sent to. The server's own routing rule. */
   responsibleOwnerCandidates: (tenantId: string, objectiveOwnerUserId: string) =>
     call<{ candidates: { userId: string; displayName: string; designation: string | null }[] }>(
@@ -2806,6 +3064,8 @@ export interface WorkflowDraftView {
   objectiveVersionId: string;
   /** The analysis run this was seeded from. That run stays frozen as the AI's proposal. */
   seededFromRunId: string | null;
+  /** A completed analysis finished after the one this draft was seeded from. */
+  supersededByRunId: string | null;
   graph: WorkflowDraft;
   schemaVersion: number;
   /** Send this back with every edit. A stale revision is refused rather than overwriting. */
@@ -2847,6 +3107,24 @@ export const objectiveReviewApi = {
       {
         method: 'POST',
         body: JSON.stringify(versionId === undefined ? { reason } : { reason, versionId }),
+      },
+    ),
+
+  /**
+   * Confirm who is going to do the work. A precondition of `completeReview`, which refuses with
+   * "Confirm the execution team before sending this for approval" until it has been done.
+   */
+  confirmTeam: (tenantId: string, objectiveId: string, executionTeam?: string, versionId?: string) =>
+    call<ObjectiveView>(
+      `/tenants/${encodeURIComponent(tenantId)}/objectives/${encodeURIComponent(
+        objectiveId,
+      )}/review/confirm-team`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          ...(versionId === undefined ? {} : { versionId }),
+          ...(executionTeam === undefined ? {} : { executionTeam }),
+        }),
       },
     ),
 
@@ -3020,11 +3298,15 @@ export interface HumanTaskView {
   notes: { id: string; kind: string; body: string; authorUserId: string; createdAt: string }[];
   /** What this task can become now, so a screen never offers a move that will be refused. */
   nextStatuses: HumanTaskStatus[];
+  /** Readable titles of the steps a `Waiting` task is still waiting on. Empty for anything else. */
+  waitingOn: string[];
+  /** Readable titles of every step this one comes after, whether or not they have finished. */
+  dependsOnLabels: string[];
 }
 
 export interface TaskListView {
   tasks: HumanTaskView[];
-  counts: { total: number; overdue: number; blocked: number; mine: number };
+  counts: { total: number; overdue: number; blocked: number; waiting: number; mine: number };
   note: string;
 }
 
@@ -3039,6 +3321,10 @@ export interface AssignmentResultView {
   executorExpectationIds: string[];
   nodesAwaitingAgentSetup: string[];
   notificationsRaised: number;
+  /** How many people were told a step is theirs to start now. Approvers are counted above. */
+  assigneesNotified: number;
+  /** AI steps that mapped to an agent already built for them, rather than asking again. */
+  reusedAgents: { nodeId: string; agentName: string }[];
   note: string;
 }
 
@@ -3153,6 +3439,8 @@ export interface AgentExecutionSetupView {
 export interface AgentBuilderView {
   assignmentId: string;
   status: string;
+  /** Where this work sits in the objective that asked for it. Null if that can no longer be read. */
+  context: AgentObjectiveContext | null;
   prefill: AgentSetupPrefillView;
   setup: AgentExecutionSetupView;
   /** Empty means the builder asks nothing — Ready to Test / Activate. */
@@ -3171,6 +3459,8 @@ export interface AgentBuilderView {
     /** False for a mock run. Never rendered as a real provider result. */
     wasReal: boolean | null;
   };
+  /** Every recorded test, newest first. Capped by the server at twenty. */
+  testHistory: AgentTestRunView[];
   engineAgent: { id: string; name: string; status: string; versionNumber: number } | null;
   vocabulary: { runTypes: string[]; missingDataBehaviours: string[] };
   note: string;
@@ -3233,12 +3523,26 @@ export const agentBuilderApi = {
       { method: 'PUT', body: JSON.stringify({ patch }) },
     ),
 
-  test: (tenantId: string, assignmentId: string) =>
+  test: (
+    tenantId: string,
+    assignmentId: string,
+    sampleInput: string,
+    expectedOutcome?: string,
+  ) =>
     call<AgentBuilderView>(
       `/tenants/${encodeURIComponent(tenantId)}/agent-builder/${encodeURIComponent(
         assignmentId,
       )}/test`,
-      { method: 'POST', body: JSON.stringify({}) },
+      {
+        method: 'POST',
+        // Omitted rather than sent empty: the server treats absent as "they did not say", and an
+        // empty string would be recorded as an expectation of nothing.
+        body: JSON.stringify(
+          expectedOutcome === undefined || expectedOutcome.trim() === ''
+            ? { sampleInput }
+            : { sampleInput, expectedOutcome },
+        ),
+      },
     ),
 
   activate: (tenantId: string, assignmentId: string, agentName?: string) =>
@@ -3596,6 +3900,22 @@ export interface ApprovalsMetaView {
 export const approvalsApi = {
   meta: (tenantId: string) =>
     call<ApprovalsMetaView>(`/tenants/${encodeURIComponent(tenantId)}/approvals/meta`),
+
+  /**
+   * Ask for a change.
+   *
+   * Filing one grants nothing. It creates a pending request addressed to the Admin, who decides
+   * it — which is why it goes through the approvals queue rather than any screen that could act
+   * on it directly.
+   */
+  requestChange: (
+    tenantId: string,
+    body: { kind: string; reason: string; conversationId?: string },
+  ) =>
+    call<{ id: string; type: string; status: string; title: string }>(
+      `/tenants/${encodeURIComponent(tenantId)}/approvals/change-requests`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
 
   list: (
     tenantId: string,
@@ -4273,12 +4593,41 @@ export interface AgentRunSummaryView {
  * outputs" had nothing to hang from. This is the minimum needed — a list of an agent's runs — not
  * the Runs screen, which is a prompt of its own.
  */
+export interface RuntimeInputFieldView {
+  key: string;
+  label: string;
+  hint: string;
+  required: boolean;
+}
+
 export const agentRunsApi = {
   list: (tenantId: string, agentId: string, limit = 20) =>
     call<{ runs: AgentRunSummaryView[]; note: string }>(
       `/tenants/${encodeURIComponent(tenantId)}/agents/${encodeURIComponent(
         agentId,
       )}/runs${queryString({ limit })}`,
+    ),
+
+  /**
+   * The few things this run still has to be told.
+   *
+   * Asked of the server rather than worked out here: the questions come from the agent's own
+   * published configuration, and a screen that decided them locally would ask for things the
+   * server already knows — the duplicate data entry this whole model is against.
+   */
+  inputs: (tenantId: string, agentId: string) =>
+    call<{ fields: RuntimeInputFieldView[]; note: string }>(
+      `/tenants/${encodeURIComponent(tenantId)}/agents/${encodeURIComponent(agentId)}/runs/inputs`,
+    ),
+
+  start: (
+    tenantId: string,
+    agentId: string,
+    body: { runtimeInputs?: Record<string, string>; aiWorkAssignmentId?: string } = {},
+  ) =>
+    call<{ run: AgentRunSummaryView | null; created: boolean; reason: string }>(
+      `/tenants/${encodeURIComponent(tenantId)}/agents/${encodeURIComponent(agentId)}/runs`,
+      { method: 'POST', body: JSON.stringify(body) },
     ),
 };
 
@@ -4731,14 +5080,35 @@ export const supportApi = {
  * cover. No KPI cards, no cost, no notifications — if a future field appears here, the server has
  * broken a rule a test already asserts.
  */
+/** One tile, as the dashboard returns it. `count` is null where no honest number exists. */
+export interface DashboardTileView {
+  tile: string;
+  count: number | null;
+}
+
+/**
+ * The dashboard payload.
+ *
+ * `tiles` holds only what this person is permitted to see — a tile they may not see is absent
+ * rather than present and hidden, so this screen has nothing to filter.
+ */
 export interface DashboardView {
-  agents: number;
-  pendingJobs: number;
+  tiles: DashboardTileView[];
   scope: string;
 }
 
 export interface DashboardMeta {
-  slices: { key: string; label: string; href: string }[];
+  tiles: {
+    key: string;
+    label: string;
+    href: string;
+    measures: string | null;
+    module: string;
+    /** Which side of the orchestration view this work area belongs to. */
+    lane: string;
+  }[];
+  /** The sides themselves, in the order they are drawn. */
+  lanes: { key: string; label: string; measures: string }[];
   contract: string;
 }
 
@@ -4775,6 +5145,18 @@ export const dashboardApi = {
 
   meta: (tenantId: string) =>
     call<DashboardMeta>(`/tenants/${encodeURIComponent(tenantId)}/dashboard/meta`),
+
+  /**
+   * Where the work has got to, by stage.
+   *
+   * Refused with 403 to anybody who may not see Objectives, which is most of the company. The
+   * caller treats that as "no section" rather than as an error: it is the server answering
+   * correctly, not something going wrong.
+   */
+  orchestration: (tenantId: string) =>
+    call<OrchestrationView>(
+      `/tenants/${encodeURIComponent(tenantId)}/dashboard/orchestration`,
+    ),
 };
 
 export const reportsApi = {
@@ -4979,6 +5361,20 @@ export const jobMethodApi = {
   meta: (tenantId: string) =>
     call<JobMethodMeta>(`/tenants/${encodeURIComponent(tenantId)}/job-methods/meta`),
 
+  /**
+   * Save the steps as they are on screen.
+   *
+   * The whole method, not a patch: the grid is saved entire, which is also what makes a deleted
+   * step actually disappear rather than surviving as an orphan between two renumbered ones.
+   */
+  saveRows: (tenantId: string, assignmentId: string, rows: JobMethodRow[]) =>
+    call<{ saved: number; note: string }>(
+      `/tenants/${encodeURIComponent(tenantId)}/job-methods/${encodeURIComponent(
+        assignmentId,
+      )}/rows`,
+      { method: 'PUT', body: JSON.stringify({ rows }) },
+    ),
+
   view: (tenantId: string, assignmentId: string) =>
     call<{
       captured: boolean;
@@ -5137,8 +5533,17 @@ export const agentOperatorApi = {
 
 export interface ChatConversationSummary {
   id: string;
-  kind: 'Direct' | 'Group';
+  /**
+   * Three kinds, not two.
+   *
+   * `DepartmentWorkshop` has existed in the database since departments got their own
+   * conversation; this type said otherwise, so every screen that switched on `kind` had a case
+   * it could not see coming.
+   */
+  kind: 'Direct' | 'Group' | 'DepartmentWorkshop';
   title: string | null;
+  /** The department a workshop belongs to. Null for the other two kinds. */
+  departmentId: string | null;
   participantUserIds: string[];
   /** The same people, named. A conversation listed by user id is not a conversation. */
   participants: { userId: string; displayName: string }[];
@@ -5206,6 +5611,21 @@ export const chatApi = {
   conversations: (tenantId: string) =>
     call<{ conversations: ChatConversationSummary[] }>(
       `/tenants/${encodeURIComponent(tenantId)}/chat/conversations`,
+    ),
+
+  /**
+   * Open a department's workshop, creating it the first time anybody asks.
+   *
+   * A PUT because asking twice asks for the same thing. The server reconciles the membership
+   * against who works there, so this is also how somebody who has just joined the department
+   * appears in it.
+   */
+  openDepartmentWorkshop: (tenantId: string, departmentId: string) =>
+    call<{ id: string; created: boolean }>(
+      `/tenants/${encodeURIComponent(tenantId)}/chat/departments/${encodeURIComponent(
+        departmentId,
+      )}/workshop`,
+      { method: 'PUT', body: JSON.stringify({}) },
     ),
 
   start: (

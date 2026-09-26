@@ -20,6 +20,14 @@ export interface JobMethodImportExportProps {
   assignedToLabel: string | null;
   /** True when this person holds `agent-builder:EditDraft`. Download needs no builder grant. */
   canImport: boolean;
+  /**
+   * Render only the two controls, for a page that puts them in its own action row.
+   *
+   * The review, the problems and the banners still appear — they are the answer to pressing
+   * Upload, and an answer that only shows up in one of two layouts would make the compact one a
+   * worse version of the feature rather than a tidier one.
+   */
+  compact?: boolean;
   onImported?: () => void;
 }
 
@@ -62,6 +70,7 @@ export function JobMethodImportExport({
   objectiveName,
   assignedToLabel,
   canImport,
+  compact,
   onImported,
 }: JobMethodImportExportProps) {
   const [outcome, setOutcome] = useState<ImportOutcomeView | null>(null);
@@ -129,6 +138,167 @@ export function JobMethodImportExport({
   const problemsOf = (kind: ImportProblemRow['kind']) =>
     (outcome?.problems ?? []).filter((problem) => problem.kind === kind);
 
+  /**
+   * What the last upload said.
+   *
+   * Extracted so both layouts show the same thing. A compact action row that swallowed the
+   * review would turn "upload" into a button with no answer, which is the one part of this
+   * feature somebody actually has to read.
+   */
+  const review =
+    outcome !== null ? (
+      <section className="jm-review" data-testid="jm-review">
+        <h4 className="jm-review-title">Import review</h4>
+
+        <dl className="jm-matched">
+          <div>
+            <dt>Objective</dt>
+            <dd data-testid="jm-objective">{objectiveName}</dd>
+          </div>
+          <div>
+            <dt>Assigned work</dt>
+            <dd>{assignmentTitle}</dd>
+          </div>
+          <div>
+            <dt>For</dt>
+            <dd>{assignedToLabel ?? 'Not assigned to a person'}</dd>
+          </div>
+          <div>
+            <dt>Steps read</dt>
+            <dd data-testid="jm-step-count">{outcome.rows.length}</dd>
+          </div>
+        </dl>
+
+        {outcome.accepted ? (
+          <Banner tone="ok">
+            Saved into the draft. Nothing has been tested and nothing has been activated.
+          </Banner>
+        ) : (
+          <Banner tone="danger">{outcome.refusedBecause ?? 'Nothing was saved.'}</Banner>
+        )}
+
+        {(['Missing', 'Invalid', 'Ambiguous', 'Unmapped'] as const).map((kind) => {
+          const rows = problemsOf(kind);
+          if (rows.length === 0) return null;
+          return (
+            <div key={kind} className="jm-problems" data-testid={`jm-problems-${kind}`}>
+              <h5>
+                <StatusBadge status={kind} tone={PROBLEM_TONE[kind]} /> {rows.length}
+              </h5>
+              <ul>
+                {rows.map((problem, index) => (
+                  <li key={`${kind}-${index}`}>
+                    {problem.row !== null ? <strong>Row {problem.row}: </strong> : null}
+                    {problem.detail}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+
+        {outcome.agentSuggestion !== null ? (
+          <div className="jm-suggestion" data-testid="jm-suggestion">
+            <h5>
+              This looks like {outcome.agentSuggestion.groups.length} Engine Agent
+              {outcome.agentSuggestion.groups.length === 1 ? '' : 's'}
+            </h5>
+            {outcome.agentSuggestion.groups.map((group) => (
+              <p key={group.key}>
+                <strong>Steps {group.steps.join(', ')}</strong> — {group.because}
+              </p>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="jm-review-actions">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setOutcome(null)}
+            data-testid="jm-cancel"
+          >
+            Cancel Import
+          </Button>
+          {outcome.accepted ? (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                setOutcome(null);
+                onImported?.();
+              }}
+              data-testid="jm-review-method"
+            >
+              Review Job Method
+            </Button>
+          ) : null}
+        </div>
+
+        {automationStance !== null ? (
+          // Verbatim from the server: an upload saves a draft and does nothing else.
+          <p className="jm-stance" data-testid="jm-automation-stance">
+            {automationStance}
+          </p>
+        ) : null}
+      </section>
+    ) : null;
+
+  const controls = (
+    <>
+      <Button variant="default" size="sm" onClick={() => void download()} disabled={busy}>
+        <Icon name="file" size={16} />
+        Download Form
+      </Button>
+
+      <input
+        ref={fileInput}
+        type="file"
+        accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        className="jm-file"
+        aria-label="Choose a completed Job Method form"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file !== undefined) void upload(file);
+        }}
+      />
+      <Button
+        variant="default"
+        size="sm"
+        onClick={() => fileInput.current?.click()}
+        disabled={busy || !canImport}
+        data-testid="upload-job-method"
+      >
+        <Icon name="build" size={16} />
+        Upload Form
+      </Button>
+    </>
+  );
+
+  /*
+   * In the page's own action row, beside Save Draft and Publish.
+   *
+   * The Objective form puts Download Excel and Upload Excel in its top row, and this is the same
+   * decision for the same reason: taking the form away to be filled in is something somebody does
+   * instead of typing, so it has to be where they look before they start.
+   */
+  if (compact === true) {
+    return (
+      <>
+        {controls}
+        {error !== null || notice !== null || outcome !== null ? (
+          <Card style={{ marginTop: 12 }}>
+            <CardBody>
+              {error !== null ? <Banner tone="danger">{error}</Banner> : null}
+              {notice !== null ? <Banner tone="ok">{notice}</Banner> : null}
+              {review}
+            </CardBody>
+          </Card>
+        ) : null}
+      </>
+    );
+  }
+
   return (
     <Card>
       <CardBody>
@@ -175,104 +345,7 @@ export function JobMethodImportExport({
           </p>
         )}
 
-        {/* ---- the import review ---- */}
-        {outcome !== null ? (
-          <section className="jm-review" data-testid="jm-review">
-            <h4 className="jm-review-title">Import review</h4>
-
-            <dl className="jm-matched">
-              <div>
-                <dt>Objective</dt>
-                <dd data-testid="jm-objective">{objectiveName}</dd>
-              </div>
-              <div>
-                <dt>Assigned work</dt>
-                <dd>{assignmentTitle}</dd>
-              </div>
-              <div>
-                <dt>For</dt>
-                <dd>{assignedToLabel ?? 'Not assigned to a person'}</dd>
-              </div>
-              <div>
-                <dt>Steps read</dt>
-                <dd data-testid="jm-step-count">{outcome.rows.length}</dd>
-              </div>
-            </dl>
-
-            {outcome.accepted ? (
-              <Banner tone="ok">
-                Saved into the draft. Nothing has been tested and nothing has been activated.
-              </Banner>
-            ) : (
-              <Banner tone="danger">{outcome.refusedBecause ?? 'Nothing was saved.'}</Banner>
-            )}
-
-            {(['Missing', 'Invalid', 'Ambiguous', 'Unmapped'] as const).map((kind) => {
-              const rows = problemsOf(kind);
-              if (rows.length === 0) return null;
-              return (
-                <div key={kind} className="jm-problems" data-testid={`jm-problems-${kind}`}>
-                  <h5>
-                    <StatusBadge status={kind} tone={PROBLEM_TONE[kind]} /> {rows.length}
-                  </h5>
-                  <ul>
-                    {rows.map((problem, index) => (
-                      <li key={`${kind}-${index}`}>
-                        {problem.row !== null ? <strong>Row {problem.row}: </strong> : null}
-                        {problem.detail}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              );
-            })}
-
-            {outcome.agentSuggestion !== null ? (
-              <div className="jm-suggestion" data-testid="jm-suggestion">
-                <h5>
-                  This looks like {outcome.agentSuggestion.groups.length} Engine Agent
-                  {outcome.agentSuggestion.groups.length === 1 ? '' : 's'}
-                </h5>
-                {outcome.agentSuggestion.groups.map((group) => (
-                  <p key={group.key}>
-                    <strong>Steps {group.steps.join(', ')}</strong> — {group.because}
-                  </p>
-                ))}
-              </div>
-            ) : null}
-
-            <div className="jm-review-actions">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setOutcome(null)}
-                data-testid="jm-cancel"
-              >
-                Cancel Import
-              </Button>
-              {outcome.accepted ? (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => {
-                    setOutcome(null);
-                    onImported?.();
-                  }}
-                  data-testid="jm-review-method"
-                >
-                  Review Job Method
-                </Button>
-              ) : null}
-            </div>
-
-            {automationStance !== null ? (
-              // Verbatim from the server: an upload saves a draft and does nothing else.
-              <p className="jm-stance" data-testid="jm-automation-stance">
-                {automationStance}
-              </p>
-            ) : null}
-          </section>
-        ) : null}
+        {review}
       </CardBody>
     </Card>
   );

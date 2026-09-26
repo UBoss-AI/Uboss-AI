@@ -35,6 +35,7 @@ import { RunController } from '../src/runs/run.controller.js';
 import { CompanySettingsService } from '../src/settings/company-settings.service.js';
 import { ApprovalService } from '../src/approvals/approval.service.js';
 import { HumanTaskService } from '../src/tasks/human-task.service.js';
+import { WorkReleaseService } from '../src/tasks/work-release.service.js';
 import { AuditEventService } from '../src/audit/audit-event.service.js';
 import { SecurityEventService } from '../src/audit/security-event.service.js';
 import { AUTH_CONFIG, loadAuthConfig } from '../src/auth/auth.config.js';
@@ -212,6 +213,7 @@ describe('approval engine, delegation and four-eyes (e2e)', () => {
         // than reporting that it asked for a decision nobody could see.
         ApprovalService,
         HumanTaskService,
+        WorkReleaseService,
         CompanySettingsService,
         TenantContextService,
         Reflector,
@@ -726,6 +728,10 @@ describe('approval engine, delegation and four-eyes (e2e)', () => {
           subjectType: 'Probe',
           requestedByUserId: managerUserId,
           approverRoleKind: 'Head',
+          // A change request carries the kind of change it is about, the way a workflow step
+          // approval carries its node. The table is shared; the columns that mean something
+          // for one type and nothing for another are how it stays one table.
+          ...(type === 'ChangeRequest' ? ({ changeKind: 'Other' } as const) : {}),
         });
         assert.equal(raised.type, type);
         assert.equal(raised.status, 'Pending');
@@ -2962,6 +2968,157 @@ describe('approval engine, delegation and four-eyes (e2e)', () => {
         note: 'Second pair of eyes.',
       });
       assert.equal(await taskStatus(), 'Completed');
+    });
+  });
+  // -------------------------------------------------------------------------
+  // Change requests
+  // -------------------------------------------------------------------------
+
+  /**
+   * Somebody asks for a change.
+   *
+   * The rule under test is the client's: "Do not give the employee direct configuration power
+   * simply because they requested a change." Filing one must change nothing — it must produce a
+   * Pending request addressed to somebody with the authority, and nothing else.
+   */
+  describe('asking for a change', () => {
+    it('creates a pending request addressed to the Admin, and changes nothing else', async () => {
+      const raised = await approvals().requestChange({
+        scope: scope(),
+        actorUserId: workerUserId,
+        kind: 'Access',
+        reason: 'I cannot open the Field Operations workshop and I work there.',
+      });
+
+      assert.equal(raised.type, 'ChangeRequest');
+      assert.equal(raised.status, 'Pending');
+
+      const row = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.approvalRequest.findFirstOrThrow({
+          where: { tenantId, id: raised.id },
+          select: {
+            changeKind: true,
+            approverRoleKind: true,
+            namedApproverUserId: true,
+            requestedByUserId: true,
+            detail: true,
+            decidedAt: true,
+          },
+        }),
+      );
+
+      assert.equal(row.changeKind, 'Access');
+      // Addressed to the authority rather than to whichever Admin is at their desk today.
+      assert.equal(row.approverRoleKind, 'CompanyAdmin');
+      assert.equal(row.namedApproverUserId, null);
+      assert.equal(row.requestedByUserId, workerUserId);
+      assert.match(row.detail, /Field Operations workshop/);
+      // Nothing has been decided, which is the whole point: asking is not doing.
+      assert.equal(row.decidedAt, null);
+    });
+
+    it('keeps the conversation it was raised from, so the Admin can read the thread', async () => {
+      const conversation = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.chatConversation.create({
+          data: {
+            tenantId,
+            kind: 'Group',
+            title: 'Field Operations',
+            createdByUserId: workerUserId,
+          },
+        }),
+      );
+
+      const raised = await approvals().requestChange({
+        scope: scope(),
+        actorUserId: workerUserId,
+        kind: 'WorkReassignment',
+        reason: 'Please move the Tuesday reconciliation to somebody else while I am away.',
+        conversationId: conversation.id,
+      });
+
+      const row = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.approvalRequest.findFirstOrThrow({
+          where: { tenantId, id: raised.id },
+          select: { subjectType: true, subjectId: true },
+        }),
+      );
+      assert.equal(row.subjectType, 'ChatConversation');
+      assert.equal(row.subjectId, conversation.id);
+    });
+
+    it('says so when it was not raised from a conversation', async () => {
+      // Rather than claiming one it does not have.
+      const raised = await approvals().requestChange({
+        scope: scope(),
+        actorUserId: workerUserId,
+        kind: 'Other',
+        reason: 'The Monday rota has me in two places at once.',
+      });
+
+      const row = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.approvalRequest.findFirstOrThrow({
+          where: { tenantId, id: raised.id },
+          select: { subjectType: true, subjectId: true },
+        }),
+      );
+      assert.equal(row.subjectType, 'ChangeRequest');
+      assert.equal(row.subjectId, null);
+    });
+
+    it('refuses a reason nobody could act on', async () => {
+      await assert.rejects(
+        () =>
+          approvals().requestChange({
+            scope: scope(),
+            actorUserId: workerUserId,
+            kind: 'Hierarchy',
+            reason: 'fix',
+          }),
+        (error: Error) => {
+          assert.match(error.message, /Say what needs changing/i);
+          return true;
+        },
+      );
+    });
+
+    it('refuses a kind nobody asked about', async () => {
+      await assert.rejects(
+        () =>
+          approvals().requestChange({
+            scope: scope(),
+            actorUserId: workerUserId,
+            kind: 'Salary' as never,
+            reason: 'A perfectly good and sufficiently long reason.',
+          }),
+        (error: Error) => {
+          assert.match(error.message, /not a kind of change/i);
+          return true;
+        },
+      );
+    });
+
+    it('refuses a change kind on any other type, at the database', async () => {
+      /*
+       * The column means something for one type and nothing for the others, and the database says
+       * so rather than trusting every future caller to remember.
+       */
+      await assert.rejects(() =>
+        ctx.prisma.runAsPlatformOperation(() =>
+          ctx.prisma.client.approvalRequest.create({
+            data: {
+              tenantId,
+              type: 'ObjectiveReview',
+              status: 'Pending',
+              title: 'Not a change request',
+              subjectType: 'Objective',
+              requestedByUserId: workerUserId,
+              approverRoleKind: 'CompanyAdmin',
+              changeKind: 'Access',
+            },
+          }),
+        ),
+      );
     });
   });
 });

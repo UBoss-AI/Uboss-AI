@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AccessModule } from './access/access.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import { AuthModule } from './auth/auth.module.js';
+import { BillingModule } from './billing/billing.module.js';
 import { CommercialModule } from './commercial/commercial.module.js';
 import { ConnectionsModule } from './connections/connections.module.js';
 import { AuthorizationModule } from './authorization/authorization.module.js';
@@ -69,6 +70,7 @@ import { TenancyModule } from './tenancy/tenancy.module.js';
     // global interceptors must be the outermost pair, so a throttled request is refused
     // before it reaches anything that would do work or claim an idempotency key.
     RateLimitsModule,
+    BillingModule,
     CommercialModule,
     // OrganizationModule provides HIERARCHY_RESOLVER, the seam AuthorizationModule declares and
     // deliberately leaves unprovided. Listed after it so the dependency direction is visible.

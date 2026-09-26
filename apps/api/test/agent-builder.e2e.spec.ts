@@ -36,6 +36,7 @@ import { LocalSealedSecretsVault, SecretsVault } from '../src/connections/secret
 import { MockModelGateway, ModelGateway } from '../src/model-gateway/model-gateway.js';
 import { NotificationService } from '../src/notifications/notification.service.js';
 import { AssignmentService } from '../src/objectives/assignment.service.js';
+import { WorkReleaseService } from '../src/tasks/work-release.service.js';
 import { ObjectiveController } from '../src/objectives/objective.controller.js';
 import { ObjectiveAnalysisService } from '../src/objectives/objective-analysis.service.js';
 import { ObjectiveService } from '../src/objectives/objective.service.js';
@@ -165,6 +166,7 @@ describe('agent builder and engine agent activation (e2e)', () => {
         ObjectiveAnalysisService,
         WorkflowEditorService,
         AssignmentService,
+        WorkReleaseService,
         AgentBuilderService,
         TenantContextService,
         Reflector,
@@ -334,9 +336,19 @@ describe('agent builder and engine agent activation (e2e)', () => {
         });
       }
 
-      // CR-03 (Prompt 40A): builder access is no longer part of the Employee default, so it is
-      // granted explicitly here. See `grantBuilderAccess` for why this is the existing mechanism
-      // rather than a new one.
+      /*
+       * Builder access, granted by name rather than inherited from a role.
+       *
+       * Two rules put it here. CR-03 took it out of the Employee template, and the client's
+       * 2026-09-25 rule took it out of Manager and Head as well: the model is that the Admin builds
+       * Agents and everybody else operates them, with anything more granted explicitly. So these
+       * personas are given it the way a real Admin would give it, through the mechanism the product
+       * already ships — which also means these tests exercise that mechanism rather than assuming a
+       * role default that no longer exists.
+       *
+       * The reach is granted with the capability and no wider: an employee over their own work, a
+       * manager over their team, a head over their department.
+       */
       for (const userId of [workerUserId, otherWorkerUserId]) {
         await grantBuilderAccess(ctx, {
           tenantId,
@@ -344,6 +356,23 @@ describe('agent builder and engine agent activation (e2e)', () => {
           grantedByUserId: platformOwnerId,
         });
       }
+
+      await grantBuilderAccess(ctx, {
+        tenantId,
+        userId: managerUserId,
+        grantedByUserId: platformOwnerId,
+        scopeKind: 'TeamSubtree',
+        canPublish: true,
+      });
+
+      await grantBuilderAccess(ctx, {
+        tenantId,
+        userId: objectiveApproverId,
+        grantedByUserId: platformOwnerId,
+        scopeKind: 'Department',
+        canPublish: true,
+        departmentIds: [departmentId],
+      });
 
       // A Head, for the approve step and for the Form 3 read.
       await ctx.prisma.client.roleAssignment.create({
@@ -774,12 +803,27 @@ describe('agent builder and engine agent activation (e2e)', () => {
   // 2. Test
   // -------------------------------------------------------------------------
 
+  /**
+   * A sample long enough to be one.
+   *
+   * `agentTestProblems` refuses anything under ten characters, because an agent given one word
+   * has not been tested. Written once here so a test that is about something else does not fail
+   * for a reason it was not asking about.
+   */
+  const SAMPLE = 'Invoice INV-4471, vendor Meridian Supplies, 82,400 INR, dated 14 March.';
+
   describe('Test Agent', () => {
     it('refuses to test an agent whose setup is unfinished', async () => {
       // A test against incomplete setup is not testing what would actually run.
       const { assignmentId } = await assignedAiWork();
       await assert.rejects(
-        () => builder().test({ scope: scope(), actorUserId: workerUserId, assignmentId }),
+        () =>
+          builder().test({
+            scope: scope(),
+            actorUserId: workerUserId,
+            assignmentId,
+            sampleInput: SAMPLE,
+          }),
         /unanswered setup/,
       );
     });
@@ -793,6 +837,7 @@ describe('agent builder and engine agent activation (e2e)', () => {
         scope: scope(),
         actorUserId: workerUserId,
         assignmentId,
+        sampleInput: SAMPLE,
       });
 
       assert.notEqual(tested.lastTest.at, null);
@@ -804,7 +849,12 @@ describe('agent builder and engine agent activation (e2e)', () => {
     it('audits the test, saying in the event whether the model was real', async () => {
       const { assignmentId } = await assignedAiWork();
       await answerEverything(assignmentId);
-      await builder().test({ scope: scope(), actorUserId: workerUserId, assignmentId });
+      await builder().test({
+        scope: scope(),
+        actorUserId: workerUserId,
+        assignmentId,
+        sampleInput: SAMPLE,
+      });
 
       const events = await ctx.prisma.runAsPlatformOperation(() =>
         ctx.prisma.client.auditEvent.findMany({
@@ -816,6 +866,112 @@ describe('agent builder and engine agent activation (e2e)', () => {
       assert.ok(metadata, 'the test was not audited');
       assert.equal(metadata['producedByRealModel'], false);
       assert.equal(metadata['modelWasMocked'], true);
+    });
+
+    it('refuses a test with nothing to work on', async () => {
+      // The bug this pins: the route used to take no body at all, so "tested and passed" could
+      // mean the agent had been handed its own configuration and nothing else. A pass like that
+      // is evidence of wiring, and it was being read as evidence of work.
+      const { assignmentId } = await assignedAiWork();
+      await answerEverything(assignmentId);
+
+      await assert.rejects(
+        () =>
+          builder().test({
+            scope: scope(),
+            actorUserId: workerUserId,
+            assignmentId,
+            sampleInput: '   ',
+          }),
+        /sample data/,
+      );
+
+      await assert.rejects(
+        () =>
+          builder().test({
+            scope: scope(),
+            actorUserId: workerUserId,
+            assignmentId,
+            sampleInput: 'too short',
+          }),
+        /at least/,
+      );
+    });
+
+    it('keeps what went in and what came back, not a sentence about them', async () => {
+      const { assignmentId } = await assignedAiWork();
+      await answerEverything(assignmentId);
+
+      const tested = await builder().test({
+        scope: scope(),
+        actorUserId: workerUserId,
+        assignmentId,
+        sampleInput: SAMPLE,
+        expectedOutcome: 'A vendor name and an amount, both matching the invoice.',
+      });
+
+      const run = tested.testHistory[0];
+      assert.ok(run, 'the test was not recorded');
+      assert.equal(run.status, 'Passed');
+      assert.equal(run.sampleInput, SAMPLE);
+      assert.equal(run.expectedOutcome, 'A vendor name and an amount, both matching the invoice.');
+      assert.ok((run.output ?? '').trim() !== '', 'the output was not kept');
+      assert.ok(run.durationMs >= 0);
+      assert.equal(run.wasReal, false);
+      // The mock gateway has to say so on the run itself, not only on the assignment: a run read
+      // a week later must carry the conditions it was produced under.
+      assert.ok(
+        run.warnings.some((warning) => warning.includes('mock gateway')),
+        'a mock run did not say it was mocked',
+      );
+      assert.deepEqual(run.errors, []);
+    });
+
+    it('keeps every attempt, so two can be compared', async () => {
+      /*
+       * The reason this matters: publishing is a decision made by comparing attempts — "the last
+       * one dropped the tax line, this one keeps it". The builder used to overwrite four columns
+       * on each test, so the attempt before was gone by the time you wanted to compare it.
+       */
+      const { assignmentId } = await assignedAiWork();
+      await answerEverything(assignmentId);
+
+      await builder().test({
+        scope: scope(),
+        actorUserId: workerUserId,
+        assignmentId,
+        sampleInput: SAMPLE,
+      });
+      const second = await builder().test({
+        scope: scope(),
+        actorUserId: workerUserId,
+        assignmentId,
+        sampleInput: 'Invoice INV-9002, vendor Kestrel Traders, 12,000 INR, dated 2 April.',
+      });
+
+      assert.equal(second.testHistory.length, 2, 'the earlier attempt was overwritten');
+      // Newest first, so the head is the run somebody just watched happen.
+      assert.match(String(second.testHistory[0]?.sampleInput), /Kestrel/);
+      assert.match(String(second.testHistory[1]?.sampleInput), /Meridian/);
+    });
+
+    it('keeps one company’s test runs out of another company', async () => {
+      const { assignmentId } = await assignedAiWork();
+      await answerEverything(assignmentId);
+      await builder().test({
+        scope: scope(),
+        actorUserId: workerUserId,
+        assignmentId,
+        sampleInput: SAMPLE,
+      });
+
+      // Read under the other company's scope, which is what row-level security exists to stop.
+      const leaked = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.agentBuilderTestRun.count({
+          where: { tenantId: otherTenantId },
+        }),
+      );
+      assert.equal(leaked, 0, 'a test run reached another company');
     });
   });
 
@@ -1077,7 +1233,9 @@ describe('agent builder and engine agent activation (e2e)', () => {
       assert.deepEqual(view.missing, []);
 
       await as(
-        agent().post(`/tenants/${tenantId}/agent-builder/${assignmentId}/test`).send({}),
+        agent()
+          .post(`/tenants/${tenantId}/agent-builder/${assignmentId}/test`)
+          .send({ sampleInput: SAMPLE }),
         workerUboss,
       ).expect(201);
 
@@ -1452,6 +1610,151 @@ describe('agent builder and engine agent activation (e2e)', () => {
       const metadata = events[0]?.metadata as Record<string, unknown> | null;
       assert.equal(metadata?.['chosenManually'], true);
       assert.equal(metadata?.['to'], versionId);
+    });
+  });
+  // -------------------------------------------------------------------------
+  // One build, many executions
+  // -------------------------------------------------------------------------
+
+  /**
+   * The client's rule that an Agent is built once and reused.
+   *
+   * "Do NOT ask Admin to build the same Skill/Agent every time the Objective runs." Before this,
+   * every publish of an objective created its AI work `AwaitingAgentSetup`, so the second run of a
+   * monthly objective asked for the whole setup again and produced a second agent doing the same
+   * job. That is also how a company ends up with six agents nobody can tell apart.
+   */
+  describe('a published agent is reused rather than rebuilt', () => {
+    /** Publish the objective again, unchanged, and return its AI work. */
+    const republish = async (objectiveId: string) => {
+      await objectives().startNewDraft({
+        scope: scope(),
+        actorUserId: managerUserId,
+        objectiveId,
+      });
+      await objectives().submitForReview({ scope: scope(), actorUserId: managerUserId, objectiveId });
+      await objectives().confirmExecutionTeam({
+        scope: scope(),
+        actorUserId: managerUserId,
+        objectiveId,
+      });
+
+      const run = await analysis().start({ scope: scope(), actorUserId: managerUserId, objectiveId });
+      assert.equal(run.status, 'Completed', run.failureReason ?? 'no failure reason recorded');
+
+      let draft = await workflow().open({ scope: scope(), actorUserId: managerUserId, objectiveId });
+      for (const node of draft.graph.nodes) {
+        draft = await workflow().editNode({
+          scope: scope(),
+          actorUserId: managerUserId,
+          objectiveId,
+          revision: draft.revision,
+          nodeId: node.id,
+          patch: {
+            ...(node.kind === 'Approval' ? { ownerUserId: objectiveApproverId } : {}),
+            dod: {
+              criteria: 'The reviewer accepts the output.',
+              failureCondition: 'A required item cannot be evidenced.',
+              expectedOutput: node.dod.expectedOutput || 'A recorded outcome for this step.',
+              evidence: node.dod.evidence || 'The output, filed against this step.',
+            },
+          },
+        });
+      }
+
+      await objectives().completeReview({ scope: scope(), actorUserId: managerUserId, objectiveId });
+      await objectives().approve({ scope: scope(), actorUserId: objectiveApproverId, objectiveId });
+      return assignment().approveAndAssign({
+        scope: scope(),
+        actorUserId: managerUserId,
+        objectiveId,
+      });
+    };
+
+    it('maps the next run to the agent already built for that step', async () => {
+      const { objectiveId, assignmentId } = await assignedAiWork();
+      await answerEverything(assignmentId);
+      const agent = await builder().activate({
+        scope: scope(),
+        actorUserId: workerUserId,
+        assignmentId,
+      });
+      assert.ok(agent.engineAgent, 'the fixture did not produce an agent');
+
+      const again = await republish(objectiveId);
+
+      // Nothing to set up, and it says which agent it reused rather than only staying quiet.
+      assert.deepEqual(again.nodesAwaitingAgentSetup, []);
+      assert.equal(again.reusedAgents.length, 1);
+      assert.equal(again.reusedAgents[0]?.agentName, agent.engineAgent?.name);
+
+      const rows = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.aiWorkAssignment.findMany({
+          where: { tenantId, objectiveId },
+          orderBy: { createdAt: 'asc' },
+          select: { status: true, engineAgentId: true },
+        }),
+      );
+      assert.equal(rows.length, 2, 'the republish produced no second assignment');
+      // The same agent, not a second one doing the same job.
+      assert.equal(rows[1]?.status, 'MappedToEngineAgent');
+      assert.equal(rows[1]?.engineAgentId, rows[0]?.engineAgentId);
+    });
+
+    it('asks again when the step is no longer the same work', async () => {
+      /*
+       * A node id survives a rewrite, so matching on it alone would hand a step an agent that was
+       * configured for different words. The title is what the agent was built against.
+       */
+      const { objectiveId, assignmentId } = await assignedAiWork();
+      await answerEverything(assignmentId);
+      await builder().activate({ scope: scope(), actorUserId: workerUserId, assignmentId });
+
+      await objectives().startNewDraft({
+        scope: scope(),
+        actorUserId: managerUserId,
+        objectiveId,
+      });
+      await objectives().submitForReview({ scope: scope(), actorUserId: managerUserId, objectiveId });
+      await objectives().confirmExecutionTeam({
+        scope: scope(),
+        actorUserId: managerUserId,
+        objectiveId,
+      });
+      const run = await analysis().start({ scope: scope(), actorUserId: managerUserId, objectiveId });
+      assert.equal(run.status, 'Completed');
+
+      let draft = await workflow().open({ scope: scope(), actorUserId: managerUserId, objectiveId });
+      for (const node of draft.graph.nodes) {
+        draft = await workflow().editNode({
+          scope: scope(),
+          actorUserId: managerUserId,
+          objectiveId,
+          revision: draft.revision,
+          nodeId: node.id,
+          patch: {
+            ...(node.kind === 'Ai' ? { label: 'Something else entirely' } : {}),
+            ...(node.kind === 'Approval' ? { ownerUserId: objectiveApproverId } : {}),
+            dod: {
+              criteria: 'The reviewer accepts the output.',
+              failureCondition: 'A required item cannot be evidenced.',
+              expectedOutput: node.dod.expectedOutput || 'A recorded outcome for this step.',
+              evidence: node.dod.evidence || 'The output, filed against this step.',
+            },
+          },
+        });
+      }
+
+      await objectives().completeReview({ scope: scope(), actorUserId: managerUserId, objectiveId });
+      await objectives().approve({ scope: scope(), actorUserId: objectiveApproverId, objectiveId });
+      const again = await assignment().approveAndAssign({
+        scope: scope(),
+        actorUserId: managerUserId,
+        objectiveId,
+      });
+
+      assert.equal(again.reusedAgents.length, 0, 'rewritten work inherited an old agent');
+      assert.equal(again.nodesAwaitingAgentSetup.length, 1, 'the rewritten step asks for setup');
     });
   });
 });

@@ -86,6 +86,20 @@ export interface HierarchyView {
    * The server remains authoritative: hiding a control is a courtesy, never the enforcement.
    */
   mayAdminister: boolean;
+
+  /**
+   * Whether this person may edit the company's Vision and Mission.
+   *
+   * A **different** permission from `mayAdminister`: the structure is `hierarchy:Administer` and
+   * the company's stated purpose is `settings:Administer`. They are held by different roles — a
+   * Head administers their department's structure and does not speak for the company — so keying
+   * the edit control on the structure permission would offer it to somebody the server then
+   * refuses.
+   *
+   * The server remains authoritative either way; this only decides whether the control is worth
+   * showing.
+   */
+  mayEditIdentity: boolean;
 }
 
 /**
@@ -149,6 +163,13 @@ export class HierarchyService {
     // somebody who can administer the hierarchy, plus each person for themselves. Withholding
     // the field is done by omitting it rather than by blanking it, so a screen cannot render an
     // empty value as though the person had no identifier on record.
+    // The company's stated purpose is company settings, not company structure — see the note on
+    // `mayEditIdentity`. Resolved here so the screen and the endpoint agree about who may.
+    const mayEditIdentity = await this.authorization.authorize(context, {
+      module: 'settings',
+      action: 'Administer',
+    });
+
     const maySeeIdentifiers = (
       await this.authorization.authorize(context, {
         module: 'hierarchy',
@@ -202,6 +223,7 @@ export class HierarchyService {
       employeeCount: rows.length,
       identifiersVisible: maySeeIdentifiers,
       mayAdminister: maySeeIdentifiers,
+      mayEditIdentity: mayEditIdentity.allowed,
     };
   }
 

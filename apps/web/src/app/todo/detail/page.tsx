@@ -325,12 +325,31 @@ function TaskDetailInner() {
               <div className="uboss-section-label" style={{ marginTop: 0 }}>
                 Activity
               </div>
+              {/*
+                What came before, in words.
+
+                This used to print the raw node ids from the plan — "step-1, step-2" — which name
+                nothing a person has ever seen. The server resolves them to the steps' own titles;
+                the ids remain the fallback for a dependency whose step produced no work item, so
+                the panel never silently drops one.
+              */}
               <div className="uboss-kv">
-                <span className="uboss-kv-key">Dependency</span>
+                <span className="uboss-kv-key">Comes after</span>
                 <span className="uboss-kv-value">
-                  {task.dependsOnNodeIds.length === 0 ? 'None' : task.dependsOnNodeIds.join(', ')}
+                  {task.dependsOnNodeIds.length === 0
+                    ? 'Nothing — this starts the chain'
+                    : task.dependsOnLabels.length > 0
+                      ? task.dependsOnLabels.join(', ')
+                      : task.dependsOnNodeIds.join(', ')}
                 </span>
               </div>
+
+              {task.waitingOn.length === 0 ? null : (
+                <Banner tone="info">
+                  This cannot be started yet. It is waiting on{' '}
+                  <b>{task.waitingOn.join(', ')}</b>.
+                </Banner>
+              )}
               <div className="uboss-kv">
                 <span className="uboss-kv-key">Approval</span>
                 <span className="uboss-kv-value">

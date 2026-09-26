@@ -22,6 +22,8 @@ import {
   ApiError,
   assignmentApi,
   authApi,
+  objectiveReviewApi,
+  objectivesApi,
   workflowEditorApi,
   type AssignmentResultView,
   type MeResponse,
@@ -224,6 +226,93 @@ function PrePublishInner() {
                 workflow yet. */}
             <Button size="sm" disabled title="A workflow runner is not built yet">
               Test workflow
+            </Button>
+{/*
+              The two acts before assignment, which had endpoints and no way to reach them.
+
+              A version leaves Workflow Draft through the review, and only then can be approved —
+              `WorkflowDraft → ReadyForApproval → approved`. Both were already built and both were
+              already in the API client; neither was on any screen, so "This version has not been
+              approved" was a blocker with nothing anywhere that could clear it.
+
+              They are separate buttons because they are separate permissions and, in the plan the
+              client works to, separate people: finishing the review is `objective:Assign`, which
+              the manager who wrote it holds; approving is `objective:Approve`, which the head
+              does. Neither is hidden by role here — the server refuses what the person may not do
+              and says so, which is the same judgement one screen cannot second-guess.
+            */}
+            <Button
+              size="sm"
+              disabled={busy || summary === null}
+              onClick={() => {
+                if (!tenantId || objectiveId === null) return;
+                setBusy(true);
+                setError(null);
+                void objectiveReviewApi
+                  .confirmTeam(tenantId, objectiveId)
+                  .then(() => {
+                    setBusy(false);
+                    load();
+                  })
+                  .catch((caught: unknown) => {
+                    setError(
+                      caught instanceof ApiError
+                        ? caught.message
+                        : 'That team could not be confirmed.',
+                    );
+                    setBusy(false);
+                  });
+              }}
+            >
+              Confirm team
+            </Button>
+            <Button
+              size="sm"
+              disabled={busy || summary === null}
+              onClick={() => {
+                if (!tenantId || objectiveId === null) return;
+                setBusy(true);
+                setError(null);
+                void objectiveReviewApi
+                  .completeReview(tenantId, objectiveId)
+                  .then(() => {
+                    setBusy(false);
+                    load();
+                  })
+                  .catch((caught: unknown) => {
+                    setError(
+                      caught instanceof ApiError
+                        ? caught.message
+                        : 'That review could not be completed.',
+                    );
+                    setBusy(false);
+                  });
+              }}
+            >
+              Finish review
+            </Button>
+            <Button
+              size="sm"
+              disabled={busy || summary === null}
+              onClick={() => {
+                if (!tenantId || objectiveId === null) return;
+                setBusy(true);
+                setError(null);
+                void objectivesApi
+                  .approve(tenantId, objectiveId)
+                  .then(() => {
+                    setBusy(false);
+                    load();
+                  })
+                  .catch((caught: unknown) => {
+                    setError(
+                      caught instanceof ApiError ? caught.message : 'That could not be approved.',
+                    );
+                    setBusy(false);
+                  });
+              }}
+            >
+              Approve version
             </Button>
             {/*
               The transaction boundary. Enabled even when the summary reports blockers: the

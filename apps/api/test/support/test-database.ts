@@ -641,19 +641,54 @@ export async function setAccountState(
  */
 export async function grantBuilderAccess(
   context: TestContext,
-  input: { tenantId: string; userId: string; grantedByUserId: string; scopeKind?: string },
+  input: {
+    tenantId: string;
+    userId: string;
+    grantedByUserId: string;
+    scopeKind?: string;
+    /**
+     * How far the granted role is allowed to reach.
+     *
+     * `OwnWork` unless a caller says otherwise, because the original case was a Power Employee
+     * building their own assigned work. A Manager or a Head granted the same capability needs it
+     * over their team or their department, and the custom role's own ceiling has to permit that or
+     * the assignment is capped below the scope it was given.
+     */
+    maxScope?: string;
+    /**
+     * Whether the granted role may publish an agent as well as build one.
+     *
+     * A real distinction rather than a convenience: publishing is what makes an agent live, and
+     * the client's model keeps that with the Admin unless it is handed over on purpose.
+     */
+    canPublish?: boolean;
+    /**
+     * Which departments a `Department` grant reaches.
+     *
+     * Required for that scope and for nothing else: a department grant naming no department
+     * resolves to nothing, so the person is silently given a capability that reaches no work.
+     */
+    departmentIds?: string[];
+  },
 ): Promise<string> {
   return context.prisma.runAsPlatformOperation(async () => {
     const role = await context.prisma.client.customRole.create({
       data: {
         tenantId: input.tenantId,
         displayName: `Power Employee ${Math.random().toString(36).slice(2, 8)}`,
-        description: 'Builder access granted explicitly under CR-03.',
+        description: 'Builder access granted explicitly.',
         permissions: {
           objective: ['View', 'Comment', 'Create', 'EditDraft'],
-          'agent-builder': ['View', 'Comment', 'Create', 'EditDraft', 'Run'],
+          'agent-builder': [
+            'View',
+            'Comment',
+            'Create',
+            'EditDraft',
+            'Run',
+            ...(input.canPublish === true ? ['Publish'] : []),
+          ],
         },
-        maxScope: 'OwnWork',
+        maxScope: (input.maxScope ?? input.scopeKind ?? 'OwnWork') as never,
       },
     });
 
@@ -666,6 +701,7 @@ export async function grantBuilderAccess(
         // `OwnWork` by default, deliberately: granting the capability must not also widen reach.
         // A Power Employee builds their *own* assigned work and nobody else's.
         scopeKind: (input.scopeKind ?? 'OwnWork') as never,
+        ...(input.departmentIds === undefined ? {} : { departmentIds: input.departmentIds }),
         grantedByUserId: input.grantedByUserId,
       },
     });

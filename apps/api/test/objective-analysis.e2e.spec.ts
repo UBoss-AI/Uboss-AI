@@ -34,6 +34,7 @@ import {
 } from '../src/model-gateway/model-gateway.js';
 import { NotificationService } from '../src/notifications/notification.service.js';
 import { AssignmentService } from '../src/objectives/assignment.service.js';
+import { WorkReleaseService } from '../src/tasks/work-release.service.js';
 import { ObjectiveController } from '../src/objectives/objective.controller.js';
 import { ObjectiveAnalysisService } from '../src/objectives/objective-analysis.service.js';
 import { ObjectiveService } from '../src/objectives/objective.service.js';
@@ -176,6 +177,7 @@ describe('objective AI analysis (e2e)', () => {
         ObjectiveAnalysisService,
         WorkflowEditorService,
         AssignmentService,
+        WorkReleaseService,
         NotificationService,
         NotificationRepository,
         OutboxRepository,

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -12,8 +13,10 @@ import { Type } from 'class-transformer';
 import {
   Allow,
   IsInt,
+  IsObject,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   Max,
   Min,
@@ -29,6 +32,10 @@ import {
   RUN_STATES,
   RUN_TRIGGER_LABELS,
   RUN_TRIGGERS,
+  RUNTIME_INPUT_KEYS,
+  runtimeInputsFor,
+  unansweredRuntimeInputs,
+  type RuntimeInputs,
 } from '@uboss/types';
 
 import { RequirePermission } from '../authorization/authorization.decorators.js';
@@ -42,6 +49,26 @@ import { EngineAgentService } from '../agents/engine-agent.service.js';
 import { RunEngineService } from './run-engine.service.js';
 import { RunQueue } from './run-queue.js';
 import { RunSchedulerService } from './run-scheduler.service.js';
+
+export class StartRunDto {
+  /**
+   * The assigned AI work this run performs, when it performs one.
+   *
+   * Named rather than inferred: a reusable agent is mapped to the same step across every version
+   * that published it, so "an assignment on this agent" has more than one right answer and the
+   * wrong one would release the successors of a step nobody is running.
+   */
+  @IsOptional() @IsUUID() aiWorkAssignmentId?: string;
+
+  /**
+   * What the person answered for this run.
+   *
+   * Validated against the closed key list rather than accepted as free-form JSON: an unknown key
+   * is a screen and a server that disagree about the question, and silently storing it would hide
+   * that until somebody read the run months later.
+   */
+  @IsOptional() @IsObject() runtimeInputs?: RuntimeInputs;
+}
 
 export class CancelRunDto {
   @IsString() @MinLength(1) @MaxLength(2000) reason!: string;
@@ -137,6 +164,29 @@ export class RunController {
     });
   }
 
+  /**
+   * What this run still has to be told, and by whom.
+   *
+   * Derived from the agent's own published configuration, never a fixed list: an agent whose
+   * builder named a destination is not asked for one again. The screen renders exactly what comes
+   * back, so it cannot ask a question the server would ignore.
+   */
+  @Get('inputs')
+  @RequirePermission({ module: 'agents', action: 'View' })
+  async runtimeInputs(@Param('agentId', ParseUUIDPipe) agentId: string): Promise<unknown> {
+    await this.assertOnAgent(agentId, 'View');
+    const setup = await this.engine.publishedSetup({
+      scope: this.tenantContext.requireScope(),
+      engineAgentId: agentId,
+    });
+    return {
+      fields: runtimeInputsFor(setup),
+      note:
+        'Only what this run genuinely needs. Everything else was answered once, when the agent ' +
+        'was built.',
+    };
+  }
+
   @Get(':runId')
   @RequirePermission({ module: 'agents', action: 'View' })
   async view(
@@ -150,13 +200,46 @@ export class RunController {
   /** Run now. */
   @Post()
   @RequirePermission({ module: 'agents', action: 'Run' })
-  async start(@Param('agentId', ParseUUIDPipe) agentId: string): Promise<unknown> {
+  async start(
+    @Param('agentId', ParseUUIDPipe) agentId: string,
+    @Body() body: StartRunDto,
+  ): Promise<unknown> {
     await this.assertOnAgent(agentId, 'Run');
+    const scope = this.tenantContext.requireScope();
+
+    /*
+     * Checked here as well as on the screen, and with the same function.
+     *
+     * A required answer that is missing is refused by name rather than as "invalid": the person is
+     * looking at the form and can fix it, and a run that started without knowing what to work on
+     * would have to invent a subject — which is the fabrication the client's rules forbid.
+     */
+    // A key the server does not know is a screen and a server disagreeing about the question.
+    // Refused rather than stored: a run recording an answer to something nobody asked reads as
+    // fact months later.
+    for (const key of Object.keys(body.runtimeInputs ?? {})) {
+      if (!(RUNTIME_INPUT_KEYS as readonly string[]).includes(key)) {
+        throw new BadRequestException(key + ' is not something this run is asked.');
+      }
+    }
+
+    const setup = await this.engine.publishedSetup({ scope, engineAgentId: agentId });
+    const unanswered = unansweredRuntimeInputs(runtimeInputsFor(setup), body.runtimeInputs ?? {});
+    if (unanswered.length > 0) {
+      throw new BadRequestException(
+        `This run still needs an answer for: ${unanswered.map((field) => field.label).join(' ')}`,
+      );
+    }
+
     return this.engine.start({
-      scope: this.tenantContext.requireScope(),
+      scope,
       engineAgentId: agentId,
       trigger: 'Manual',
       startedByUserId: this.currentUserId(),
+      ...(body.aiWorkAssignmentId === undefined
+        ? {}
+        : { aiWorkAssignmentId: body.aiWorkAssignmentId }),
+      ...(body.runtimeInputs === undefined ? {} : { runtimeInputs: body.runtimeInputs }),
     });
   }
 

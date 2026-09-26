@@ -8,6 +8,7 @@ import {
 import {
   APPROVAL_TYPE_MODULE,
   ASSIGNMENT_CHECK_LABELS,
+  dependenciesSatisfied,
   FOUR_EYES_APPROVAL_KIND,
   incompleteDodFields,
   isObjectiveWorkAssignable,
@@ -24,6 +25,7 @@ import {
 import { AuditEventService } from '../audit/audit-event.service.js';
 import { AuthorizationService } from '../authorization/authorization.service.js';
 import { NotificationService } from '../notifications/notification.service.js';
+import { WorkReleaseService, type ReleasedTask } from '../tasks/work-release.service.js';
 import { PrismaService } from '../persistence/prisma.service.js';
 import type { TenantScope } from '../persistence/tenant-context.js';
 
@@ -42,6 +44,21 @@ export interface AssignmentResult {
   /** AI steps that still need Agent Builder setup, so the caller can send somebody there. */
   nodesAwaitingAgentSetup: string[];
   notificationsRaised: number;
+  /**
+   * How many people were told their step is theirs to start now.
+   *
+   * Counted separately from `notificationsRaised`, which means approvers and is asserted as such.
+   * Folding the two together would make "notified nobody" stop meaning what it says.
+   */
+  assigneesNotified: number;
+  /**
+   * The AI steps that mapped to an agent already built for them, and the agent's name.
+   *
+   * Reported rather than left silent: "nothing to set up" and "reused what you built last time"
+   * look identical on a screen that only counts what is outstanding, and they are not the same
+   * fact. `nodesAwaitingAgentSetup` stays what it always was — the steps that still need somebody.
+   */
+  reusedAgents: { nodeId: string; agentName: string }[];
   note: string;
 }
 
@@ -89,6 +106,8 @@ export class AssignmentService {
     private readonly notifications: NotificationService,
     /// Reused rather than re-derived: the readiness rules live with the editor that shows them.
     private readonly workflow: WorkflowEditorService,
+    /// Telling the first person their work is ready. One place raises every `WorkReady`.
+    private readonly workRelease: WorkReleaseService,
   ) {}
 
   /**
@@ -267,12 +286,38 @@ export class AssignmentService {
 
       // ---- Turn the graph into work ----
       const assignedAt = new Date();
+
+      /*
+       * Which node ids are work somebody could wait on.
+       *
+       * Two things are excluded and both matter. A dependency may name a step that did not survive
+       * into the published graph, and a dependency may name a Goal or a Condition — a label or a
+       * branch, which nothing ever "finishes". Either would park a task in Waiting with nothing
+       * left in the world that could release it. The same three kinds are what `WorkReleaseService`
+       * counts on the way out, so the two ends of the rule cannot drift apart.
+       */
+      const plannedNodeIds = new Set(
+        graph.nodes
+          .filter((node) => node.kind === 'Human' || node.kind === 'Ai' || node.kind === 'Approval')
+          .map((node) => node.id),
+      );
       const humanTaskIds: string[] = [];
       const aiAssignmentIds: string[] = [];
       const approvalRequestIds: string[] = [];
       const executorExpectationIds: string[] = [];
       const nodesAwaitingAgentSetup: string[] = [];
       const notifiedApprovers: { userId: string; approvalId: string; title: string }[] = [];
+      /*
+       * The people who can begin immediately, and only them.
+       *
+       * The client's rule is that the first eligible person is told and the rest of the chain is
+       * told as it unlocks. A task created `Waiting` is therefore deliberately absent from this
+       * list — announcing work somebody is forbidden to start is how a notification centre teaches
+       * people to ignore it.
+       */
+      const startable: ReleasedTask[] = [];
+      /** Steps that mapped to an agent somebody had already built and published for them. */
+      const reusedAgents: { nodeId: string; agentName: string }[] = [];
 
       for (const node of graph.nodes) {
         if (node.kind === 'Human') {
@@ -296,10 +341,31 @@ export class AssignmentService {
               evidenceRequirement: node.dod.evidence,
               dependsOnNodeIds: node.dod.dependencies,
               ...(node.dod.approval === null ? {} : { approvalKind: node.dod.approval }),
-              status: 'Assigned',
+              /*
+               * Waiting when the plan says something must happen first.
+               *
+               * Nothing has been done at the moment of assignment, so the finished set is empty and
+               * any dependency on a real step means this one cannot start. This is the enforcement:
+               * before it, `dependsOnNodeIds` was recorded and then ignored, so every step in a
+               * three-stage chain arrived in its owner's list at once and the order the workflow
+               * described was a suggestion. `human-task.service` is what moves it on.
+               */
+              status: dependenciesSatisfied(node.dod.dependencies, new Set(), plannedNodeIds)
+                ? 'Assigned'
+                : 'Waiting',
             },
           });
           humanTaskIds.push(task.id);
+          if (task.status === 'Assigned') {
+            startable.push({
+              id: task.id,
+              title: task.title,
+              assignedToUserId: task.assignedToUserId,
+              objectiveId: objective.id,
+              objectiveCode: objective.code,
+              nodeId: node.id,
+            });
+          }
 
           // The Executor is told what to watch. An expectation nobody recorded cannot be unmet.
           if (dueAt !== null) {
@@ -357,6 +423,39 @@ export class AssignmentService {
             completionEvidence: node.dod.evidence,
           };
 
+          /*
+           * The agent this step already has, if it has one.
+           *
+           * The client's rule: "Do not ask Admin to build the same Agent every time the Objective
+           * runs." An agent built for this step of this objective is a reusable capability, so a
+           * later publish maps to it instead of asking for the setup again. Until now this branch
+           * was deliberately empty — the Engine Agent registry did not exist when this code was
+           * written, and claiming a mapping to nothing would have been a lie. It exists now.
+           *
+           * Matched on **the same step of the same objective, doing the same work**. The node id
+           * alone is not enough: node ids are stable across a re-publish, so a step that was
+           * rewritten would silently inherit an agent built for the old wording. The title is what
+           * the agent was configured against, so a changed title asks again — which is the right
+           * answer for work that is no longer the same work.
+           *
+           * Only an `Active` agent counts. One that was never activated, or was retired, is not a
+           * published capability and mapping to it would put the objective in front of an agent
+           * nobody approved for use.
+           */
+          const reusable = await this.prisma.client.aiWorkAssignment.findFirst({
+            where: {
+              tenantId: input.scope.tenantId,
+              objectiveId: objective.id,
+              nodeId: node.id,
+              title: node.label,
+              status: 'MappedToEngineAgent',
+              engineAgentId: { not: null },
+              engineAgent: { status: 'Active' },
+            },
+            orderBy: { createdAt: 'desc' },
+            select: { engineAgentId: true, engineAgent: { select: { name: true } } },
+          });
+
           const assignment = await this.prisma.client.aiWorkAssignment.create({
             data: {
               tenantId: input.scope.tenantId,
@@ -365,17 +464,22 @@ export class AssignmentService {
               workflowDraftId: draft.id,
               nodeId: node.id,
               title: node.label,
-              // Always awaiting setup at this prompt: the Engine Agent registry does not exist
-              // yet, so there is nothing to map to. The mapping branch is a column and a
-              // constraint, ready for the registry prompt — claiming a mapping now would be a
-              // lie the "OR existing approved reusable Engine Agent" branch does not license.
-              status: 'AwaitingAgentSetup',
+              ...(reusable?.engineAgentId == null
+                ? { status: 'AwaitingAgentSetup' }
+                : {
+                    status: 'MappedToEngineAgent',
+                    engineAgentId: reusable.engineAgentId,
+                  }),
               setupPrefill: prefill as unknown as object,
               assignedByUserId: input.actorUserId,
             },
           });
           aiAssignmentIds.push(assignment.id);
-          nodesAwaitingAgentSetup.push(node.id);
+          if (reusable?.engineAgentId == null) {
+            nodesAwaitingAgentSetup.push(node.id);
+          } else {
+            reusedAgents.push({ nodeId: node.id, agentName: reusable.engineAgent?.name ?? '' });
+          }
 
           for (const category of node.dod.tools) {
             const expectation = await this.prisma.client.executorExpectation.create({
@@ -502,6 +606,8 @@ export class AssignmentService {
         executorExpectationIds,
         nodesAwaitingAgentSetup,
         notifiedApprovers,
+        startable,
+        reusedAgents,
       };
     });
 
@@ -513,10 +619,13 @@ export class AssignmentService {
     // can be reminded about — which is the recoverable failure of the two.
     //
     // Approvers are told because somebody is now waiting on them and nothing in their day would
-    // otherwise say so. Assignees get no separate notification: the approved catalogue has no
-    // assignment kind, and its `Overdue` kind is explicitly this prompt's — new work appears in
-    // the To-do list, and lateness is what raises an alert. Adding a seventh kind would change an
-    // approved vocabulary with no source asking for it.
+    // otherwise say so.
+    //
+    // Assignees used to get no notification at all, on the reasoning that the approved catalogue
+    // had no kind for it and inventing one would change a vocabulary nobody had asked to change.
+    // The client asked: "only the first eligible person receives the current work notification",
+    // and `WorkReady` is that kind. It is raised below, after the approvers, and only for the
+    // steps that can actually begin.
     let notificationsRaised = 0;
     for (const approver of committed.notifiedApprovers) {
       const raised = await this.notifications.raise({
@@ -536,6 +645,10 @@ export class AssignmentService {
       if (raised.notification !== null) notificationsRaised += 1;
     }
 
+    // After the transaction, like every other notification here: a bell that will not ring must
+    // never undo work that was correctly recorded.
+    await this.workRelease.announceAssigned(input.scope, committed.startable);
+
     return {
       objectiveId: committed.objectiveId,
       objectiveVersionId: committed.objectiveVersionId,
@@ -546,7 +659,9 @@ export class AssignmentService {
       approvalRequestIds: committed.approvalRequestIds,
       executorExpectationIds: committed.executorExpectationIds,
       nodesAwaitingAgentSetup: committed.nodesAwaitingAgentSetup,
+      reusedAgents: committed.reusedAgents,
       notificationsRaised,
+      assigneesNotified: committed.startable.length,
       // Conditional, because a note that mentions AI steps to a plan that has none is a small
       // untruth on a screen somebody reads once and believes.
       note:

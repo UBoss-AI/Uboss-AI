@@ -30,7 +30,9 @@ import { PrismaService } from '../src/persistence/prisma.service.js';
 import { tenantScopeForPlatformOperation } from '../src/persistence/tenant-context.js';
 import { UserRepository } from '../src/persistence/user.repository.js';
 import { DashboardService } from '../src/reports/dashboard.service.js';
+import { OrchestrationService } from '../src/reports/orchestration.service.js';
 import { ReportScopeService } from '../src/reports/report-scope.service.js';
+import type { OrchestrationView } from '@uboss/types';
 import { ReportsController } from '../src/reports/reports.controller.js';
 import { ReportsService } from '../src/reports/reports.service.js';
 import { ActorResolver, DevHeaderActorResolver } from '../src/request-context/actor-resolver.js';
@@ -113,6 +115,7 @@ describe('reports and the company dashboard (e2e)', () => {
         SecurityEventPublisher,
         ReportsService,
         DashboardService,
+        OrchestrationService,
         ReportScopeService,
         AuthorizationService,
         RoleAdministrationService,
@@ -333,7 +336,7 @@ describe('reports and the company dashboard (e2e)', () => {
 
   const dashboardFor = async (
     uboss: string,
-  ): Promise<{ agents: number; pendingJobs: number; scope: string }> => {
+  ): Promise<{ tiles: { tile: string; count: number | null }[]; scope: string }> => {
     const response = await asPerson(agent().get(`/tenants/${tenantId}/dashboard`), uboss).expect(
       200,
     );
@@ -369,6 +372,36 @@ describe('reports and the company dashboard (e2e)', () => {
     }
   });
 
+  /** One tile's number, or undefined when this reader was not given that tile at all. */
+  const tileCount = (body: unknown, tile: string): number | null | undefined =>
+    (body as { tiles?: { tile: string; count: number | null }[] }).tiles?.find(
+      (row) => row.tile === tile,
+    )?.count;
+
+  it('returns only the tiles the person’s permissions allow', async () => {
+    /*
+     * A tile somebody may not see is **absent**, not present and zero.
+     *
+     * Zero is a fact about the company; absence is a fact about the reader. A browser that
+     * forgot to filter would therefore have nothing to leak, which is the whole reason the
+     * decision is made on the server.
+     */
+    const admin = (await dashboardFor(adminUboss)) as { tiles: { tile: string }[] };
+    const employee = (await dashboardFor(employeeUboss)) as { tiles: { tile: string }[] };
+
+    const employeeTiles = employee.tiles.map((row) => row.tile);
+    // CR-03 §9 leaves a standard Employee without Objectives, Reports or the Executor screen.
+    assert.ok(!employeeTiles.includes('objectives'), 'an employee was given the Objectives tile');
+    assert.ok(!employeeTiles.includes('reports'), 'an employee was given the Reports tile');
+    assert.ok(!employeeTiles.includes('exceptions'), 'an employee was given the Exceptions tile');
+
+    // And the admin sees strictly more, so the filter is doing something rather than nothing.
+    assert.ok(
+      admin.tiles.length > employee.tiles.length,
+      'the two readers were given the same tiles',
+    );
+  });
+
   it('counts agents in the signed-in person’s own authorized scope', async () => {
     await seedAgent(adminId);
     await seedAgent(managerId);
@@ -376,17 +409,17 @@ describe('reports and the company dashboard (e2e)', () => {
     await seedAgent(strangerId);
 
     // WholeCompany sees all four.
-    assert.equal((await dashboardFor(adminUboss)).agents, 4);
+    assert.equal(tileCount(await dashboardFor(adminUboss), 'agents'), 4);
 
     // TeamSubtree: the manager and the one person reporting to them. Not the stranger, not the
     // admin — this is the leakage control, against a real reporting tree.
-    assert.equal((await dashboardFor(managerUboss)).agents, 2);
+    assert.equal(tileCount(await dashboardFor(managerUboss), 'agents'), 2);
 
     // OwnWork: one.
-    assert.equal((await dashboardFor(employeeUboss)).agents, 1);
+    assert.equal(tileCount(await dashboardFor(employeeUboss), 'agents'), 1);
   });
 
-  it('does not count an archived agent, so the donut matches the list it drills into', async () => {
+  it('does not count an archived agent, so the tile matches the list it opens', async () => {
     const live = await seedAgent(employeeId);
     const archived = await seedAgent(employeeId);
     await ctx.prisma.runAsPlatformOperation(() =>
@@ -399,9 +432,21 @@ describe('reports and the company dashboard (e2e)', () => {
       }),
     );
 
-    const body = await dashboardFor(employeeUboss);
-    assert.equal(body.agents, 1);
+    assert.equal(tileCount(await dashboardFor(employeeUboss), 'agents'), 1);
     assert.equal(typeof live.id, 'string');
+  });
+
+  it('carries no invented number on the two tiles that have none', async () => {
+    /*
+     * Performance and Reports return `null`, and that is the honest answer rather than a gap.
+     *
+     * There is no single true number for either — a performance score is per person and per
+     * period, and "reports" is a set of screens rather than a quantity. A zero would read as
+     * "nothing to see", and any other figure would be invented.
+     */
+    const body = await dashboardFor(adminUboss);
+    assert.equal(tileCount(body, 'performance'), null);
+    assert.equal(tileCount(body, 'reports'), null);
   });
 
   it('tells the reader what the counts cover', async () => {
@@ -413,22 +458,86 @@ describe('reports and the company dashboard (e2e)', () => {
     assert.equal((await dashboardFor(employeeUboss)).scope, 'Your own work only.');
   });
 
-  it('names both slices and where each one drills to', async () => {
+  it('names every tile, where it goes, and what its number means', async () => {
     const response = await asPerson(
       agent().get(`/tenants/${tenantId}/dashboard/meta`),
       employeeUboss,
     ).expect(200);
 
-    const body = response.body as { slices: { key: string; href: string }[] };
-    assert.equal(body.slices.length, 2, 'exactly two slices, forever');
-    assert.deepEqual(
-      body.slices.map((slice: { key: string }) => slice.key),
-      ['agents', 'pendingJobs'],
+    const body = response.body as {
+      tiles: { key: string; label: string; href: string; measures: string | null }[];
+      lanes: { key: string }[];
+    };
+
+    /*
+     * Served rather than written into the screen, so the two cannot drift.
+     *
+     * It lists every tile that exists — which tiles a given person *gets* is decided by
+     * `/dashboard` against their own permissions, and this test reads it as an employee to prove
+     * the catalogue is not itself a leak: knowing a tile exists is not seeing its number.
+     */
+    assert.ok(body.tiles.length > 0, 'the catalogue was empty');
+    for (const tile of body.tiles) {
+      assert.ok(tile.label.trim() !== '', `${tile.key} has no label`);
+      assert.ok(tile.href.startsWith('/'), `${tile.key} does not name where it goes`);
+    }
+
+    // The two that carry no number say so here as well, so a screen never has to guess.
+    const measuresOf = new Map(body.tiles.map((tile) => [tile.key, tile.measures]));
+    assert.equal(measuresOf.get('performance'), null);
+    assert.equal(measuresOf.get('reports'), null);
+  });
+
+  it('counts a finished agent run as finished', async () => {
+    /*
+     * The bug this pins: the mix counted runs in states called `Succeeded` and `DeadLettered`,
+     * neither of which is a run state — `Succeeded` belongs to security events and `DeadLettered`
+     * exists nowhere. So a completed run was reported as still in flight and the AI row's
+     * completed count was zero whatever had happened. Nothing covered this row, which is why it
+     * survived; this is that cover.
+     */
+    const agentRow = await seedAgent(adminId);
+
+    const version = await ctx.prisma.runAsPlatformOperation(() =>
+      ctx.prisma.client.engineAgentVersion.create({
+        data: {
+          tenantId,
+          engineAgentId: agentRow.id,
+          versionNumber: 1,
+          // Draft, not Published: a published version has to record when it was published
+          // (`published_engine_agent_version_records_when`), and nothing published this one. The
+          // run does not care which it is.
+          status: 'Draft',
+          config: {},
+          createdByUserId: adminId,
+        },
+      }),
     );
-    assert.deepEqual(
-      body.slices.map((slice: { href: string }) => slice.href),
-      ['/agents', '/todo'],
+
+    await ctx.prisma.runAsPlatformOperation(() =>
+      ctx.prisma.client.agentRun.create({
+        data: {
+          tenantId,
+          engineAgentId: agentRow.id,
+          engineAgentVersionId: version.id,
+          state: 'Completed',
+          trigger: 'Manual',
+          idempotencyKey: `mix:${Date.now()}`,
+          correlationId: 'mix-fixture',
+          // `running_run_was_reserved_first`: a run reaches a started state only through
+          // Reserved, where budget is set aside.
+          reservedAt: new Date(),
+          startedAt: new Date(),
+          finishedAt: new Date(),
+          producedByRealModel: false,
+        },
+      }),
     );
+
+    const mix = await reportFor(adminUboss, 'HumanVsAiWorkMix');
+    const ai = mix.rows.find((row) => String(row['kind']).toLowerCase().includes('ai'));
+    assert.ok(ai, 'the mix has no AI row');
+    assert.equal(Number(ai['completed']), 1, 'a completed run was reported as unfinished');
   });
 
   // -------------------------------------------------------------------------
@@ -483,12 +592,375 @@ describe('reports and the company dashboard (e2e)', () => {
    * suite never ran that report, so the bug shipped. This loop would have caught it: it asks for
    * each report in the catalogue and asserts a 200, which is enough to execute every query.
    */
+  /**
+   * The orchestration overview — Phase 16.
+   *
+   * The tiles say how much of each thing exists. This says *where the work has got to*, which is
+   * the question an admin opens the dashboard to answer and the one no tile could: Engine,
+   * Sub-Engine and Executor only mean anything side by side.
+   *
+   * What these tests defend, in order of how badly each would mislead somebody:
+   *
+   *   1. **Mapped is not finished.** An AI step with an agent mapped to it and no run has not been
+   *      done. Reading the assignment alone would mark every step finished the moment an admin
+   *      pressed Publish, and a dashboard that says the work is done is worse than no dashboard.
+   *   2. **Waiting is not "not started".** Work blocked on a predecessor is a queue for the admin
+   *      to clear, not an employee who has not got round to it.
+   *   3. **Withheld is not zero.** A reader who may not see approvals is told `null`, because zero
+   *      is a fact about the company and would read as good news.
+   *   4. **Two permissions.** Somebody who may not see Objectives cannot read this, or the
+   *      dashboard becomes the way around the Objectives module.
+   */
+  describe('the orchestration overview', () => {
+    // A function, not a constant: `tenantId` is assigned in `before`, and a describe body runs
+    // before that. A constant here would bake in `undefined` and every test would ask for a
+    // company that does not exist.
+    const orchestration = () => `/tenants/${tenantId}/dashboard/orchestration`;
+
+    /**
+     * A plan of three steps in a chain, with work on each.
+     *
+     * The stages are not stored anywhere — `executionStages` derives them from the dependency
+     * graph — so the fixture describes the dependencies and lets the product decide what is an
+     * Engine and what is an Executor. A fixture that asserted the names it had just written down
+     * would prove nothing.
+     */
+    const seedPlan = async (input: {
+      code: string;
+      ownerUserId: string;
+      assigneeUserId: string;
+      tenant?: string;
+      department?: string;
+      firstStatus?: string;
+      withAgentRun?: boolean;
+      dueAt?: Date;
+    }) =>
+      ctx.prisma.runAsPlatformOperation(async () => {
+        const tenant = input.tenant ?? tenantId;
+        // `objectives_tenant_id_department_id_fkey` is composite: a department belongs to one
+        // company, so seeding into another one has to name that company's own department.
+        const department = input.department ?? departmentId;
+        const objective = await ctx.prisma.client.objective.create({
+          data: {
+            tenantId: tenant,
+            code: input.code,
+            departmentId: department,
+            objectiveOwnerUserId: input.ownerUserId,
+            createdByUserId: input.ownerUserId,
+          },
+        });
+
+        const version = await ctx.prisma.client.objectiveVersion.create({
+          data: {
+            tenantId: tenant,
+            objectiveId: objective.id,
+            versionNumber: 1,
+            origin: 'Initial',
+            status: 'Draft',
+            objectiveName: 'Plan ' + input.code,
+            departmentId: department,
+            objectiveOwnerUserId: input.ownerUserId,
+            expectedFinalResult: 'Something finished.',
+            createdByUserId: input.ownerUserId,
+          },
+        });
+
+        const draft = await ctx.prisma.client.objectiveWorkflowDraft.create({
+          data: {
+            tenantId: tenant,
+            objectiveId: objective.id,
+            objectiveVersionId: version.id,
+            /*
+             * A chain: first, then second, then third.
+             *
+             * `executionStages` reads depth from these dependencies, so this is a plan with an
+             * Engine, one Sub-Engine and an Executor without the fixture ever saying those words.
+             */
+            graph: {
+              nodes: [
+                { id: 'n1', kind: 'Human', label: 'Gather', dod: { dependencies: [] } },
+                { id: 'n2', kind: 'Human', label: 'Check', dod: { dependencies: ['n1'] } },
+                { id: 'n3', kind: 'Ai', label: 'Summarise', dod: { dependencies: ['n2'] } },
+              ],
+              edges: [],
+            },
+            schemaVersion: 1,
+          },
+        });
+
+        await ctx.prisma.client.humanTask.create({
+          data: {
+            tenantId: tenant,
+            objectiveId: objective.id,
+            objectiveVersionId: version.id,
+            workflowDraftId: draft.id,
+            nodeId: 'n1',
+            title: 'Gather',
+            assignedToUserId: input.assigneeUserId,
+            assignedByUserId: input.ownerUserId,
+            dependsOnNodeIds: [],
+            status: input.firstStatus ?? 'Assigned',
+            ...(input.dueAt === undefined ? {} : { dueAt: input.dueAt }),
+            /*
+             * A finished task records both ends of itself.
+             *
+             * Three rules, and each of them right: `started_task_records_when`,
+             * `submitted_task_records_when` and `completed_task_records_when`. Work cannot have
+             * been finished without having been begun and handed in, and the database says so
+             * rather than trusting whoever writes the row.
+             */
+            ...(input.firstStatus === 'Completed'
+              ? {
+                  startedAt: new Date(Date.now() - 3_600_000),
+                  submittedAt: new Date(Date.now() - 60_000),
+                  completedAt: new Date(),
+                }
+              : {}),
+          },
+        });
+
+        await ctx.prisma.client.humanTask.create({
+          data: {
+            tenantId: tenant,
+            objectiveId: objective.id,
+            objectiveVersionId: version.id,
+            workflowDraftId: draft.id,
+            nodeId: 'n2',
+            title: 'Check',
+            assignedToUserId: input.assigneeUserId,
+            assignedByUserId: input.ownerUserId,
+            dependsOnNodeIds: ['n1'],
+            status: 'Waiting',
+          },
+        });
+
+        /*
+         * The agent comes first, because the row rule says so.
+         *
+         * `mapped_assignment_names_its_agent` refuses a `MappedToEngineAgent` row that names no
+         * agent — an assignment claiming a mapping it does not have is exactly the state that
+         * would make this dashboard lie. A fixture that created the row first and filled the
+         * column afterwards was refused, which is the product being right.
+         */
+        const built = await ctx.prisma.client.engineAgent.create({
+          data: {
+            tenantId: tenant,
+            name: 'Agent ' + input.code,
+            ownerUserId: input.ownerUserId,
+            status: 'Ready',
+          },
+        });
+
+        const assignment = await ctx.prisma.client.aiWorkAssignment.create({
+          data: {
+            tenantId: tenant,
+            objectiveId: objective.id,
+            objectiveVersionId: version.id,
+            workflowDraftId: draft.id,
+            nodeId: 'n3',
+            title: 'Summarise',
+            status: 'MappedToEngineAgent',
+            engineAgentId: built.id,
+            assignedByUserId: input.ownerUserId,
+            setupPrefill: {},
+          },
+        });
+
+        if (input.withAgentRun === true) {
+          const builtVersion = await ctx.prisma.client.engineAgentVersion.create({
+            data: {
+              tenantId: tenant,
+              engineAgentId: built.id,
+              versionNumber: 1,
+              status: 'Draft',
+              config: {},
+              createdByUserId: input.ownerUserId,
+            },
+          });
+          await ctx.prisma.client.agentRun.create({
+            data: {
+              tenantId: tenant,
+              engineAgentId: built.id,
+              engineAgentVersionId: builtVersion.id,
+              aiWorkAssignmentId: assignment.id,
+              state: 'Completed',
+              trigger: 'Manual',
+              idempotencyKey: 'run-' + input.code,
+              correlationId: 'orchestration-fixture',
+              /*
+               * `running_run_was_reserved_first`: a run reaches a started state only through
+               * Reserved, where budget is set aside. A fixture that skips it is refused, which is
+               * the product being right rather than the fixture being awkward.
+               */
+              reservedAt: new Date(),
+              startedAt: new Date(),
+              finishedAt: new Date(),
+              producedByRealModel: false,
+            },
+          });
+        }
+
+        return { objectiveId: objective.id, versionId: version.id };
+      });
+
+    const read = async (uboss: string) =>
+      ((await asPerson(agent().get(orchestration()), uboss).expect(200))
+        .body as OrchestrationView);
+
+    it('puts work at the stage the dependency graph says, not at one somebody typed', async () => {
+      await seedPlan({ code: 'ORCH-1', ownerUserId: adminId, assigneeUserId: adminId });
+
+      const view = await read(adminUboss);
+      const byStage = new Map(view.stages.map((row) => [row.stage, row]));
+
+      // First in the chain, so Engine; last, so Executor; the one between, Sub-Engine. Nothing in
+      // the fixture said any of those words.
+      assert.equal(byStage.get('Engine')?.human.ready, 1);
+      assert.equal(byStage.get('SubEngine')?.human.waiting, 1);
+      assert.equal(byStage.get('Executor')?.agent.ready, 1);
+      assert.equal(view.activeObjectives, 1);
+      assert.ok(view.covers.trim() !== '', 'the reader was not told what the numbers cover');
+    });
+
+    it('does not call mapped agent work finished', async () => {
+      /*
+       * The bug this pins: `MappedToEngineAgent` means an agent exists to do this step, not that
+       * it has done it. Counting the assignment's own status as progress would have reported
+       * every mapped step finished the moment an admin pressed Publish — a dashboard claiming the
+       * work was done when nothing had run.
+       */
+      await seedPlan({ code: 'ORCH-2', ownerUserId: adminId, assigneeUserId: adminId });
+
+      const mapped = await read(adminUboss);
+      const executor = mapped.stages.find((row) => row.stage === 'Executor');
+      assert.equal(executor?.agent.completed, 0, 'a mapped step was reported as finished');
+      assert.equal(executor?.agent.ready, 1);
+    });
+
+    it('counts an agent step once a run has actually completed', async () => {
+      // The other half of the rule above: this is about evidence, not about caution.
+      await seedPlan({
+        code: 'ORCH-3',
+        ownerUserId: adminId,
+        assigneeUserId: adminId,
+        withAgentRun: true,
+      });
+
+      const view = await read(adminUboss);
+      assert.equal(
+        view.stages.find((row) => row.stage === 'Executor')?.agent.completed,
+        1,
+        'a completed run was not counted',
+      );
+    });
+
+    it('keeps work that cannot start apart from work nobody has started', async () => {
+      await seedPlan({ code: 'ORCH-4', ownerUserId: adminId, assigneeUserId: adminId });
+
+      const view = await read(adminUboss);
+      // One of each, and not in the same column: the waiting one is a queue for the admin to
+      // clear, and the ready one is a person who has not begun.
+      assert.equal(view.waitingOnDependency, 1);
+      assert.equal(view.stages.find((row) => row.stage === 'Engine')?.human.ready, 1);
+    });
+
+    it('counts unfinished work as overdue and finished work never', async () => {
+      const past = new Date(Date.now() - 86_400_000);
+      await seedPlan({
+        code: 'ORCH-5',
+        ownerUserId: adminId,
+        assigneeUserId: adminId,
+        dueAt: past,
+      });
+      assert.equal((await read(adminUboss)).overdue, 1);
+
+      await seedPlan({
+        code: 'ORCH-6',
+        ownerUserId: adminId,
+        assigneeUserId: adminId,
+        firstStatus: 'Completed',
+        dueAt: past,
+      });
+      assert.equal((await read(adminUboss)).overdue, 1, 'a finished task was counted as overdue');
+    });
+
+    it('names a withheld number null rather than zero', async () => {
+      /*
+       * Asserted against the service rather than the route, because the route refuses this reader
+       * earlier and for a different reason: a standard Employee holds no `objective` grant at
+       * all. The rule under test is the one inside — a module somebody may not see comes back as
+       * null. Zero is a fact about the company, and this reader is not entitled to state it.
+       */
+      await seedPlan({ code: 'ORCH-7', ownerUserId: adminId, assigneeUserId: employeeId });
+
+      const context = await app.get(AuthorizationService).contextFor(scope(), employeeId);
+      /*
+       * `executor`, not `approvals`.
+       *
+       * CR-03 §9 leaves a standard Employee the approvals they are given — so approvals is a
+       * module they hold — and takes away the Executor screen along with hierarchy, reports and
+       * profile search. The premise is asserted rather than assumed because a role template edit
+       * needs no migration, so this could stop being true without anything else breaking.
+       */
+      assert.ok(!context.visibleModules.includes('executor'), 'the fixture lost its premise');
+
+      const view = await app.get(OrchestrationService).overview({
+        scope: scope(),
+        reportScope: await app
+          .get(ReportScopeService)
+          .forDashboard({ scope: scope(), actorUserId: employeeId }),
+        context,
+        now: new Date(),
+      });
+
+      assert.equal(view.exceptionsOpen, null);
+    });
+
+    it('refuses a reader who may not see objectives', async () => {
+      // A standard Employee holds no `objective` grant, so this is the real case rather than a
+      // constructed one. Without the second check the dashboard would be the way around the
+      // Objectives module — the hole every report's second permission exists to close.
+      await asPerson(agent().get(orchestration()), employeeUboss).expect(403);
+    });
+
+    it('shows one company nothing of another', async () => {
+      const theirs = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.department.create({
+          data: { tenantId: otherTenantId, name: 'Their Operations' },
+        }),
+      );
+      await seedPlan({
+        code: 'ORCH-8',
+        ownerUserId: strangerId,
+        assigneeUserId: strangerId,
+        tenant: otherTenantId,
+        department: theirs.id,
+      });
+
+      const leaked = await ctx.prisma.runInTenantTransaction(scope(), () =>
+        ctx.prisma.client.objective.count({ where: { code: 'ORCH-8' } }),
+      );
+      assert.equal(leaked, 0, 'another company’s objective was readable');
+
+      // And it is absent from the numbers, not merely unreadable by a direct query.
+      const view = await read(adminUboss);
+      assert.ok(
+        view.departments.every((row) => row.activeObjectives >= 0),
+        'a department row was malformed',
+      );
+    });
+  });
+
   it('runs every report in the catalogue without throwing', async () => {
     const catalogue = (
       await asPerson(agent().get(`/tenants/${tenantId}/reports`), adminUboss).expect(200)
     ).body as { reports: { key: string }[] };
 
-    assert.equal(catalogue.reports.length, 10, 'an admin sees all ten');
+    // Eleven since DependencyWaiting joined them. Written out rather than derived from
+    // REPORT_KEYS: a count taken from the constant the catalogue is built from would agree
+    // with itself whatever happened, and the point of the number is that adding a report has
+    // to be a decision somebody made here rather than something that slipped in.
+    assert.equal(catalogue.reports.length, 11, 'an admin sees all eleven');
 
     for (const report of catalogue.reports) {
       await asPerson(agent().get(`/tenants/${tenantId}/reports/${report.key}`), adminUboss).expect(
@@ -850,8 +1322,8 @@ describe('reports and the company dashboard (e2e)', () => {
         otherAdminUboss,
         otherTenantId,
       ).expect(200)
-    ).body as { agents: number };
-    assert.equal(theirDashboard.agents, 1);
+    ).body as { tiles: { tile: string; count: number | null }[] };
+    assert.equal(theirDashboard.tiles.find((row) => row.tile === 'agents')?.count, 1);
 
     // And our admin cannot reach their workspace by putting its id in the path.
     await asPerson(

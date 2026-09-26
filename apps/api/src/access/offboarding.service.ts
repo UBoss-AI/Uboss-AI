@@ -14,6 +14,8 @@ import { OrganizationRepository } from '../persistence/organization.repository.j
 import { PerformanceService } from '../performance/performance.service.js';
 import { MemoryService } from '../agents/memory.service.js';
 import { PrismaService } from '../persistence/prisma.service.js';
+import { TERMINAL_HUMAN_TASK_STATUSES } from '@uboss/types';
+
 import type { TenantScope } from '../persistence/tenant-context.js';
 
 /**
@@ -132,6 +134,14 @@ export class OffboardingService {
   async assess(input: { scope: TenantScope; actorUserId: string; subjectUserId: string }): Promise<{
     directReports: number;
     roleAssignments: number;
+    /** Work assigned to them that has not finished. Somebody has to pick it up. */
+    openTasks: number;
+    /** Objectives they own. An objective with no owner has nobody to answer for it. */
+    objectivesOwned: number;
+    /** Engine Agents they are accountable for. */
+    agentsOwned: number;
+    /** Approvals waiting on this person by name, which would otherwise wait forever. */
+    approvalsPending: number;
     successorRequired: boolean;
     domains: typeof HANDOVER_DOMAINS;
     note: string;
@@ -150,6 +160,46 @@ export class OffboardingService {
       roleAssignments: await this.prisma.client.roleAssignment.count({
         where: { tenantId: input.scope.tenantId, userId: input.subjectUserId },
       }),
+
+      /*
+       * What else stops when this person does.
+       *
+       * The client's rule is that an administrator sees what will be affected **before** they
+       * confirm. Direct reports and roles were the only two things counted, which made the
+       * preview answer "who reports to them" when the question is "what happens to their work".
+       * Each of these is something that has an owner today and would have none tomorrow.
+       *
+       * Counted, not listed: a count is what a decision needs, and the detail is on the tabs of
+       * the panel this is shown in.
+       */
+      openTasks: await this.prisma.client.humanTask.count({
+        where: {
+          tenantId: input.scope.tenantId,
+          assignedToUserId: input.subjectUserId,
+          status: { notIn: [...TERMINAL_HUMAN_TASK_STATUSES] },
+        },
+      }),
+      objectivesOwned: await this.prisma.client.objectiveVersion.count({
+        where: {
+          tenantId: input.scope.tenantId,
+          objectiveOwnerUserId: input.subjectUserId,
+          status: { not: 'Archived' },
+        },
+      }),
+      agentsOwned: await this.prisma.client.engineAgent.count({
+        where: {
+          tenantId: input.scope.tenantId,
+          ownerUserId: input.subjectUserId,
+          status: { not: 'Archived' },
+        },
+      }),
+      approvalsPending: await this.prisma.client.approvalRequest.count({
+        where: {
+          tenantId: input.scope.tenantId,
+          namedApproverUserId: input.subjectUserId,
+          status: 'Pending',
+        },
+      }),
     }));
 
     return {
@@ -163,7 +213,22 @@ export class OffboardingService {
         `permission to act. ` +
         (counts.directReports > 0
           ? `${counts.directReports} direct report(s) move to the successor, who must be named.`
-          : 'There are no direct reports to move.'),
+          : 'There are no direct reports to move.') +
+        /*
+         * Said plainly, because these are the ones that do **not** move.
+         *
+         * Transferring an objective's ownership or an agent's accountability to whoever happens
+         * to be the successor would be inventing a business decision — somebody has to choose,
+         * and the choice is per item. Saying so here is the difference between an administrator
+         * who knows there is follow-up work and one who finds out when an approval never arrives.
+         */
+        (counts.openTasks + counts.objectivesOwned + counts.agentsOwned + counts.approvalsPending >
+        0
+          ? ` Still needing a decision afterwards: ${counts.openTasks} unfinished task(s), ` +
+            `${counts.objectivesOwned} objective(s) they own, ${counts.agentsOwned} agent(s) they ` +
+            `own and ${counts.approvalsPending} approval(s) waiting on them by name. None of ` +
+            'these is reassigned automatically — each is a decision somebody has to make.'
+          : ' They hold no unfinished work, objectives, agents or approvals.'),
     };
   }
 

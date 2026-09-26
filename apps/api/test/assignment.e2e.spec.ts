@@ -49,6 +49,7 @@ import { SkillRouterService } from '../src/skills/skill-router.service.js';
 import { SkillService } from '../src/skills/skill.service.js';
 import { HumanTaskController } from '../src/tasks/human-task.controller.js';
 import { HumanTaskService } from '../src/tasks/human-task.service.js';
+import { WorkReleaseService } from '../src/tasks/work-release.service.js';
 import { RequestActorInterceptor } from '../src/tenancy/request-actor.interceptor.js';
 import { TenantContextService } from '../src/tenancy/tenant-context.service.js';
 import { TenantGuard, WORKSPACE_HEADER } from '../src/tenancy/tenant.guard.js';
@@ -153,6 +154,7 @@ describe('approve & assign and the human to-do list (e2e)', () => {
         WorkflowEditorService,
         AssignmentService,
         HumanTaskService,
+        WorkReleaseService,
         TenantContextService,
         Reflector,
         ReportingHierarchyResolver,
@@ -481,6 +483,37 @@ describe('approve & assign and the human to-do list (e2e)', () => {
    * Draft → submit → confirm team → analyse → fill in the Definitions of Done the analysis
    * honestly left blank → complete review → approve.
    */
+  /**
+   * Three human steps and nothing else.
+   *
+   * `mixedSteps` is the right fixture for most of this suite — it carries an AI step and an
+   * approval gate, which is what a real plan looks like. It is the wrong one for proving a
+   * sequence: two of its three steps are not human, so a chain built from it has only two people
+   * in it and cannot tell "the third waited for the second" from "the third was last".
+   */
+  const threeHumanSteps = (): Form2WorkflowStep[] => [
+    step({
+      position: 1,
+      whoPersonName: 'Aman Singh',
+      whatExactWork: 'Engine: prepare the source data',
+      outputWhatIsProduced: 'Source extract',
+    }),
+    step({
+      position: 2,
+      whoPersonName: 'Ram Iyer',
+      whatExactWork: 'Sub-Engine: reconcile the extract against the ledger',
+      inputWhatIsUsed: 'Source extract',
+      outputWhatIsProduced: 'Reconciliation sheet',
+    }),
+    step({
+      position: 3,
+      whoPersonName: 'Vikram Bose',
+      whatExactWork: 'Executor: file the reconciliation and close the period',
+      inputWhatIsUsed: 'Reconciliation sheet',
+      outputWhatIsProduced: 'Filed reconciliation',
+    }),
+  ];
+
   const readyToAssign = async ({
     fillDods = true,
     approve = true,
@@ -503,6 +536,15 @@ describe('approve & assign and the human to-do list (e2e)', () => {
     nameApprover = true,
     /** Name somebody who cannot approve, to assert the refusal rather than rely on it. */
     nameIneligibleApprover = false,
+    /** The Form 2 grid to build from. The mixed one unless a test needs a different shape. */
+    steps = mixedSteps(),
+  }: {
+    fillDods?: boolean;
+    approve?: boolean;
+    withSkill?: boolean;
+    nameApprover?: boolean;
+    nameIneligibleApprover?: boolean;
+    steps?: Form2WorkflowStep[];
   } = {}): Promise<{ objectiveId: string; versionId: string; graph: WorkflowDraft }> => {
     if (withSkill) await publishSkill();
 
@@ -510,7 +552,7 @@ describe('approve & assign and the human to-do list (e2e)', () => {
       scope: scope(),
       actorUserId: managerUserId,
       content: form2(),
-      steps: mixedSteps(),
+      steps,
     });
 
     await objectives().submitForReview({
@@ -777,7 +819,18 @@ describe('approve & assign and the human to-do list (e2e)', () => {
         assert.ok(row.expectedOutput.trim() !== '', 'no expected output');
         assert.ok(row.evidenceRequirement.trim() !== '', 'no evidence requirement');
         assert.notEqual(row.dueAt, null, 'no due time, though the objective set a target');
-        assert.equal(row.status, 'Assigned');
+        /*
+         * Assigned only when nothing has to happen first.
+         *
+         * The analysis now records the chain it drew as each step's dependencies, so a plan of
+         * three sequential steps produces one task somebody can start and two that wait. Asserting
+         * 'Assigned' for all of them was asserting that the order is not enforced.
+         */
+        assert.equal(
+          row.status,
+          row.dependsOnNodeIds.length === 0 ? 'Assigned' : 'Waiting',
+          `${row.title} (waits on ${row.dependsOnNodeIds.join(', ') || 'nothing'})`,
+        );
       }
     });
 
@@ -1197,9 +1250,17 @@ describe('approve & assign and the human to-do list (e2e)', () => {
         const rows = await ctx.prisma.client.humanTask.findMany({ where: { objectiveId } });
         const row = rows.find((candidate) => candidate.approvalKind !== null) ?? rows[0];
         assert.ok(row);
+        /*
+         * Put the step in front of somebody, which is what this test is about.
+         *
+         * `status` is set for the same reason `assignedToUserId` is: the step needing approval is
+         * the last one in the chain, so it legitimately starts Waiting on the ones before it. That
+         * is the sequence's business and it has its own tests — this one asks what happens when a
+         * step that needs approval is submitted, and it has to be startable to ask that.
+         */
         return ctx.prisma.client.humanTask.update({
           where: { id: row.id },
-          data: { assignedToUserId: workerUserId, approvalKind: 'Head' },
+          data: { assignedToUserId: workerUserId, approvalKind: 'Head', status: 'Assigned' },
         });
       });
 
@@ -1325,6 +1386,262 @@ describe('approve & assign and the human to-do list (e2e)', () => {
 
     it('refuses an unauthenticated request', async () => {
       await agent().get(`/tenants/${tenantId}/todo`).set(WORKSPACE_HEADER, tenantId).expect(401);
+    });
+  });
+  // -------------------------------------------------------------------------
+  // 5. Engine -> Sub-Engine -> Executor
+  // -------------------------------------------------------------------------
+
+  /**
+   * The sequence, proved rather than assumed.
+   *
+   * The client's rule is that the next stage must not become actionable before the required
+   * previous stage is complete, and until this existed `dependsOnNodeIds` was written at publish
+   * and never read again — so all three people in a chain got their work at the same moment.
+   *
+   * Three humans, three stages, one dependency each. Anything simpler would not distinguish "the
+   * second step waited" from "the third step happened to be last".
+   */
+  describe('the Engine -> Sub-Engine -> Executor sequence', () => {
+    /** Publish a three-person chain and return its tasks, in plan order. */
+    const chain = async () => {
+      // No AI step, so no Skill is needed and nothing else can park the plan.
+      const ready = await readyToAssign({ withSkill: false, steps: threeHumanSteps() });
+
+      // The three human steps the fixture's Form 2 produces, given owners and an order.
+      let draft = await workflow().open({
+        scope: scope(),
+        actorUserId: managerUserId,
+        objectiveId: ready.objectiveId,
+      });
+
+      const humans = draft.graph.nodes.filter((node) => node.kind === 'Human');
+      assert.equal(humans.length, 3, 'the chain needs three people to be a chain');
+
+      const owners = [workerUserId, otherWorkerUserId, ownerUserId];
+      for (let index = 0; index < humans.length; index += 1) {
+        const node = humans[index] as (typeof humans)[number];
+        const previous = index === 0 ? [] : [(humans[index - 1] as (typeof humans)[number]).id];
+        draft = await workflow().editNode({
+          scope: scope(),
+          actorUserId: managerUserId,
+          objectiveId: ready.objectiveId,
+          revision: draft.revision,
+          nodeId: node.id,
+          patch: {
+            ownerUserId: owners[index % owners.length] as string,
+            dod: { ...node.dod, dependencies: previous },
+          },
+        });
+      }
+
+      await assign(ready.objectiveId);
+
+      const rows = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.humanTask.findMany({
+          where: { tenantId, objectiveId: ready.objectiveId },
+          select: {
+            id: true,
+            nodeId: true,
+            title: true,
+            status: true,
+            assignedToUserId: true,
+            dependsOnNodeIds: true,
+          },
+        }),
+      );
+
+      // Back into plan order: findMany's order is not the graph's.
+      const ordered = humans.map((node) => {
+        const row = rows.find((candidate) => candidate.nodeId === node.id);
+        assert.ok(row !== undefined, `no task for node ${node.id}`);
+        return row;
+      });
+
+      return { objectiveId: ready.objectiveId, nodes: humans, tasks: ordered };
+    };
+
+    const statusOf = async (taskId: string): Promise<string> => {
+      const row = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.humanTask.findFirstOrThrow({
+          where: { tenantId, id: taskId },
+          select: { status: true },
+        }),
+      );
+      return row.status;
+    };
+
+    /** Take a task all the way to Completed, as the person it belongs to. */
+    const finish = async (taskId: string, actorUserId: string) => {
+      await tasks().start({ scope: scope(), actorUserId, taskId });
+      await tasks().addEvidence({
+        scope: scope(),
+        actorUserId,
+        taskId,
+        description: 'The output, filed against this step.',
+        reference: 'proof://dependency-sequence',
+      });
+      return tasks().submit({ scope: scope(), actorUserId, taskId });
+    };
+
+    it('starts only the first step, and leaves the rest waiting', async () => {
+      const { tasks: chained } = await chain();
+
+      assert.equal(chained[0]?.status, 'Assigned');
+      for (let index = 1; index < chained.length; index += 1) {
+        assert.equal(
+          chained[index]?.status,
+          'Waiting',
+          `step ${index + 1} should not be startable yet`,
+        );
+        // The dependency is recorded, which is what the release later reads.
+        assert.deepEqual(chained[index]?.dependsOnNodeIds, [chained[index - 1]?.nodeId]);
+      }
+    });
+
+    it('tells the first person and nobody else when the plan is assigned', async () => {
+      /*
+       * The client's rule, exactly: "only the first eligible person receives the current work
+       * notification". The rest of the chain is told as it unlocks — which the test below this one
+       * proves — and telling them now would be announcing work the product forbids them to start.
+       */
+      const { tasks: chained } = await chain();
+      const [first, second, third] = chained;
+      assert.ok(first !== undefined && second !== undefined);
+
+      const told = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.notification.findMany({
+          where: { tenantId, kind: 'WorkReady' },
+          select: { recipientUserId: true, resourceId: true, title: true },
+        }),
+      );
+
+      const forThisPlan = told.filter((row) =>
+        chained.some((task) => task.id === row.resourceId),
+      );
+
+      assert.equal(forThisPlan.length, 1, 'exactly one person was told');
+      assert.equal(forThisPlan[0]?.resourceId, first.id);
+      assert.equal(forThisPlan[0]?.recipientUserId, first.assignedToUserId);
+      assert.match(String(forThisPlan[0]?.title), /New work assigned/);
+
+      for (const later of [second, third]) {
+        if (later === undefined) continue;
+        assert.ok(
+          !forThisPlan.some((row) => row.resourceId === later.id),
+          `${later.title} was announced before its turn`,
+        );
+      }
+    });
+
+    it('refuses to start a step whose dependency has not finished', async () => {
+      const { tasks: chained } = await chain();
+      const second = chained[1];
+      assert.ok(second !== undefined);
+
+      /*
+       * The negative test the whole feature rests on.
+       *
+       * Hiding the button would not be enough — this asks the server directly, as the person the
+       * work genuinely belongs to, and requires a refusal. A permission error would not count:
+       * this person *is* allowed to work their own task, and the reason it is refused has to be
+       * the plan's order.
+       */
+      await assert.rejects(
+        () => tasks().start({ scope: scope(), actorUserId: second.assignedToUserId, taskId: second.id }),
+        (error: Error) => {
+          assert.match(error.message, /Waiting|cannot/i);
+          return true;
+        },
+      );
+
+      assert.equal(await statusOf(second.id), 'Waiting');
+    });
+
+    it('releases the next step, and only the next step, when one completes', async () => {
+      const { tasks: chained } = await chain();
+      const [first, second, third] = chained;
+      assert.ok(first !== undefined && second !== undefined);
+
+      await finish(first.id, first.assignedToUserId);
+
+      assert.equal(await statusOf(first.id), 'Completed');
+      assert.equal(await statusOf(second.id), 'Assigned');
+      // The one after that is still waiting: a completion releases its own successor, not the tail.
+      if (third !== undefined) assert.equal(await statusOf(third.id), 'Waiting');
+    });
+
+    it('notifies the person whose work just became startable', async () => {
+      const { tasks: chained } = await chain();
+      const [first, second] = chained;
+      assert.ok(first !== undefined && second !== undefined);
+
+      await finish(first.id, first.assignedToUserId);
+
+      const raised = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.notification.findMany({
+          where: { tenantId, recipientUserId: second.assignedToUserId, kind: 'WorkReady' },
+          select: { title: true, body: true, deepLink: true, resourceId: true },
+        }),
+      );
+
+      assert.equal(raised.length, 1, 'exactly one WorkReady, raised once');
+      assert.equal(raised[0]?.resourceId, second.id);
+      assert.match(String(raised[0]?.title), new RegExp(second.title.slice(0, 12)));
+      assert.equal(raised[0]?.deepLink, `/todo/${second.id}`);
+
+      // And nothing was said to the person whose turn has not come.
+      const third = chained[2];
+      if (third !== undefined && third.assignedToUserId !== second.assignedToUserId) {
+        const premature = await ctx.prisma.runAsPlatformOperation(() =>
+          ctx.prisma.client.notification.count({
+            where: { tenantId, recipientUserId: third.assignedToUserId, kind: 'WorkReady' },
+          }),
+        );
+        assert.equal(premature, 0, 'the third person was told nothing yet');
+      }
+    });
+
+    it('walks the whole chain to the end', async () => {
+      const { tasks: chained } = await chain();
+
+      for (let index = 0; index < chained.length; index += 1) {
+        const task = chained[index] as (typeof chained)[number];
+        assert.equal(await statusOf(task.id), 'Assigned', `step ${index + 1} should be ready now`);
+        await finish(task.id, task.assignedToUserId);
+      }
+
+      for (const task of chained) {
+        const status = await statusOf(task.id);
+        // A step whose Definition of Done required an approval parks at WaitingApproval instead,
+        // which is the approval engine's business and not this sequence's.
+        assert.ok(
+          status === 'Completed' || status === 'WaitingApproval',
+          `${task.title} ended at ${status}`,
+        );
+      }
+    });
+
+    it('tells the person what the wait is for, in words rather than node ids', async () => {
+      const { tasks: chained } = await chain();
+      const second = chained[1];
+      assert.ok(second !== undefined);
+
+      const list = await tasks().list({
+        scope: scope(),
+        actorUserId: second.assignedToUserId,
+        filter: 'mine',
+      });
+
+      const view = list.tasks.find((task) => task.id === second.id);
+      assert.ok(view !== undefined, 'the waiting task is shown, not hidden');
+      assert.equal(view.status, 'Waiting');
+      assert.deepEqual(view.waitingOn, [chained[0]?.title]);
+      // Nothing it can do: the move list offers no way to start it.
+      assert.ok(!view.nextStatuses.includes('InProgress'));
+      // One, not two: the filter is `mine`, and the third stage belongs to somebody else.
+      assert.equal(list.counts.waiting, 1);
+      assert.equal(list.tasks.filter((task) => task.status === 'Waiting').length, 1);
     });
   });
 });

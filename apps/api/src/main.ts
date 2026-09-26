@@ -5,7 +5,7 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 import type { NextFunction, Request, Response } from 'express';
-import { json, urlencoded } from 'express';
+import { json, raw, urlencoded } from 'express';
 import helmet from 'helmet';
 
 import { AppModule } from './app.module.js';
@@ -63,8 +63,30 @@ async function bootstrap(): Promise<void> {
    */
   const uploadJson = json({ limit: '340mb' });
   const ordinaryJson = json({ limit: '1mb' });
+
+  /**
+   * The payment provider's webhook gets the raw bytes, and nothing else does.
+   *
+   * Its signature is computed over the **exact body** that was sent. A body parsed to JSON and
+   * serialised again is not those bytes — key order and number formatting both differ — so every
+   * genuine delivery would fail verification and look like a forgery.
+   *
+   * A literal path rather than a pattern, because there is exactly one such endpoint and a
+   * pattern here would be a way to accidentally hand another route an unparsed body. The handler
+   * asserts it received a Buffer rather than assuming, so if this ever stops matching, the failure
+   * says so instead of looking like a wrong signing secret.
+   *
+   * One megabyte, like every other ordinary route: a webhook body is a few kilobytes, and this
+   * endpoint is reachable without a session.
+   */
+  const providerWebhook = raw({ type: '*/*', limit: '1mb' });
+  const PROVIDER_WEBHOOK_PATH = '/billing/stripe/webhook';
   const UPLOAD_PATHS = /\/tenants\/[^/]+\/files\/?$/;
   app.use((request: Request, response: Response, next: NextFunction) => {
+    if (request.path === PROVIDER_WEBHOOK_PATH) {
+      providerWebhook(request, response, next);
+      return;
+    }
     const parser = UPLOAD_PATHS.test(request.path) ? uploadJson : ordinaryJson;
     parser(request, response, next);
   });

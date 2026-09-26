@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Put,
   Post,
   Query,
   UnauthorizedException,
@@ -126,6 +127,25 @@ export class ChatController {
         actorUserId: this.me(),
       }),
     };
+  }
+
+  /**
+   * Open a department's Workshop.
+   *
+   * A PUT rather than a POST: asking twice is asking for the same thing, and the second answer is
+   * the same conversation. Creating it on first ask means no company has to be migrated into
+   * having workshops, and membership is reconciled against the department each time.
+   */
+  @Put('departments/:departmentId/workshop')
+  async openDepartmentWorkshop(
+    @Param('tenantId', ParseUUIDPipe) tenantId: string,
+    @Param('departmentId', ParseUUIDPipe) departmentId: string,
+  ): Promise<unknown> {
+    return this.chat.openDepartmentWorkshop({
+      scope: tenantScopeForPlatformOperation(tenantId),
+      actorUserId: this.me(),
+      departmentId,
+    });
   }
 
   @Post('conversations')

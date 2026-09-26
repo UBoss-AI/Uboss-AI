@@ -1049,13 +1049,42 @@ describe('Agent Builder permissions are the documented journey', () => {
     assert.ok(!agents.includes('Schedule'), 'an Employee could make an agent run unattended');
   });
 
-  it('gives a Head authority over agent work without making them the owner of it', () => {
+  it('keeps building agents with the Admin, and gives everybody else a read', () => {
+    /*
+     * The client's 2026-09-25 rule: "By default, ONLY ADMIN builds Agents."
+     *
+     * This used to assert the opposite for a Head — Run, EditDraft and Publish — on the reading
+     * that authority over the job method belonged with the department. The client replaced that
+     * reading. Anyone below Company Admin who genuinely needs to author one is given the
+     * capability by name, which is the mechanism `grantBuilderAccess` exercises and which the
+     * CR-03 suite proves moves the real grant rather than only a label.
+     *
+     * Asserted as a property of every template rather than of one role, so a future widening has
+     * to be a decision somebody wrote down here.
+     */
+    const authoring = ['Create', 'EditDraft', 'Run', 'Publish'];
+
+    const admin = ROLE_TEMPLATES.CompanyAdmin.permissions['agent-builder'] ?? [];
+    for (const action of authoring) {
+      assert.ok(admin.includes(action as never), `the Admin cannot ${action} an agent`);
+    }
+
+    for (const [kind, template] of Object.entries(ROLE_TEMPLATES)) {
+      if (kind === 'CompanyAdmin') continue;
+      const granted = template.permissions['agent-builder'] ?? [];
+      for (const action of authoring) {
+        assert.ok(
+          !granted.includes(action as never),
+          `${kind} may ${action} an agent by role alone, which is the Admin's to grant`,
+        );
+      }
+    }
+
+    // A Head still reads and comments: withholding authorship is not withholding sight of the
+    // work their department is doing.
     const head = ROLE_TEMPLATES.Head.permissions['agent-builder'] ?? [];
-    assert.ok(head.includes('Run'), 'a Head cannot activate an agent');
-    assert.ok(head.includes('EditDraft'));
-    // `Publish` is what gates the canonical Form 3 read and releasing a reusable agent's
-    // configuration to the company — authority over the job method, not over doing the work.
-    assert.ok(head.includes('Publish'));
+    assert.ok(head.includes('View'));
+    assert.ok(head.includes('Comment'));
   });
 
   it('keeps every Agent Builder action inside the closed vocabulary', () => {

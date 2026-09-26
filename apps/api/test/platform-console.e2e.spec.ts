@@ -1012,8 +1012,12 @@ describe('the Master Console (e2e)', () => {
         );
       }
 
-      // Still a shell, with a real blocker.
-      assert.ok(modules.some((module) => module.navKey === 'billing' && module.state === 'shell'));
+      // Live since the Stripe integration, and honest about the part that is not: whether money
+      // can actually move is a deployment fact — whether this deployment holds a credential — and
+      // the provider's own dunning, refunds and credit notes are deliberately not rebuilt here.
+      const billing = modules.find((module) => module.navKey === 'billing');
+      assert.equal(billing?.state, 'live');
+      assert.match(billing?.blockedOn ?? '', /credential/i);
 
       // Live since Prompt 31, and honest about what is still missing: the figures are real but
       // stay at zero while no provider has ever been called.

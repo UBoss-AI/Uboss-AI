@@ -41,6 +41,15 @@ export interface WorkflowDraftView {
   assignedAt: string | null;
   assignedByUserId: string | null;
   editable: boolean;
+  /**
+   * A completed analysis of this version finished after the one this draft was seeded from.
+   *
+   * The draft is seeded once, on first open, and a later analysis deliberately does not overwrite
+   * it — that is what stops a re-analysis discarding a manager's edits. The cost is that somebody
+   * who re-analyses *because something was wrong* watches it succeed and sees nothing change, with
+   * no sign that the newer result was never applied. So the draft says so, and the screen can too.
+   */
+  supersededByRunId: string | null;
   note: string;
 }
 
@@ -127,7 +136,7 @@ export class WorkflowEditorService {
         where: { objectiveVersionId: versionId },
       });
       if (existing) {
-        return this.viewOf(existing);
+        return await this.viewOf(existing);
       }
 
       // Seed from the most recent completed analysis of this version.
@@ -187,7 +196,7 @@ export class WorkflowEditorService {
         },
       });
 
-      return this.viewOf(created);
+      return await this.viewOf(created);
     });
   }
 
@@ -639,7 +648,7 @@ export class WorkflowEditorService {
 
     const loaded = await this.load(input.scope, input.objectiveId, input.versionId);
     await this.assertOnObjective(context, loaded.objective, 'View');
-    return this.viewOf(loaded.draft);
+    return await this.viewOf(loaded.draft);
   }
 
   // -------------------------------------------------------------------------
@@ -724,7 +733,7 @@ export class WorkflowEditorService {
         },
       });
 
-      return this.viewOf(saved);
+      return await this.viewOf(saved);
     });
   }
 
@@ -929,7 +938,31 @@ export class WorkflowEditorService {
     });
   }
 
-  private viewOf(draft: ObjectiveWorkflowDraft): WorkflowDraftView {
+  private async viewOf(draft: ObjectiveWorkflowDraft): Promise<WorkflowDraftView> {
+    /*
+     * Newer than the run this draft came from. Compared by completion time rather than by id,
+     * because ids are not ordered by when a run finished.
+     */
+    let supersededByRunId: string | null = null;
+    if (draft.seededFromRunId !== null) {
+      const seed = await this.prisma.client.objectiveAnalysisRun.findUnique({
+        where: { id: draft.seededFromRunId },
+        select: { completedAt: true },
+      });
+      if (seed?.completedAt != null) {
+        const newer = await this.prisma.client.objectiveAnalysisRun.findFirst({
+          where: {
+            objectiveVersionId: draft.objectiveVersionId,
+            status: 'Completed',
+            completedAt: { gt: seed.completedAt },
+          },
+          orderBy: { completedAt: 'desc' },
+          select: { id: true },
+        });
+        supersededByRunId = newer?.id ?? null;
+      }
+    }
+
     return {
       id: draft.id,
       objectiveId: draft.objectiveId,
@@ -941,6 +974,7 @@ export class WorkflowEditorService {
       assignedAt: draft.assignedAt?.toISOString() ?? null,
       assignedByUserId: draft.assignedByUserId,
       editable: draft.assignedAt === null,
+      supersededByRunId,
       note:
         'This is the workflow the company is shaping. The AI analysis it was seeded from is kept ' +
         'unchanged as the record of what was proposed. Nothing here publishes: Approve & Assign ' +

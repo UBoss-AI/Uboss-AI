@@ -27,6 +27,7 @@ import { RunController } from '../src/runs/run.controller.js';
 import { CompanySettingsService } from '../src/settings/company-settings.service.js';
 import { ApprovalService } from '../src/approvals/approval.service.js';
 import { HumanTaskService } from '../src/tasks/human-task.service.js';
+import { WorkReleaseService } from '../src/tasks/work-release.service.js';
 import { AuditEventService } from '../src/audit/audit-event.service.js';
 import { SecurityEventService } from '../src/audit/security-event.service.js';
 import { AUTH_CONFIG, loadAuthConfig } from '../src/auth/auth.config.js';
@@ -198,6 +199,7 @@ describe('run engine, queue and scheduler (e2e)', () => {
         EngineAgentService,
         ApprovalService,
         HumanTaskService,
+        WorkReleaseService,
         { provide: RunQueue, useClass: InlineRunQueue },
         RunProgressGateway,
         RunEngineService,
@@ -736,6 +738,110 @@ describe('run engine, queue and scheduler (e2e)', () => {
   // -------------------------------------------------------------------------
   // 2. Idempotency
   // -------------------------------------------------------------------------
+
+  // -------------------------------------------------------------------------
+  // What one run still has to be told
+  // -------------------------------------------------------------------------
+
+  /**
+   * The employee's whole involvement with AI work.
+   *
+   * The client's rule: the person operating an agent answers "approximately 3–4 questions
+   * genuinely required for THIS run", derived from the published agent rather than hard-coded.
+   * Before this, `POST .../runs` took no body at all — every run of an agent was identical to every
+   * other one, and there was nowhere to say which invoices, which period, which batch.
+   */
+  describe('the questions a run still asks', () => {
+    it('asks only what the published agent left open', async () => {
+      const { agentId } = await liveAgent();
+
+      const response = await as(
+        agent().get(`/tenants/${tenantId}/agents/${agentId}/runs/inputs`),
+        workerUboss,
+      ).expect(200);
+
+      const keys = (response.body.fields as { key: string; required: boolean }[]).map(
+        (field) => field.key,
+      );
+      assert.ok(keys.includes('subject'), 'nobody was asked what this run works on');
+      assert.ok(keys.includes('note'), 'nobody was offered a run-specific note');
+      assert.ok(keys.length <= 4, `asked ${keys.length} questions`);
+      // The optional one is optional, which is what makes the count bearable.
+      const note = (response.body.fields as { key: string; required: boolean }[]).find(
+        (field) => field.key === 'note',
+      );
+      assert.equal(note?.required, false);
+    });
+
+    it('refuses a run that does not say what it is working on, and names it', async () => {
+      const { agentId } = await liveAgent();
+
+      const refused = await as(
+        agent().post(`/tenants/${tenantId}/agents/${agentId}/runs`).send({}),
+        workerUboss,
+      ).expect(400);
+
+      // Named, not "invalid": the person is looking at the form and can answer it.
+      assert.match(String(refused.body.message), /still needs an answer/i);
+      assert.match(String(refused.body.message), /work on/i);
+    });
+
+    it('records what the person said, against that run and no other', async () => {
+      const { agentId } = await liveAgent();
+
+      const started = await as(
+        agent()
+          .post(`/tenants/${tenantId}/agents/${agentId}/runs`)
+          .send({
+            runtimeInputs: {
+              subject: 'March distributor records',
+              note: 'Skip the two branches that closed.',
+            },
+          }),
+        workerUboss,
+      ).expect(201);
+
+      const runId = started.body.run?.id;
+      assert.ok(runId, 'no run was created');
+
+      const row = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.agentRun.findFirstOrThrow({
+          where: { tenantId, id: runId },
+          select: { runtimeInputs: true },
+        }),
+      );
+      assert.deepEqual(row.runtimeInputs, {
+        subject: 'March distributor records',
+        note: 'Skip the two branches that closed.',
+      });
+    });
+
+    it('refuses an answer to a question nobody asked', async () => {
+      /*
+       * A key the server does not know means the screen and the server disagree about the
+       * question. Storing it would leave a run recording an answer to something nobody asked,
+       * which reads as fact to whoever opens it later.
+       */
+      const { agentId } = await liveAgent();
+
+      const refused = await as(
+        agent()
+          .post(`/tenants/${tenantId}/agents/${agentId}/runs`)
+          .send({ runtimeInputs: { subject: 'March', modelTemperature: '0.9' } }),
+        workerUboss,
+      ).expect(400);
+
+      assert.match(String(refused.body.message), /modelTemperature/);
+    });
+
+    it('refuses an unauthenticated request for the questions', async () => {
+      const { agentId } = await liveAgent();
+      await agent()
+        .get(`/tenants/${tenantId}/agents/${agentId}/runs/inputs`)
+        .set(WORKSPACE_HEADER, tenantId)
+        .expect(401);
+    });
+  });
 
   describe('idempotency', () => {
     it('makes two callers meaning one occurrence into one run', async () => {
@@ -1371,7 +1477,9 @@ describe('run engine, queue and scheduler (e2e)', () => {
     it('runs now over HTTP, which is what Prompt 25 deliberately had no route for', async () => {
       const { agentId } = await liveAgent();
       const response = await as(
-        agent().post(`/tenants/${tenantId}/agents/${agentId}/runs`).send({}),
+        agent()
+          .post(`/tenants/${tenantId}/agents/${agentId}/runs`)
+          .send({ runtimeInputs: { subject: 'This run' } }),
         workerUboss,
       ).expect(201);
 
@@ -1468,7 +1576,9 @@ describe('run engine, queue and scheduler (e2e)', () => {
       const { agentId } = await liveAgent();
 
       const response = await as(
-        agent().post(`/tenants/${tenantId}/agents/${agentId}/runs`).send({}),
+        agent()
+          .post(`/tenants/${tenantId}/agents/${agentId}/runs`)
+          .send({ runtimeInputs: { subject: 'This run' } }),
         otherWorkerUboss,
       );
 
@@ -1483,7 +1593,9 @@ describe('run engine, queue and scheduler (e2e)', () => {
       await shareWithOtherWorker(agentId);
 
       const response = await as(
-        agent().post(`/tenants/${tenantId}/agents/${agentId}/runs`).send({}),
+        agent()
+          .post(`/tenants/${tenantId}/agents/${agentId}/runs`)
+          .send({ runtimeInputs: { subject: 'This run' } }),
         otherWorkerUboss,
       ).expect(201);
 
@@ -1504,7 +1616,9 @@ describe('run engine, queue and scheduler (e2e)', () => {
 
       // And the route agrees. These two disagreeing is the defect this block was written for.
       await as(
-        agent().post(`/tenants/${tenantId}/agents/${agentId}/runs`).send({}),
+        agent()
+          .post(`/tenants/${tenantId}/agents/${agentId}/runs`)
+          .send({ runtimeInputs: { subject: 'This run' } }),
         otherWorkerUboss,
       ).expect(201);
     });
@@ -1533,7 +1647,9 @@ describe('run engine, queue and scheduler (e2e)', () => {
       });
 
       const response = await as(
-        agent().post(`/tenants/${tenantId}/agents/${agentId}/runs`).send({}),
+        agent()
+          .post(`/tenants/${tenantId}/agents/${agentId}/runs`)
+          .send({ runtimeInputs: { subject: 'This run' } }),
         otherWorkerUboss,
       );
 
@@ -1571,7 +1687,9 @@ describe('run engine, queue and scheduler (e2e)', () => {
 
       // No share anywhere. The worker owns this agent and runs it the way they always did.
       await as(
-        agent().post(`/tenants/${tenantId}/agents/${agentId}/runs`).send({}),
+        agent()
+          .post(`/tenants/${tenantId}/agents/${agentId}/runs`)
+          .send({ runtimeInputs: { subject: 'This run' } }),
         workerUboss,
       ).expect(201);
     });
@@ -1669,7 +1787,9 @@ describe('run engine, queue and scheduler (e2e)', () => {
 
       // ---- 5. and running it over HTTP actually works ----
       const started = await as(
-        agent().post(`/tenants/${tenantId}/agents/${agentId}/runs`).send({}),
+        agent()
+          .post(`/tenants/${tenantId}/agents/${agentId}/runs`)
+          .send({ runtimeInputs: { subject: 'This run' } }),
         otherWorkerUboss,
       ).expect(201);
       assert.equal(started.body.created, true);

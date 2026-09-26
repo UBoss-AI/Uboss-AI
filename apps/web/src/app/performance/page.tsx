@@ -10,6 +10,7 @@ import {
   Card,
   CardBody,
   Icon,
+  BADGE_LADDER_LABELS,
   MedalBadge,
   PageHeader,
   SkeletonText,
@@ -268,9 +269,11 @@ function PerformancePageBody() {
                       <MedalBadge tier="Diamond" /> — the top of the ladder
                     </>
                   ) : (
-                    `${view.nextLevel.level} @ ${policy.thresholds[view.nextLevel.level]} · ${
-                      view.nextLevel.pointsAway
-                    } to go`
+                    // The shown name, not the stored one: the medal above says Pro, and this
+                    // line saying Gold would read as two different ladders.
+                    `${BADGE_LADDER_LABELS[view.nextLevel.level]} @ ${
+                      policy.thresholds[view.nextLevel.level]
+                    } · ${view.nextLevel.pointsAway} to go`
                   )}
                 </span>
               </div>

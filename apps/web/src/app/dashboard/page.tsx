@@ -5,11 +5,9 @@ import { useCallback, useEffect, useState } from 'react';
 
 import {
   Banner,
-  Button,
   Card,
   CardBody,
   DashboardAmbience,
-  DonutDashboard,
   PageHeader,
   SkeletonText,
 } from '@uboss/ui';
@@ -25,6 +23,9 @@ import {
 import { useAccountMenu } from '../../lib/use-account-menu';
 import { useSignedInUser } from '../../lib/use-signed-in-user';
 import { RoutedAppShell } from '../../components/RoutedAppShell';
+import type { OrchestrationView } from '@uboss/types';
+import { OrchestrationMap } from '../../components/OrchestrationMap';
+import { StageOverview } from '../../components/StageOverview';
 import {
   forgetWorkspace,
   readRememberedWorkspace,
@@ -67,6 +68,7 @@ export default function DashboardPage(): React.JSX.Element {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [counts, setCounts] = useState<DashboardView | null>(null);
   const [meta, setMeta] = useState<DashboardMeta | null>(null);
+  const [orchestration, setOrchestration] = useState<OrchestrationView | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const tenantId =
@@ -99,10 +101,31 @@ export default function DashboardPage(): React.JSX.Element {
       );
   }, [tenantId]);
 
-  useEffect(load, [load]);
+  /*
+   * Where the work has got to, read on its own.
+   *
+   * Deliberately not part of `load`. The server refuses this to anybody who may not see
+   * Objectives, which is most of the company — and a refusal is the right answer rather than a
+   * failure. Putting it in the same `Promise.all` as the tiles would turn one correct refusal
+   * into "could not load your dashboard" for every employee.
+   */
+  useEffect(() => {
+    if (tenantId === null) return;
+    let current = true;
+    void dashboardApi
+      .orchestration(tenantId)
+      .then((view) => {
+        if (current) setOrchestration(view);
+      })
+      .catch(() => {
+        if (current) setOrchestration(null);
+      });
+    return () => {
+      current = false;
+    };
+  }, [tenantId]);
 
-  const hrefFor = (key: string): string =>
-    meta?.slices.find((slice) => slice.key === key)?.href ?? '/';
+  useEffect(load, [load]);
 
   return (
     <RoutedAppShell
@@ -133,67 +156,49 @@ export default function DashboardPage(): React.JSX.Element {
 
         {error !== null ? <Banner tone="danger">{error}</Banner> : null}
 
-        <Card>
-          <CardBody>
-            {counts === null ? (
-              <SkeletonText lines={3} />
+        {counts === null ? (
+          <Card>
+            <CardBody>
+              <SkeletonText lines={4} />
+            </CardBody>
+          </Card>
+        ) : (
+          <>
+            {/*
+              The work areas this person is authorized to see.
+
+              `counts.tiles` already holds only what the server permits — a tile somebody may not
+              see never arrives here, so this screen has nothing to filter and nothing to hide.
+              That is the whole reason the payload is shaped this way.
+            */}
+            {counts.tiles.length === 0 ? (
+              <Card>
+                <CardBody>
+                  <p className="uboss-muted">
+                    No work areas are available to you yet. An administrator grants access in
+                    Settings → Users &amp; Access.
+                  </p>
+                </CardBody>
+              </Card>
             ) : (
-              <>
-                {/*
-                One donut, two slices, and each one drills into the list it counts. The
-                destinations come from the server so this screen and the contract cannot drift.
-              */}
-                <DonutDashboard
-                  agents={counts.agents}
-                  pendingJobs={counts.pendingJobs}
-                  onSelectAgents={() => router.push(hrefFor('agents'))}
-                  onSelectPendingJobs={() => router.push(hrefFor('pendingJobs'))}
-                />
-
-                {/*
-                The legend, not a KPI. Without it a manager and an employee see two different
-                numbers with no way to tell why they differ.
-              */}
-                <p className="uboss-dash-scope">{counts.scope}</p>
-
-                {/*
-                Why the dashboard is this small, said on the dashboard.
-
-                It is the reference's own sentence, and it was the one thing missing: without it a
-                screen holding a single donut reads as unfinished, and the first question in a demo
-                is "where is everything else". With it the same screen reads as a decision. The
-                modules named here are real and reachable from the navigation.
-              */}
-                <p className="uboss-dash-note">
-                  Your permission-scoped snapshot. Select a slice to drill into the list it counts.
-                  Reports, budgets and KPIs live in their own modules — not here.
-                </p>
-
-                {/*
-                A zero is a starting point, not a gap.
-
-                Aarohan has no activated Engine Agent, so half the donut is empty — and an empty
-                half with nothing said about it looks like something failed to load. This names the
-                one act that fills it and links to where that act happens. It appears only while
-                the count is nought, so a company with agents never sees it.
-
-                No new data: this is rendered from the count the contract already returns.
-              */}
-                {counts.agents === 0 ? (
-                  <div className="uboss-dash-next">
-                    <span>
-                      No Engine Agents yet. One is built from an approved objective, in Agent
-                      Builder.
-                    </span>
-                    <Button variant="ghost" onClick={() => router.push('/agent-builder')}>
-                      Open Agent Builder
-                    </Button>
-                  </div>
-                ) : null}
-              </>
+              <OrchestrationMap
+                tiles={counts.tiles}
+                meta={meta}
+                scope={counts.scope}
+                onOpen={(href) => router.push(href)}
+              />
             )}
-          </CardBody>
-        </Card>
+
+            {/*
+              Under the tiles, and only for somebody entitled to it.
+
+              Absent rather than empty when the server refused: an employee seeing an orchestration
+              table of zeroes would read it as "the company has nothing on", which is a claim about
+              everybody else's work that they are not entitled to make.
+            */}
+            {orchestration === null ? null : <StageOverview view={orchestration} />}
+          </>
+        )}
       </div>
     </RoutedAppShell>
   );

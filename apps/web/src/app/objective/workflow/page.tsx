@@ -27,6 +27,7 @@ import {
   ApiError,
   authApi,
   objectivesApi,
+  organizationApi,
   workflowEditorApi,
   type MeResponse,
   type ObjectiveView,
@@ -67,6 +68,12 @@ function WorkflowEditorInner() {
   const [objective, setObjective] = useState<ObjectiveView | null>(null);
   const [draft, setDraft] = useState<WorkflowDraftView | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  /*
+   * The people an owner can be set to, from the same place Form 2's owner list comes from — the
+   * company's own hierarchy. Loaded here because the draft carries an owner's id, and an id is
+   * not something a manager can choose between.
+   */
+  const [people, setPeople] = useState<{ userId: string; label: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -104,6 +111,22 @@ function WorkflowEditorInner() {
         setError(caught instanceof ApiError ? caught.message : 'Could not open the workflow.'),
       );
   }, [objectiveId, tenantId]);
+
+  useEffect(() => {
+    if (tenantId === null) return;
+    void organizationApi
+      .hierarchy(tenantId)
+      .then((view) =>
+        setPeople(
+          view.list.map((row) => ({
+            userId: row.userId,
+            label:
+              row.designation === '' ? row.displayName : `${row.displayName} — ${row.designation}`,
+          })),
+        ),
+      )
+      .catch(() => setPeople([]));
+  }, [tenantId]);
 
   useEffect(load, [load]);
 
@@ -203,6 +226,23 @@ function WorkflowEditorInner() {
           This workflow has already been assigned, so it is read-only. Editing what people are
           already working to is what versioning exists to prevent — open a new objective version
           instead.
+        </Banner>
+      ) : null}
+
+      {/*
+        A newer analysis exists and this workflow is not it.
+
+        The draft is seeded once and a later analysis deliberately does not overwrite it, so that
+        re-analysing cannot discard edits somebody made here. What that left was silent: a manager
+        who re-analysed because a step had no owner watched the run succeed and saw nothing change.
+        Saying it is the whole fix — the choice of what to do about it is theirs, and both answers
+        are already on this screen.
+      */}
+      {draft !== null && draft.editable && draft.supersededByRunId !== null ? (
+        <Banner tone="info">
+          A newer analysis of this version has finished since this workflow was opened, and it has
+          not been applied — your edits here are kept instead. Change what you need on this canvas,
+          or start a new version if you want the newer analysis to be the basis.
         </Banner>
       ) : null}
 
@@ -416,6 +456,49 @@ function WorkflowEditorInner() {
                     )()
                   }
                 />
+              </div>
+            ) : null}
+
+            {/*
+              Who this step belongs to.
+
+              `editNode` has always accepted an owner; the panel simply never offered one, so a node
+              that came back from the analysis without an owner could not be given one from
+              anywhere in the product — and Approve & Assign refuses to publish a human step that
+              nobody owns. Nothing new is decided here: this is the existing patch field, shown.
+
+              Human and AI nodes both carry an owner. A Human node's owner does the work; an AI
+              node's is the accountable person the Engine Agent is built for.
+            */}
+            {node.kind === 'Human' || node.kind === 'Ai' ? (
+              <div className="uboss-field">
+                <label htmlFor="nodeOwner">Owner</label>
+                <select
+                  id="nodeOwner"
+                  value={node.ownerUserId ?? ''}
+                  disabled={!draft?.editable}
+                  onChange={(event) =>
+                    edit((tenant, objectiveKey, revision) =>
+                      workflowEditorApi.editNode(tenant, objectiveKey, node.id, {
+                        revision,
+                        ownerUserId: event.target.value === '' ? null : event.target.value,
+                      }),
+                    )()
+                  }
+                >
+                  <option value="">Nobody yet</option>
+                  {people.map((person) => (
+                    <option key={person.userId} value={person.userId}>
+                      {person.label}
+                    </option>
+                  ))}
+                </select>
+                {node.kind === 'Human' && node.ownerUserId === null ? (
+                  <p className="uboss-notice-min">
+                    A human step with no owner cannot be published — the workflow would put work in
+                    front of nobody.
+                  </p>
+                ) : null}
               </div>
             ) : null}
 

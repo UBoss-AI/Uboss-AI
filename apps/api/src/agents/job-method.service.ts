@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
-import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 
 import {
   AUTOMATION_STANCE,
@@ -10,6 +11,7 @@ import {
   JOB_METHOD_COLUMNS,
   JOB_METHOD_FORM_VERSION,
   JOB_METHOD_KEY_BY_HEADING,
+  JOB_METHOD_CELL_MAX,
   JOB_METHOD_MAX_ROWS,
   mayMerge,
   normaliseHeading,
@@ -162,6 +164,76 @@ export class JobMethodService {
    * sent that in three weeks ago" is answered by a record saying it arrived and why it was not
    * applied.
    */
+  /**
+   * Save the job method's steps as somebody typed them on screen.
+   *
+   * ## Why this exists beside the import
+   *
+   * The import is for a form that went out of UBoss, was filled in by whoever really does the work,
+   * and came back. This is the same steps edited in place. They write the same rows through the
+   * same `mergeRows`, so a grid and a spreadsheet cannot drift into two ideas of what a job
+   * method is — what differs is only where the answers came from, and `ValueSource` records that.
+   *
+   * ## What it deliberately does not do
+   *
+   * No envelope check. An envelope proves a *file* belongs to this assignment, which matters when
+   * the file has been out of the building; a person typing into this assignment's own grid has
+   * already been checked by the route and the resource rule below.
+   *
+   * Replace rather than merge, for the reason `mergeRows` gives: a step somebody deleted has to
+   * disappear, and merging row by row leaves an orphan between the new ones.
+   */
+  async saveRows(input: {
+    scope: TenantScope;
+    actorUserId: string;
+    aiWorkAssignmentId: string;
+    rows: readonly JobMethodRow[];
+  }): Promise<{ saved: number; note: string }> {
+    const context = await this.authorization.contextFor(input.scope, input.actorUserId);
+    await this.authorization.assertCan(context, { module: 'agent-builder', action: 'EditDraft' });
+
+    if (input.rows.length > JOB_METHOD_MAX_ROWS) {
+      throw new BadRequestException(
+        `This job method has ${input.rows.length} steps and the limit is ${JOB_METHOD_MAX_ROWS}. ` +
+          'A job with more than that is more than one job.',
+      );
+    }
+
+    for (const row of input.rows) {
+      for (const [key, value] of Object.entries(row)) {
+        if (key === 'step' || typeof value !== 'string') continue;
+        if (value.length > JOB_METHOD_CELL_MAX) {
+          throw new BadRequestException(
+            `Step ${row.step} has ${value.length} characters in "${key}", and the limit is ` +
+              `${JOB_METHOD_CELL_MAX}. Shorten it rather than letting UBoss cut it off mid-sentence.`,
+          );
+        }
+      }
+    }
+
+    const assignment = await this.requireAssignment(input.scope, input.aiWorkAssignmentId);
+    const jobMethod = await this.ensureJobMethod(input.scope, input.actorUserId, assignment);
+
+    // Renumbered on the way in, so a step number is always the row's place in the method. Saving a
+    // grid somebody reordered must not leave the numbers describing the order it used to be in.
+    const renumbered = input.rows.map((row, index) => ({ ...row, step: index + 1 }));
+    await this.mergeRows(input.scope, jobMethod.id, renumbered);
+
+    await this.audit.appendWithinCurrentScope(input.scope.tenantId, {
+      action: 'agent.job_method_edited',
+      resourceType: 'ai-work-assignment',
+      resourceId: input.aiWorkAssignmentId,
+      actorUserId: input.actorUserId,
+      summary: `Saved ${renumbered.length} step${renumbered.length === 1 ? '' : 's'} of the job method.`,
+      metadata: { steps: renumbered.length },
+    });
+
+    return {
+      saved: renumbered.length,
+      note: 'Saved. These are the steps the agent is built from.',
+    };
+  }
+
   async importForm(input: {
     scope: TenantScope;
     actorUserId: string;

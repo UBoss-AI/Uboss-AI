@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { after, before, beforeEach, describe, it } from 'node:test';
 
 import { type INestApplication, ValidationPipe } from '@nestjs/common';
@@ -1240,16 +1241,27 @@ describe('authentication (e2e)', () => {
         /*
          * The token travels to a browser, so the answer must not be readable from it.
          *
-         * The first version of this decoded the hash as UTF-8 and looked for the answer as a
-         * substring — which flaked, and deserved to: thirty-two random bytes read as text
-         * contain a given one- or two-digit string often enough to fail a suite now and then.
-         * It was testing the wrong thing anyway. What matters is that the segment is a full
-         * SHA-256 rather than the answer in any encoding, and that is a fixed, checkable fact:
-         * 32 bytes is 43 base64url characters, which no two-digit number can be.
+         * Two versions of this flaked before this one, both for the same reason: they searched a
+         * random blob for the answer as a substring. The token is about 106 base64url characters
+         * and the answer is two digits, so a chance match lands in **2% of runs** — measured, not
+         * estimated. The second version was reported fixed after ten clean runs, which was not
+         * evidence: ten runs at 2% come up clean 81% of the time.
+         *
+         * A substring search was never the check anyway. What has to be true is that the segment
+         * is a keyed hash rather than the answer in some encoding somebody reached for, and every
+         * one of those is a fixed string that can be compared exactly. No randomness, no rate.
          */
         const answerSegment = challenge.token.split('.')[0] ?? '';
         assert.equal(answerSegment.length, 43, 'the answer segment is a full SHA-256, not a number');
-        assert.ok(!challenge.token.includes(answer), 'and the answer appears nowhere verbatim');
+
+        for (const plain of [
+          answer,
+          Buffer.from(answer).toString('base64url'),
+          Buffer.from(answer).toString('hex'),
+          createHash('sha256').update(answer).digest('base64url'),
+        ]) {
+          assert.notEqual(answerSegment, plain, `the answer segment is not ${plain}`);
+        }
 
         // Two questions with the same answer still hash identically — the hash is keyed, not
         // salted — so what stops an attacker is that they cannot compute it, which the signature

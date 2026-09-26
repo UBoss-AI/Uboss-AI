@@ -67,7 +67,7 @@ export interface ExitView {
  *
  * ## The deletion is selective, and the classification is the product
  *
- * `TABLE_DISPOSITION` says, for all 91 tenant-scoped tables, whether exit deletes them
+ * `TABLE_DISPOSITION` says, for every tenant-scoped table, whether exit deletes them
  * (`Content`), preserves them as accountability (`Accountability`), or preserves them because they
  * belong to a person rather than the company (`PersonRecord`). An e2e test asserts the
  * classification is exhaustive against `information_schema`, so a table added by a later prompt
@@ -891,6 +891,7 @@ export class CompanyExitService {
       'objective_outcome_reviews',
       'objective_pauses',
       'objective_rewards',
+      'agent_builder_test_runs',
       'ai_work_assignments',
       'engine_agent_versions',
       'engine_agents',

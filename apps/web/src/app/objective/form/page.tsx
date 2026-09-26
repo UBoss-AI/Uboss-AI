@@ -17,7 +17,18 @@ import {
   type RewardType,
   type TimeUnit,
 } from '@uboss/types';
-import { Banner, Button, Card, CardBody, Drawer, Icon, PageHeader } from '@uboss/ui';
+import {
+  Banner,
+  Button,
+  Card,
+  CardBody,
+  DataTable,
+  Drawer,
+  Icon,
+  Modal,
+  PageHeader,
+  StatusBadge,
+} from '@uboss/ui';
 
 import { useAccountMenu } from '../../../lib/use-account-menu';
 import { useSignedInUser } from '../../../lib/use-signed-in-user';
@@ -36,6 +47,8 @@ import {
   organizationApi,
   type MeResponse,
   type ObjectiveView,
+  type ParsedObjectiveWorkbook,
+  type WorkbookProblem,
 } from '../../../lib/api-client';
 import { useNotificationBell } from '../../../lib/use-notification-bell';
 import { DiscussButton } from '../../../components/DiscussButton';
@@ -151,7 +164,17 @@ function ObjectiveFormInner() {
   const problems = error === null ? [] : parseValidationProblems(error);
   const problemFields = new Set(problems.map((problem) => problem.field).filter((field): field is string => field !== null));
   const [notice, setNotice] = useState<string | null>(null);
+  /* Whether the grid's free-text cells are showing their full content. See WorkflowGrid. */
+  const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  /*
+   * What an uploaded workbook said, before any of it is applied.
+   *
+   * Held rather than applied on arrival, because the client's rule is that existing data is never
+   * silently destroyed — the file is shown, the conflicts are named, and a person decides.
+   */
+  const [upload, setUpload] = useState<ParsedObjectiveWorkbook | null>(null);
 
   const tenantId =
     resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
@@ -256,6 +279,105 @@ function ObjectiveFormInner() {
     [],
   );
 
+  /** Download the Objective carrying whatever is filled in. */
+  const downloadWorkbook = useCallback(() => {
+    if (!tenantId) return;
+    setBusy(true);
+    setError(null);
+    /*
+     * The blank template when there is nothing saved yet.
+     *
+     * The client's rule has two halves: a blank objective downloads a blank form, and a filled
+     * one downloads its current values. Refusing the first half until somebody saves a draft
+     * asks them to do the work they were taking the form away to do.
+     */
+    void (objective === null
+      ? objectivesApi.downloadWorkbookTemplate(tenantId)
+      : objectivesApi.downloadWorkbook(tenantId, objective.id, objective.code))
+      .catch((caught: unknown) =>
+        setError(
+          caught instanceof ApiError ? caught.message : 'That Objective could not be downloaded.',
+        ),
+      )
+      .finally(() => setBusy(false));
+  }, [objective, tenantId]);
+
+  /** Read a returned workbook. Applies nothing — it opens the review below. */
+  const uploadWorkbook = useCallback(
+    (file: File) => {
+      if (!tenantId || objective === null) return;
+      setBusy(true);
+      setError(null);
+      setNotice(null);
+
+      const reader = new FileReader();
+      reader.onerror = () => {
+        setError('That file could not be read.');
+        setBusy(false);
+      };
+      reader.onload = () => {
+        const encoded = String(reader.result ?? '').split(',')[1] ?? '';
+        void objectivesApi
+          .parseWorkbook(tenantId, objective.id, encoded)
+          .then(setUpload)
+          .catch((caught: unknown) =>
+            setError(
+              caught instanceof ApiError ? caught.message : 'That file could not be read.',
+            ),
+          )
+          .finally(() => setBusy(false));
+      };
+      reader.readAsDataURL(file);
+    },
+    [objective, tenantId],
+  );
+
+  /**
+   * Put the uploaded values into the form.
+   *
+   * Into the form, not into the database: the draft is saved by Save Draft as it always was, so an
+   * upload is reviewed on screen exactly like typing would be. Fields the file did not carry keep
+   * what they had — an absent cell is "not filled in", never "clear this".
+   */
+  const applyUpload = useCallback(() => {
+    if (upload === null) return;
+
+    setContent((current) => {
+      const next = { ...current };
+      for (const [key, value] of Object.entries(upload.objective)) {
+        if (value === undefined || value === '') continue;
+        /*
+         * The three fields the file carries as names rather than ids are skipped.
+         *
+         * Resolving "Regulatory Affairs" to a department id is a question about the company, and
+         * guessing it here would silently point the objective at the wrong department. They stay
+         * as they are and the review says so.
+         */
+        if (key === 'departmentId' || key === 'objectiveOwnerUserId' || key === 'responsibleOwnerUserId') {
+          continue;
+        }
+        const numeric = key === 'currentWorkload' || key === 'targetCompletionTime';
+        (next as Record<string, unknown>)[key] = numeric ? Number(value) : value;
+      }
+      return next;
+    });
+
+    if (upload.steps.length > 0) {
+      setSteps(
+        upload.steps.map((row, index) => ({
+          ...blankWorkflowStep(index + 1),
+          ...(row as Partial<Form2WorkflowStep>),
+          position: index + 1,
+        })),
+      );
+    }
+
+    setUpload(null);
+    setNotice(
+      'The file has been put into the form. Nothing is stored until you press Save Draft.',
+    );
+  }, [upload]);
+
   const save = useCallback(() => {
     if (!tenantId) return;
     setBusy(true);
@@ -329,6 +451,12 @@ function ObjectiveFormInner() {
       });
   }, [objective, reward, tenantId]);
 
+  /*
+   * "Empty" is measured on Exact Work alone, because that is the one column the server will not
+   * accept a step without. A row with a person's name and no work is still not a step.
+   */
+  const stepsAreEmpty = steps.every((step) => (step.whatExactWork ?? '').trim() === '');
+
   const statusCrumb =
     objective === null
       ? 'Draft'
@@ -357,6 +485,21 @@ function ObjectiveFormInner() {
         ]}
         actions={
           <>
+            {/*
+              The status, which the breadcrumb used to carry.
+
+              Inside the shell PageHeader draws only the actions — the top bar already names the
+              section, and the client's words for the old arrangement were that it "looks double".
+              What went with the trail, though, was the one word on it that was not a repetition:
+              whether this objective is a Draft. `statusCrumb` survived in exactly one other
+              place, a banner that appears only when a version *cannot* be edited, so an objective
+              somebody could still change said nowhere what state it was in.
+
+              It sits at the head of the action row rather than over the first card, because it
+              describes the thing those buttons act on.
+            */}
+            <StatusBadge status={statusCrumb} className="uboss-page-status" />
+
             {/* Fixing one of the seven prototype defects:  was orphaned,
                 reachable by no link at all. */}
             {objective === null ? null : (
@@ -379,6 +522,48 @@ function ObjectiveFormInner() {
               <Icon name="medal" size={16} />
               Performance &amp; Reward
             </Button>
+            {/*
+              Out of UBoss and back.
+
+              Download carries whatever is filled in — the client's rule is that a partly filled
+              objective comes down with its values, not as a blank template. Upload reads the file
+              and shows what it found; it saves nothing until somebody agrees to it.
+            */}
+            <Button
+              size="sm"
+              onClick={downloadWorkbook}
+              disabled={busy}
+              title={
+                objective === null
+                  ? 'Downloads the blank form, ready to fill in'
+                  : undefined
+              }
+            >
+              <Icon name="arrow-down" size={16} />
+              Download Excel
+            </Button>
+
+            <label
+              className={`uboss-btn uboss-btn--sm${busy || readOnly || objective === null ? ' uboss-btn--disabled' : ''}`}
+              htmlFor="objective-workbook-file"
+            >
+              <Icon name="arrow-up" size={16} />
+              Upload Excel
+            </label>
+            <input
+              id="objective-workbook-file"
+              type="file"
+              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              className="uboss-visually-hidden"
+              disabled={busy || readOnly || objective === null}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file !== undefined) uploadWorkbook(file);
+                // Cleared so re-picking the same file fires the event again.
+                event.target.value = '';
+              }}
+            />
+
             <Button size="sm" onClick={save} disabled={busy || readOnly}>
               Save Draft
             </Button>
@@ -662,17 +847,53 @@ function ObjectiveFormInner() {
         <div className="uboss-section-label" style={{ margin: 0, border: 0 }}>
           Workflow steps (source grid — {FORM2_WORKFLOW_COLUMN_COUNT} columns)
         </div>
-        <Button
-          size="sm"
-          disabled={readOnly}
-          onClick={() => setSteps((current) => [...current, blankWorkflowStep(current.length + 1)])}
-        >
-          <Icon name="plus" size={15} />
-          Add Row
-        </Button>
+        <div className="uboss-wfg-toolbar-actions">
+          <Button
+            size="sm"
+            disabled={readOnly}
+            onClick={() =>
+              setSteps((current) => [...current, blankWorkflowStep(current.length + 1)])
+            }
+          >
+            <Icon name="plus" size={15} />
+            Add Row
+          </Button>
+          {/*
+            A toggle, not a one-way door, and it says which way it is about to go. It stays
+            enabled in read-only: reading a long cell is the one thing a reader most needs, and
+            nothing here writes.
+          */}
+          <Button
+            size="sm"
+            aria-pressed={expanded}
+            onClick={() => setExpanded((current) => !current)}
+          >
+            {expanded ? 'Collapse long text' : 'Expand long text'}
+          </Button>
+        </div>
       </div>
 
-      <WorkflowGrid steps={steps} onChange={setSteps} readOnly={readOnly} />
+      <WorkflowGrid steps={steps} onChange={setSteps} readOnly={readOnly} expanded={expanded} />
+
+      {/*
+        Nothing typed yet, said plainly.
+
+        The grid opens on one blank row because it cannot open on none — deleting the last row
+        would leave nowhere to start typing. But a single row of empty boxes, each with the grey
+        fill an editable cell carries, reads as a table that failed to load. The reference never
+        showed this: it shipped four filled rows.
+
+        The floor for "started" is the one column the server requires. Checking every column would
+        make the line vanish the moment somebody typed a person's name and leave them with no
+        guidance while the row was still unusable.
+      */}
+      {stepsAreEmpty ? (
+        <p className="uboss-wfg-empty-note">
+          {readOnly
+            ? 'No workflow steps were recorded on this version.'
+            : 'No steps yet. Describe the first one under Exact Work, then add a row for each step that follows.'}
+        </p>
+      ) : null}
 
       <p className="uboss-notice-min">
         <Icon name="shield" size={14} />
@@ -808,6 +1029,118 @@ function ObjectiveFormInner() {
 
         {rewardNote === null ? null : <p className="uboss-notice-min">{rewardNote}</p>}
       </Drawer>
+      {/*
+        The upload review.
+
+        The whole point of the feature: an uploaded file is shown before it touches anything. Four
+        different facts are kept apart rather than collapsed into "error" — Missing is a blank the
+        form requires, Invalid is a value outside a closed list, Unmapped is a column UBoss has no
+        field for, and a conflict is a value that would replace one already typed. Only the last of
+        those is the person's decision; the first three are the file's.
+      */}
+      <Modal
+        open={upload !== null}
+        title="Review the uploaded Objective"
+        wide
+        onClose={() => setUpload(null)}
+        footer={
+          <>
+            <Button onClick={() => setUpload(null)}>Discard</Button>
+            <Button variant="primary" onClick={applyUpload}>
+              Put it into the form
+            </Button>
+          </>
+        }
+      >
+        {upload === null ? null : (
+          <>
+            <p className="uboss-muted">
+              The file carries {Object.keys(upload.objective).length} Objective field
+              {Object.keys(upload.objective).length === 1 ? '' : 's'} and {upload.steps.length} step
+              {upload.steps.length === 1 ? '' : 's'}. Nothing is saved: pressing the button below
+              puts these values into the form, and the draft is stored only when you press Save
+              Draft.
+            </p>
+
+            {/*
+              What would be replaced.
+
+              Computed here rather than by the server, because the server has no idea what is
+              currently typed into this form — the conflict is between the file and the screen.
+            */}
+            {(() => {
+              const conflicts = Object.entries(upload.objective).filter(([key, value]) => {
+                if (value === undefined || value === '') return false;
+                const existing = (content as unknown as Record<string, unknown>)[key];
+                return (
+                  existing !== null &&
+                  existing !== undefined &&
+                  String(existing) !== '' &&
+                  String(existing) !== value
+                );
+              });
+              return conflicts.length === 0 ? null : (
+                <Banner tone="warn">
+                  {conflicts.length} field{conflicts.length === 1 ? '' : 's'} already filled in
+                  would be replaced: {conflicts.map(([key]) => key).join(', ')}.
+                </Banner>
+              );
+            })()}
+
+            {upload.steps.length > 0 ? (
+              <Banner tone="info">
+                The {steps.length} step{steps.length === 1 ? '' : 's'} in the grid would be replaced
+                by the {upload.steps.length} in the file. Steps are a list, not a merge — a partial
+                overlay would leave rows nobody wrote.
+              </Banner>
+            ) : null}
+
+            {upload.problems.length === 0 ? (
+              <Banner tone="ok">Every column was understood.</Banner>
+            ) : (
+              <DataTable
+                caption="What the file got wrong"
+                columns={[
+                  { key: 'where', header: 'Where', render: (row: WorkbookProblem) => row.where },
+                  { key: 'field', header: 'Field', render: (row: WorkbookProblem) => row.field },
+                  {
+                    key: 'kind',
+                    header: '',
+                    render: (row: WorkbookProblem) => (
+                      <StatusBadge
+                        status={row.kind}
+                        tone={
+                          row.kind === 'Missing'
+                            ? 'warn'
+                            : row.kind === 'Invalid'
+                              ? 'danger'
+                              : 'grey'
+                        }
+                      />
+                    ),
+                  },
+                  {
+                    key: 'detail',
+                    header: 'Detail',
+                    render: (row: WorkbookProblem) => <small className="uboss-muted-3">{row.detail}</small>,
+                  },
+                ]}
+                rows={upload.problems}
+                // Where + field + kind is unique per problem: the same field is never reported
+                // Missing and Invalid at once.
+                rowKey={(row: WorkbookProblem) => `${row.where}-${row.field}-${row.kind}`}
+              />
+            )}
+
+            <p className="uboss-muted-3">
+              Department, Objective Owner and Responsible Owner are carried in the file as names
+              and are <b>not</b> applied: matching a name to a person is a question about this
+              company, and guessing it would point the Objective at the wrong one. Set those on the
+              form.
+            </p>
+          </>
+        )}
+      </Modal>
     </RoutedAppShell>
   );
 }

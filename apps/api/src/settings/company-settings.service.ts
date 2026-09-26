@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
 
 import {
   SETTING_DEFINITIONS,
@@ -58,8 +63,17 @@ export interface SettingsCategoryView {
 export interface SettingsView {
   /** Only the categories this caller may see. The server decides scope. */
   categories: SettingsCategoryView[];
-  /** Which of the 19 were withheld, and how many — stated rather than silently absent. */
+  /** Withheld because this caller may not read them. A permission boundary. */
   withheldCategories: number;
+  /**
+   * Left out because everything in them is company administration this caller cannot change.
+   *
+   * Counted apart from `withheldCategories` because the two are different sentences and only one
+   * of them is about permission. Telling somebody their role cannot read Appearance, when the
+   * truth is that there was nothing in it for them to do, is a lie they can catch — and the kind
+   * that makes a person distrust every other refusal the product gives them.
+   */
+  administrativeCategories: number;
 }
 
 /**
@@ -143,6 +157,7 @@ export class CompanySettingsService {
 
     const categories: SettingsCategoryView[] = [];
     let withheld = 0;
+    let administrative = 0;
 
     for (const category of SETTINGS_CATEGORIES) {
       /*
@@ -173,7 +188,31 @@ export class CompanySettingsService {
       );
 
       if (definitionsHere.length > 0 && settings.length === 0) {
-        withheld += 1;
+        /*
+         * Which of the two reasons emptied it?
+         *
+         * If this caller could read something here but it was all administration they cannot
+         * change, that is not a permission boundary and must not be reported as one.
+         */
+let readableHere = false;
+        /*
+         * One at a time, and it matters.
+         *
+         * A `Promise.all` here issued several authorization queries at once, and the driver
+         * answers with "client.query() when the client is already executing a query" — then the
+         * pool wedges and the failure surfaces as a timeout in whichever unrelated test happened
+         * to be running. Every other authorization call in this codebase is sequential for the
+         * same reason. It stops at the first readable one anyway, so the loop is also the shorter
+         * path.
+         */
+        for (const definition of definitionsHere) {
+          if ((await this.authorization.authorize(context, definition.readPermission)).allowed) {
+            readableHere = true;
+            break;
+          }
+        }
+        if (readableHere) administrative += 1;
+        else withheld += 1;
         continue;
       }
 
@@ -185,7 +224,38 @@ export class CompanySettingsService {
       });
     }
 
-    return { categories, withheldCategories: withheld };
+    return { categories, withheldCategories: withheld, administrativeCategories: administrative };
+  }
+
+  /**
+   * One setting's effective value **for a named caller**, checked.
+   *
+   * `viewFor` enforces each setting's own `readPermission`, and the single-value route beside it
+   * did not: it held `settings:View` at the door and then called the unchecked accessor below, so
+   * one request by key returned any setting in the company — the per-setting permissions the list
+   * applies so carefully were a formality for anybody who knew a key.
+   *
+   * Nothing in the product asked for that. Every screen reads the list.
+   */
+  async readableValue(
+    scope: TenantScope,
+    userId: string,
+    key: string,
+  ): Promise<SettingValue> {
+    const definition = settingDefinition(key);
+    if (!definition) {
+      throw new BadRequestException(`"${key}" is not a setting.`);
+    }
+
+    const context = await this.authorization.contextFor(scope, userId);
+    const decision = await this.authorization.authorize(context, definition.readPermission);
+    if (!decision.allowed) {
+      // The same answer a withheld category gives. Naming the setting would confirm it exists,
+      // which is the half of the boundary a refusal is supposed to keep.
+      throw new ForbiddenException('You cannot read that setting.');
+    }
+
+    return this.effectiveValue(scope, key);
   }
 
   /**
@@ -193,7 +263,8 @@ export class CompanySettingsService {
    *
    * No permission check: this is the *internal* accessor other services use to read a policy
    * they are about to apply, and a service enforcing a company's escalation window must not
-   * depend on who happens to be signed in. The screen-facing path is `viewFor`, which does check.
+   * depend on who happens to be signed in. Anything reaching this on behalf of a person goes
+   * through `readableValue` above instead.
    */
   async effectiveValue(scope: TenantScope, key: string): Promise<SettingValue> {
     const definition = settingDefinition(key);
@@ -447,6 +518,25 @@ export class CompanySettingsService {
 
       const editable = (await this.authorization.authorize(context, definition.writePermission))
         .allowed;
+
+      /*
+       * Company policy somebody can neither change nor act on is left out.
+       *
+       * Read permissions are generous on purpose — a company's working days sit on
+       * `dashboard:View` because everybody's deadlines are computed in them — and added up, that
+       * generosity put eighteen read-only policies in front of every employee. Nothing there was
+       * a leak; it was simply not theirs, and the four settings that do affect their day were
+       * buried among fourteen that do not.
+       *
+       * `readableWithoutEditing` is the second question: not "may they see it" but "does seeing
+       * it help them". An administrator is unaffected, because `editable` is true for them.
+       *
+       * `includeUnreadable` still overrides it, because a write path has to resolve the current
+       * value of every setting whatever the caller may look at.
+       */
+      if (!includeUnreadable && !editable && !definition.readableWithoutEditing) {
+        continue;
+      }
 
       resolved.push({
         key: definition.key,

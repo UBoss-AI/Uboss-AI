@@ -39,6 +39,8 @@ import {
 
 import { useAccountMenu } from '../../lib/use-account-menu';
 import { useSignedInUser } from '../../lib/use-signed-in-user';
+import { EmployeeDrawer } from '../../components/EmployeeDrawer';
+import { HierarchyImport } from '../../components/HierarchyImport';
 import { RoutedAppShell } from '../../components/RoutedAppShell';
 import {
   forgetWorkspace,
@@ -110,11 +112,14 @@ const EMPTY_FORM: EmployeeForm = {
  * | `empProgress()`         | the three-step stepper while saving                            |
  * | `empResult()`           | the permanent UBoss Unique ID panel with Copy ID               |
  *
- * ## Two reference controls are deliberately not here
+ * ## One reference control is deliberately not here
  *
- * **Full screen** and **Download** appear on the reference's tree toolbar. Both are presentation
- * features over a chart that now comes from real data; they are listed in `docs/UX_MAP.md` as
- * not built rather than shipped as buttons that do nothing. Everything that touches data is real.
+ * **Download** appears on the reference's tree toolbar and is still listed in `docs/UX_MAP.md` as
+ * not built, rather than shipped as a button that does nothing.
+ *
+ * **Full screen** is built, along with zoom, pan and Fit: the chart is given a frame it can be
+ * moved around in. A real company does not fit in a window — this one is 5,700px wide — and a
+ * horizontal scrollbar makes a reader hunt for a branch by dragging a bar and guessing.
  *
  * ## And one control that must never be here
  *
@@ -147,6 +152,28 @@ export default function HierarchyPage() {
   const [copied, setCopied] = useState(false);
 
   const [departmentOpen, setDepartmentOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+
+  /*
+   * Who the side panel is showing, or null.
+   *
+   * Held here rather than in the URL so the chart keeps its zoom and pan while somebody looks
+   * through three people in a department — which is the whole reason the panel exists rather than
+   * a page.
+   */
+  const [inspecting, setInspecting] = useState<string | null>(null);
+
+  /*
+   * The Vision & Mission editor.
+   *
+   * Draft state is held here rather than inside the modal so that closing and reopening does not
+   * silently discard what somebody had typed — and so the fields start from what is recorded
+   * rather than from empty, which would read as "type it again" to anybody editing one of the two.
+   */
+  const [identityOpen, setIdentityOpen] = useState(false);
+  const [visionDraft, setVisionDraft] = useState('');
+  const [missionDraft, setMissionDraft] = useState('');
+  const [savingIdentity, setSavingIdentity] = useState(false);
   /*
     Null means the department form is adding; an id means it is editing that one.
 
@@ -476,7 +503,19 @@ export default function HierarchyPage() {
       ) : (
         <>
           {/* The Vision/Mission strip, above the structure — the client's requirement. */}
-          <VisionMission vision={view.company.vision} mission={view.company.mission} />
+          <VisionMission
+            vision={view.company.vision}
+            mission={view.company.mission}
+            {...(view.mayEditIdentity
+              ? {
+                  onEdit: () => {
+                    setVisionDraft(view.company.vision ?? '');
+                    setMissionDraft(view.company.mission ?? '');
+                    setIdentityOpen(true);
+                  },
+                }
+              : {})}
+          />
 
           <Card>
             <CardBody>
@@ -510,6 +549,9 @@ export default function HierarchyPage() {
                 />
                 {mayAdminister ? (
                   <>
+                    <Button icon="arrow-up" onClick={() => setImportOpen(true)}>
+                      Import
+                    </Button>
                     <Button icon="panel" onClick={() => setDepartmentOpen(true)}>
                       Add Department
                     </Button>
@@ -531,7 +573,10 @@ export default function HierarchyPage() {
                 chartRoot === null ? null : (
                   <OrgChart
                     root={chartRoot}
-                    onSelectPerson={(userId) => router.push(`/hierarchy/${userId}`)}
+                    // The frame: zoom, pan, fit and full screen. This chart is the screen rather
+                    // than an illustration in one, and a real company does not fit in a window.
+                    controls
+                    onSelectPerson={(userId) => setInspecting(userId)}
                     // The `+` and pencil actions are omitted for a viewer who cannot administer,
                     // rather than rendered disabled: a control that cannot act should not be on
                     // the node at all. The server refuses either way.
@@ -1041,6 +1086,130 @@ export default function HierarchyPage() {
           </>
         )}
       </Modal>
+      {/*
+        The company's Vision and Mission.
+
+        A plain pair of text areas, because that is what these are: two sentences somebody writes.
+        Both are saved together in one call — they are one statement of purpose, and saving half of
+        it is how a company ends up with a Vision that contradicts its Mission.
+      */}
+      <Modal
+        open={identityOpen}
+        title="Company Vision & Mission"
+        onClose={() => setIdentityOpen(false)}
+        footer={
+          <>
+            <Button onClick={() => setIdentityOpen(false)} disabled={savingIdentity}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={savingIdentity || tenantId === null}
+              onClick={() => {
+                if (tenantId === null) return;
+                setSavingIdentity(true);
+                setError(null);
+                organizationApi
+                  .updateIdentity(tenantId, {
+                    vision: visionDraft.trim(),
+                    mission: missionDraft.trim(),
+                  })
+                  .then(() => {
+                    setIdentityOpen(false);
+                    load();
+                  })
+                  .catch((caught: unknown) =>
+                    setError(
+                      caught instanceof ApiError
+                        ? caught.message
+                        : 'The Vision and Mission could not be saved.',
+                    ),
+                  )
+                  .finally(() => setSavingIdentity(false));
+              }}
+            >
+              {savingIdentity ? 'Saving…' : 'Save'}
+            </Button>
+          </>
+        }
+      >
+        <FormField
+          label="Company Vision"
+          hint="Where this company is going. Shown above the chart to everybody."
+        >
+          {(field) => (
+            <textarea
+              {...field}
+              className="uboss-textarea"
+              rows={4}
+              maxLength={1000}
+              value={visionDraft}
+              onChange={(event) => setVisionDraft(event.target.value)}
+              placeholder="The company we intend to become."
+            />
+          )}
+        </FormField>
+
+        <FormField label="Company Mission" hint="What it does every day to get there.">
+          {(field) => (
+            <textarea
+              {...field}
+              className="uboss-textarea"
+              rows={4}
+              maxLength={1000}
+              value={missionDraft}
+              onChange={(event) => setMissionDraft(event.target.value)}
+              placeholder="The work this company does, and for whom."
+            />
+          )}
+        </FormField>
+
+        <p className="uboss-muted-3">
+          Both are visible to everybody in this company. Leaving one empty removes it from the
+          strip rather than showing a blank panel.
+        </p>
+      </Modal>
+
+      {/*
+        Importing a hierarchy from a spreadsheet.
+
+        Mounted here rather than on its own route: the person doing it is looking at the chart they
+        are about to change, and sending them to another page to come back and find out what
+        happened is the navigation this brief asks to remove.
+      */}
+      {/*
+        The person, beside the chart rather than instead of it.
+
+        Rendered inside the same workspace, so the tree stays on screen and its zoom survives.
+      */}
+      {tenantId === null ? null : (
+        <EmployeeDrawer
+          tenantId={tenantId}
+          userId={inspecting}
+          me={me?.user.userId ?? null}
+          mayAdminister={mayAdminister}
+          /*
+           * Who could take over: the company's own List View, which this screen already has.
+           * Fetching a second roster would be a second answer to "who works here".
+           */
+          candidates={(view?.list ?? []).map((person) => ({
+            userId: person.userId,
+            displayName: person.displayName,
+            designation: person.designation,
+          }))}
+          onClose={() => setInspecting(null)}
+          onChanged={load}
+        />
+      )}
+
+      {tenantId === null ? null : (
+        <HierarchyImport
+          tenantId={tenantId}
+          open={importOpen}
+          onClose={() => setImportOpen(false)}
+          onImported={load}
+        />
+      )}
     </RoutedAppShell>
   );
 }

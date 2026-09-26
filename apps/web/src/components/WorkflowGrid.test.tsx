@@ -19,6 +19,28 @@ function Harness({ initial }: { initial?: Form2WorkflowStep[] }) {
 }
 
 describe('WorkflowGrid', () => {
+  /*
+   * The expansion is a class on the wrapper and a rule in the stylesheet, so what this can hold
+   * still is the contract between them: the class arrives only when asked for, and it lands on
+   * the element the rule targets. The height itself is CSS and was measured in a browser — jsdom
+   * computes no layout and would report the same number either way, which is the kind of check
+   * that passes after the feature stops working.
+   */
+  it('carries the expanded class only when the caller asks for it', () => {
+    const { container, rerender } = render(
+      <WorkflowGrid steps={[blankWorkflowStep(1)]} onChange={() => {}} />,
+    );
+
+    const wrap = () => container.querySelector('.uboss-wfgrid-wrap');
+    expect(wrap()?.classList.contains('uboss-wfgrid-wrap--tall')).toBe(false);
+
+    rerender(<WorkflowGrid steps={[blankWorkflowStep(1)]} onChange={() => {}} expanded />);
+    expect(wrap()?.classList.contains('uboss-wfgrid-wrap--tall')).toBe(true);
+
+    rerender(<WorkflowGrid steps={[blankWorkflowStep(1)]} onChange={() => {}} expanded={false} />);
+    expect(wrap()?.classList.contains('uboss-wfgrid-wrap--tall')).toBe(false);
+  });
+
   it('renders every source column header, in the source order', () => {
     // The locked rule made testable: the header row is derived from the shared array, so a
     // dropped column fails here rather than shipping.

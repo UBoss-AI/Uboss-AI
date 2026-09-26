@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { DashboardService } from './dashboard.service.js';
+import { OrchestrationService } from './orchestration.service.js';
 import { ReportScopeService } from './report-scope.service.js';
 import { ReportsController } from './reports.controller.js';
 import { ReportsService } from './reports.service.js';
@@ -23,7 +24,7 @@ import { ReportsService } from './reports.service.js';
  */
 @Module({
   controllers: [ReportsController],
-  providers: [ReportsService, DashboardService, ReportScopeService],
-  exports: [ReportsService, DashboardService, ReportScopeService],
+  providers: [ReportsService, DashboardService, OrchestrationService, ReportScopeService],
+  exports: [ReportsService, DashboardService, OrchestrationService, ReportScopeService],
 })
 export class ReportsModule {}

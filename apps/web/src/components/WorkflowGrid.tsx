@@ -10,7 +10,7 @@ import {
 
 import { cn, Icon, stagger, transition } from '@uboss/ui';
 import { motion } from 'motion/react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export interface WorkflowGridProps {
   steps: readonly Form2WorkflowStep[];
@@ -18,6 +18,8 @@ export interface WorkflowGridProps {
   onChange: (steps: Form2WorkflowStep[]) => void;
   /** Read-only for a live version, whose grid the database will refuse to change anyway. */
   readOnly?: boolean;
+  /** Show every free-text cell at its full height rather than one line. */
+  expanded?: boolean;
   className?: string;
 }
 
@@ -105,13 +107,29 @@ function renumber(steps: readonly Form2WorkflowStep[]): Form2WorkflowStep[] {
  * no visible WHO / WHEN / WHAT banner leaves you reading cells you cannot place. The CSS does the
  * sticking; this component's job is to emit the two header rows in the shape the CSS expects.
  *
+ * ## Expanding the long cells
+ *
+ * Thirteen of the fifteen columns are free text, and three of them — Exact Work, What Is Produced,
+ * Current Problem — routinely hold a sentence. At one line each that sentence is there but not
+ * readable: the cell scrolls its own content and the row gives no sign that there is more.
+ *
+ * The reference drew a button for this and wired nothing to it. What it needs to be is a toggle
+ * over the whole grid rather than a click on one cell, because the reason to expand is to compare
+ * a column down the rows — reading one cell at a time is what the grid already does.
+ *
  * ## The row count is not fixed
  *
  * Per-row Insert, Duplicate, Delete and Reorder, and Add Row above. The only floor is one row —
  * deleting the last one would leave a grid with no way to start typing again, so Delete is
  * disabled at a single row rather than silently refusing.
  */
-export function WorkflowGrid({ steps, onChange, readOnly = false, className }: WorkflowGridProps) {
+export function WorkflowGrid({
+  steps,
+  onChange,
+  readOnly = false,
+  expanded = false,
+  className,
+}: WorkflowGridProps) {
   const columns = FORM2_WORKFLOW_COLUMNS;
 
   /*
@@ -168,6 +186,49 @@ export function WorkflowGrid({ steps, onChange, readOnly = false, className }: W
     index += span;
   }
 
+  /*
+   * Which row is being carried, and where a right-click asked for a menu.
+   *
+   * Both are presentation state and neither survives a change to the grid: a menu left open over a
+   * row that has since moved would act on whatever is under it now.
+   */
+  const [dragging, setDragging] = useState<number | null>(null);
+  const [over, setOver] = useState<number | null>(null);
+  const [menu, setMenu] = useState<{ position: number; x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (menu === null) return;
+
+    /*
+     * Close on a press anywhere else — but not on the menu itself.
+     *
+     * The first version relied on `stopPropagation` in the menu's own handler. It did not hold:
+     * the press closed the menu on `mousedown`, React removed it, and the `click` that follows a
+     * moment later had nothing left to land on. Every item looked present, was reported by a test
+     * as clickable, and did nothing at all.
+     *
+     * Asking where the press landed is the version that cannot race: the menu is closed by
+     * anything outside it, and its own items are left to run.
+     */
+    const dismiss = (event: Event) => {
+      const target = event.target;
+      if (target instanceof Node && target instanceof Element && target.closest('.uboss-wfg-menu') !== null) {
+        return;
+      }
+      setMenu(null);
+    };
+    const onKey = () => setMenu(null);
+
+    document.addEventListener('mousedown', dismiss);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('blur', onKey);
+    return () => {
+      document.removeEventListener('mousedown', dismiss);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('blur', onKey);
+    };
+  }, [menu]);
+
   const update = (position: number, patch: Partial<Form2WorkflowStep>) => {
     const index = steps.findIndex((step) => step.position === position);
     if (index !== -1) setTouched(rowIds[index] ?? null);
@@ -213,6 +274,29 @@ export function WorkflowGrid({ steps, onChange, readOnly = false, className }: W
     }
     if (op === 'up' || op === 'down') setTouched(ids[op === 'up' ? index - 1 : index + 1] ?? null);
 
+    setRowIds(ids);
+    onChange(renumber(next));
+  };
+
+  /**
+   * Move a row to a position, which is what dragging asks for.
+   *
+   * The up/down buttons move by one and can express any reorder eventually; a drag expresses it in
+   * one gesture, and expressing it as repeated swaps would animate the row past every step it
+   * crossed. This lifts it out and puts it back, which is what the reader just did with the mouse.
+   */
+  const moveRow = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0 || from >= steps.length || to >= steps.length) return;
+
+    const next = [...steps];
+    const ids = [...rowIds];
+    const [carriedStep] = next.splice(from, 1);
+    const [carriedId] = ids.splice(from, 1);
+    if (carriedStep === undefined || carriedId === undefined) return;
+    next.splice(to, 0, carriedStep);
+    ids.splice(to, 0, carriedId);
+
+    setTouched(carriedId);
     setRowIds(ids);
     onChange(renumber(next));
   };
@@ -303,7 +387,7 @@ export function WorkflowGrid({ steps, onChange, readOnly = false, className }: W
   };
 
   return (
-    <div className={cn('uboss-wfgrid-wrap', className)}>
+    <div className={cn('uboss-wfgrid-wrap', expanded && 'uboss-wfgrid-wrap--tall', className)}>
       <table className="uboss-wfg">
         <caption className="uboss-sr-only">
           Form 2 workflow steps — {columns.length} source columns
@@ -356,10 +440,75 @@ export function WorkflowGrid({ steps, onChange, readOnly = false, className }: W
               // there is no second rule to keep in step.
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
+              /*
+               * The row is a drop target; the handle is what is picked up.
+               *
+               * The handle rather than the whole row for two reasons. `motion.tr` already owns
+               * `onDragStart` for its own gesture system, so the native one cannot live here — and
+               * a row that is draggable everywhere cannot have its text selected, which is the
+               * first thing somebody tries to do in a spreadsheet.
+               */
+              onDragOver={(event) => {
+                if (readOnly === true || dragging === null) return;
+                // Without this the drop is refused and the gesture ends where it started.
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
+                if (over !== index) setOver(index);
+              }}
+              onDrop={(event) => {
+                if (readOnly === true || dragging === null) return;
+                event.preventDefault();
+                moveRow(dragging, index);
+                setDragging(null);
+                setOver(null);
+              }}
+              onContextMenu={(event) => {
+                if (readOnly === true) return;
+                event.preventDefault();
+                /*
+                 * Kept inside the window.
+                 *
+                 * The grid scrolls sideways and is wider than the screen, so a right-click near
+                 * its right edge put the menu past the viewport — visible to a test, unreachable
+                 * to a person. Clamping to the pointer *or* the last position where the whole menu
+                 * still fits is the difference between a menu and a rumour.
+                 */
+                const width = 190;
+                const height = 190;
+                setMenu({
+                  position: step.position,
+                  x: Math.max(8, Math.min(event.clientX, window.innerWidth - width)),
+                  y: Math.max(8, Math.min(event.clientY, window.innerHeight - height)),
+                });
+              }}
+              data-dragging={dragging === index ? 'true' : undefined}
+              data-drop-target={over === index && dragging !== index ? 'true' : undefined}
             >
               {columns.map((column) => cellFor(step, column))}
               <td>
                 <div className="uboss-wfg-rowops">
+                  {readOnly === true ? null : (
+                    <span
+                      className="uboss-wfg-grip"
+                      draggable
+                      role="button"
+                      tabIndex={-1}
+                      aria-label={`Drag step ${step.position} to reorder`}
+                      title="Drag to reorder"
+                      onDragStart={(event) => {
+                        setDragging(index);
+                        // Firefox will not start a drag without data on the transfer.
+                        event.dataTransfer.effectAllowed = 'move';
+                        event.dataTransfer.setData('text/plain', String(index));
+                      }}
+                      onDragEnd={() => {
+                        setDragging(null);
+                        setOver(null);
+                      }}
+                    >
+                      <Icon name="list" size={13} />
+                    </span>
+                  )}
                   <button
                     type="button"
                     title="Move up"
@@ -411,6 +560,46 @@ export function WorkflowGrid({ steps, onChange, readOnly = false, className }: W
           ))}
         </tbody>
       </table>
+
+      {/*
+        The row menu.
+
+        Positioned where the press happened rather than anchored to the row, because the row it
+        belongs to may be off the top of a scrolled grid — the pointer is the one place that is
+        certainly on screen. It carries exactly the operations the row buttons carry, so there is
+        one set of row actions reachable two ways rather than two sets that can disagree.
+      */}
+      {menu === null ? null : (
+        <div
+          className="uboss-wfg-menu"
+          style={{ left: menu.x, top: menu.y }}
+          role="menu"
+          aria-label={`Actions for step ${menu.position}`}
+        >
+          {[
+            { op: 'insert' as const, label: 'Insert row below' },
+            { op: 'duplicate' as const, label: 'Duplicate row' },
+            { op: 'up' as const, label: 'Move up' },
+            { op: 'down' as const, label: 'Move down' },
+            { op: 'delete' as const, label: 'Delete row' },
+          ].map((item) => (
+            <button
+              key={item.op}
+              type="button"
+              role="menuitem"
+              className={item.op === 'delete' ? 'uboss-wfg-menu-item uboss-wfg-menu-item--danger' : 'uboss-wfg-menu-item'}
+              // Delete keeps the same floor the row button has: never the last row.
+              disabled={item.op === 'delete' && steps.length <= 1}
+              onClick={() => {
+                rowOp(menu.position, item.op);
+                setMenu(null);
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

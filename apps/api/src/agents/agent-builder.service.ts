@@ -7,6 +7,10 @@ import {
 } from '@nestjs/common';
 
 import {
+  executionStages,
+  type AgentObjectiveContext,
+
+  agentTestProblems,
   ALLOWED_ENGINE_AGENT_TRANSITIONS,
   emptyAgentExecutionSetup,
   FORM3_JOB_LEVEL_FIELDS,
@@ -17,6 +21,8 @@ import {
   type AgentExecutionSetup,
   type AgentRunType,
   type AgentSetupPrefill,
+  type AgentTestRunView,
+  type AgentTestStatus,
   type Form3ActionRow,
   type Form3JobLevelFieldKey,
   type Form3View,
@@ -43,6 +49,15 @@ export interface AgentReadinessFinding {
 export interface AgentBuilderView {
   assignmentId: string;
   status: string;
+
+  /**
+   * Where this work sits in the objective that asked for it.
+   *
+   * Null when the objective version behind it can no longer be read. The builder still opens:
+   * an assignment whose objective was archived is still an assignment, and saying what is known
+   * beats refusing to show anything.
+   */
+  context: AgentObjectiveContext | null;
 
   /** Prefilled and read-only: inherited from the objective, the workflow and policy. */
   prefill: AgentSetupPrefill;
@@ -72,6 +87,15 @@ export interface AgentBuilderView {
     /** False for a mock run. Never presented as a real provider result. */
     wasReal: boolean | null;
   };
+
+  /**
+   * Every test of this agent, newest first, capped at what a person will actually read.
+   *
+   * `lastTest` above answers "is it ready"; this answers "does it do the right thing", which is
+   * the question somebody is really asking when they press Test. They need the input they gave,
+   * the output they got, and the run before it to compare against.
+   */
+  testHistory: AgentTestRunView[];
 
   engineAgent: { id: string; name: string; status: string; versionNumber: number } | null;
 
@@ -412,9 +436,23 @@ export class AgentBuilderService {
     scope: TenantScope;
     actorUserId: string;
     assignmentId: string;
+    /** The admin's sample data. Required: an agent tested against nothing proves nothing. */
+    sampleInput: string;
+    /** What they expected. Recorded and shown, never machine-compared — see the type's note. */
+    expectedOutcome?: string | null;
   }): Promise<AgentBuilderView> {
     const context = await this.authorization.contextFor(input.scope, input.actorUserId);
     await this.authorization.assertCan(context, { module: 'agent-builder', action: 'EditDraft' });
+
+    // Checked before the permission work has any effect and before the clock starts: a refusal
+    // for a reason the screen could have told them is not worth a row in the history.
+    const problems = agentTestProblems({
+      sampleInput: input.sampleInput,
+      expectedOutcome: input.expectedOutcome ?? null,
+    });
+    if (problems.length > 0) {
+      throw new BadRequestException(problems.join(' '));
+    }
 
     const assignment = await this.prisma.runInTenantTransaction(input.scope, async () => {
       const row = await this.loadAssignment(input.assignmentId);
@@ -435,9 +473,26 @@ export class AgentBuilderService {
 
     // Outside the transaction: the provider call can be slow, and holding a database transaction
     // open across it would pin a connection for its duration.
+    const sampleInput = input.sampleInput.trim();
+    const expectedOutcome = (input.expectedOutcome ?? '').trim() || null;
+
+    /*
+     * Said out loud rather than left for the reader to notice.
+     *
+     * Unanswered setup already stopped this above, so these are the things that are true but not
+     * disqualifying — most often that the answer came from the mock gateway. They go on the run
+     * because a result read a week later has to carry the conditions it was produced under.
+     */
+    const warnings: string[] = [];
+    const errors: string[] = [];
+
     let passed: boolean;
     let summary: string;
     let wasReal = false;
+    let threw = false;
+    let output: string | null = null;
+    let capability: string | null = null;
+    const startedAt = Date.now();
     try {
       const response = await this.modelGateway.complete({
         // Section 18: AGENT_STANDARD is "normal AI work", which is what a builder test
@@ -446,8 +501,8 @@ export class AgentBuilderService {
         profile: 'AGENT_STANDARD',
         purpose: 'AgentBuilderTest',
         instruction:
-          'Perform this assigned AI work once, against the described input, and report what you ' +
-          'would produce. Do not deliver it anywhere.',
+          'Perform this assigned AI work once, against the sample input below, and report what ' +
+          'you would produce. Do not deliver it anywhere.',
         context: [
           `Objective: ${prefill.objectiveName}`,
           `Assigned AI work: ${prefill.assignedWork}`,
@@ -455,21 +510,55 @@ export class AgentBuilderService {
           `Where the work happens: ${setup.whereWorkHappens ?? 'unspecified'}`,
           `Output destination (not written to during a test): ${setup.outputDestination ?? 'unspecified'}`,
           `On missing or wrong data: ${setup.missingDataBehaviour ?? 'unspecified'}`,
+          '',
+          // Last, and labelled: everything above is configuration, and this is the thing being
+          // worked on. A sample folded in among the settings gets read as another setting.
+          'Sample input to work on:',
+          sampleInput,
+          ...(expectedOutcome === null
+            ? []
+            : [
+                '',
+                // Given as context, never as a target. An agent told the expected answer will
+                // produce the expected answer, and the test would confirm nothing.
+                'For context only, what the person running this test expects. Do not treat it ' +
+                  'as the answer:',
+                expectedOutcome,
+              ]),
         ].join('\n'),
         maxTokens: 400,
         tenantId: input.scope.tenantId,
       });
       wasReal = response.producedByRealModel;
-      passed = response.output.trim() !== '';
+      capability = response.capability;
+      output = response.output.trim() === '' ? null : response.output;
+      passed = output !== null;
       summary = passed
         ? `The agent produced output for "${prefill.assignedWork}" using ${response.capability}.`
         : 'The agent produced nothing, so there is no evidence it can do this work.';
+      if (!wasReal) {
+        warnings.push(
+          'This answer came from the mock gateway, not a provider. It shows the agent is wired ' +
+            'up; it is not evidence about the quality of its work.',
+        );
+      }
+      if (!passed) {
+        errors.push('The agent returned nothing at all.');
+      }
     } catch (caught) {
       passed = false;
+      threw = true;
       // Recorded, not swallowed. A test that failed for an infrastructure reason must not read
       // as the work being impossible.
-      summary = `The test could not complete: ${caught instanceof Error ? caught.message : String(caught)}`;
+      const reason = caught instanceof Error ? caught.message : String(caught);
+      summary = `The test could not complete: ${reason}`;
+      errors.push(reason);
     }
+
+    const durationMs = Date.now() - startedAt;
+    // `Failed` is a fact about the agent; `Error` is a fact about the test. Keeping them apart is
+    // the whole reason both exist — see AGENT_TEST_STATUSES.
+    const status: AgentTestStatus = passed ? 'Passed' : threw ? 'Error' : 'Failed';
 
     return this.prisma.runInTenantTransaction(input.scope, async () => {
       const saved = await this.prisma.client.aiWorkAssignment.update({
@@ -483,6 +572,30 @@ export class AgentBuilderService {
         },
       });
 
+      /*
+       * The run itself, kept.
+       *
+       * The four columns above are overwritten by the next test; this row is not. An admin
+       * deciding whether to publish is comparing this attempt with the last one, and that
+       * comparison needs both to still exist.
+       */
+      await this.prisma.client.agentBuilderTestRun.create({
+        data: {
+          tenantId: input.scope.tenantId,
+          aiWorkAssignmentId: assignment.id,
+          sampleInput,
+          expectedOutcome,
+          output,
+          status,
+          warnings,
+          errors,
+          durationMs,
+          wasReal,
+          capability,
+          ranByUserId: input.actorUserId,
+        },
+      });
+
       await this.auditEvents.appendWithinCurrentScope(input.scope.tenantId, {
         action: 'agent.tested',
         resourceType: 'agent-builder',
@@ -492,6 +605,8 @@ export class AgentBuilderService {
         summary,
         metadata: {
           passed,
+          status,
+          durationMs,
           // Stored on the event as well as the row, so an audit reader never has to assume.
           producedByRealModel: wasReal,
           modelWasMocked: !wasReal,
@@ -712,7 +827,39 @@ export class AgentBuilderService {
         ? `${version.objectiveName} / ${department.name}`
         : version.objectiveName;
       jobLevel.jobIdName = `${objective?.code ?? '—'} · ${prefill.suggestedAgentName}`;
-      jobLevel.jobOwnerCurrentPersonRole = prefill.ownerUserId;
+      /*
+       * The person, by name and designation.
+       *
+       * This printed the raw user id, which is what the prefill stores and what nobody can read.
+       * The field's own label — "Job Owner / Current Person / Role" — asks for a person and their
+       * role, so it answers with both, and falls back to the id only when the person cannot be
+       * read at all rather than showing an empty box where a name should be.
+       */
+      const ownerPerson =
+        prefill.ownerUserId === null
+          ? null
+          : await this.prisma.client.user.findUnique({
+              where: { id: prefill.ownerUserId },
+              select: { displayName: true },
+            });
+      const ownerEmployment =
+        prefill.ownerUserId === null
+          ? null
+          : await this.prisma.client.employmentRecord.findFirst({
+              where: {
+                tenantId: input.scope.tenantId,
+                userId: prefill.ownerUserId,
+                endedAt: null,
+              },
+              select: { designation: true },
+            });
+
+      jobLevel.jobOwnerCurrentPersonRole =
+        ownerPerson === null
+          ? prefill.ownerUserId
+          : ownerEmployment === null
+            ? ownerPerson.displayName
+            : `${ownerPerson.displayName} · ${ownerEmployment.designation}`;
       jobLevel.triggerFrequency =
         setup.triggerOrFrequency ??
         (setup.runType === null ? null : `${setup.runType} (no schedule required)`);
@@ -788,6 +935,90 @@ export class AgentBuilderService {
       throw new NotFoundException('There is no such assigned AI work you can see.');
     }
     return row;
+  }
+
+  /**
+   * Where this piece of AI work sits in the objective that asked for it.
+   *
+   * ## Why the builder resolves this rather than the screen
+   *
+   * Two of these answers are derivations the screen must not make for itself. The step's position
+   * — Engine, Sub-Engine, Executor — comes from the dependency graph and nothing else, and what it
+   * comes after is the same graph read backwards. A screen that worked either out locally would be
+   * a second opinion about the plan, and the first time the two disagreed the product would be
+   * telling somebody that a step is an Executor on one page and a Sub-Engine on another.
+   *
+   * Returns null rather than throwing when the version or its draft cannot be read: an assignment
+   * whose objective has been archived is still an assignment, and the builder should say what it
+   * knows rather than fail to open.
+   */
+  private async objectiveContextOf(
+    scope: TenantScope,
+    assignment: { objectiveId: string; objectiveVersionId: string; nodeId: string; updatedAt: Date },
+  ): Promise<AgentObjectiveContext | null> {
+    const version = await this.prisma.client.objectiveVersion.findFirst({
+      where: { tenantId: scope.tenantId, id: assignment.objectiveVersionId },
+      select: {
+        objectiveName: true,
+        status: true,
+        expectedFinalResult: true,
+        departmentId: true,
+        objectiveOwnerUserId: true,
+        objective: { select: { code: true } },
+      },
+    });
+    if (version === null) return null;
+
+    const [department, owner, draft] = [
+      version.departmentId === null
+        ? null
+        : await this.prisma.client.department.findFirst({
+            where: { tenantId: scope.tenantId, id: version.departmentId },
+            select: { name: true },
+          }),
+      version.objectiveOwnerUserId === null
+        ? null
+        : await this.prisma.client.user.findUnique({
+            where: { id: version.objectiveOwnerUserId },
+            select: { displayName: true },
+          }),
+      await this.prisma.client.objectiveWorkflowDraft.findFirst({
+        where: { tenantId: scope.tenantId, objectiveVersionId: assignment.objectiveVersionId },
+        orderBy: { createdAt: 'desc' },
+        select: { graph: true },
+      }),
+    ];
+
+    const graph = draft?.graph as
+      | { nodes?: { id: string; kind: string; label: string; dod?: { dependencies?: string[] } }[] }
+      | null;
+    const nodes = (graph?.nodes ?? []).map((node) => ({
+      id: node.id,
+      kind: node.kind,
+      label: node.label,
+      dod: { dependencies: node.dod?.dependencies ?? [] },
+    }));
+
+    const mine = nodes.find((node) => node.id === assignment.nodeId) ?? null;
+    const labelOf = new Map(nodes.map((node) => [node.id, node.label]));
+    const stages = executionStages(nodes);
+
+    return {
+      objectiveId: assignment.objectiveId,
+      objectiveCode: version.objective.code,
+      objectiveName: version.objectiveName,
+      objectiveStatus: version.status,
+      departmentName: department?.name ?? null,
+      ownerName: owner?.displayName ?? null,
+      expectedOutcome: version.expectedFinalResult,
+      nodeId: assignment.nodeId,
+      stepLabel: mine?.label ?? assignment.nodeId,
+      stage: stages.get(assignment.nodeId) ?? null,
+      comesAfter: (mine?.dod.dependencies ?? [])
+        .map((id) => labelOf.get(id))
+        .filter((label): label is string => label !== undefined),
+      updatedAt: assignment.updatedAt.toISOString(),
+    };
   }
 
   private prefillOf(assignment: { setupPrefill: unknown }): AgentSetupPrefill {
@@ -967,6 +1198,7 @@ export class AgentBuilderService {
     return {
       assignmentId: assignment.id,
       status: assignment.status,
+      context: await this.objectiveContextOf(scope, assignment),
       prefill,
       setup,
       missing: missingSetupFields(setup, needsConnection),
@@ -978,6 +1210,7 @@ export class AgentBuilderService {
         summary: assignment.lastTestSummary,
         wasReal: assignment.lastTestWasReal,
       },
+      testHistory: await this.testHistoryOf(scope, assignment.id),
       engineAgent,
       vocabulary: {
         runTypes: this.runTypes(),
@@ -988,6 +1221,42 @@ export class AgentBuilderService {
         'objective. The canonical Form 3 is available to authorized users as a read, never as a ' +
         'form to re-enter.',
     };
+  }
+
+  /**
+   * The recorded tests, newest first.
+   *
+   * Capped at twenty. Somebody comparing attempts is looking at the last few; a page of every
+   * test ever run would be a different screen with a different purpose, and this one would load
+   * slower for everybody to serve it.
+   */
+  private async testHistoryOf(
+    scope: TenantScope,
+    assignmentId: string,
+  ): Promise<AgentTestRunView[]> {
+    const rows = await this.prisma.client.agentBuilderTestRun.findMany({
+      where: { tenantId: scope.tenantId, aiWorkAssignmentId: assignmentId },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      include: { ranBy: { select: { displayName: true } } },
+    });
+
+    return rows.map((row) => ({
+      id: row.id,
+      status: row.status as AgentTestStatus,
+      sampleInput: row.sampleInput,
+      expectedOutcome: row.expectedOutcome,
+      output: row.output,
+      // Stored as JSON, so narrowed rather than asserted: a malformed row shows an empty list
+      // instead of crashing the screen that was opened to find out what went wrong.
+      warnings: Array.isArray(row.warnings) ? row.warnings.map((entry) => String(entry)) : [],
+      errors: Array.isArray(row.errors) ? row.errors.map((entry) => String(entry)) : [],
+      durationMs: row.durationMs,
+      wasReal: row.wasReal,
+      capability: row.capability,
+      ranByName: row.ranBy?.displayName ?? null,
+      at: row.createdAt.toISOString(),
+    }));
   }
 
   /**

@@ -31,6 +31,7 @@ import { PermissionGuard } from '../src/authorization/permission.guard.js';
 import { MockModelGateway, ModelGateway } from '../src/model-gateway/model-gateway.js';
 import { NotificationService } from '../src/notifications/notification.service.js';
 import { AssignmentService } from '../src/objectives/assignment.service.js';
+import { WorkReleaseService } from '../src/tasks/work-release.service.js';
 import { ObjectiveController } from '../src/objectives/objective.controller.js';
 import { ObjectiveAnalysisService } from '../src/objectives/objective-analysis.service.js';
 import { ObjectiveService } from '../src/objectives/objective.service.js';
@@ -98,6 +99,8 @@ describe('workflow graph editor and pre-publish readiness (e2e)', () => {
   let viewerUboss: string;
   let skillAdminId: string;
   let skillApproverId: string;
+  /// An Approver: real work in this company, and no authoring rights on objectives.
+  let skillApproverUboss: string;
   let platformOwnerId: string;
   /// A second company, to prove no workflow crosses a tenant boundary.
   let otherTenantId: string;
@@ -145,6 +148,7 @@ describe('workflow graph editor and pre-publish readiness (e2e)', () => {
         ObjectiveAnalysisService,
         WorkflowEditorService,
         AssignmentService,
+        WorkReleaseService,
         NotificationService,
         NotificationRepository,
         OutboxRepository,
@@ -243,6 +247,7 @@ describe('workflow graph editor and pre-publish readiness (e2e)', () => {
     viewerUboss = people.viewer.ubossUniqueId;
     skillAdminId = people.skillAdmin.id;
     skillApproverId = people.skillApprover.id;
+    skillApproverUboss = people.skillApprover.ubossUniqueId;
     otherUboss = people.outsider.ubossUniqueId;
     platformOwnerId = people.platform.id;
 
@@ -289,8 +294,13 @@ describe('workflow graph editor and pre-publish readiness (e2e)', () => {
         });
       }
 
-      // CompanyAdmin: objective View/Comment/Export and no EditDraft. That is the Prompt 7
-      // decision, and it makes this actor the natural "can look, cannot edit" case.
+      // CompanyAdmin, who now holds objective EditDraft.
+      //
+      // Prompt 7 gave this role View/Comment/Export and deliberately no EditDraft, which made it
+      // the natural "can look, cannot edit" case in this suite. The client's 2026-09-25 rule
+      // replaced that: the Admin chosen when a company is provisioned controls the company, and
+      // "edit workflow/nodes" is named in their list. The variable is still called `viewer`
+      // because renaming it would touch thirty assertions that do not care.
       for (const [userId, roleKind] of [
         [people.viewer.id, 'CompanyAdmin'],
         [skillAdminId, 'CompanyAdmin'],
@@ -380,6 +390,27 @@ describe('workflow graph editor and pre-publish readiness (e2e)', () => {
     }),
   ];
 
+  /**
+   * Four rows, and the same person on two of them.
+   *
+   * The UAT run found a human step whose node came back with no owner while another step naming
+   * the very same employee resolved correctly, so a grid that uses somebody twice is the shape
+   * that tells the two apart. The engine row in the middle keeps the positions from lining up
+   * with the node order, which is the other thing a positional mapping would get wrong.
+   */
+  const repeatedOwnerSteps = (): Form2WorkflowStep[] => [
+    step({ position: 1, whoPersonName: 'Pranav Kulkarni', whatExactWork: 'Collect the evidence' }),
+    step({
+      position: 2,
+      whoEngine: 'Engine',
+      whoPersonName: null,
+      whatExactWork: 'Draft the GSPR matrix from the evidence index',
+      outputWhatIsProduced: 'Draft checklist',
+    }),
+    step({ position: 3, whoPersonName: 'Pranav Kulkarni', whatExactWork: 'Check the draft' }),
+    step({ position: 4, whoPersonName: 'Pranav Kulkarni', whatExactWork: 'File the signed record' }),
+  ];
+
   /** A published Skill, so the machine step has something approved behind it. */
   const publishSkill = async () => {
     const content: SkillContent = {
@@ -451,6 +482,7 @@ describe('workflow graph editor and pre-publish readiness (e2e)', () => {
     graph: WorkflowDraft;
     schemaVersion: number;
     seededFromRunId: string | null;
+    supersededByRunId: string | null;
     assignedAt: string | null;
     editable: boolean;
   }
@@ -572,6 +604,64 @@ describe('workflow graph editor and pre-publish readiness (e2e)', () => {
         reopened.graph.nodes.find((candidate) => candidate.id === node.id)?.label,
         'Manager wording',
       );
+    });
+
+    /*
+     * Every human row that names a real employee keeps that employee, however many rows name them.
+     *
+     * The UAT run produced a workflow whose step 4 had no owner while step 2, naming the same
+     * person, had one — and Approve & Assign then refused to publish, correctly, because a human
+     * step nobody owns would put work in front of nobody.
+     */
+    it('keeps the owner on every human step, including a person used more than once', async () => {
+      await publishSkill();
+      const objective = await objectives().create({
+        scope: scope(),
+        actorUserId: ownerUserId,
+        content: form2(),
+        steps: repeatedOwnerSteps(),
+      });
+      const run = await analysis().start({
+        scope: scope(),
+        actorUserId: ownerUserId,
+        objectiveId: objective.id,
+      });
+      assert.equal(run.status, 'Completed', run.failureReason ?? '');
+
+      const draft = await open(objective.id);
+      const humans = draft.graph.nodes.filter((node) => node.kind === 'Human');
+      assert.equal(humans.length, 3, 'three human rows named a person');
+
+      const unowned = humans.filter((node) => node.ownerUserId === null).map((node) => node.id);
+      assert.deepEqual(unowned, [], 'no human step lost its owner');
+
+      for (const node of humans) {
+        assert.equal(node.ownerUserId, workerId, `${node.id} should belong to the named employee`);
+      }
+    });
+
+    /*
+     * A newer analysis is not applied — by design, so it cannot discard edits — but the draft has
+     * to say so. Without it somebody who re-analyses because a node was wrong watches the run
+     * succeed, sees nothing change, and has no way to tell that the newer result was never used.
+     */
+    it('says when a newer analysis has finished and was not applied', async () => {
+      const { objective, run } = await analysedObjective();
+
+      const first = await open(objective.id);
+      assert.equal(first.seededFromRunId, run.id);
+      assert.equal(first.supersededByRunId, null, 'nothing newer has run yet');
+
+      const second = await analysis().start({
+        scope: scope(),
+        actorUserId: ownerUserId,
+        objectiveId: objective.id,
+      });
+      assert.equal(second.status, 'Completed', second.failureReason ?? '');
+
+      const reopened = await open(objective.id);
+      assert.equal(reopened.seededFromRunId, run.id, 'still the draft it was seeded from');
+      assert.equal(reopened.supersededByRunId, second.id, 'and it names the run it is behind');
     });
 
     it('serves an editor vocabulary the server itself validates against', async () => {
@@ -1382,8 +1472,15 @@ describe('workflow graph editor and pre-publish readiness (e2e)', () => {
         .expect(401);
     });
 
-    it('lets a CompanyAdmin read the plan but not edit it', async () => {
-      // Hidden navigation is presentation only; the route itself is what protects the data.
+    it('lets a CompanyAdmin correct the generated plan', async () => {
+      /*
+       * The client's rule, from the route rather than from the screen.
+       *
+       * "Admin reviews/edits workflow" is one of the things the Company Admin is listed as doing,
+       * and the grant that permits it is `objective:EditDraft` on the CompanyAdmin template. This
+       * asserts the server agrees — hiding or showing the button is presentation, and presentation
+       * is not what protects or permits anything.
+       */
       const { objective } = await analysedObjective();
       const draft = await open(objective.id);
 
@@ -1397,17 +1494,37 @@ describe('workflow graph editor and pre-publish readiness (e2e)', () => {
           .put(
             `/tenants/${tenantId}/objectives/${objective.id}/workflow/nodes/${humanNodeOf(draft.graph).id}`,
           )
-          .send({ revision: draft.revision, label: 'Not permitted' }),
+          .send({ revision: draft.revision, label: 'Corrected by the Admin' }),
         viewerUboss,
-      ).expect(403);
+      ).expect(200);
     });
 
-    it('refuses a CompanyAdmin opening the editable draft', async () => {
-      // Opening seeds a row, so it is an edit, not a read.
+    it('lets a CompanyAdmin open the editable draft', async () => {
+      // Opening seeds a row, so it is an edit rather than a read — and the Admin may make it.
       const { objective } = await analysedObjective();
       await as(
         agent().post(`/tenants/${tenantId}/objectives/${objective.id}/workflow`).send({}),
         viewerUboss,
+      ).expect(201);
+    });
+
+    it('still refuses somebody who holds no EditDraft on objectives', async () => {
+      /*
+       * The Admin gaining this grant must not mean everybody did.
+       *
+       * The Skill Approver is an ordinary member of this company with approvals work and no
+       * authoring rights, so the route is what stops them — not the navigation they are shown.
+       */
+      const { objective } = await analysedObjective();
+      const draft = await open(objective.id);
+
+      await as(
+        agent()
+          .put(
+            `/tenants/${tenantId}/objectives/${objective.id}/workflow/nodes/${humanNodeOf(draft.graph).id}`,
+          )
+          .send({ revision: draft.revision, label: 'Not permitted' }),
+        skillApproverUboss,
       ).expect(403);
     });
 

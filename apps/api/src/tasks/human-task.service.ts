@@ -15,6 +15,7 @@ import { AuditEventService } from '../audit/audit-event.service.js';
 import { AuthorizationService } from '../authorization/authorization.service.js';
 import { PrismaService } from '../persistence/prisma.service.js';
 import type { TenantScope } from '../persistence/tenant-context.js';
+import { WorkReleaseService, type ReleasedTask } from './work-release.service.js';
 
 export interface HumanTaskView {
   id: string;
@@ -52,6 +53,25 @@ export interface HumanTaskView {
   notes: { id: string; kind: string; body: string; authorUserId: string; createdAt: string }[];
   /** Which moves this task can make now, so a screen does not offer one that will be refused. */
   nextStatuses: HumanTaskStatus[];
+  /**
+   * The readable titles of the steps this task is still waiting on.
+   *
+   * Empty for anything that is not `Waiting` — once it has been released there is nothing left to
+   * wait for. Titles rather than the node ids already on `dependsOnNodeIds`, because "waiting on
+   * step-1" tells a person nothing, and a queue that will not say what it is waiting for is the
+   * black box the Operations screen exists to replace.
+   */
+  waitingOn: string[];
+  /**
+   * The readable titles of every step this one comes after, finished or not.
+   *
+   * Separate from `waitingOn` because the two answer different questions. "What am I waiting for?"
+   * is empty once the work is yours; "what happened before this?" is context somebody reads while
+   * doing it, and it stays true for the whole life of the task.
+   *
+   * Both are populated on the list and detail reads, which are the ones a screen shows somebody.
+   */
+  dependsOnLabels: string[];
 }
 
 type TaskRow = Awaited<ReturnType<PrismaService['client']['humanTask']['findFirstOrThrow']>>;
@@ -78,6 +98,7 @@ export class HumanTaskService {
     private readonly prisma: PrismaService,
     private readonly authorization: AuthorizationService,
     private readonly auditEvents: AuditEventService,
+    private readonly workRelease: WorkReleaseService,
   ) {}
 
   /** The To-do list. `mine` is the default because that is what the screen opens on. */
@@ -130,11 +151,16 @@ export class HumanTaskService {
           isHumanTaskOverdue({ status: row.status as HumanTaskStatus, dueAt: row.dueAt }),
         ).length,
         blocked: visible.filter((row) => row.status === 'Blocked').length,
+        // Separate from blocked on purpose: one is a person stuck, the other is the plan's order.
+        waiting: visible.filter((row) => row.status === 'Waiting').length,
         mine: visible.filter((row) => row.assignedToUserId === input.actorUserId).length,
       };
 
       return {
-        tasks: visible.map((row) => this.viewOf(row)),
+        tasks: await this.describeDependencies(
+          input.scope.tenantId,
+          visible.map((row) => this.viewOf(row)),
+        ),
         counts,
         note: 'Work assigned from published workflows. Nothing here was created by hand.',
       };
@@ -152,7 +178,8 @@ export class HumanTaskService {
     return this.prisma.runInTenantTransaction(input.scope, async () => {
       const row = await this.load(input.taskId);
       await this.assertOnTask(context, row, 'View');
-      return this.viewOf(row);
+      const [view] = await this.describeDependencies(input.scope.tenantId, [this.viewOf(row)]);
+      return view as HumanTaskView;
     });
   }
 
@@ -353,7 +380,17 @@ export class HumanTaskService {
     const context = await this.authorization.contextFor(input.scope, input.actorUserId);
     await this.authorization.assertCan(context, { module: 'todo', action: 'EditDraft' });
 
-    return this.prisma.runInTenantTransaction(input.scope, async () => {
+    /*
+     * Collected inside the transaction, announced after it.
+     *
+     * The successors are moved in the same transaction as the completion, because a step that is
+     * finished while its successor still says Waiting is precisely the inconsistency the whole
+     * mechanism exists to prevent. Telling the people is a separate concern and a fallible one —
+     * see `announce` — so it happens once the work is safely stored.
+     */
+    let released: ReleasedTask[] = [];
+
+    const view = await this.prisma.runInTenantTransaction(input.scope, async () => {
       const row = await this.load(input.taskId);
       await this.assertOnTask(context, row, 'EditDraft');
 
@@ -432,8 +469,26 @@ export class HumanTaskService {
         },
       });
 
+      /*
+       * Only an outright completion releases anything.
+       *
+       * A submission that still needs an approval has not finished the step — the next person's
+       * work becomes startable when the approver says so, which is the other call site below.
+       */
+      if (!needsApproval) {
+        released = await this.workRelease.releaseWithinTransaction({
+          tenantId: input.scope.tenantId,
+          objectiveVersionId: row.objectiveVersionId,
+          actorUserId: input.actorUserId,
+          finishedNodeId: row.nodeId,
+        });
+      }
+
       return this.viewOf(await this.load(input.taskId));
     });
+
+    await this.workRelease.announce(input.scope, released);
+    return view;
   }
 
   /**
@@ -480,16 +535,29 @@ export class HumanTaskService {
     taskId: string;
     /** Whoever's decision prompted this. Recorded as the actor on the completion event. */
     actorUserId: string;
-  }): Promise<{ changed: boolean; status: HumanTaskStatus }> {
+  }): Promise<{ changed: boolean; status: HumanTaskStatus; released: ReleasedTask[] }> {
     return this.prisma.runInTenantTransaction(input.scope, async () => {
       const row = await this.prisma.client.humanTask.findFirst({
         where: { id: input.taskId },
-        select: { id: true, title: true, status: true, startedAt: true, submittedAt: true },
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          startedAt: true,
+          submittedAt: true,
+          // Read so a completion can release whatever the plan had waiting behind this step.
+          nodeId: true,
+          objectiveVersionId: true,
+        },
       });
 
       // Not ours to see, or already past the gate. Either way there is nothing to do.
       if (row === null || row.status !== 'WaitingApproval') {
-        return { changed: false, status: (row?.status ?? 'Cancelled') as HumanTaskStatus };
+        return {
+          changed: false,
+          status: (row?.status ?? 'Cancelled') as HumanTaskStatus,
+          released: [],
+        };
       }
 
       /*
@@ -531,13 +599,13 @@ export class HumanTaskService {
       // A task parked at WaitingApproval with no approval governing it is a data problem, not a
       // task to finish. Left alone rather than completed on the strength of an absence.
       if (governing.length === 0) {
-        return { changed: false, status: row.status as HumanTaskStatus };
+        return { changed: false, status: row.status as HumanTaskStatus, released: [] };
       }
 
       const outstanding = governing.filter((request) => request.status === 'Pending');
       const approved = governing.filter((request) => request.status === 'Approved');
       if (outstanding.length > 0 || approved.length !== governing.length) {
-        return { changed: false, status: row.status as HumanTaskStatus };
+        return { changed: false, status: row.status as HumanTaskStatus, released: [] };
       }
 
       // The declared route, walked rather than jumped: WaitingApproval -> Submitted -> Completed.
@@ -574,7 +642,21 @@ export class HumanTaskService {
         },
       });
 
-      return { changed: true, status: 'Completed' as HumanTaskStatus };
+      /*
+       * The step is finished, so whatever waited on it can start.
+       *
+       * Returned rather than announced, because this runs inside `decide`'s transaction and the
+       * bell must not ring for something a rollback is about to undo. The caller announces once
+       * the decision is committed.
+       */
+      const released = await this.workRelease.releaseWithinTransaction({
+        tenantId: input.scope.tenantId,
+        objectiveVersionId: row.objectiveVersionId,
+        actorUserId: input.actorUserId,
+        finishedNodeId: row.nodeId,
+      });
+
+      return { changed: true, status: 'Completed' as HumanTaskStatus, released };
     });
   }
 
@@ -803,7 +885,85 @@ export class HumanTaskService {
         createdAt: note.createdAt.toISOString(),
       })),
       nextStatuses: [...ALLOWED_HUMAN_TASK_TRANSITIONS[status]],
+      // Both filled by `describeDependencies` on the paths that show them to somebody.
+      waitingOn: [],
+      dependsOnLabels: [],
     };
+  }
+
+  /**
+   * Put names to the steps each task depends on.
+   *
+   * Three queries at most, and none at all when nothing depends on anything. It reads the same
+   * three tables `WorkReleaseService` does and applies the same rule for what counts as finished,
+   * so the screen cannot claim a task is waiting on something the server would already have
+   * released it from.
+   *
+   * A dependency whose node produced no work item is not listed: there is nothing to name, and it
+   * is not something the task is really waiting for.
+   */
+  private async describeDependencies(
+    tenantId: string,
+    views: HumanTaskView[],
+  ): Promise<HumanTaskView[]> {
+    const dependent = views.filter((view) => view.dependsOnNodeIds.length > 0);
+    if (dependent.length === 0) return views;
+
+    const versionIds = [...new Set(dependent.map((view) => view.objectiveVersionId))];
+
+    const [tasks, assignments, approvals] = [
+      await this.prisma.client.humanTask.findMany({
+        where: { tenantId, objectiveVersionId: { in: versionIds } },
+        select: { nodeId: true, title: true, status: true },
+      }),
+      await this.prisma.client.aiWorkAssignment.findMany({
+        where: { tenantId, objectiveVersionId: { in: versionIds } },
+        select: { nodeId: true, title: true, status: true },
+      }),
+      await this.prisma.client.approvalRequest.findMany({
+        where: {
+          tenantId,
+          objectiveVersionId: { in: versionIds },
+          workflowNodeId: { not: null },
+        },
+        select: { workflowNodeId: true, title: true, status: true },
+      }),
+    ];
+
+    /** Every step that produced work, by node. What a dependency can be given a name from. */
+    const named = new Map<string, string>();
+    /** The subset that has not finished. What a `Waiting` task is actually held up by. */
+    const unfinished = new Map<string, string>();
+
+    for (const row of tasks) {
+      named.set(row.nodeId, row.title);
+      if (row.status !== 'Completed' && row.status !== 'Cancelled') {
+        unfinished.set(row.nodeId, row.title);
+      }
+    }
+    for (const row of assignments) {
+      named.set(row.nodeId, row.title);
+      // An assignment that has not run is unfinished. Whether it *has* run is a question about
+      // runs, and this is a label rather than a gate — the gate is in WorkReleaseService.
+      if (row.status !== 'Cancelled') unfinished.set(row.nodeId, row.title);
+    }
+    for (const row of approvals) {
+      if (row.workflowNodeId === null) continue;
+      named.set(row.workflowNodeId, row.title);
+      if (row.status !== 'Approved' && row.status !== 'Cancelled') {
+        unfinished.set(row.workflowNodeId, row.title);
+      }
+    }
+
+    const titles = (nodeIds: string[], from: Map<string, string>): string[] =>
+      nodeIds.map((nodeId) => from.get(nodeId)).filter((title): title is string => title !== undefined);
+
+    for (const view of dependent) {
+      view.dependsOnLabels = titles(view.dependsOnNodeIds, named);
+      view.waitingOn = view.status === 'Waiting' ? titles(view.dependsOnNodeIds, unfinished) : [];
+    }
+
+    return views;
   }
 }
 

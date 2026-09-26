@@ -32,6 +32,9 @@ import {
   type ApprovalRouting,
   type ResourceDescriptor,
   type SodPolicy,
+  CHANGE_REQUEST_KIND_LABELS,
+  changeRequestProblems,
+  type ChangeRequestKind,
 } from '@uboss/types';
 
 import { AuditEventService } from '../audit/audit-event.service.js';
@@ -41,6 +44,7 @@ import {
 } from '../authorization/authorization.service.js';
 import { NotificationService } from '../notifications/notification.service.js';
 import { HumanTaskService } from '../tasks/human-task.service.js';
+import { WorkReleaseService, type ReleasedTask } from '../tasks/work-release.service.js';
 import { OrganizationRepository } from '../persistence/organization.repository.js';
 import { PrismaService } from '../persistence/prisma.service.js';
 import {
@@ -189,6 +193,8 @@ export class ApprovalService {
      * cannot form a cycle.
      */
     private readonly humanTasks: HumanTaskService,
+    /** Turning a finished step into a startable one. Also one-way, for the same reason. */
+    private readonly workRelease: WorkReleaseService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -207,6 +213,63 @@ export class ApprovalService {
    * a decision is not making one — and it is exactly what the locked rule requires of the
    * Executor: escalate rather than proceed.
    */
+  /**
+   * Somebody asks for a change.
+   *
+   * ## Why this is an approval and not its own thing
+   *
+   * A change request is a person asking, somebody with authority deciding, and the decision being
+   * audited — which is what this table is. Giving it a table of its own would mean a second queue,
+   * a second notion of who may decide, a second audit path and a second place to get delegation
+   * wrong. So it is a `type`, and everything that already works for approvals works for it.
+   *
+   * ## The rule it exists to keep
+   *
+   * "Do not give the employee direct configuration power simply because they requested a change."
+   * Filing this changes nothing at all. It creates a Pending request addressed to the Company
+   * Admin, and the change happens — if it happens — when the Admin does it. That is not enforced
+   * by a comment: this method has no write to anything but the request.
+   *
+   * Anybody in the company may file one. That is deliberate and is not a permission hole: the one
+   * thing it grants is the ability to be told "no" by somebody with the authority to say it.
+   */
+  async requestChange(input: {
+    scope: TenantScope;
+    actorUserId: string;
+    kind: ChangeRequestKind;
+    reason: string;
+    /** The conversation it was raised from, when it was raised from one. */
+    conversationId?: string | undefined;
+  }): Promise<ApprovalSummary> {
+    const problems = changeRequestProblems({ kind: input.kind, reason: input.reason });
+    if (problems.length > 0) throw new BadRequestException(problems.join(' '));
+
+    const reason = input.reason.trim();
+
+    return this.raise({
+      scope: input.scope,
+      type: 'ChangeRequest',
+      // The kind leads, so a queue of forty reads as forty different asks rather than forty
+      // "Change request" rows somebody has to open one at a time.
+      title: `${CHANGE_REQUEST_KIND_LABELS[input.kind]}: ${reason.slice(0, 120)}`,
+      detail: reason,
+      /*
+       * Where it came from, when it came from somewhere.
+       *
+       * A request raised in a department's workshop keeps the conversation on it, so the Admin can
+       * go back and read what was being discussed. A request raised anywhere else says so rather
+       * than claiming a conversation it does not have.
+       */
+      subjectType: input.conversationId === undefined ? 'ChangeRequest' : 'ChatConversation',
+      ...(input.conversationId === undefined ? {} : { subjectId: input.conversationId }),
+      requestedByUserId: input.actorUserId,
+      // Addressed to the Admin by role rather than to a person: the Admin who happens to be on
+      // leave is not the point, the authority is.
+      approverRoleKind: 'CompanyAdmin',
+      changeKind: input.kind,
+    });
+  }
+
   async raise(input: {
     scope: TenantScope;
     type: ApprovalRequestType;
@@ -224,6 +287,8 @@ export class ApprovalService {
     dueAt?: Date | undefined;
     supersedesId?: string | undefined;
     byExecutor?: boolean | undefined;
+    /** What a change request is about. The database refuses it on any other type. */
+    changeKind?: ChangeRequestKind | undefined;
   }): Promise<ApprovalSummary> {
     if (!APPROVAL_REQUEST_TYPES.includes(input.type)) {
       throw new BadRequestException(`Unknown approval type: ${input.type}`);
@@ -285,6 +350,7 @@ export class ApprovalService {
             ? {}
             : { approverRoleKind: input.approverRoleKind }),
           ...(input.dueAt === undefined ? {} : { dueAt: input.dueAt }),
+          ...(input.changeKind === undefined ? {} : { changeKind: input.changeKind }),
           ...(input.supersedesId === undefined ? {} : { supersedesId: input.supersedesId }),
         },
       });
@@ -344,6 +410,14 @@ export class ApprovalService {
     if (!APPROVAL_DECISIONS.includes(input.decision)) {
       throw new BadRequestException(`Unknown decision: ${input.decision}`);
     }
+
+    /*
+     * What this decision unblocked, carried out of the transaction to be announced after it.
+     *
+     * Declared here rather than returned from the transaction callback because two different
+     * branches inside it can fill it, and a decision can legitimately release nothing at all.
+     */
+    let released: ReleasedTask[] = [];
 
     if (decisionNeedsReason(input.decision) && input.note.trim() === '') {
       throw new BadRequestException(
@@ -554,15 +628,42 @@ export class ApprovalService {
        * carrying no subject, reaches no task at all.
        */
       if (request.subjectType === 'HumanTask' && request.subjectId !== null) {
-        await this.humanTasks.reconcileApprovalOutcome({
+        const outcome = await this.humanTasks.reconcileApprovalOutcome({
           scope: input.scope,
           taskId: request.subjectId,
           actorUserId: input.actorUserId,
+        });
+        released = outcome.released;
+      }
+
+      /*
+       * An approval gate is a step in the workflow, and approving it finishes that step.
+       *
+       * A `WorkflowStepApproval` carries no task of its own — it *is* the node — so nothing above
+       * reaches it, and without this a plan with a gate in the middle would stop dead: everything
+       * after the gate would wait for a node that nothing ever reported finishing.
+       *
+       * Only on `Approved`. A rejection sends the work back, and releasing the next step on the
+       * strength of a refusal would be the early unlock this whole mechanism exists to prevent.
+       */
+      if (
+        request.subjectType === 'ObjectiveWorkflowNode' &&
+        request.workflowNodeId !== null &&
+        request.objectiveVersionId !== null &&
+        input.decision === 'Approve'
+      ) {
+        released = await this.workRelease.releaseWithinTransaction({
+          tenantId: input.scope.tenantId,
+          objectiveVersionId: request.objectiveVersionId,
+          actorUserId: input.actorUserId,
+          finishedNodeId: request.workflowNodeId,
         });
       }
 
       await this.notifyRequester(input.scope, updated, input.decision, input.note);
     });
+
+    await this.workRelease.announce(input.scope, released);
 
     return this.buildView(input.scope, request.id, input.actorUserId, context);
   }

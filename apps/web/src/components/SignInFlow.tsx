@@ -19,6 +19,7 @@ import { rememberWorkspace } from '../lib/active-workspace';
 import {
   ApiError,
   authApi,
+  myAccessApi,
   type SignInMethods,
   type SsoConnectionSummary,
   type Workspace,
@@ -501,7 +502,28 @@ export function SignInFlow({ plane }: SignInFlowProps) {
                   // the only way into the product was to type a URL. Recording the choice here is
                   // what makes every later screen agree on which company it is showing.
                   rememberWorkspace(workspace.tenantId);
-                  router.push('/dashboard');
+
+                  /*
+                   * Where somebody lands depends on what they are here to do.
+                   *
+                   * A person who defines work — hierarchy, objectives, agents — lands on the
+                   * orchestration Dashboard. A person who only performs work lands on Operations,
+                   * which for them is the whole application; sending them to a Dashboard of
+                   * counts for modules they cannot open is a screen that answers nothing.
+                   *
+                   * The decision is made from the server's own answer about this person, not from
+                   * a role name. A failure to get that answer lands them on the Dashboard, which
+                   * every company role can open.
+                   */
+                  void myAccessApi
+                    .mine(workspace.tenantId)
+                    .then((access) => {
+                      const builds = ['hierarchy', 'objective', 'agent-builder'].some((module) =>
+                        access.visibleModules.includes(module),
+                      );
+                      router.push(builds ? '/dashboard' : '/operations');
+                    })
+                    .catch(() => router.push('/dashboard'));
                 }}
               >
                 {workspace.tenantName}

@@ -1,9 +1,9 @@
 import {
+  Put,
   BadRequestException,
   Body,
   Controller,
   Get,
-  Header,
   Param,
   Post,
   Res,
@@ -21,6 +21,7 @@ import {
 } from 'class-validator';
 
 import {
+  type JobMethodRow,
   AUTOMATION_STANCE,
   COLUMNS_THE_EMPLOYEE_MUST_ANSWER,
   AGENT_BOUNDARY_FACTORS,
@@ -53,6 +54,17 @@ import { JobMethodService } from './job-method.service.js';
 class ImportWorkbookDto {
   @IsString() @MinLength(1) @MaxLength(400) filename!: string;
   @IsString() @MinLength(1) @MaxLength(30_000_000) contentBase64!: string;
+}
+
+/**
+ * The whole job method, as the grid holds it.
+ *
+ * Rows are validated field by field in the service rather than here, because the same limits have
+ * to hold for a spreadsheet that arrives through the import — a rule written in a DTO only binds
+ * the callers that come through this door.
+ */
+class SaveJobMethodRowsDto {
+  @IsArray() @ArrayMaxSize(JOB_METHOD_MAX_ROWS + 1) rows!: JobMethodRow[];
 }
 
 class ImportFormDto {
@@ -124,12 +136,21 @@ export class JobMethodController {
    * rendering JSON. The JSON shape is still available at `/form.json` for a client that wants to
    * render the form itself.
    */
+  /**
+   * The form as a spreadsheet.
+   *
+   * **`@Res()` without `passthrough`, and the buffer is written rather than returned.** Returning
+   * a Buffer from a passthrough handler hands it to Nest's serialiser, which turns it into
+   * `{"type":"Buffer","data":[80,75,3,4,…]}` — a JSON document with an .xlsx name, which is
+   * exactly what Excel refuses with "the file format or file extension is not valid". The bytes
+   * were always right; they were being described as text on the way out. The objective workbook
+   * route has always done it this way, which is why that one downloaded and this one did not.
+   */
   @Get(':aiWorkAssignmentId/form.xlsx')
-  @Header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
   async downloadWorkbook(
     @Param('aiWorkAssignmentId') aiWorkAssignmentId: string,
-    @Res({ passthrough: true }) response: Response,
-  ): Promise<Buffer> {
+    @Res() response: Response,
+  ): Promise<void> {
     const form = await this.jobMethods.downloadForm({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -137,8 +158,12 @@ export class JobMethodController {
     });
 
     const filename = JobMethodWorkbook.filenameFor(form);
+    response.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
     response.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    return JobMethodWorkbook.toBuffer(form);
+    response.send(await JobMethodWorkbook.toBuffer(form));
   }
 
   /** The same form as JSON, for a client that renders it rather than downloading it. */
@@ -167,6 +192,25 @@ export class JobMethodController {
    * Returns the import review — the flagged problems and what would be saved — and saves into the
    * draft only. It never tests and never activates.
    */
+  /**
+   * Save the steps as somebody typed them on screen.
+   *
+   * A `PUT`: the body is the whole method, not an addition to it. That matches what the screen
+   * does — a grid is saved entire — and it is what makes a deleted step actually disappear.
+   */
+  @Put(':aiWorkAssignmentId/rows')
+  async saveRows(
+    @Param('aiWorkAssignmentId') aiWorkAssignmentId: string,
+    @Body() body: SaveJobMethodRowsDto,
+  ): Promise<unknown> {
+    return this.jobMethods.saveRows({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
+      aiWorkAssignmentId,
+      rows: body.rows,
+    });
+  }
+
   @Post(':aiWorkAssignmentId/import')
   async import(
     @Param('aiWorkAssignmentId') aiWorkAssignmentId: string,

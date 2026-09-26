@@ -1,6 +1,14 @@
 import { Injectable } from '@nestjs/common';
 
-import { REPORT_ROW_LIMIT, type ReportScope, type ReportWindow } from '@uboss/types';
+import {
+  isHumanTaskFinished,
+  isRunFinished,
+  REPORT_ROW_LIMIT,
+  type HumanTaskStatus,
+  type ReportScope,
+  type ReportWindow,
+  type RunState,
+} from '@uboss/types';
 
 import { PrismaService } from '../persistence/prisma.service.js';
 import type { TenantScope } from '../persistence/tenant-context.js';
@@ -126,6 +134,123 @@ export class ReportsService {
    * cannot be measured — only elapsed time — so a mix expressed in hours would be comparing a
    * measured number with an unmeasurable one. Two counts is the honest comparison.
    */
+  /**
+   * What cannot start yet, and what it is waiting for.
+   *
+   * ## Why this report exists
+   *
+   * Since the sequence became real, a step whose dependencies are unfinished is `Waiting` and its
+   * owner cannot start it. That is correct and it is also invisible: from the outside, an objective
+   * with four waiting steps looks exactly like an objective nobody has got round to. This says
+   * which it is.
+   *
+   * ## No window
+   *
+   * Every other report here is bounded by a reporting window, because it is about what happened.
+   * This one is about what is true now — a step that has been waiting since last month is the most
+   * interesting row in it, and a window would hide it.
+   */
+  async dependencyWaiting(input: {
+    scope: TenantScope;
+    reportScope: ReportScope;
+  }): Promise<ReportResult> {
+    const columns = ['objective', 'step', 'owner', 'waitingOn', 'waitingSince'];
+    if (ReportsService.empty(input.reportScope)) return ReportsService.none(columns);
+
+    return this.prisma.runInTenantTransaction(input.scope, async () => {
+      const waiting = await this.prisma.client.humanTask.findMany({
+        where: {
+          tenantId: input.scope.tenantId,
+          status: 'Waiting',
+          ...ReportScopeService.userFilter(input.reportScope, 'assignedToUserId'),
+        },
+        select: {
+          id: true,
+          title: true,
+          createdAt: true,
+          dependsOnNodeIds: true,
+          objectiveVersionId: true,
+          assignedToUserId: true,
+          objective: { select: { code: true } },
+        },
+        orderBy: { createdAt: 'asc' },
+        take: REPORT_ROW_LIMIT,
+      });
+
+      if (waiting.length === 0) return ReportsService.none(columns);
+
+      /*
+       * The steps they are waiting on, by name.
+       *
+       * Node ids are what the plan stores and they name nothing a person has seen, so they are
+       * resolved against the work items in the same versions. A dependency whose node produced no
+       * work item is left out rather than printed as an id: it is not what the step is really
+       * waiting for.
+       */
+      const versionIds = [...new Set(waiting.map((row) => row.objectiveVersionId))];
+      const [siblingTasks, siblingAi] = [
+        await this.prisma.client.humanTask.findMany({
+          where: { tenantId: input.scope.tenantId, objectiveVersionId: { in: versionIds } },
+          select: { nodeId: true, title: true, status: true, assignedToUserId: true },
+        }),
+        await this.prisma.client.aiWorkAssignment.findMany({
+          where: { tenantId: input.scope.tenantId, objectiveVersionId: { in: versionIds } },
+          select: { nodeId: true, title: true, status: true },
+        }),
+      ];
+
+      const unfinished = new Map<string, string>();
+      for (const row of siblingTasks) {
+        if (row.status !== 'Completed' && row.status !== 'Cancelled') {
+          unfinished.set(row.nodeId, row.title);
+        }
+      }
+      for (const row of siblingAi) {
+        if (row.status !== 'Cancelled') unfinished.set(row.nodeId, row.title);
+      }
+
+      const people = await this.prisma.client.user.findMany({
+        where: { id: { in: [...new Set(waiting.map((row) => row.assignedToUserId))] } },
+        select: { id: true, displayName: true },
+      });
+      const nameOf = new Map(people.map((row) => [row.id, row.displayName]));
+
+      const rows = waiting.map((row) => ({
+        objective: row.objective.code,
+        step: row.title,
+        owner: nameOf.get(row.assignedToUserId) ?? '—',
+        waitingOn:
+          row.dependsOnNodeIds
+            .map((nodeId) => unfinished.get(nodeId))
+            .filter((title): title is string => title !== undefined)
+            .join(', ') || '—',
+        waitingSince: row.createdAt.toISOString(),
+      }));
+
+      const oldest = rows.reduce<string | null>(
+        (earliest, row) =>
+          earliest === null || row.waitingSince < earliest ? row.waitingSince : earliest,
+        null,
+      );
+
+      return {
+        columns,
+        rows,
+        summary: {
+          waiting: rows.length,
+          objectives: new Set(rows.map((row) => row.objective)).size,
+          // The one number worth leading with: a step waiting since last month is a stalled
+          // objective, and a count alone would not say so.
+          oldestWaitingSince: oldest ?? '—',
+        },
+        truncated: waiting.length >= REPORT_ROW_LIMIT,
+        note:
+          'Steps the product is holding because the plan says something else comes first. ' +
+          'Nobody can start these, and that is the product working rather than a person delaying.',
+      };
+    });
+  }
+
   async humanVsAiWorkMix(input: {
     scope: TenantScope;
     reportScope: ReportScope;
@@ -179,6 +304,20 @@ export class ReportsService {
           .filter(predicate as (group: unknown) => boolean)
           .reduce((total, group) => total + group._count._all, 0);
 
+      /*
+       * Counted against the real vocabularies, not against words that were never in them.
+       *
+       * `Succeeded` and `DeadLettered` are not run states — `Succeeded` is a *security event*
+       * outcome and `DeadLettered` exists nowhere — so this row reported every AI run as in flight
+       * and its completed count as zero, always. The states are now asked of `RUN_STATES`' own
+       * terminal set, and `isHumanTaskFinished` answers the same question on the other row, so
+       * neither can drift from the vocabulary again.
+       *
+       * A cancelled item is in none of the three columns on purpose: it was not completed, it did
+       * not fail, and it is certainly not still running. The columns are the client's; inventing a
+       * fourth here would be a reporting decision, and quietly filing cancellations under
+       * "failed" would be a false one.
+       */
       const humanCompleted = countOf(
         tasks,
         ((group: { status: string }) => group.status === 'Completed') as never,
@@ -190,24 +329,21 @@ export class ReportsService {
       const humanInFlight = countOf(
         tasks,
         ((group: { status: string }) =>
-          group.status !== 'Completed' && group.status !== 'Blocked') as never,
+          !isHumanTaskFinished(group.status as HumanTaskStatus) &&
+          group.status !== 'Blocked') as never,
       );
 
       const aiCompleted = countOf(
         runs,
-        ((group: { state: string }) => group.state === 'Succeeded') as never,
+        ((group: { state: string }) => group.state === 'Completed') as never,
       );
       const aiFailed = countOf(
         runs,
-        ((group: { state: string }) =>
-          group.state === 'Failed' || group.state === 'DeadLettered') as never,
+        ((group: { state: string }) => group.state === 'Failed') as never,
       );
       const aiInFlight = countOf(
         runs,
-        ((group: { state: string }) =>
-          group.state !== 'Succeeded' &&
-          group.state !== 'Failed' &&
-          group.state !== 'DeadLettered') as never,
+        ((group: { state: string }) => !isRunFinished(group.state as RunState)) as never,
       );
 
       const rows = [

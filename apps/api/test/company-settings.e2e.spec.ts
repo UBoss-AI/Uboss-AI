@@ -408,6 +408,87 @@ describe('company settings (e2e)', () => {
       assert.ok(all.every((setting) => setting.editable === false));
     });
 
+    it('leaves out company policy the reader can neither change nor act on', async () => {
+      /*
+       * Phase 18. The read permissions are generous on purpose — a company's working days sit on
+       * `dashboard:View` because everybody's deadlines are computed in them — and added up, that
+       * generosity put every company policy in front of every employee, all of it read-only.
+       * Nothing there was a leak. It was simply not theirs, and the handful that do affect their
+       * day were buried among the ones that do not.
+       */
+      const mine = (await settings().viewFor(scope(), employeeId)).categories.flatMap(
+        (category) => category.settings,
+      );
+      const keys = new Set(mine.map((setting) => setting.key));
+
+      // Kept: the facts their own work is measured in.
+      assert.ok(keys.has('general.working_days'), 'the working week was taken away');
+      assert.ok(keys.has('general.timezone'), 'the timezone was taken away');
+      assert.ok(
+        keys.has('security.portable_profile_search_enabled'),
+        'a setting about this person was taken away',
+      );
+
+      // Gone: company administration, which they cannot change and cannot use.
+      assert.ok(!keys.has('appearance.accent_colour'), 'company branding is still offered');
+      assert.ok(
+        !keys.has('security.support_session_authorization'),
+        'a company security policy is still offered',
+      );
+      assert.ok(
+        !keys.has('organization.employee_id_uniqueness'),
+        'a company identity policy is still offered',
+      );
+
+      // And still none of it editable, which was true before and must stay true.
+      assert.ok(mine.every((setting) => setting.editable === false));
+    });
+
+    it('takes nothing away from somebody who can administer it', async () => {
+      // The rule keys off whether the reader can change the setting, so an administrator is
+      // untouched. Asserted rather than assumed: a filter meant to tidy one person's screen is
+      // exactly the kind that quietly empties somebody else's.
+      const theirs = (await settings().viewFor(scope(), adminId)).categories.flatMap(
+        (category) => category.settings,
+      );
+      const keys = new Set(theirs.map((setting) => setting.key));
+
+      assert.ok(keys.has('appearance.accent_colour'));
+      assert.ok(keys.has('security.support_session_authorization'));
+      assert.ok(keys.has('organization.employee_id_uniqueness'));
+      assert.equal(theirs.length, SETTING_DEFINITIONS.length, 'an administrator lost a setting');
+    });
+
+    it('applies a setting’s own read permission to the single-value route', async () => {
+      /*
+       * The hole this closes: `GET settings/value/:key` held `settings:View` at the door and then
+       * called the *unchecked* internal accessor, so one request by key returned any setting in
+       * the company. The per-setting read permissions the list applies so carefully were a
+       * formality for anybody who knew a key to ask for.
+       *
+       * Nothing in the product asked for the loose behaviour — every screen reads the list — so
+       * this is a gap closing rather than a feature changing.
+       */
+      const mine = await as(
+        agent().get(
+          `/tenants/${tenantId}/settings/value/${encodeURIComponent('general.timezone')}`,
+        ),
+        employeeUboss,
+      ).expect(200);
+      assert.ok(String(mine.body.value).length > 0, 'a setting they may read was refused');
+
+      // And one they may not. `organization.employee_id_uniqueness` reads on `hierarchy:View`,
+      // which CR-03 §9 takes away from a standard Employee.
+      await as(
+        agent().get(
+          `/tenants/${tenantId}/settings/value/${encodeURIComponent(
+            'organization.employee_id_uniqueness',
+          )}`,
+        ),
+        employeeUboss,
+      ).expect(403);
+    });
+
     it('refuses a write from somebody who may only read', async () => {
       await assert.rejects(
         () =>

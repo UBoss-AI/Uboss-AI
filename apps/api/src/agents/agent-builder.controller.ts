@@ -29,6 +29,9 @@ import {
   FORM3_JOB_LEVEL_FIELDS,
   MISSING_DATA_BEHAVIOUR_LABELS,
   MISSING_DATA_BEHAVIOURS,
+  MAX_AGENT_TEST_EXPECTATION,
+  MAX_AGENT_TEST_INPUT,
+  MIN_AGENT_TEST_INPUT,
   AGENT_RUN_TYPE_LABELS,
   type AgentRunType,
   type MissingDataBehaviour,
@@ -76,6 +79,21 @@ export class SaveAgentSetupDto {
   @ValidateNested()
   @Type(() => AgentSetupPatchDto)
   patch!: AgentSetupPatchDto;
+}
+
+/** What a test is run against. */
+export class TestAgentDto {
+  /**
+   * The admin's sample data. Required — an agent tested against nothing proves nothing, and the
+   * old no-body test is exactly why a passing test meant so little.
+   */
+  @IsString()
+  @MinLength(MIN_AGENT_TEST_INPUT)
+  @MaxLength(MAX_AGENT_TEST_INPUT)
+  sampleInput!: string;
+
+  /** What they expect. Recorded and shown beside the output; never machine-compared. */
+  @IsOptional() @IsString() @MaxLength(MAX_AGENT_TEST_EXPECTATION) expectedOutcome?: string;
 }
 
 export class ActivateAgentDto {
@@ -206,11 +224,16 @@ export class AgentBuilderController {
   /** A controlled test. Writes nothing to the real output destination. */
   @Post(':assignmentId/test')
   @RequirePermission({ module: 'agent-builder', action: 'EditDraft' })
-  async test(@Param('assignmentId', ParseUUIDPipe) assignmentId: string): Promise<unknown> {
+  async test(
+    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
+    @Body() body: TestAgentDto,
+  ): Promise<unknown> {
     return this.builder.test({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
       assignmentId,
+      sampleInput: body.sampleInput,
+      expectedOutcome: body.expectedOutcome ?? null,
     });
   }
 

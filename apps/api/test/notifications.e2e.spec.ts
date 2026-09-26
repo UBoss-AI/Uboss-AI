@@ -327,8 +327,8 @@ describe('notifications and escalation (e2e)', () => {
 
   // =========================================================================
   describe('the catalogue', () => {
-    it('declares exactly the client’s six initial sources', () => {
-      assert.equal(NOTIFICATION_KINDS.length, 6);
+    it('declares the client’s six initial sources plus the dependency release', () => {
+      assert.equal(NOTIFICATION_KINDS.length, 7);
       for (const kind of [
         'Invitation',
         'ApprovalWaiting',
@@ -336,6 +336,7 @@ describe('notifications and escalation (e2e)', () => {
         'ConnectionExpiry',
         'BudgetThreshold',
         'SecurityEvent',
+        'WorkReady',
       ]) {
         assert.ok((NOTIFICATION_KINDS as readonly string[]).includes(kind), kind);
       }
@@ -525,7 +526,7 @@ describe('notifications and escalation (e2e)', () => {
     it('reports the documented default for a kind nobody has configured', async () => {
       const view = await notifications().preferencesFor({ scope: scope(), userId: employeeId });
 
-      assert.equal(view.preferences.length, 6);
+      assert.equal(view.preferences.length, 7);
       const approvals = view.preferences.find((row) => row.kind === 'ApprovalWaiting');
       assert.deepEqual(
         {
@@ -1466,7 +1467,7 @@ describe('notifications and escalation (e2e)', () => {
         agent().get(`/tenants/${tenantId}/notifications/preferences`),
         employeeUboss,
       ).expect(200);
-      assert.equal(view.body.preferences.length, 6);
+      assert.equal(view.body.preferences.length, 7);
       assert.match(view.body.note, /cannot be turned off/i);
 
       await as(agent().put(`/tenants/${tenantId}/notifications/preferences`), employeeUboss)

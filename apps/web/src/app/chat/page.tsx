@@ -2,7 +2,7 @@
 
 import { motion } from 'motion/react';
 import { useSearchParams } from 'next/navigation';
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   Banner,
@@ -20,13 +20,19 @@ import {
   ApiError,
   authApi,
   chatApi,
+  filesApi,
+  organizationApi,
   type ChatConversationSummary,
   type ChatConversationView,
   type MeResponse,
 } from '../../lib/api-client';
+import { RequestChangePanel } from '../../components/RequestChangePanel';
 import { useAccountMenu } from '../../lib/use-account-menu';
 import { useSignedInUser } from '../../lib/use-signed-in-user';
+import { ChatRail } from '../../components/ChatRail';
+import { NewConversationPanel } from '../../components/NewConversationPanel';
 import { RoutedAppShell } from '../../components/RoutedAppShell';
+import { can, useMyAccess } from '../../lib/use-my-access';
 import {
   forgetWorkspace,
   readRememberedWorkspace,
@@ -62,9 +68,30 @@ function WorkspaceChatInner() {
   const requestedId = useSearchParams().get('conversation');
   const [me, setMe] = useState<MeResponse | null>(null);
   const [conversations, setConversations] = useState<ChatConversationSummary[]>([]);
+  /**
+   * The departments this person may open a workshop for.
+   *
+   * Read from the hierarchy, which already answers "what of this company may you see": an employee
+   * gets their own department, an Admin gets all of them. Asking that question here would be a
+   * second answer to it, and the two would disagree.
+   */
+  const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
+  const [requestingChange, setRequestingChange] = useState(false);
   const [openId, setOpenId] = useState<string | null>(requestedId);
   const [open, setOpen] = useState<ChatConversationView | null>(null);
   const [draft, setDraft] = useState('');
+  const [starting, setStarting] = useState(false);
+  /** Files uploaded and waiting to go with the next message. */
+  const [attached, setAttached] = useState<{ id: string; filename: string }[]>([]);
+  const fileInput = useRef<HTMLInputElement | null>(null);
+  /**
+   * The colleagues this person may start a conversation with, named.
+   *
+   * Read from the hierarchy, which already answers "what of this company may you see". Nobody
+   * picks a person by user id: an id is not a person, and an admin asked to identify a colleague
+   * by UUID will choose the wrong one eventually.
+   */
+  const [colleagues, setColleagues] = useState<{ userId: string; displayName: string }[]>([]);
   const [search, setSearch] = useState('');
   const [found, setFound] = useState<Record<string, unknown>[] | null>(null);
   const [stances, setStances] = useState<{
@@ -80,6 +107,26 @@ function WorkspaceChatInner() {
   const tenantId =
     resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
 
+  const myAccess = useMyAccess();
+
+  /*
+   * Whether the server will accept a group from this person.
+   *
+   * The same grant the server checks, asked here only so the button is not offered to somebody
+   * who would fill the form in and be refused at the end. The decision is still the server's — a
+   * refusal that reaches this screen is printed verbatim.
+   */
+  const mayCreateGroup = can(myAccess, 'users', 'ManageAccess');
+
+  /*
+   * Everybody but the signed-in person.
+   *
+   * Filtered here rather than where the list is fetched: doing it in the effect made the effect
+   * depend on who is signed in, and re-running a hierarchy read because an identity resolved is
+   * a second request for the same answer.
+   */
+  const otherPeople = colleagues.filter((person) => person.userId !== me?.user.userId);
+
   const signedInUser = useSignedInUser(me);
 
   const accountMenu = useAccountMenu(me);
@@ -88,6 +135,34 @@ function WorkspaceChatInner() {
   const activeWorkspace = useMemo(
     () => me?.workspaces.find((workspace) => workspace.tenantId === tenantId) ?? null,
     [me, tenantId],
+  );
+
+  /**
+   * Open a department's workshop and go straight into it.
+   *
+   * The list is reloaded rather than the new conversation being pushed onto it by hand: the server
+   * decides what this person is in, and a locally assembled row would be this screen's opinion of
+   * that. Opening one already open is not an error — it brings its membership up to date.
+   */
+  const openWorkshop = useCallback(
+    async (departmentId: string) => {
+      if (tenantId === null) return;
+      setBusy(true);
+      setError(null);
+      try {
+        const opened = await chatApi.openDepartmentWorkshop(tenantId, departmentId);
+        const refreshed = await chatApi.conversations(tenantId);
+        setConversations(refreshed.conversations);
+        setOpenId(opened.id);
+      } catch (caught) {
+        setError(
+          caught instanceof ApiError ? caught.message : 'That workshop could not be opened.',
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [tenantId],
   );
 
   const load = useCallback(async () => {
@@ -129,6 +204,41 @@ function WorkspaceChatInner() {
     }
   }, [openId, requestedId]);
 
+  /*
+   * The departments, read on their own.
+   *
+   * Deliberately not part of `load`. Workshops are a convenience beside the conversation list, and
+   * putting the read in the same `Promise.all` tied the list everybody needs to a call some people
+   * are not allowed to make — one refusal and the screen said "no conversations yet" to somebody
+   * who had plenty. A failure here costs the workshop buttons and nothing else.
+   */
+  useEffect(() => {
+    if (tenantId === null) return;
+    let current = true;
+    void organizationApi
+      .hierarchy(tenantId)
+      .then((view) => {
+        if (!current) return;
+        setDepartments(
+          (view.departments ?? [])
+            .filter((department) => !department.archived)
+            .map((department) => ({ id: department.id, name: department.name })),
+        );
+        setColleagues(
+          (view.list ?? []).map((person) => ({
+            userId: person.userId,
+            displayName: person.displayName,
+          })),
+        );
+      })
+      .catch(() => {
+        if (current) setDepartments([]);
+      });
+    return () => {
+      current = false;
+    };
+  }, [tenantId]);
+
   useEffect(() => {
     void load();
   }, [load]);
@@ -161,13 +271,57 @@ function WorkspaceChatInner() {
     };
   }, [tenantId, openId]);
 
-  const send = async () => {
-    if (tenantId === null || openId === null || draft.trim() === '') return;
+  /**
+   * Put a file in the company's own store, then remember its id for the next message.
+   *
+   * Two steps rather than one, and deliberately so: the file becomes a governed record — scanned,
+   * classified, retained, deletable — before any conversation points at it. A chat that carried
+   * its own copies would be a second file system with none of those rules.
+   *
+   * The message is not sent here. Somebody attaching a spreadsheet usually wants to say something
+   * about it, and sending on attach takes that away.
+   */
+  const attach = async (file: File) => {
+    if (tenantId === null) return;
     setBusy(true);
     setError(null);
     try {
-      const sent = await chatApi.send(tenantId, openId, { body: draft });
+      const buffer = await file.arrayBuffer();
+      let binary = '';
+      const bytes = new Uint8Array(buffer);
+      // Chunked rather than spread in one call: `String.fromCharCode(...bytes)` overflows the
+      // argument limit on a file of any size, and it does it by crashing rather than by failing.
+      for (let at = 0; at < bytes.length; at += 8192) {
+        binary += String.fromCharCode(...bytes.subarray(at, at + 8192));
+      }
+
+      const stored = await filesApi.upload(tenantId, {
+        filename: file.name,
+        contentType: file.type === '' ? 'application/octet-stream' : file.type,
+        contentBase64: btoa(binary),
+      });
+      setAttached((current) => [...current, { id: stored.id, filename: file.name }]);
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : 'That file could not be attached.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const send = async () => {
+    if (tenantId === null || openId === null) return;
+    if (draft.trim() === '' && attached.length === 0) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const sent = await chatApi.send(tenantId, openId, {
+        body: draft,
+        ...(attached.length === 0
+          ? {}
+          : { attachmentIds: attached.map((file) => file.id) }),
+      });
       setDraft('');
+      setAttached([]);
       if (sent.ignoredMentions.length > 0) {
         // Reported rather than silently dropped: resolving a mention of somebody outside the
         // conversation would notify them about something they cannot open.
@@ -211,14 +365,34 @@ function WorkspaceChatInner() {
         void authApi.logout().finally(() => window.location.assign('/login'));
       }}
     >
+      {/*
+        Request Change sits in the header, beside the conversation it came from.
+
+        The client puts it inside Workshop Chat on purpose: somebody notices a problem while
+        talking about the work, and the request carries the conversation with it so the Admin can
+        read what was being discussed rather than only the summary.
+      */}
       <PageHeader
         title="Workspace Chat"
         description="Talk about the work, beside the work."
         breadcrumbs={[{ label: 'Operations' }]}
+        actions={
+          <Button size="sm" onClick={() => setRequestingChange(true)}>
+            <Icon name="shield" size={16} />
+            Request a change
+          </Button>
+        }
       />
 
       {error !== null ? <Banner tone="danger">{error}</Banner> : null}
       {notice !== null ? <Banner tone="info">{notice}</Banner> : null}
+
+      {/*
+        The department workshops used to be a row of buttons here as well as a section in the
+        rail, so every department was on screen twice and the two disagreed about which was
+        selected. They belong in the rail with everything else somebody can open — a workshop is a
+        conversation, and a conversation belongs in the conversation list.
+      */}
 
       {loading ? (
         <Card>
@@ -229,6 +403,32 @@ function WorkspaceChatInner() {
           {/* ---- the conversation list ---- */}
           <Card>
             <CardBody>
+              <div className="chat-new">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => setStarting((current) => !current)}
+                  data-testid="new-conversation"
+                >
+                  <Icon name="plus" size={16} />
+                  New
+                </Button>
+              </div>
+
+              {starting && tenantId !== null ? (
+                <NewConversationPanel
+                  tenantId={tenantId}
+                  people={otherPeople}
+                  mayCreateGroup={mayCreateGroup}
+                  onCancel={() => setStarting(false)}
+                  onOpened={(conversationId) => {
+                    setStarting(false);
+                    setOpenId(conversationId);
+                    void load();
+                  }}
+                />
+              ) : null}
+
               <div className="chat-search">
                 <SearchField
                   label="Search your conversations"
@@ -254,45 +454,34 @@ function WorkspaceChatInner() {
                 </div>
               ) : null}
 
-              <ul className="chat-list" data-testid="chat-conversations">
-                {conversations.length === 0 ? (
-                  <li className="chat-muted">No conversations yet.</li>
-                ) : null}
-                {conversations.map((conversation) => (
-                  <li key={conversation.id}>
-                    <button
-                      type="button"
-                      className={
-                        conversation.id === openId ? 'chat-item chat-item-open' : 'chat-item'
-                      }
-                      onClick={() => setOpenId(conversation.id)}
-                    >
-                      <span className="chat-item-name">
-                        {conversationLabel(conversation, me?.user.userId ?? null)}
-                      </span>
-                      {conversation.unread > 0 ? (
-                        // A badge, not a concatenated label — the locked rule for counts.
-                        // Keyed by the count, so it moves when the count really changes.
-                        <motion.span
-                          key={conversation.unread}
-                          initial={{ opacity: 0, scale: 0.85 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          transition={transition('small', 'emphasized')}
-                          style={{ display: 'inline-block' }}
-                        >
-                          <StatusBadge status={String(conversation.unread)} tone="blue" />
-                        </motion.span>
-                      ) : null}
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              {/*
+                Grouped by kind, because the three answer different questions.
+
+                A flat list ordered by recency is right for a mailbox and wrong here: a workshop
+                that has been quiet for a week sinking below six direct messages is a workshop
+                nobody opens again.
+              */}
+              <ChatRail
+                conversations={conversations}
+                departments={departments}
+                openId={openId}
+                meUserId={me?.user.userId ?? null}
+                onOpen={setOpenId}
+                onOpenWorkshop={(departmentId) => void openWorkshop(departmentId)}
+              />
             </CardBody>
           </Card>
 
           {/* ---- the open conversation ---- */}
           <Card>
-            <CardBody>
+            {/*
+              Three rows: who you are talking to, what was said, and the box you say it in.
+
+              A chat is read bottom-up — the newest message is the one you came for, and the
+              composer is where your hands already are. As an ordinary stack the composer sat
+              near the top of a mostly empty card whenever a conversation was quiet.
+            */}
+            <CardBody className="chat-pane">
               {open === null ? (
                 <p className="chat-muted">Choose a conversation.</p>
               ) : (
@@ -338,6 +527,19 @@ function WorkspaceChatInner() {
 
                   {/* ---- messages ---- */}
                   <ul className="chat-messages" data-testid="chat-messages">
+                    {/*
+                      A conversation nobody has spoken in yet says so.
+
+                      An empty pane between a title and a composer reads as something that failed
+                      to load — which is exactly the wrong thing for a department workshop, where
+                      being the first to say anything is the normal case rather than a sign that
+                      the screen is broken.
+                    */}
+                    {open.messages.length === 0 ? (
+                      <li className="chat-empty">
+                        Nothing has been said here yet. Start the conversation.
+                      </li>
+                    ) : null}
                     {open.messages.map((message) => (
                       /*
                        * A message arrives rather than appearing. Keyed by its id, so this runs
@@ -391,9 +593,64 @@ function WorkspaceChatInner() {
                       onChange={(event) => setDraft(event.target.value)}
                       placeholder="Write a message. Use @name to mention somebody in this conversation."
                     />
-                    <Button onClick={() => void send()} disabled={busy || draft.trim() === ''}>
-                      Send
-                    </Button>
+
+                    {/*
+                      What is attached, before it is sent.
+
+                      Listed rather than counted: "2 files" is not something somebody can check,
+                      and the one thing they want to do at this moment is take the wrong one off
+                      again.
+                    */}
+                    {attached.length === 0 ? null : (
+                      <ul className="chat-attached" data-testid="chat-attached">
+                        {attached.map((file) => (
+                          <li key={file.id}>
+                            <Icon name="file" size={16} />
+                            <span>{file.filename}</span>
+                            <button
+                              type="button"
+                              className="uboss-link"
+                              onClick={() =>
+                                setAttached((current) =>
+                                  current.filter((entry) => entry.id !== file.id),
+                                )
+                              }
+                            >
+                              Remove
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    <div className="chat-compose-actions">
+                      <input
+                        ref={fileInput}
+                        type="file"
+                        className="chat-file"
+                        aria-label="Attach a file"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (file !== undefined) void attach(file);
+                          event.target.value = '';
+                        }}
+                      />
+                      <Button
+                        variant="default"
+                        disabled={busy}
+                        onClick={() => fileInput.current?.click()}
+                        data-testid="chat-attach"
+                      >
+                        <Icon name="file" size={16} />
+                        Attach
+                      </Button>
+                      <Button
+                        onClick={() => void send()}
+                        disabled={busy || (draft.trim() === '' && attached.length === 0)}
+                      >
+                        Send
+                      </Button>
+                    </div>
                   </div>
                 </>
               )}
@@ -428,6 +685,15 @@ function WorkspaceChatInner() {
           </CardBody>
         </Card>
       ) : null}
+      {tenantId === null ? null : (
+        <RequestChangePanel
+          tenantId={tenantId}
+          open={requestingChange}
+          conversationId={openId ?? undefined}
+          onClose={() => setRequestingChange(false)}
+          onFiled={setNotice}
+        />
+      )}
     </RoutedAppShell>
   );
 }

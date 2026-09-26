@@ -31,6 +31,7 @@ import { RunController } from '../src/runs/run.controller.js';
 import { CompanySettingsService } from '../src/settings/company-settings.service.js';
 import { ApprovalService } from '../src/approvals/approval.service.js';
 import { HumanTaskService } from '../src/tasks/human-task.service.js';
+import { WorkReleaseService } from '../src/tasks/work-release.service.js';
 import { AuditEventService } from '../src/audit/audit-event.service.js';
 import { SecurityEventService } from '../src/audit/security-event.service.js';
 import { AUTH_CONFIG, loadAuthConfig } from '../src/auth/auth.config.js';
@@ -202,6 +203,7 @@ describe('executor agent and exception center (e2e)', () => {
         // than reporting that it asked for a decision nobody could see.
         ApprovalService,
         HumanTaskService,
+        WorkReleaseService,
         CompanySettingsService,
         TenantContextService,
         Reflector,

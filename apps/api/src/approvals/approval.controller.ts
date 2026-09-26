@@ -33,7 +33,12 @@ import { actorUserId } from '../request-context/authenticated-actor.js';
 import { getActor } from '../request-context/request-context.js';
 import { TenantScoped } from '../tenancy/tenancy.decorators.js';
 import { TenantContextService } from '../tenancy/tenant-context.service.js';
-import { CreateDelegationDto, DecideApprovalDto, ListApprovalsDto } from './approval.dto.js';
+import {
+  CreateDelegationDto,
+  DecideApprovalDto,
+  ListApprovalsDto,
+  RequestChangeDto,
+} from './approval.dto.js';
 import { ApprovalService } from './approval.service.js';
 
 /**
@@ -114,6 +119,25 @@ export class ApprovalController {
       ...(query.status === undefined ? {} : { status: query.status }),
       ...(query.type === undefined ? {} : { type: query.type }),
       ...(query.mineOnly === undefined ? {} : { mineOnly: query.mineOnly === 'true' }),
+    });
+  }
+
+  /**
+   * Ask for a change.
+   *
+   * `View` on approvals, not `Approve`. Asking is not deciding, and requiring the authority to
+   * decide before you may ask would mean the people the feature exists for — the ones who cannot
+   * change the thing themselves — are exactly the ones who cannot raise it.
+   */
+  @Post('change-requests')
+  @RequirePermission({ module: 'approvals', action: 'View' })
+  async requestChange(@Body() body: RequestChangeDto): Promise<unknown> {
+    return this.approvals.requestChange({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
+      kind: body.kind,
+      reason: body.reason,
+      ...(body.conversationId === undefined ? {} : { conversationId: body.conversationId }),
     });
   }
 

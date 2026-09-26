@@ -9,9 +9,11 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Res,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Type } from 'class-transformer';
+import type { Response } from 'express';
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -45,6 +47,10 @@ import { TenantScoped } from '../tenancy/tenancy.decorators.js';
 import { TenantContextService } from '../tenancy/tenant-context.service.js';
 import { RoleAdministrationService } from '../authorization/role-administration.service.js';
 import { CapabilityService } from './capability.service.js';
+import {
+  HIERARCHY_COLUMNS,
+  HierarchyWorkbook,
+} from '../organization/hierarchy-workbook.js';
 import { BulkOperationService, MAX_BULK_ROWS } from './bulk-operation.service.js';
 import { InvitationAccessService } from './invitation-access.service.js';
 import { OffboardingService } from './offboarding.service.js';
@@ -113,6 +119,30 @@ export class OffboardDto {
   @MinLength(5, { message: 'reason must explain why this person is leaving.' })
   @MaxLength(1000)
   reason!: string;
+}
+
+export class ValidateHierarchyWorkbookDto {
+  /**
+   * The workbook, base64-encoded.
+   *
+   * Base64 in a JSON body rather than multipart, because that is how every other upload in this
+   * product already arrives and the size ceiling is enforced the same way. A hierarchy of four
+   * hundred people is a few tens of kilobytes.
+   */
+  @IsString()
+  @MinLength(8)
+  @MaxLength(12_000_000)
+  file!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(260)
+  sourceFileName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  reason?: string;
 }
 
 export class ValidateBulkDto {
@@ -355,6 +385,82 @@ export class AccessController {
       actorUserId: this.currentUserId(),
       kind: body.kind,
       content: body.content,
+      sourceFileName: body.sourceFileName,
+      reason: body.reason,
+    });
+  }
+
+  /**
+   * The hierarchy import template, as a real spreadsheet.
+   *
+   * ## Why the template is generated rather than a static file
+   *
+   * Two of its three sheets are this company's own departments and people. Those are exactly the
+   * values a row is rejected for getting wrong — a department that does not exist, a manager's
+   * name spelt differently — so the file a person fills in carries the correct spellings beside
+   * the blank columns. A checked-in template could not do that, and would be stale the first time
+   * somebody added a department.
+   */
+  @Get('bulk/hierarchy-template')
+  @RequirePermission({ module: 'hierarchy', action: 'Administer' })
+  async hierarchyTemplate(@Res() response: Response): Promise<void> {
+    const scope = this.tenantContext.requireScope();
+    const reference = await this.bulk.hierarchyReference(scope, this.currentUserId());
+    const workbook = await HierarchyWorkbook.template(reference);
+
+    response.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    response.setHeader(
+      'Content-Disposition',
+      'attachment; filename="UBoss hierarchy import template.xlsx"',
+    );
+    response.send(workbook);
+  }
+
+  /** The columns the template carries, so a screen can say what is required before the download. */
+  @Get('bulk/hierarchy-template/columns')
+  @RequirePermission({ module: 'hierarchy', action: 'View' })
+  hierarchyTemplateColumns(): unknown {
+    return {
+      columns: HIERARCHY_COLUMNS.map((column) => ({
+        heading: column.heading,
+        required: column.required,
+        note: column.note,
+      })),
+    };
+  }
+
+  /**
+   * Validate a filled-in hierarchy workbook. **Applies nothing.**
+   *
+   * The workbook is turned into the delimited text the existing importer already reads, and then
+   * handed to it. Every rule, every per-row message and every write stays where it was — a second
+   * importer for spreadsheets would be a second place for "a manager must be actively employed
+   * here" to be got right, and one of them would drift.
+   *
+   * Applying and cancelling are the existing `bulk/:operationId/apply` and `/cancel`.
+   */
+  @Post('bulk/hierarchy/validate')
+  @RequirePermission({ module: 'hierarchy', action: 'View' })
+  async validateHierarchyWorkbook(@Body() body: ValidateHierarchyWorkbookDto): Promise<unknown> {
+    let content: string;
+    try {
+      content = await HierarchyWorkbook.toDelimited(Buffer.from(body.file, 'base64'));
+    } catch (error) {
+      // The workbook could not be read at all. A 400 with the reason, rather than a 500: the file
+      // is the caller's and the message tells them what to fix.
+      throw new BadRequestException(
+        error instanceof Error ? error.message : 'That file could not be read as a spreadsheet.',
+      );
+    }
+
+    return this.bulk.validate({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
+      kind: 'ImportEmployees',
+      content,
       sourceFileName: body.sourceFileName,
       reason: body.reason,
     });

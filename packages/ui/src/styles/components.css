@@ -8604,3 +8604,186 @@ tr[data-drop-target='true'] td {
   color: var(--uboss-danger);
   font-weight: 700;
 }
+
+/* ============================================================
+   Workshop Chat — the rail, the people picker and the composer
+
+   The screen was a list and a pane. These are the parts that make it read as a chat
+   application: conversations grouped by what they are, a way to start one, and a composer
+   that can carry a file.
+   ============================================================ */
+.chat-rail {
+  display: grid;
+  gap: 18px;
+}
+
+.chat-rail-section {
+  display: grid;
+  gap: 6px;
+}
+
+.chat-rail-heading {
+  color: var(--uboss-text-3);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+/* A department whose workshop nobody has opened yet. Dimmer, because it is a room rather
+   than a conversation — there is nothing in it until somebody speaks. */
+.chat-item-unopened .chat-item-name {
+  color: var(--uboss-text-3);
+}
+
+.chat-new {
+  margin-bottom: 12px;
+}
+
+.chat-new-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.chat-new-modes {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.chat-people {
+  display: grid;
+  gap: 2px;
+  list-style: none;
+  margin: 0 0 12px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.chat-person {
+  align-items: center;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--uboss-radius-control);
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  justify-content: space-between;
+  padding: 7px 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.chat-person:hover {
+  background: var(--uboss-bg-2);
+}
+
+.chat-person:focus-visible {
+  outline: 2px solid var(--uboss-border-control-hover);
+  outline-offset: 1px;
+}
+
+.chat-person-on {
+  background: var(--uboss-bg-2);
+  border-color: var(--uboss-border-control);
+  font-weight: 600;
+}
+
+/* The real control is a button beside it; this one only has to be reachable by a click the
+   button forwards, and hidden rather than absent so the label still belongs to it. */
+.chat-file {
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  width: 0;
+}
+
+.chat-compose-actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.chat-attached {
+  display: grid;
+  gap: 4px;
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+}
+
+.chat-attached > li {
+  align-items: center;
+  background: var(--uboss-bg-2);
+  border: 1px solid var(--uboss-border-2);
+  border-radius: var(--uboss-radius-control);
+  display: flex;
+  gap: 8px;
+  padding: 6px 10px;
+}
+
+.chat-attached > li > span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ============================================================
+   Workshop Chat — the conversation as a column
+
+   A chat is read bottom-up: the newest message is the one you came for, and the composer is
+   where your hands already are. The pane was a stack that grew downwards, so on a quiet
+   conversation the composer sat near the top of a mostly empty card and the history had
+   nowhere to settle. Three rows fix it — header, history, composer — with the middle one
+   taking whatever height is left.
+   ============================================================ */
+.chat-pane {
+  display: grid;
+  gap: 0;
+  grid-template-rows: auto 1fr auto;
+  min-height: 64vh;
+}
+
+.chat-messages {
+  align-content: end;
+  max-height: none;
+  min-height: 0;
+  padding-bottom: 12px;
+}
+
+/* Pinned to the foot of the pane rather than following the last message up it. */
+.chat-compose {
+  border-top: 1px solid var(--uboss-border-2);
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+}
+
+.chat-compose textarea {
+  min-height: 76px;
+  width: 100%;
+}
+
+/* One column on a phone, where two panes leave neither readable — the rail scrolls above the
+   conversation rather than beside it, and the pane keeps its own height. */
+@media (max-width: 900px) {
+  .chat-pane {
+    min-height: 56vh;
+  }
+}
+
+/* Centred in the space the history would occupy, so the pane reads as a room nobody has
+   spoken in rather than as a panel that failed to load. */
+.chat-empty {
+  align-self: center;
+  color: var(--uboss-text-3);
+  padding: 24px 0;
+  text-align: center;
+}

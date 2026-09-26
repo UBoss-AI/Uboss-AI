@@ -24,11 +24,14 @@ import {
   type RunProgressEvent,
   type RunState,
   type RunTrigger,
+  type AgentExecutionSetup,
+  type RuntimeInputs,
 } from '@uboss/types';
 
 import { AuditEventService } from '../audit/audit-event.service.js';
 import { BudgetRefusedError, ModelGateway } from '../model-gateway/model-gateway.js';
 import { PrismaService } from '../persistence/prisma.service.js';
+import { WorkReleaseService, type ReleasedTask } from '../tasks/work-release.service.js';
 import {
   tenantScopeForPlatformOperation,
   type TenantScope,
@@ -130,6 +133,8 @@ export class RunEngineService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditEvents: AuditEventService,
+    /** Making the next step in a workflow startable once this AI step has produced its output. */
+    private readonly workRelease: WorkReleaseService,
     private readonly queue: RunQueue,
     private readonly modelGateway: ModelGateway,
     private readonly progress: RunProgressGateway,
@@ -203,10 +208,54 @@ export class RunEngineService implements OnModuleInit {
    * and the unique index makes the second a no-op that returns the first run rather than an
    * error. That is what makes a scheduler safe to run on two instances.
    */
+  /**
+   * The execution setup the agent was published with.
+   *
+   * Read from the agent's **current version**, not from the assignment that built it: the version
+   * is the immutable configuration a run actually executes, and it is what decides which questions
+   * a run still has to ask. An agent with no current version has nothing published, so there is
+   * nothing to read and every question gets asked — which is the truthful answer, not a failure.
+   */
+  async publishedSetup(input: {
+    scope: TenantScope;
+    engineAgentId: string;
+  }): Promise<AgentExecutionSetup | null> {
+    return this.prisma.runInTenantTransaction(input.scope, async () => {
+      const agent = await this.prisma.client.engineAgent.findFirst({
+        where: { tenantId: input.scope.tenantId, id: input.engineAgentId },
+        select: { currentVersionId: true },
+      });
+      if (agent?.currentVersionId == null) return null;
+
+      const version = await this.prisma.client.engineAgentVersion.findFirst({
+        where: { tenantId: input.scope.tenantId, id: agent.currentVersionId },
+        select: { config: true },
+      });
+      const config = version?.config as { setup?: AgentExecutionSetup } | null;
+      return config?.setup ?? null;
+    });
+  }
+
   async start(input: {
     scope: TenantScope;
     engineAgentId: string;
     trigger: RunTrigger;
+    /**
+     * The assigned AI work this run performs.
+     *
+     * Names the step so the run can be attributed to it, and so finishing the run releases what
+     * was waiting on *that* step. Optional because a run started directly against an agent — a
+     * scheduler tick, somebody testing it — belongs to no step at all.
+     */
+    aiWorkAssignmentId?: string | undefined;
+    /**
+     * What the person starting this run answered.
+     *
+     * Stored on the run rather than folded into the agent: the agent is the reusable capability
+     * and these are true of one occurrence only. A scheduler tick has nobody to ask and passes
+     * nothing, which is why the column is nullable rather than defaulted.
+     */
+    runtimeInputs?: RuntimeInputs | undefined;
     /** What makes this occurrence distinct. A manual start may omit it and get a nonce. */
     occurrence?: string | undefined;
     scheduledFor?: Date | undefined;
@@ -248,10 +297,42 @@ export class RunEngineService implements OnModuleInit {
         return { run: null, created: false, reason: overlap.reason } as const;
       }
 
-      const assignment = await this.prisma.client.aiWorkAssignment.findFirst({
-        where: { tenantId: input.scope.tenantId, engineAgentId: agent.id },
-        select: { id: true, objectiveId: true },
-      });
+      /*
+       * Which step this run is doing.
+       *
+       * An agent is reusable, so one agent is mapped to the same step of the same objective across
+       * every version that published it. Asking for "an assignment on this agent" therefore has
+       * more than one right answer, and taking whichever the database happened to return first
+       * would attribute the run to an old version — and, worse, release the successors of a step
+       * in a version nobody is running.
+       *
+       * So the caller names it when it knows, and the fallback is explicitly the most recent, not
+       * an arbitrary one.
+       */
+      const assignment =
+        input.aiWorkAssignmentId === undefined
+          ? await this.prisma.client.aiWorkAssignment.findFirst({
+              where: { tenantId: input.scope.tenantId, engineAgentId: agent.id },
+              orderBy: { createdAt: 'desc' },
+              select: { id: true, objectiveId: true },
+            })
+          : await this.prisma.client.aiWorkAssignment.findFirst({
+              // Checked against the agent as well as the id: a run may not be attributed to work
+              // this agent was never mapped to.
+              where: {
+                tenantId: input.scope.tenantId,
+                id: input.aiWorkAssignmentId,
+                engineAgentId: agent.id,
+              },
+              select: { id: true, objectiveId: true },
+            });
+
+      if (input.aiWorkAssignmentId !== undefined && assignment === null) {
+        throw new NotFoundException(
+          'That assigned AI work does not belong to this agent, so a run cannot be recorded ' +
+            'against it.',
+        );
+      }
 
       const idempotencyKey = runIdempotencyKey({
         engineAgentId: agent.id,
@@ -293,6 +374,9 @@ export class RunEngineService implements OnModuleInit {
           ...(input.startedByUserId === undefined
             ? {}
             : { startedByUserId: input.startedByUserId }),
+          ...(input.runtimeInputs === undefined
+            ? {}
+            : { runtimeInputs: input.runtimeInputs as object }),
         },
       });
 
@@ -436,6 +520,19 @@ export class RunEngineService implements OnModuleInit {
     try {
       const outcome = await this.execute(job);
 
+      /*
+       * The AI step of a workflow finishing is what makes the next step startable.
+       *
+       * This is the Engine -> Sub-Engine hop when the step that finished is an AI one. Released in
+       * the same transaction as the run's own completion, so a crash between them cannot leave a
+       * completed run beside a successor still saying Waiting; announced after it commits, because
+       * a notification failure must not roll back work an agent genuinely did.
+       *
+       * A run started directly against an agent carries no assignment and releases nothing — it
+       * was never a step in anybody's plan.
+       */
+      let released: ReleasedTask[] = [];
+
       await this.prisma.runInTenantTransaction(scope, async () => {
         await this.move(job.runId, job.tenantId, 'Completed', {
           finishedAt: new Date(),
@@ -446,7 +543,30 @@ export class RunEngineService implements OnModuleInit {
             ? 'Completed against a live model provider.'
             : 'Completed against the built-in mock model, not a live provider.',
         });
+
+        // Two reads rather than an include: the run carries the assignment id as a plain column
+        // with no relation declared, so there is nothing to join through.
+        const run = await this.prisma.client.agentRun.findFirst({
+          where: { tenantId: job.tenantId, id: job.runId },
+          select: { aiWorkAssignmentId: true },
+        });
+        const assignment =
+          run?.aiWorkAssignmentId == null
+            ? null
+            : await this.prisma.client.aiWorkAssignment.findFirst({
+                where: { tenantId: job.tenantId, id: run.aiWorkAssignmentId },
+                select: { objectiveVersionId: true, nodeId: true },
+              });
+        if (assignment !== null) {
+          released = await this.workRelease.releaseWithinTransaction({
+            tenantId: job.tenantId,
+            objectiveVersionId: assignment.objectiveVersionId,
+            finishedNodeId: assignment.nodeId,
+          });
+        }
       });
+
+      await this.workRelease.announce(scope, released);
     } catch (caught) {
       await this.fail(scope, job, caught);
     }

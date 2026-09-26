@@ -612,13 +612,23 @@ export class PlatformConsoleController {
           navKey: 'billing',
           module: moduleForMasterNavKey('billing'),
           title: 'Billing & Payments',
-          state: 'shell',
+          state: 'live',
+          // Stripe is integrated: Checkout for a company to pay, the Customer Portal for it to
+          // manage what it pays with, and a signature-verified webhook that is the only thing
+          // allowed to move a subscription on payment grounds. What remains blocked is narrower
+          // and worth stating precisely — whether a credential has been supplied is a deployment
+          // fact, and the screen reads it rather than assuming either way.
           blockedOn:
-            'No payment provider is connected. Invoices, dunning and payment state need a ' +
-            'provider integration and a webhook path before a screen here can be anything but ' +
-            'a mock.',
+            'Whether money can actually move depends on this deployment holding a provider ' +
+            'credential; the Billing screen reads that and says so. Dunning beyond the ' +
+            'provider’s own retries, refunds and credit notes are not built: those are the ' +
+            'provider’s own screens and rebuilding them here would mean holding a second ' +
+            'opinion about money.',
           available:
-            'Billing state per company, set by hand, on the Companies and Company Detail screens.',
+            'Provider connection and mode; publishing a plan so it can be bought; every ' +
+            'company’s subscription and payment position with the provider’s own status beside ' +
+            'this product’s translation of it; invoices as the provider issued them; and the ' +
+            'recent webhook deliveries with what was done with each.',
         },
         {
           navKey: 'credits',

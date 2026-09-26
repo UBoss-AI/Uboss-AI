@@ -11,8 +11,15 @@ import {
 
 import {
   DASHBOARD_CONTRACT,
-  DASHBOARD_SLICE_DESTINATIONS,
-  DASHBOARD_SLICE_LABELS,
+  DASHBOARD_LANE_LABELS,
+  DASHBOARD_LANE_MEASURE,
+  DASHBOARD_LANES,
+  DASHBOARD_TILE_DESTINATIONS,
+  DASHBOARD_TILE_LABELS,
+  DASHBOARD_TILE_LANE,
+  DASHBOARD_TILE_MEASURE,
+  DASHBOARD_TILE_MODULE,
+  DASHBOARD_TILES,
   DEFAULT_REPORT_RANGE,
   permissionsForReport,
   REPORT_RANGE_LABELS,
@@ -36,6 +43,7 @@ import { getActor } from '../request-context/request-context.js';
 import { TenantContextService } from '../tenancy/tenant-context.service.js';
 import { TenantScoped } from '../tenancy/tenancy.decorators.js';
 import { DashboardService } from './dashboard.service.js';
+import { OrchestrationService } from './orchestration.service.js';
 import { ReportScopeService } from './report-scope.service.js';
 import { ReportsService, type ReportResult } from './reports.service.js';
 
@@ -67,6 +75,7 @@ export class ReportsController {
   constructor(
     private readonly reports: ReportsService,
     private readonly dashboard: DashboardService,
+    private readonly orchestrationService: OrchestrationService,
     private readonly reportScope: ReportScopeService,
     private readonly authorization: AuthorizationService,
     private readonly auditEvents: AuditEventService,
@@ -92,34 +101,84 @@ export class ReportsController {
       actorUserId: this.currentUserId(),
     });
 
-    const counts = await this.dashboard.counts({ scope, reportScope });
+    /*
+     * The authorization context decides which tiles exist in the reply. A tile this person may
+     * not see is absent from the payload rather than present and hidden, so a browser that forgot
+     * to filter would have nothing to leak.
+     */
+    const context = await this.authorization.contextFor(scope, this.currentUserId());
+    const counts = await this.dashboard.counts({ scope, reportScope, context });
 
-    // Exactly these three keys. A fourth is a locked-contract violation, and a test asserts it.
+    // Exactly these two keys. A third is a contract violation, and a test asserts it.
     return {
-      agents: counts.agents,
-      pendingJobs: counts.pendingJobs,
+      tiles: counts.tiles,
       scope: reportScope.description,
     };
   }
 
-  /** What the donut renders from: the two labels and where each slice drills to. */
+  /**
+   * The orchestration overview: where the company's work has actually got to.
+   *
+   * ## A second route rather than a third key on `/dashboard`
+   *
+   * `/dashboard` answers with exactly `tiles` and `scope`, and a test asserts it, because the way
+   * that contract erodes is by addition. This is a different question asked by a different person
+   * — the tiles are what everybody lands on, and this is what an admin opens to find out what is
+   * stuck — so it gets its own route and the old one stays closed.
+   *
+   * ## Two permissions, for the reason every report needs two
+   *
+   * `dashboard:View` is not enough. This counts work across the company's objectives, so somebody
+   * who may not see objectives must not read it here — otherwise the dashboard becomes the way
+   * around the Objectives module. The second check is explicit rather than implied by a screen
+   * that chooses not to call it.
+   */
+  @Get('dashboard/orchestration')
+  @RequirePermission({ module: 'dashboard', action: 'View' })
+  async orchestration(): Promise<unknown> {
+    const scope = this.tenantContext.requireScope();
+    const context = await this.authorization.contextFor(scope, this.currentUserId());
+    await this.authorization.assertCan(context, { module: 'objective', action: 'View' });
+
+    const reportScope = await this.reportScope.forDashboard({
+      scope,
+      actorUserId: this.currentUserId(),
+    });
+
+    return this.orchestrationService.overview({
+      scope,
+      reportScope,
+      context,
+      // Passed in rather than read inside, so a test can state what "overdue" was measured
+      // against instead of racing the clock.
+      now: new Date(),
+    });
+  }
+
+  /**
+   * What each tile renders from: its label, where it goes, and what its number means.
+   *
+   * Served rather than written into the screen so the two cannot drift, and so anybody reading the
+   * API sees the same vocabulary the dashboard uses. It lists every tile that exists — which tiles
+   * a given person *gets* is decided by `/dashboard`, against their own permissions.
+   */
   @Get('dashboard/meta')
   @RequirePermission({ module: 'dashboard', action: 'View' })
   async dashboardMeta(): Promise<unknown> {
     return {
-      slices: [
-        {
-          key: 'agents',
-          label: DASHBOARD_SLICE_LABELS.agents,
-          href: DASHBOARD_SLICE_DESTINATIONS.agents,
-        },
-        {
-          key: 'pendingJobs',
-          label: DASHBOARD_SLICE_LABELS.pendingJobs,
-          href: DASHBOARD_SLICE_DESTINATIONS.pendingJobs,
-        },
-      ],
-      // Served so the screen cannot drift from the rule, and so anybody reading the API sees it.
+      tiles: DASHBOARD_TILES.map((tile) => ({
+        key: tile,
+        label: DASHBOARD_TILE_LABELS[tile],
+        href: DASHBOARD_TILE_DESTINATIONS[tile],
+        measures: DASHBOARD_TILE_MEASURE[tile],
+        module: DASHBOARD_TILE_MODULE[tile],
+        lane: DASHBOARD_TILE_LANE[tile],
+      })),
+      lanes: DASHBOARD_LANES.map((lane) => ({
+        key: lane,
+        label: DASHBOARD_LANE_LABELS[lane],
+        measures: DASHBOARD_LANE_MEASURE[lane],
+      })),
       contract: DASHBOARD_CONTRACT,
     };
   }
@@ -290,6 +349,8 @@ export class ReportsController {
         return this.reports.engineAgentHealth({ scope, reportScope, window });
       case 'SkillUsageAndQuality':
         return this.reports.skillUsageAndQuality({ scope, window });
+      case 'DependencyWaiting':
+        return this.reports.dependencyWaiting({ scope, reportScope });
       case 'ExecutorExceptions':
         return this.reports.executorExceptions({ scope, reportScope, window });
       case 'ApprovalAging':

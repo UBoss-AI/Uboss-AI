@@ -21,9 +21,12 @@ import {
 import {
   ApiError,
   authApi,
+  billingApi,
   commercialApi,
   formatMinor,
   SEAT_RULE_LABELS,
+  type BillingConnection,
+  type BillingInvoiceRow,
   type CommercialPosition,
   type CommercialRequestRow,
   type MeResponse,
@@ -82,8 +85,16 @@ const REQUEST_KINDS = [
  *
  * No roles and no permissions. A plan is not authority: buying more seats or a larger plan grants
  * nobody any new ability, and the panel says so where somebody might reasonably assume otherwise.
- * Invoices and payment methods are the Billing & Payments work of a later prompt, and are listed
- * as not built rather than mocked up as though they worked.
+ *
+ * ## Paying is here; what was charged is the provider's
+ *
+ * Payment is taken on the provider's own hosted page rather than on a card form built here, so
+ * card details never reach this product. Every figure in the invoice list is the provider's,
+ * copied verbatim — nothing on this screen computes money.
+ *
+ * And nothing here grants anything. Returning from the payment page shows "waiting to hear",
+ * because the redirect is not evidence: it can be opened by hand and it can be missed. The
+ * subscription changes when the provider tells the server so.
  */
 export default function CompanyBillingSettingsPage() {
   // Prompt 40A (CR-03): the sidebar follows this person's real grants, never a role label.
@@ -99,6 +110,10 @@ export default function CompanyBillingSettingsPage() {
   const [planCode, setPlanCode] = useState('');
   const [justification, setJustification] = useState('');
   const [busy, setBusy] = useState(false);
+
+  const [connection, setConnection] = useState<BillingConnection | null>(null);
+  const [invoices, setInvoices] = useState<BillingInvoiceRow[] | null>(null);
+  const [paying, setPaying] = useState(false);
 
   const tenantId =
     resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
@@ -121,10 +136,17 @@ export default function CompanyBillingSettingsPage() {
     if (!tenantId) {
       return;
     }
-    void Promise.all([commercialApi.position(tenantId), commercialApi.requests(tenantId)])
-      .then(([positionResult, requestResult]) => {
+    void Promise.all([
+      commercialApi.position(tenantId),
+      commercialApi.requests(tenantId),
+      billingApi.connection(tenantId),
+      billingApi.invoices(tenantId),
+    ])
+      .then(([positionResult, requestResult, connectionResult, invoiceResult]) => {
         setPosition(positionResult);
         setRequests(requestResult.requests);
+        setConnection(connectionResult);
+        setInvoices(invoiceResult.invoices);
       })
       .catch((caught: unknown) =>
         setError(
@@ -136,6 +158,46 @@ export default function CompanyBillingSettingsPage() {
   }, [tenantId]);
 
   useEffect(load, [load]);
+
+  /**
+   * Send the browser to the provider's own payment page.
+   *
+   * A full navigation, not a fetch: the provider has to own the next page. A card form rendered
+   * inside somebody else's application is how a customer learns not to trust one, and it would
+   * put this product inside the cardholder-data boundary for no benefit.
+   */
+  const pay = useCallback(
+    (cycle: 'Monthly' | 'Annual') => {
+      if (!tenantId) return;
+      setPaying(true);
+      setError(null);
+      billingApi
+        .checkout(tenantId, cycle)
+        .then(({ url }) => window.location.assign(url))
+        .catch((caught: unknown) => {
+          setError(
+            caught instanceof ApiError ? caught.message : 'Could not start the payment.',
+          );
+          setPaying(false);
+        });
+    },
+    [tenantId],
+  );
+
+  const manageBilling = useCallback(() => {
+    if (!tenantId) return;
+    setPaying(true);
+    setError(null);
+    billingApi
+      .portal(tenantId)
+      .then(({ url }) => window.location.assign(url))
+      .catch((caught: unknown) => {
+        setError(
+          caught instanceof ApiError ? caught.message : 'Could not open the billing portal.',
+        );
+        setPaying(false);
+      });
+  }, [tenantId]);
 
   const submit = useCallback(() => {
     if (!tenantId) {
@@ -555,18 +617,172 @@ export default function CompanyBillingSettingsPage() {
             </CardBody>
           </Card>
 
+          {/*
+            Payment.
+
+            Shown to everybody who can see this screen, and actionable only by somebody who can
+            administer it — the server decides that, and a refusal here is the server's message
+            rather than a guess made in the browser.
+          */}
+          <Card>
+            <CardHeader
+              title="Payment"
+              aside={
+                connection === null ? null : (
+                  <StatusBadge
+                    status={
+                      !connection.connected
+                        ? 'Not available'
+                        : connection.mode === 'live'
+                          ? 'Live'
+                          : 'Test mode'
+                    }
+                    tone={
+                      !connection.connected
+                        ? 'grey'
+                        : connection.mode === 'live'
+                          ? 'success'
+                          : 'warn'
+                    }
+                  />
+                )
+              }
+            />
+            <CardBody>
+              {connection === null ? (
+                <SkeletonText lines={2} />
+              ) : !connection.connected ? (
+                <Banner tone="info">
+                  Paying online is not available on this deployment yet. Your plan and seats are
+                  unaffected — invoicing is arranged with UBoss directly.
+                </Banner>
+              ) : (
+                <>
+                  {connection.mode === 'test' ? (
+                    <Banner tone="warn">
+                      This deployment is in the payment provider’s test mode. No real money moves
+                      and only the provider’s test cards will work.
+                    </Banner>
+                  ) : null}
+
+                  <p className="uboss-muted">
+                    Payment is taken on the provider’s own secure page. Card details never reach
+                    UBoss.
+                  </p>
+
+                  <div className="uboss-row-actions">
+                    <Button variant="primary" onClick={() => pay('Monthly')} disabled={paying}>
+                      Pay monthly
+                    </Button>
+                    <Button onClick={() => pay('Annual')} disabled={paying}>
+                      Pay annually
+                    </Button>
+                    <Button onClick={manageBilling} disabled={paying}>
+                      Manage billing
+                    </Button>
+                  </div>
+
+                  <p className="uboss-muted-3">
+                    Manage billing opens the provider’s portal, where a card can be changed, an
+                    invoice downloaded, or the subscription cancelled.
+                  </p>
+                </>
+              )}
+            </CardBody>
+          </Card>
+
+          {/*
+            Invoices.
+
+            Every figure here is the provider’s, stored as it issued them. Nothing on this screen
+            adds anything up — a second opinion about what was charged is an invoice dispute.
+          */}
+          <Card>
+            <CardHeader title="Invoices" />
+            <CardBody>
+              {invoices === null ? (
+                <SkeletonText lines={3} />
+              ) : invoices.length === 0 ? (
+                <p className="uboss-muted-3">
+                  No invoice has been issued to this company yet.
+                </p>
+              ) : (
+                <DataTable
+                  caption="Invoices issued by the payment provider"
+                  columns={[
+                    {
+                      key: 'number',
+                      header: 'Invoice',
+                      render: (row) => (
+                        <span className="uboss-mono">{row.number ?? 'Not yet issued'}</span>
+                      ),
+                    },
+                    {
+                      key: 'status',
+                      header: 'Status',
+                      render: (row) => (
+                        <StatusBadge
+                          status={row.status}
+                          tone={
+                            row.status === 'paid'
+                              ? 'success'
+                              : row.status === 'open'
+                                ? 'warn'
+                                : row.status === 'void' || row.status === 'uncollectible'
+                                  ? 'danger'
+                                  : 'grey'
+                          }
+                        />
+                      ),
+                    },
+                    {
+                      key: 'amount',
+                      header: 'Amount',
+                      render: (row) => formatMinor(row.amountDueMinor, row.currency),
+                    },
+                    {
+                      key: 'period',
+                      header: 'Period',
+                      render: (row) =>
+                        row.periodStart === null || row.periodEnd === null
+                          ? '—'
+                          : `${new Date(row.periodStart).toLocaleDateString()} – ${new Date(
+                              row.periodEnd,
+                            ).toLocaleDateString()}`,
+                    },
+                    {
+                      key: 'open',
+                      header: '',
+                      render: (row) =>
+                        row.hostedInvoiceUrl === null ? null : (
+                          <a
+                            href={row.hostedInvoiceUrl}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                            className="uboss-link"
+                          >
+                            View
+                          </a>
+                        ),
+                    },
+                  ]}
+                  rows={invoices}
+                  rowKey={(row) => row.id}
+                />
+              )}
+
+              {invoices !== null && invoices.some((row) => row.lastPaymentError !== null) ? (
+                <Banner tone="danger">
+                  {invoices.find((row) => row.lastPaymentError !== null)?.lastPaymentError}
+                </Banner>
+              ) : null}
+            </CardBody>
+          </Card>
+
           <Card>
             <CardHeader title="Not built yet" />
             <CardBody>
-              {/*
-                Named rather than mocked. An invoice list that looked real and was not would be
-                worse than an empty panel saying so.
-              */}
               <ul className="uboss-muted-3">
-                <li>
-                  <b>Invoices and payment methods</b> — Billing &amp; Payments is its own prompt.
-                  What exists today is the plan, the entitlements, the allowance and the seats.
-                </li>
                 <li>
                   <b>Usage detail per Engine Agent run</b> — the allowance figure above is the
                   contracted amount and what has been consumed against it; the per-run breakdown

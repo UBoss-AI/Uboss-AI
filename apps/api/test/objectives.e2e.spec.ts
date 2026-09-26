@@ -25,6 +25,7 @@ import { PermissionGuard } from '../src/authorization/permission.guard.js';
 import { MockModelGateway, ModelGateway } from '../src/model-gateway/model-gateway.js';
 import { NotificationService } from '../src/notifications/notification.service.js';
 import { AssignmentService } from '../src/objectives/assignment.service.js';
+import { WorkReleaseService } from '../src/tasks/work-release.service.js';
 import { ObjectiveController } from '../src/objectives/objective.controller.js';
 import { ObjectiveAnalysisService } from '../src/objectives/objective-analysis.service.js';
 import { ObjectiveService } from '../src/objectives/objective.service.js';
@@ -141,6 +142,7 @@ describe('objective builder — Form 2 (e2e)', () => {
         ObjectiveAnalysisService,
         WorkflowEditorService,
         AssignmentService,
+        WorkReleaseService,
         NotificationService,
         NotificationRepository,
         OutboxRepository,
@@ -1467,12 +1469,21 @@ describe('objective builder — Form 2 (e2e)', () => {
       assert.equal(response.status, 403);
     });
 
-    it('lets a Company Admin read objectives and refuses them creating one', async () => {
-      // Prompt 7's deliberate decision, pinned here because it is surprising enough to be
-      // "corrected" later: `CompanyAdmin` holds `objective: View, Comment, Export` and **not**
-      // Create, EditDraft or Assign. Administering a company is not doing its business work, and
-      // an administrator who must also draft objectives is additionally given a business role —
-      // a separate, visible decision rather than a silent widening of the admin role.
+    it('lets a Company Admin define an objective', async () => {
+      /*
+       * The client's 2026-09-25 rule, replacing Prompt 7's.
+       *
+       * Prompt 7 gave `CompanyAdmin` `objective: View, Comment, Export` and deliberately not
+       * Create, on the reasoning that administering a company is not doing its business work. The
+       * client replaced that: the Admin chosen when a company is provisioned is the person who
+       * defines the work — "Admin fills Objective OR uploads Objective Excel" is the first step of
+       * the canonical flow — and the role template now carries Create, EditDraft, Assign and
+       * Publish. Pinned here because it is the kind of grant that gets widened by accident, and
+       * this is the one place that says it was widened on purpose.
+       *
+       * `Approve` is still absent, and that is not an oversight: approving what you defined is the
+       * separation the four-eyes rules exist for.
+       */
       await createObjective();
 
       const read = await as(agent().get(`/tenants/${tenantId}/objectives`), adminUboss);
@@ -1484,7 +1495,7 @@ describe('objective builder — Form 2 (e2e)', () => {
           .send({ content: form2(), steps: [step()] }),
         adminUboss,
       );
-      assert.equal(create.status, 403);
+      assert.equal(create.status, 201);
     });
 
     it('refuses an unauthenticated request', async () => {

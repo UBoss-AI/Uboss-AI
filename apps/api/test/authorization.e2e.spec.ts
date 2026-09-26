@@ -423,25 +423,34 @@ describe('authorization (e2e)', () => {
      * caught against the running product before this was fixed.
      */
     it('does not let one role’s action borrow another role’s scope', async () => {
-      // Employee grants `todo:EditDraft` over their own work; Company Admin grants `todo:View`
-      // over the whole company and deliberately not EditDraft. Nobody's role permits editing
-      // somebody else's task, so nor should holding both.
+      /*
+       * Employee grants `todo:EditDraft` over their own work; Auditor grants `todo:View` over the
+       * whole company and no EditDraft at all. Neither role permits editing somebody else's task,
+       * so nor should holding both — that is the property under test, and it is about the engine
+       * rather than about any particular pair of roles.
+       *
+       * The pair used to be Employee + CompanyAdmin, which stopped demonstrating anything when the
+       * client's 2026-09-25 rule gave the Company Admin `todo:EditDraft` company-wide. Auditor is
+       * the replacement because it is the other role with `WholeCompany` reach and a read-only
+       * grant on this module; swapping it keeps the test asking its real question instead of
+       * quietly weakening the assertion to match a widened role.
+       */
       await assign(managerId, { roleKind: 'Employee', scopeKind: 'OwnWork' });
-      await assign(managerId, { roleKind: 'CompanyAdmin', scopeKind: 'WholeCompany' });
+      await assign(managerId, { roleKind: 'Auditor', scopeKind: 'WholeCompany' });
 
       const authorization = app.get(AuthorizationService);
       const context = await authorization.contextFor(scope(), managerId);
 
       const colleaguesTask = { id: 'task-1', ownerUserId: employeeId };
 
-      // The Company Admin role's own action still reaches company-wide: nothing was narrowed
-      // that the roles really grant.
+      // The Auditor role's own action still reaches company-wide: nothing was narrowed that the
+      // roles really grant.
       const view = await authorization.authorize(context, {
         module: 'todo',
         action: 'View',
         resource: colleaguesTask,
       });
-      assert.equal(view.allowed, true, 'the Company Admin role sees the whole company');
+      assert.equal(view.allowed, true, 'the Auditor role sees the whole company');
 
       // EditDraft came from the Employee role, which is scoped to own work.
       const edit = await authorization.authorize(context, {

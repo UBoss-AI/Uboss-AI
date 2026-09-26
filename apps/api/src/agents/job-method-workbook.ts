@@ -51,30 +51,13 @@ export class JobMethodWorkbook {
     workbook.creator = 'UBoss';
     workbook.created = new Date(form.context.downloadedAt);
 
-    // ---- the context sheet ----
-    const context = workbook.addWorksheet(CONTEXT_SHEET);
-    context.columns = [
-      { key: 'label', width: 26 },
-      { key: 'value', width: 60 },
-    ];
-
-    context.addRow(['UBoss Job Method form', '']).font = { bold: true, size: 14 };
-    context.addRow([]);
-    context.addRow(['Objective', form.context.objectiveName]);
-    context.addRow(['Assigned work', form.context.assignmentTitle]);
-    context.addRow(['For employee', form.context.assignedToEmployeeRef ?? '—']);
-    context.addRow(['Downloaded', form.context.downloadedAt]);
-    context.addRow([]);
-    context.addRow([
-      'Please do not change',
-      'The four rows below identify this form. Editing them means UBoss cannot match your ' +
-        'answers back to the right work, and the upload will be refused.',
-    ]).font = { italic: true };
-    context.addRow(['Form version', form.context.formVersion]);
-    context.addRow(['Objective ID', form.context.objectiveId]);
-    context.addRow(['Objective version ID', form.context.objectiveVersionId]);
-    context.addRow(['Assignment ID', form.context.aiWorkAssignmentId]);
-
+    /*
+     * The form itself, and it is the first sheet on purpose.
+     *
+     * Excel opens on whichever sheet was added first, and that used to be the identity block — so
+     * somebody who asked for a form to fill in got a page of UUIDs and had to find the real one.
+     * The thing being filled in goes first; what identifies it follows.
+     */
     // ---- the method sheet ----
     const sheet = workbook.addWorksheet(METHOD_SHEET);
     sheet.columns = JOB_METHOD_COLUMNS.map((column) => ({
@@ -112,6 +95,37 @@ export class JobMethodWorkbook {
       if (number === 1) return;
       row.alignment = { vertical: 'top', wrapText: true };
     });
+
+    /*
+     * What this form is for, and what identifies it.
+     *
+     * Second, because it is read rather than filled. The four identifiers below are what let an
+     * uploaded file be matched back to the work it describes, which is why the sheet says not to
+     * edit them rather than hiding them somewhere a person cannot see them at all.
+     */
+    // ---- the context sheet ----
+    const context = workbook.addWorksheet(CONTEXT_SHEET);
+    context.columns = [
+      { key: 'label', width: 26 },
+      { key: 'value', width: 60 },
+    ];
+
+    context.addRow(['UBoss Job Method form', '']).font = { bold: true, size: 14 };
+    context.addRow([]);
+    context.addRow(['Objective', form.context.objectiveName]);
+    context.addRow(['Assigned work', form.context.assignmentTitle]);
+    context.addRow(['For employee', form.context.assignedToEmployeeRef ?? '—']);
+    context.addRow(['Downloaded', form.context.downloadedAt]);
+    context.addRow([]);
+    context.addRow([
+      'Please do not change',
+      'The four rows below identify this form. Editing them means UBoss cannot match your ' +
+        'answers back to the right work, and the upload will be refused.',
+    ]).font = { italic: true };
+    context.addRow(['Form version', form.context.formVersion]);
+    context.addRow(['Objective ID', form.context.objectiveId]);
+    context.addRow(['Objective version ID', form.context.objectiveVersionId]);
+    context.addRow(['Assignment ID', form.context.aiWorkAssignmentId]);
 
     const written = await workbook.xlsx.writeBuffer();
     return Buffer.from(written);

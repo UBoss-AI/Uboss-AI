@@ -33,6 +33,10 @@ const send = vi.fn();
 const search = vi.fn();
 const myAccess = vi.fn();
 const notificationCounts = vi.fn();
+// The page reads the hierarchy to offer department workshops. Stubbed because an unstubbed
+// property is not a refused call but a TypeError, which is a failure mode the real client
+// cannot produce and would hide the ones it can.
+const hierarchy = vi.fn();
 
 vi.mock('../../lib/api-client', () => ({
   ApiError: class ApiError extends Error {
@@ -56,6 +60,7 @@ vi.mock('../../lib/api-client', () => ({
   },
   myAccessApi: { mine: (...a: unknown[]) => myAccess(...a) },
   notificationsApi: { counts: (...a: unknown[]) => notificationCounts(...a) },
+  organizationApi: { hierarchy: (...a: unknown[]) => hierarchy(...a) },
 }));
 
 vi.mock('../../lib/use-notification-bell', () => ({
@@ -100,6 +105,7 @@ beforeEach(() => {
     granted: { chat: ['View'] },
     note: '',
   });
+  hierarchy.mockResolvedValue({ departments: [] });
   chatMeta.mockResolvedValue({
     contextStance: 'Being in a conversation does not grant access to what it refers to.',
     realtimeStance: 'Messages arrive when the screen refreshes. Nothing here is a live socket.',

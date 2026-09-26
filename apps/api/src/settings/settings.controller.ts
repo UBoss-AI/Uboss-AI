@@ -120,13 +120,24 @@ export class SettingsController {
     return { key: query.key, changes };
   }
 
-  /** One effective value, for a screen that needs a single policy rather than the whole shell. */
+  /**
+   * One effective value, for a screen that needs a single policy rather than the whole shell.
+   *
+   * `settings:View` opens the door, and then the *setting's own* read permission is checked —
+   * which it was not before. Holding only the first meant one request by key returned any setting
+   * in the company, and the per-setting permissions the list applies were decoration for anybody
+   * who knew a key to ask for.
+   */
   @Get('value/:key')
   @RequirePermission({ module: 'settings', action: 'View' })
   async value(@Param('key') key: string): Promise<unknown> {
     return {
       key,
-      value: await this.settings.effectiveValue(this.tenantContext.requireScope(), key),
+      value: await this.settings.readableValue(
+        this.tenantContext.requireScope(),
+        this.currentUserId(),
+        key,
+      ),
     };
   }
 

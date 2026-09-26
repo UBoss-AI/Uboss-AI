@@ -2,9 +2,17 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 
-import { ANALYSIS_RUN_STATUS_TONES, TIME_UNIT_LABELS, type AnalysisNode } from '@uboss/types';
+import {
+  ANALYSIS_RUN_STATUS_TONES,
+  EXECUTION_STAGE_LABELS,
+  executionDepths,
+  executionStages,
+  TIME_UNIT_LABELS,
+  type AnalysisNode,
+  type ExecutionStage,
+} from '@uboss/types';
 import {
   Banner,
   Button,
@@ -22,6 +30,7 @@ import {
   ApiError,
   authApi,
   objectivesApi,
+  organizationApi,
   type AnalysisRunView,
   type MeResponse,
   type ObjectiveView,
@@ -45,10 +54,43 @@ import { useCompanyNavigation } from '../../../lib/use-company-navigation';
  * component's only job is to draw what it is told, so the locked rule (Human is a rectangle, AI is
  * a diamond, the Goal is distinct) cannot be broken by a restyle here.
  */
-function WorkflowNode({ node }: { node: AnalysisNode }) {
+function WorkflowNode({
+  node,
+  stage,
+  ownerName,
+  waitsFor,
+}: {
+  node: AnalysisNode;
+  stage: ExecutionStage | undefined;
+  ownerName: string | null;
+  /** The labels of the steps this one waits on, already resolved from ids. */
+  waitsFor: string[];
+}) {
   if (node.shape === 'goal') {
     return <div className="uboss-wf-goal">{node.label}</div>;
   }
+
+  /*
+   * The three facts the client asked every step to carry.
+   *
+   * Which position in the chain it is, who owns it, and what has to happen first. The position is
+   * derived from the dependencies rather than stored, so it can never contradict them.
+   */
+  const footer =
+    stage === undefined && waitsFor.length === 0 ? null : (
+      <div className="uboss-wf-node-meta">
+        {stage === undefined ? null : (
+          <span className={`uboss-wf-stage uboss-wf-stage--${stage.toLowerCase()}`}>
+            {EXECUTION_STAGE_LABELS[stage]}
+          </span>
+        )}
+        {waitsFor.length === 0 ? (
+          <span className="uboss-muted-3">Starts the chain</span>
+        ) : (
+          <span className="uboss-muted-3">After: {waitsFor.join(', ')}</span>
+        )}
+      </div>
+    );
 
   if (node.shape === 'diamond') {
     return (
@@ -56,7 +98,8 @@ function WorkflowNode({ node }: { node: AnalysisNode }) {
         <div className="uboss-wf-ai-diamond" />
         <div className="uboss-wf-ai-label">
           <b>{node.label}</b>
-          <small>{node.skillName ?? 'No approved Skill yet'}</small>
+          <small>Agent work — {node.skillName ?? 'no published Agent yet'}</small>
+          {footer}
         </div>
       </div>
     );
@@ -66,6 +109,9 @@ function WorkflowNode({ node }: { node: AnalysisNode }) {
     return (
       <div className="uboss-wf-approve">
         <Icon name="shield" size={15} /> {node.label}
+        {node.approvalKind === null ? null : (
+          <span className="uboss-wf-node-tag">{node.approvalKind}</span>
+        )}
       </div>
     );
   }
@@ -83,10 +129,15 @@ function WorkflowNode({ node }: { node: AnalysisNode }) {
           // and the screen must not make an unassigned step look assigned.
           <span className="uboss-muted-3">No owner assigned</span>
         ) : (
-          <>Owner: {node.ownerDesignation ?? 'assigned'}</>
+          <>Owner: {ownerName ?? node.ownerDesignation ?? 'assigned'}</>
         )}
-        <br />
-        Evidence required
+        {node.dod.approval === null || node.dod.approval === 'NotRequired' ? null : (
+          <>
+            <br />
+            Approval: {node.dod.approval}
+          </>
+        )}
+        {footer}
       </div>
     </div>
   );
@@ -95,10 +146,20 @@ function WorkflowNode({ node }: { node: AnalysisNode }) {
 /**
  * Analyze / Generate Workflow — the reference's `objAnalyze()`.
  *
- * The prompt's frontend requirements, in its words: **keep the Objective Form on the left, open a
- * right-side UBoss panel, and show real progress stages.** So the layout is the reference's
- * `1fr 380px` grid, the left card carries the objective, and the right card is the analysis panel
- * with the seven stages.
+ * ## Where the workflow sits, and why that changed
+ *
+ * The original layout put the objective on the left and the analysis in a 380px right rail, which
+ * is where the generated workflow was drawn. The client's 2026-09-25 rule is explicit that this is
+ * wrong — "do not squeeze the important workflow into a tiny side panel; keep this visual in the
+ * CENTER of the workspace" — so the screen now has two shapes rather than one:
+ *
+ *   - **Before and during the run**, the objective has the wide column and the stages sit beside
+ *     it: there is nothing else to look at yet.
+ *   - **Once it has produced a workflow**, the two columns swap. The panel carrying the stages and
+ *     the drawn workflow becomes the wide one and the objective shrinks to a reference rail.
+ *
+ * The same components in both, moved rather than duplicated: a second copy of the workflow drawing
+ * would be a second thing to keep truthful.
  *
  * ## The progress is real
  *
@@ -126,6 +187,8 @@ function ObjectiveAnalyzeInner() {
   const [usesRealModel, setUsesRealModel] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Owner ids resolved to names. A step's owner is a person, and an id is not a person. */
+  const [people, setPeople] = useState<Map<string, string>>(new Map());
 
   const tenantId =
     resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
@@ -133,6 +196,43 @@ function ObjectiveAnalyzeInner() {
   const signedInUser = useSignedInUser(me);
 
   const accountMenu = useAccountMenu(me);
+
+  /*
+   * What the drawn workflow needs, worked out once rather than per node.
+   *
+   * `hasWorkflow` decides the page's shape: until there is something to draw, the stages are the
+   * point and sit in the middle; once there is, the workflow takes the centre.
+   */
+  /*
+   * The nodes, in the order the work actually happens.
+   *
+   * The stored array is the order the analysis built it — every human step, then every AI step —
+   * so drawing it as it comes puts a later step above an earlier one and draws a connector between
+   * them. That is a picture of a sequence the plan does not describe. Sorted by how deep into the
+   * chain each node is, with the stored position breaking ties so siblings keep a stable order.
+   */
+  const drawn = useMemo(() => {
+    const nodes = run?.draft?.nodes ?? null;
+    if (nodes === null) return null;
+    const depth = executionDepths(nodes);
+    return nodes
+      .map((node, index) => ({ node, index }))
+      .sort(
+        (left, right) =>
+          (depth.get(left.node.id) ?? 0) - (depth.get(right.node.id) ?? 0) ||
+          left.index - right.index,
+      )
+      .map((entry) => entry.node);
+  }, [run]);
+  const hasWorkflow = drawn !== null && drawn.length > 0;
+  const executionStageById = useMemo(
+    () => (drawn === null ? new Map<string, ExecutionStage>() : executionStages(drawn)),
+    [drawn],
+  );
+  const labelById = useMemo(
+    () => new Map((drawn ?? []).map((node) => [node.id, node.label])),
+    [drawn],
+  );
   const activeWorkspace = me?.workspaces.find((workspace) => workspace.tenantId === tenantId);
   const bell = useNotificationBell(tenantId);
 
@@ -165,6 +265,16 @@ function ObjectiveAnalyzeInner() {
       .then((meta) => setUsesRealModel(meta.model.usesRealModel))
       .catch(() => undefined);
   }, [objectiveId, tenantId]);
+
+  useEffect(() => {
+    if (tenantId === null) return;
+    void organizationApi
+      .hierarchy(tenantId)
+      .then((view) => setPeople(new Map(view.list.map((row) => [row.userId, row.displayName]))))
+      // A name is a courtesy. Without it the node falls back to the designation the analysis
+      // recorded, which is still true, so a failure here must not empty the screen.
+      .catch(() => setPeople(new Map()));
+  }, [tenantId]);
 
   useEffect(load, [load]);
 
@@ -245,8 +355,8 @@ function ObjectiveAnalyzeInner() {
       }}
     >
       <PageHeader
-        title="Analyzing objective"
-        description="Real AI decomposition progress — no fake completion."
+        title="Run Objective"
+        description="UBoss reads the objective and works out who does what, in what order. Real progress — no fake completion."
         breadcrumbs={[
           { label: 'Objective Optimization', href: '/objective' },
           { label: 'Analyze' },
@@ -260,7 +370,7 @@ function ObjectiveAnalyzeInner() {
             ) : (
               <Button variant="primary" size="sm" onClick={startAnalysis} disabled={busy}>
                 <Icon name="bolt" size={16} />
-                {run === null ? 'Analyze & Generate Workflow' : 'Re-analyse'}
+                {run === null ? 'Run Objective' : 'Run again'}
               </Button>
             )}
           </>
@@ -278,7 +388,10 @@ function ObjectiveAnalyzeInner() {
         </Banner>
       ) : null}
 
-      <div className="uboss-grid" style={{ gridTemplateColumns: '1fr 380px' }}>
+      <div
+        className="uboss-grid"
+        style={{ gridTemplateColumns: hasWorkflow ? '360px 1fr' : '1fr 380px' }}
+      >
         {/* ---- Left: the objective stays visible, as the prompt requires ---- */}
         <Card>
           <CardBody>
@@ -346,8 +459,8 @@ function ObjectiveAnalyzeInner() {
 
             {run === null ? (
               <p className="uboss-muted">
-                This objective has not been analysed. Press <b>Analyze &amp; Generate Workflow</b>{' '}
-                to decompose its Form 2 grid into a draft workflow.
+                This objective has not been run yet. Press <b>Run Objective</b> and UBoss will read
+                its grid and work out the human work, the agent work, the order and the owners.
               </p>
             ) : (
               <>
@@ -404,7 +517,7 @@ function ObjectiveAnalyzeInner() {
                         gap: 0,
                       }}
                     >
-                      {run.draft.nodes.map((node, index) => (
+                      {(drawn ?? []).map((node, index) => (
                         <div
                           key={node.id}
                           className="uboss-wf-reveal-item"
@@ -414,7 +527,18 @@ function ObjectiveAnalyzeInner() {
                           style={{ textAlign: 'center', '--uboss-row': index } as React.CSSProperties}
                         >
                           {index === 0 ? null : <div className="uboss-wf-connector" />}
-                          <WorkflowNode node={node} />
+                          <WorkflowNode
+                            node={node}
+                            stage={executionStageById.get(node.id)}
+                            ownerName={
+                              node.ownerUserId === null
+                                ? null
+                                : (people.get(node.ownerUserId) ?? null)
+                            }
+                            waitsFor={node.dod.dependencies
+                              .map((id) => labelById.get(id))
+                              .filter((label): label is string => label !== undefined)}
+                          />
                         </div>
                       ))}
                     </div>

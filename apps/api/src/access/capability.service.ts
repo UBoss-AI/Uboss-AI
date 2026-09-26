@@ -277,10 +277,13 @@ export class CapabilityService {
       );
       if (match === undefined) return false;
 
+      /*
+       * Only the assignment. The capability role is shared by everybody in this company who holds
+       * the capability, so deleting it here would strip it from all of them — which is what the
+       * old one-role-per-grant arrangement hid. An unused role left behind grants nobody anything:
+       * authority comes from the assignment, and that is what has gone.
+       */
       await this.prisma.client.roleAssignment.delete({ where: { id: match.id } });
-      if (match.customRoleId !== null) {
-        await this.prisma.client.customRole.delete({ where: { id: match.customRoleId } });
-      }
       return true;
     });
 
@@ -299,6 +302,66 @@ export class CapabilityService {
     return { revoked: removed };
   }
 
+  /**
+   * One capability role per company, shared by everybody who holds that capability.
+   *
+   * It used to create a role per grant, named after the capability — and `custom_roles` is unique
+   * on (tenant_id, display_name). So the first person in a company to be given a capability
+   * succeeded and **every later person got a unique-constraint violation**, surfaced as a bare
+   * 500, while the screen left the box ticked. A company could give each capability to exactly one
+   * person, which is not a rule anybody chose.
+   *
+   * The role is the same object for everyone by design: it carries the capability's permissions
+   * and nothing about a person. Who holds it is the assignment, which stays per person and keeps
+   * its own grantedBy, scope and audit trail.
+   *
+   * Created inside the caller's transaction, so a race between two administrators granting the
+   * same capability at the same moment is resolved by the unique index rather than by luck — the
+   * loser re-reads and uses the winner's row. That is what the P2002 branch is for; it is a
+   * genuine concurrent case, not a swallowed error.
+   */
+  private async capabilityRole(scope: TenantScope, capability: CapabilityKey): Promise<string> {
+    const displayName = `${CAPABILITY_ROLE_PREFIX}${capability}`;
+    const permissions = expandCapabilities([capability]);
+
+    const existing = await this.prisma.client.customRole.findFirst({
+      where: { tenantId: scope.tenantId, displayName },
+      select: { id: true },
+    });
+    if (existing !== null) return existing.id;
+
+    try {
+      const created = await this.prisma.client.customRole.create({
+        data: {
+          tenantId: scope.tenantId,
+          displayName,
+          description: `Granted through the Access & Permissions step.`,
+          permissions: permissions as never,
+          // **Never wider than the person's own work.** Granting a capability must not also widen
+          // reach: a Power Employee builds their own assigned work and nobody else's. Somebody who
+          // needs wider reach is given a role, which is a different and more visible decision.
+          maxScope: 'OwnWork',
+        },
+        select: { id: true },
+      });
+      return created.id;
+    } catch (caught: unknown) {
+      // Somebody else created it between the read and the write.
+      if (
+        typeof caught === 'object' &&
+        caught !== null &&
+        (caught as { code?: unknown }).code === 'P2002'
+      ) {
+        const won = await this.prisma.client.customRole.findFirst({
+          where: { tenantId: scope.tenantId, displayName },
+          select: { id: true },
+        });
+        if (won !== null) return won.id;
+      }
+      throw caught;
+    }
+  }
+
   private async writeGrant(
     scope: TenantScope,
     actorUserId: string,
@@ -308,18 +371,8 @@ export class CapabilityService {
     const permissions = expandCapabilities([capability]);
 
     await this.prisma.runInTenantTransaction(scope, async () => {
-      const role = await this.prisma.client.customRole.create({
-        data: {
-          tenantId: scope.tenantId,
-          displayName: `${CAPABILITY_ROLE_PREFIX}${capability}`,
-          description: `Granted through the Access & Permissions step.`,
-          permissions: permissions as never,
-          // **Never wider than the person's own work.** Granting a capability must not also widen
-          // reach: a Power Employee builds their own assigned work and nobody else's. Somebody who
-          // needs wider reach is given a role, which is a different and more visible decision.
-          maxScope: 'OwnWork',
-        },
-      });
+      const roleId = await this.capabilityRole(scope, capability);
+      const role = { id: roleId };
 
       await this.prisma.client.roleAssignment.create({
         data: {

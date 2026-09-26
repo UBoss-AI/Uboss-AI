@@ -26,6 +26,7 @@ import { PermissionGuard } from '../src/authorization/permission.guard.js';
 import { MockModelGateway, ModelGateway } from '../src/model-gateway/model-gateway.js';
 import { NotificationService } from '../src/notifications/notification.service.js';
 import { AssignmentService } from '../src/objectives/assignment.service.js';
+import { WorkReleaseService } from '../src/tasks/work-release.service.js';
 import { ObjectiveClosureController } from '../src/objectives/objective-closure.controller.js';
 import { ObjectiveClosureService } from '../src/objectives/objective-closure.service.js';
 import { ObjectiveController } from '../src/objectives/objective.controller.js';
@@ -141,6 +142,7 @@ describe('objective closure, outcome review and archive (e2e)', () => {
         ObjectiveAnalysisService,
         WorkflowEditorService,
         AssignmentService,
+        WorkReleaseService,
         NotificationService,
         NotificationRepository,
         OutboxRepository,

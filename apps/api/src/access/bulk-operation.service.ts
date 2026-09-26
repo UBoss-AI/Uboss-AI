@@ -9,6 +9,7 @@ import {
 import type { BulkOperation, BulkOperationKind } from '../generated/prisma/client.js';
 import { normaliseAadhaar } from '../organization/aadhaar.js';
 import { EmploymentService } from '../organization/employment.service.js';
+import type { HierarchyReference } from '../organization/hierarchy-workbook.js';
 import { AccessRepository } from '../persistence/access.repository.js';
 import { OrganizationRepository } from '../persistence/organization.repository.js';
 import { PrismaService } from '../persistence/prisma.service.js';
@@ -437,6 +438,33 @@ export class BulkOperationService {
       }
 
       const managerName = values['reportingManager']?.trim() ?? '';
+
+      /*
+       * A blank Reporting Manager is only allowed for the very first person in the company.
+       *
+       * `addEmployee` refuses a second person with no manager, because a company with two people
+       * at the top of its reporting tree has no top. Validation did not know that, so a row with
+       * the column left blank previewed as **Valid** and then failed at apply — which is the
+       * precise failure this preview exists to prevent, and the one the note on the manager check
+       * below already warns about. An import of forty people with the column unfilled reported
+       * forty ready rows and added none.
+       *
+       * Checked once per file rather than per row: it is a fact about the company, not the row.
+       */
+      if (managerName === '') {
+        const roster = await this.access.roster(scope);
+        const roots = roster.filter(
+          (person) =>
+            person.employmentState === 'Active' && person.reportingManagerUserId === null,
+        );
+        if (roots.length > 0) {
+          errors.push(
+            `Reporting Manager is required. ${roots[0]?.displayName} is already at the top of ` +
+              'this company’s reporting tree, and there can only be one.',
+          );
+        }
+      }
+
       if (managerName !== '') {
         const roster = await this.access.roster(scope);
         const matches = roster.filter(
@@ -678,6 +706,47 @@ export class BulkOperationService {
       // The row already failed and its error is recorded on the row. Losing the security event
       // must not turn a contained row failure into a failed operation.
     }
+  }
+
+  /**
+   * What the import template's reference sheets are filled from.
+   *
+   * The same two sources the validator checks a row against — this company's departments and its
+   * roster — so the values offered for copying are exactly the values that will be accepted. Read
+   * at download time rather than cached: a department added five minutes ago has to be in the file
+   * somebody downloads now.
+   */
+  async hierarchyReference(
+    scope: TenantScope,
+    actorUserId: string,
+  ): Promise<HierarchyReference> {
+    await this.assertMayRun(scope, actorUserId, 'ImportEmployees');
+
+    const [departments, roster] = await Promise.all([
+      this.organization.listDepartments(scope, false),
+      this.access.roster(scope),
+    ]);
+
+    return {
+      departments: departments.map((department) => ({
+        name: department.name,
+        code: department.code ?? null,
+      })),
+      /*
+       * Only people who can actually be somebody's manager.
+       *
+       * A row naming a manager with no active employment record is rejected by the validator, so
+       * listing them here would be offering a value that fails — which is worse than not listing
+       * them, because the person copied it from the file we gave them.
+       */
+      people: roster
+        .filter((person) => person.employmentState === 'Active')
+        .map((person) => ({
+          displayName: person.displayName,
+          designation: person.designation ?? null,
+          department: person.departmentName ?? null,
+        })),
+    };
   }
 
   private async assertMayRun(

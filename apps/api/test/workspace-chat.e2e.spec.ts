@@ -81,6 +81,7 @@ describe('workspace chat (e2e)', () => {
   let colleagueId: string;
   let strangerUboss: string;
   let ownerId: string;
+  let adminId: string;
 
   const agent = () => request(app.getHttpServer());
 
@@ -199,6 +200,7 @@ describe('workspace chat (e2e)', () => {
 
       return {
         department,
+        admin: await member('admin@chat.example', 'Admin', provisioned.tenant.id),
         head: await member('head@chat.example', 'Head', provisioned.tenant.id),
         employee: await member('emp@chat.example', 'Employee', provisioned.tenant.id),
         colleague: await member('col@chat.example', 'Colleague', provisioned.tenant.id),
@@ -213,6 +215,7 @@ describe('workspace chat (e2e)', () => {
     });
 
     departmentId = made.department.id;
+    adminId = made.admin.id;
     headId = made.head.id;
     employeeId = made.employee.id;
     employeeUboss = made.employee.ubossUniqueId;
@@ -223,6 +226,22 @@ describe('workspace chat (e2e)', () => {
     await ctx.prisma.runAsPlatformOperation(async () => {
       // A Head who can read Objectives in the department, and two Employees who — since CR-03 —
       // cannot read Objectives at all. That asymmetry is what makes the preview test meaningful.
+      /*
+       * A Company Admin, because creating a Group is now an administrator's act.
+       *
+       * The client's rule is that Admin decides who belongs to an official Group, and a Head is
+       * not an administrator — they run a department. The grant checked is
+       * `users:ManageAccess`, which only this template holds.
+       */
+      await ctx.prisma.client.roleAssignment.create({
+        data: {
+          tenantId,
+          userId: adminId,
+          roleKind: 'CompanyAdmin',
+          scopeKind: 'WholeCompany',
+          grantedByUserId: ownerId,
+        },
+      });
       await ctx.prisma.client.roleAssignment.create({
         data: {
           tenantId,
@@ -296,16 +315,21 @@ describe('workspace chat (e2e)', () => {
       return objective.id;
     });
 
-  const startGroup = async (
-    actorUserId: string,
-    participantUserIds: string[],
-    title = 'Month end',
-  ) =>
+  /**
+   * A group, as a fixture for the tests that are about what happens inside one.
+   *
+   * Always created by the administrator, and with the administrator in it, because creating an
+   * official Group is an administrator's act — the client's rule, enforced in
+   * `startConversation`. The tests below are about messages, mentions, context and access; who
+   * created the group is not their subject, and the three tests where it *is* the subject say so
+   * by calling the service directly.
+   */
+  const startGroup = async (participantUserIds: string[], title = 'Month end') =>
     chat().startConversation({
       scope: scope(),
-      actorUserId,
+      actorUserId: adminId,
       kind: 'Group',
-      participantUserIds,
+      participantUserIds: [...new Set([adminId, ...participantUserIds])],
       title,
     });
 
@@ -313,7 +337,7 @@ describe('workspace chat (e2e)', () => {
   describe('a context reference grants nothing — the rule this feature turns on', () => {
     it('shows the name to somebody with access and refuses it to somebody without, in the same conversation', async () => {
       const objectiveId = await seedObjective('Regulatory filing Q3');
-      const conversation = await startGroup(headId, [headId, employeeId]);
+      const conversation = await startGroup([headId, employeeId]);
 
       await chat().addContext({
         scope: scope(),
@@ -355,7 +379,7 @@ describe('workspace chat (e2e)', () => {
       // open the conversation and render the preview for them — using somebody else's
       // permissions as an oracle.
       const objectiveId = await seedObjective('Confidential restructure');
-      const conversation = await startGroup(employeeId, [employeeId, colleagueId]);
+      const conversation = await startGroup([employeeId, colleagueId]);
 
       await assert.rejects(
         chat().addContext({
@@ -375,7 +399,7 @@ describe('workspace chat (e2e)', () => {
 
     it('stops previewing when access is lost, with nobody editing the conversation', async () => {
       const objectiveId = await seedObjective('Seasonal hiring');
-      const conversation = await startGroup(headId, [headId, employeeId]);
+      const conversation = await startGroup([headId, employeeId]);
       await chat().addContext({
         scope: scope(),
         actorUserId: headId,
@@ -407,7 +431,7 @@ describe('workspace chat (e2e)', () => {
 
     it('stores a reference with no copy of the resource in it', async () => {
       const objectiveId = await seedObjective('Nothing cached here');
-      const conversation = await startGroup(headId, [headId, employeeId]);
+      const conversation = await startGroup([headId, employeeId]);
       await chat().addContext({
         scope: scope(),
         actorUserId: headId,
@@ -439,7 +463,7 @@ describe('workspace chat (e2e)', () => {
   // =========================================================================
   describe('membership is the only gate', () => {
     it('hides a conversation from somebody who is not in it', async () => {
-      const conversation = await startGroup(headId, [headId, employeeId]);
+      const conversation = await startGroup([headId, employeeId]);
 
       // Not "Forbidden": that would confirm the conversation exists and that these two people are
       // talking, which the participants have not shared either.
@@ -454,7 +478,7 @@ describe('workspace chat (e2e)', () => {
     });
 
     it('refuses a message from somebody who is not in it', async () => {
-      const conversation = await startGroup(headId, [headId, employeeId]);
+      const conversation = await startGroup([headId, employeeId]);
       await assert.rejects(
         chat().sendMessage({
           scope: scope(),
@@ -466,10 +490,12 @@ describe('workspace chat (e2e)', () => {
     });
 
     it('refuses a conversation you are not part of yourself', async () => {
+      // As the administrator, so the refusal under test is the self rule rather than the group
+      // permission — a Head is now turned away before this rule is ever reached.
       await assert.rejects(
         chat().startConversation({
           scope: scope(),
-          actorUserId: headId,
+          actorUserId: adminId,
           kind: 'Group',
           participantUserIds: [employeeId, colleagueId],
           title: 'About you two',
@@ -498,7 +524,7 @@ describe('workspace chat (e2e)', () => {
     });
 
     it('keeps one company’s conversations invisible to another', async () => {
-      await startGroup(headId, [headId, employeeId], 'Ours');
+      await startGroup([headId, employeeId], 'Ours');
 
       const visible = await ctx.prisma.runInTenantTransaction(scope(otherTenantId), () =>
         ctx.prisma.client.chatConversation.findMany({}),
@@ -535,7 +561,247 @@ describe('workspace chat (e2e)', () => {
   });
 
   // =========================================================================
+  // -------------------------------------------------------------------------
+  // Department workshops
+  // -------------------------------------------------------------------------
+
+  /**
+   * A department's own conversation.
+   *
+   * The difference from a group is the whole point: a group's membership is a list somebody typed,
+   * and a workshop's membership is whoever works in the department. A typed list goes stale the
+   * first time somebody transfers, quietly leaving a leaver reading the department's conversation
+   * and a joiner locked out of it.
+   */
+  describe('a department workshop', () => {
+    /** Put somebody in the department, the way the product does. */
+    const employ = async (userId: string, department = departmentId) =>
+      ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.employmentRecord.create({
+          data: {
+            tenantId,
+            userId,
+            departmentId: department,
+            designation: 'Operations Associate',
+            employeeId: `EMP-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
+          },
+        }),
+      );
+
+    const endEmployment = async (userId: string) =>
+      ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.employmentRecord.updateMany({
+          where: { tenantId, userId, endedAt: null },
+          data: { endedAt: new Date(), state: 'Ended' },
+        }),
+      );
+
+    const membersOf = async (conversationId: string) => {
+      const rows = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.chatParticipant.findMany({
+          where: { tenantId, conversationId, leftAt: null },
+          select: { userId: true },
+        }),
+      );
+      return new Set(rows.map((row) => row.userId));
+    };
+
+    it('creates itself the first time somebody opens it, and is named after the department', async () => {
+      await employ(employeeId);
+
+      const opened = await chat().openDepartmentWorkshop({
+        scope: scope(),
+        actorUserId: employeeId,
+        departmentId,
+      });
+      assert.equal(opened.created, true);
+
+      const row = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.chatConversation.findFirstOrThrow({
+          where: { tenantId, id: opened.id },
+          select: { kind: true, title: true, departmentId: true },
+        }),
+      );
+      assert.equal(row.kind, 'DepartmentWorkshop');
+      assert.equal(row.title, 'Operations Workshop');
+      assert.equal(row.departmentId, departmentId);
+    });
+
+    it('is the same workshop the second time, not another one', async () => {
+      await employ(employeeId);
+
+      const first = await chat().openDepartmentWorkshop({
+        scope: scope(),
+        actorUserId: employeeId,
+        departmentId,
+      });
+      const second = await chat().openDepartmentWorkshop({
+        scope: scope(),
+        actorUserId: employeeId,
+        departmentId,
+      });
+
+      assert.equal(second.created, false);
+      assert.equal(second.id, first.id);
+    });
+
+    it('follows the department when somebody joins or leaves', async () => {
+      /*
+       * The reason this is not a Group. A membership captured once would leave the departed
+       * employee reading the conversation and the new one unable to find it.
+       */
+      await employ(employeeId);
+      const opened = await chat().openDepartmentWorkshop({
+        scope: scope(),
+        actorUserId: employeeId,
+        departmentId,
+      });
+      assert.deepEqual([...(await membersOf(opened.id))], [employeeId]);
+
+      await employ(colleagueId);
+      await chat().openDepartmentWorkshop({
+        scope: scope(),
+        actorUserId: employeeId,
+        departmentId,
+      });
+      const joined = await membersOf(opened.id);
+      assert.ok(joined.has(colleagueId), 'a new joiner cannot reach their own workshop');
+
+      await endEmployment(employeeId);
+      await chat().openDepartmentWorkshop({
+        scope: scope(),
+        actorUserId: colleagueId,
+        departmentId,
+      });
+      const afterLeaving = await membersOf(opened.id);
+      assert.ok(!afterLeaving.has(employeeId), 'somebody who left is still reading the workshop');
+      assert.ok(afterLeaving.has(colleagueId));
+    });
+
+    it('records a leaver as having left rather than deleting them', async () => {
+      // They really did say what they said, and who could see it is part of the history.
+      await employ(employeeId);
+      const opened = await chat().openDepartmentWorkshop({
+        scope: scope(),
+        actorUserId: employeeId,
+        departmentId,
+      });
+
+      await endEmployment(employeeId);
+      await employ(colleagueId);
+      await chat().openDepartmentWorkshop({
+        scope: scope(),
+        actorUserId: colleagueId,
+        departmentId,
+      });
+
+      const row = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.chatParticipant.findFirstOrThrow({
+          where: { tenantId, conversationId: opened.id, userId: employeeId },
+          select: { leftAt: true },
+        }),
+      );
+      assert.notEqual(row.leftAt, null);
+    });
+
+    it('lets a Head over the department look in without working there', async () => {
+      // The client's rule that an Admin or a Head may enter a permitted department's workshop.
+      await employ(employeeId);
+      const opened = await chat().openDepartmentWorkshop({
+        scope: scope(),
+        actorUserId: headId,
+        departmentId,
+      });
+
+      assert.ok(opened.id);
+      assert.ok((await membersOf(opened.id)).has(headId));
+    });
+
+    it('refuses somebody whose access does not reach the department', async () => {
+      /*
+       * An Employee at OwnWork scope who works somewhere else. Refused by the engine's own answer
+       * about this department, not by a role name written into the chat service.
+       */
+      const elsewhere = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.department.create({
+          data: { tenantId, name: 'Somewhere Else', code: 'ELSE' },
+        }),
+      );
+      await employ(colleagueId, elsewhere.id);
+
+      await assert.rejects(
+        () =>
+          chat().openDepartmentWorkshop({
+            scope: scope(),
+            actorUserId: colleagueId,
+            departmentId,
+          }),
+        (error: Error) => {
+          assert.match(error.message, /not a department you work in/i);
+          return true;
+        },
+      );
+    });
+  });
+
   describe('conversations', () => {
+    it('lets an administrator create a group and refuses everybody else', async () => {
+      /*
+       * The client's rule: an official Group is company structure, and Admin decides who belongs
+       * to it. Before this, the route checked that the participants were colleagues and nothing
+       * else — so any employee could mint a company Group and put whoever they liked in it.
+       *
+       * The grant is `users:ManageAccess` rather than a role name. Only Company Admin holds it
+       * today, which is the default the client asked for, and an administrator can grant it to
+       * somebody else, which is the path the client asked to keep open. A service that asked
+       * "is this an admin?" would be a second permission engine.
+       */
+      const made = await chat().startConversation({
+        scope: scope(),
+        actorUserId: adminId,
+        kind: 'Group',
+        participantUserIds: [adminId, employeeId],
+        title: 'Month end close',
+      });
+      assert.equal(made.created, true);
+
+      await assert.rejects(
+        chat().startConversation({
+          scope: scope(),
+          actorUserId: employeeId,
+          kind: 'Group',
+          participantUserIds: [employeeId, colleagueId],
+          title: 'My own group',
+        }),
+        /administrator/i,
+      );
+
+      // A Head runs a department; they are not the company's administrator.
+      await assert.rejects(
+        chat().startConversation({
+          scope: scope(),
+          actorUserId: headId,
+          kind: 'Group',
+          participantUserIds: [headId, employeeId],
+          title: 'My department group',
+        }),
+        /administrator/i,
+      );
+    });
+
+    it('still lets anybody message a colleague directly', async () => {
+      // Deliberately not gated. Two colleagues talking is not company structure, and the client
+      // asks for Admin to be able to start a direct conversation *easily* rather than for
+      // everybody else to be stopped from doing so.
+      const made = await chat().startConversation({
+        scope: scope(),
+        actorUserId: employeeId,
+        kind: 'Direct',
+        participantUserIds: [employeeId, colleagueId],
+      });
+      assert.equal(made.created, true);
+    });
+
     it('gives two people one direct conversation however they start it', async () => {
       const first = await chat().startConversation({
         scope: scope(),
@@ -570,16 +836,17 @@ describe('workspace chat (e2e)', () => {
       await assert.rejects(
         chat().startConversation({
           scope: scope(),
-          actorUserId: headId,
+          // The administrator, so the refusal is about the blank name rather than the permission.
+          actorUserId: adminId,
           kind: 'Group',
-          participantUserIds: [headId, employeeId],
+          participantUserIds: [adminId, employeeId],
           title: '   ',
         }),
       );
     });
 
     it('audits starting a conversation without recording who is in it', async () => {
-      await startGroup(headId, [headId, employeeId], 'Quarter close');
+      await startGroup([headId, employeeId], 'Quarter close');
 
       const events = await ctx.prisma.runAsPlatformOperation(() =>
         ctx.prisma.client.auditEvent.findMany({
@@ -587,18 +854,25 @@ describe('workspace chat (e2e)', () => {
         }),
       );
       assert.equal(events.length, 1);
-      // The count, not the list. Who is in a conversation is the conversation's business, and an
-      // audit trail is read by people who are not in it.
+      /*
+       * The count, not the list.
+       *
+       * Who is in a conversation is the conversation's business, and an audit trail is read by
+       * people who are not in it. Three, because an official Group is created by the
+       * administrator and they are in it — the number is incidental to what this test is about,
+       * which is that a number is what gets recorded.
+       */
       const serialised = JSON.stringify(events[0]?.metadata);
       assert.equal(serialised.includes(employeeId), false);
-      assert.match(serialised, /"participants":2/);
+      assert.equal(serialised.includes(adminId), false);
+      assert.match(serialised, /"participants":3/);
     });
   });
 
   // =========================================================================
   describe('messages', () => {
     it('does not audit an ordinary message', async () => {
-      const conversation = await startGroup(headId, [headId, employeeId]);
+      const conversation = await startGroup([headId, employeeId]);
       await chat().sendMessage({
         scope: scope(),
         actorUserId: headId,
@@ -615,7 +889,7 @@ describe('workspace chat (e2e)', () => {
     });
 
     it('drops a mention of somebody outside the conversation and says it did', async () => {
-      const conversation = await startGroup(headId, [headId, employeeId]);
+      const conversation = await startGroup([headId, employeeId]);
       const sent = await chat().sendMessage({
         scope: scope(),
         actorUserId: headId,
@@ -631,7 +905,7 @@ describe('workspace chat (e2e)', () => {
     });
 
     it('keeps a deleted message’s place and none of its words', async () => {
-      const conversation = await startGroup(headId, [headId, employeeId]);
+      const conversation = await startGroup([headId, employeeId]);
       const sent = await chat().sendMessage({
         scope: scope(),
         actorUserId: headId,
@@ -664,7 +938,7 @@ describe('workspace chat (e2e)', () => {
     });
 
     it('lets only the author delete their message', async () => {
-      const conversation = await startGroup(headId, [headId, employeeId]);
+      const conversation = await startGroup([headId, employeeId]);
       const sent = await chat().sendMessage({
         scope: scope(),
         actorUserId: headId,
@@ -684,7 +958,7 @@ describe('workspace chat (e2e)', () => {
     });
 
     it('refuses an empty message with nothing attached', async () => {
-      const conversation = await startGroup(headId, [headId, employeeId]);
+      const conversation = await startGroup([headId, employeeId]);
       await assert.rejects(
         chat().sendMessage({
           scope: scope(),
@@ -696,7 +970,7 @@ describe('workspace chat (e2e)', () => {
     });
 
     it('counts unread without counting your own messages', async () => {
-      const conversation = await startGroup(headId, [headId, employeeId]);
+      const conversation = await startGroup([headId, employeeId]);
       await chat().sendMessage({
         scope: scope(),
         actorUserId: headId,
@@ -736,7 +1010,7 @@ describe('workspace chat (e2e)', () => {
   // =========================================================================
   describe('search', () => {
     it('never reaches a conversation you are not in', async () => {
-      const theirs = await startGroup(headId, [headId, colleagueId], 'Not yours');
+      const theirs = await startGroup([headId, colleagueId], 'Not yours');
       await chat().sendMessage({
         scope: scope(),
         actorUserId: headId,
@@ -744,7 +1018,7 @@ describe('workspace chat (e2e)', () => {
         body: 'The secret word is pineapple',
       });
 
-      const mine = await startGroup(headId, [headId, employeeId], 'Yours');
+      const mine = await startGroup([headId, employeeId], 'Yours');
       await chat().sendMessage({
         scope: scope(),
         actorUserId: headId,
@@ -764,7 +1038,7 @@ describe('workspace chat (e2e)', () => {
     });
 
     it('finds a message in a conversation you are in', async () => {
-      const conversation = await startGroup(headId, [headId, employeeId]);
+      const conversation = await startGroup([headId, employeeId]);
       await chat().sendMessage({
         scope: scope(),
         actorUserId: headId,

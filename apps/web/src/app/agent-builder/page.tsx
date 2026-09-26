@@ -9,7 +9,6 @@ import {
   Button,
   Card,
   CardBody,
-  DataTable,
   Icon,
   PageHeader,
   StatusBadge,
@@ -17,6 +16,7 @@ import {
 } from '@uboss/ui';
 
 import {
+  jobMethodApi,
   agentBuilderApi,
   type AgentBuilderMetaView,
   type AgentBuilderView,
@@ -30,13 +30,30 @@ import { useJustBecameTrue } from '../../lib/use-just-became-true';
 import { useAccountMenu } from '../../lib/use-account-menu';
 import { useSignedInUser } from '../../lib/use-signed-in-user';
 import { RoutedAppShell } from '../../components/RoutedAppShell';
-import { SkillPicker } from '../../components/SkillPicker';
 import {
   forgetWorkspace,
   readRememberedWorkspace,
   resolveActiveWorkspace,
 } from '../../lib/active-workspace';
 import { useNotificationBell } from '../../lib/use-notification-bell';
+import {
+  AGENT_TEST_EXPECTATION_NOTE,
+  AGENT_TEST_STATUS_LABELS,
+  AGENT_TEST_STATUS_TONES,
+  agentTestProblems,
+  FIELD_SOURCE_LABELS,
+  FORM3_FIELD_SOURCE,
+  FORM3_JOB_LEVEL_FIELDS,
+  type FieldSource,
+  type JobMethodRow,
+} from '@uboss/types';
+
+import { AgentObjectiveList } from '../../components/AgentObjectiveList';
+import {
+  blankJobMethodRow,
+  JOB_METHOD_COLUMNS,
+  JobMethodGrid,
+} from '../../components/JobMethodGrid';
 import { JobMethodImportExport } from '../../components/JobMethodImportExport';
 import { useCompanyNavigation } from '../../lib/use-company-navigation';
 import { can, useMyAccess } from '../../lib/use-my-access';
@@ -77,6 +94,35 @@ function AgentBuilderInner() {
   const [assignments, setAssignments] = useState<AgentBuilderView[]>([]);
   const [selected, setSelected] = useState<AgentBuilderView | null>(null);
 
+  /**
+   * Which objective's agents are being looked at.
+   *
+   * Separate from `selected`: closing an agent should put somebody back in the objective they
+   * opened it from, not at the top of the list. Those are two different places and one piece of
+   * state cannot be both.
+   */
+  const [openObjectiveId, setOpenObjectiveId] = useState<string | null>(null);
+
+  /**
+   * The job method's steps, as the grid holds them.
+   *
+   * Loaded per assignment and owned here, the way the Objective form owns its workflow rows: the
+   * grid does the editing and the page does the saving, so one place knows whether anything is
+   * unsaved.
+   */
+  const [methodRows, setMethodRows] = useState<JobMethodRow[]>([]);
+  const [methodDirty, setMethodDirty] = useState(false);
+  const [methodExpanded, setMethodExpanded] = useState(false);
+
+  /**
+   * The overview, composed from the four records that already answer it.
+   *
+   * Read rather than assembled here: Form 3 is the product's own answer to "what is already known
+   * about this job", and building a second answer on this screen would be a second thing to keep
+   * true. Null until it arrives, and null for an assignment that has no composed view yet.
+   */
+  const [overview, setOverview] = useState<Record<string, string | null> | null>(null);
+
   /*
    * Readiness changes while you are looking elsewhere on this screen — a connection is resolved in
    * another panel, the readiness answer comes back, and a control that was dead is live. These
@@ -84,13 +130,36 @@ function AgentBuilderInner() {
    * arrival would announce something that did not just occur.
    */
   const [testJustOpened, clearTestCue] = useJustBecameTrue(selected?.readiness.readyToTest ?? false);
+
+  /*
+   * What the test runs against.
+   *
+   * Held on the screen rather than saved with the draft. A sample is something somebody types to
+   * try one thing; persisting it would make the next person think it was part of the agent's
+   * configuration, and it is not — the agent is configured above, and this is what you throw at
+   * it to see what happens.
+   */
+  const [sampleInput, setSampleInput] = useState('');
+  const [expectedOutcome, setExpectedOutcome] = useState('');
+  const testProblems = agentTestProblems({ sampleInput, expectedOutcome });
+
+  // Newest first from the server, so the head is the run somebody just watched happen.
+  const latestTest = selected?.testHistory[0] ?? null;
+  const earlierTests = selected?.testHistory.slice(1) ?? [];
   const [activateJustOpened, clearActivateCue] = useJustBecameTrue(
     selected?.readiness.readyToActivate ?? false,
   );
   const [error, setError] = useState<string | null>(null);
+  /**
+   * The load was refused, as opposed to having failed.
+   *
+   * Kept apart from `error` because the screen answers them differently. A failure leaves the
+   * builder on screen — reloading may well work. A refusal is the whole answer, and everything
+   * below it would be describing work this person is not allowed to know about.
+   */
+  const [refused, setRefused] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [pickingSkills, setPickingSkills] = useState(false);
 
   const tenantId =
     resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
@@ -122,17 +191,26 @@ function AgentBuilderInner() {
       .list(tenantId)
       .then((result) => {
         setAssignments(result.assignments);
-        const wanted =
+        /*
+         * Nothing opens itself.
+         *
+         * This used to fall back to the first assignment, so arriving at Agent Builder dropped
+         * somebody straight into a form for work they had not chosen — and the objective cards,
+         * which are the way in, were never seen. A URL that names an assignment still opens it,
+         * because that is somebody asking for it by name.
+         */
+        setSelected(
           assignmentId === null
-            ? result.assignments[0]
-            : result.assignments.find((entry) => entry.assignmentId === assignmentId);
-        setSelected(wanted ?? null);
+            ? null
+            : (result.assignments.find((entry) => entry.assignmentId === assignmentId) ?? null),
+        );
       })
-      .catch((caught: unknown) =>
+      .catch((caught: unknown) => {
+        setRefused(caught instanceof ApiError && caught.statusCode === 403);
         setError(
           caught instanceof ApiError ? caught.message : 'Could not load your assigned AI work.',
-        ),
-      );
+        );
+      });
   }, [assignmentId, tenantId]);
 
   useEffect(load, [load]);
@@ -179,6 +257,120 @@ function AgentBuilderInner() {
     run((tenant, assignment) => agentBuilderApi.saveSetup(tenant, assignment, patch))();
 
   /** One control per remaining question, in the order the server reported them. */
+  /**
+   * One field of the Agent form, read-only because the objective already answered it.
+   *
+   * Drawn in the same markup as an editable one — same label, same box, same row — because the
+   * point of the form is that somebody can read the whole configuration in one place. Greying out
+   * a value is how you say "this is settled"; hiding it is how you make somebody go and look for
+   * it somewhere else.
+   */
+  const inherited = (
+    id: string,
+    label: string,
+    value: string,
+    source: FieldSource,
+    required = false,
+  ) => (
+    <div className="uboss-field" key={id}>
+      <label htmlFor={id}>
+        {label} {required ? <span className="uboss-field-required">*</span> : null}
+        <span className={`uboss-srcchip uboss-srcchip--${source.toLowerCase()}`}>
+          {FIELD_SOURCE_LABELS[source]}
+        </span>
+      </label>
+      <input id={id} value={value} readOnly />
+
+    </div>
+  );
+
+  /*
+   * The job method's steps follow whichever assignment is open.
+   *
+   * Refetched rather than carried on the builder view, because the two are edited by different
+   * people at different times: the setup is the builder's, and the steps are often filled in by
+   * whoever actually does the work, through the downloaded form. Reading them here means the grid
+   * shows what the last upload left, not what the page happened to be holding.
+   */
+  useEffect(() => {
+    if (tenantId === null || selected === null) {
+      setMethodRows([]);
+      setMethodDirty(false);
+      setOverview(null);
+      return;
+    }
+
+    let current = true;
+
+    void agentBuilderApi
+      .form3(tenantId, selected.assignmentId)
+      .then((view) => {
+        if (current) setOverview(view.jobLevel as Record<string, string | null>);
+      })
+      // A person who may build but not read the canonical view simply gets the fields the builder
+      // already carries. Not an error worth a banner on a screen that still works.
+      .catch(() => {
+        if (current) setOverview(null);
+      });
+
+    void jobMethodApi
+      .view(tenantId, selected.assignmentId)
+      .then((view) => {
+        if (!current) return;
+        /*
+         * Read as rows, and numbered here rather than trusted.
+         *
+         * The view serves them as loose records, so a row is only a `JobMethodRow` once it has a
+         * step number. Renumbering on the way in also means the grid always opens with 1..n in
+         * order, whatever gaps a previous import left behind.
+         */
+        const read = (view.rows ?? []) as Record<string, unknown>[];
+        /*
+         * One blank step when there is nothing yet, exactly as the Objective form does.
+         *
+         * A grid with a header and no rows is a spreadsheet with nowhere to type: the first thing
+         * somebody has to do is find the Add button before they can start. The Objective form
+         * opens on row 1 for the same reason.
+         */
+        setMethodRows(
+          read.length === 0
+            ? [blankJobMethodRow(1)]
+            : read.map((row, index) => ({ ...row, step: index + 1 }) as JobMethodRow),
+        );
+        setMethodDirty(false);
+      })
+      .catch(() => {
+        if (!current) return;
+        // No method captured yet is the ordinary case for a new assignment, not an error worth a
+        // banner. It opens on a blank first step, the way the Objective form does.
+        setMethodRows([blankJobMethodRow(1)]);
+        setMethodDirty(false);
+      });
+
+    return () => {
+      current = false;
+    };
+  }, [selected, tenantId]);
+
+  /** Save the grid. The whole method, because that is what the grid is. */
+  const saveMethod = useCallback(() => {
+    if (tenantId === null || selected === null) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+
+    void jobMethodApi
+      .saveRows(tenantId, selected.assignmentId, methodRows)
+      .then((result) => {
+        setMethodDirty(false);
+        setNotice(result.note);
+      })
+      .catch((caught: unknown) =>
+        setError(caught instanceof ApiError ? caught.message : 'Those steps could not be saved.'),
+      )
+      .finally(() => setBusy(false));
+  }, [methodRows, selected, tenantId]);
+
   const controlFor = (field: keyof AgentExecutionSetupView, label: string, why: string) => {
     if (selected === null) return null;
 
@@ -277,16 +469,129 @@ function AgentBuilderInner() {
         void authApi.logout().finally(() => window.location.assign('/login'));
       }}
     >
+      {/*
+        The actions, at the top.
+
+        The client's rule is that the important actions are visible rather than tucked into a side
+        area, so Test and Activate live here and the Readiness card beside the form keeps only the
+        reasons — which is the half of it that is genuinely reference material. They are not drawn
+        in both places: one button that can be disabled with a reason beats two that disagree.
+      */}
       <PageHeader
         title="Agent Builder"
         description="Ask only for missing execution setup — never re-enter the whole method."
         breadcrumbs={[{ label: 'Engine Agent' }, { label: 'Builder' }]}
+        actions={
+          selected === null ? null : selected.engineAgent !== null ? (
+            <Button size="sm" onClick={() => setSelected(null)}>
+              <Icon name="back" size={16} />
+              This objective
+            </Button>
+          ) : (
+            <>
+              {/*
+                Back first, because leaving is the one action that is always available.
+
+                The approved reference puts it here for the same reason: once the list is replaced
+                by the form, there has to be a way back to it that does not depend on the form
+                being in any particular state.
+              */}
+              <Button size="sm" onClick={() => setSelected(null)}>
+                <Icon name="back" size={16} />
+                This objective
+              </Button>
+              {/*
+                Save Draft first, because it is the one that loses work if it is missed.
+
+                The other two are gated on readiness and say why they are disabled; this one is
+                always available and always means the same thing — what is on screen is stored.
+              */}
+              {/*
+                Download and upload sit with the other actions, as they do on the Objective form.
+
+                Taking the form away to be filled in is something somebody does *instead* of
+                typing, so it belongs where they look before they start — not in a card below the
+                grid they have already finished filling by hand.
+              */}
+              {tenantId === null ? null : (
+                <JobMethodImportExport
+                  tenantId={tenantId}
+                  assignmentId={selected.assignmentId}
+                  assignmentTitle={selected.prefill.assignedWork}
+                  objectiveName={selected.prefill.objectiveName}
+                  assignedToLabel={assignedToLabel}
+                  canImport={can(myAccess, 'agent-builder', 'EditDraft')}
+                  compact
+                  onImported={() => void load()}
+                />
+              )}
+              <Button
+                size="sm"
+                disabled={busy || !methodDirty}
+                title={methodDirty ? undefined : 'Nothing has changed'}
+                onClick={saveMethod}
+              >
+                Save Draft
+              </Button>
+              <span
+                className={testJustOpened ? 'uboss-just-enabled' : undefined}
+                onAnimationEnd={clearTestCue}
+              >
+                <Button
+                  size="sm"
+                  disabled={busy || !selected.readiness.readyToTest || testProblems.length > 0}
+                  title={
+                    !selected.readiness.readyToTest
+                      ? 'Answer the remaining setup first — the Readiness panel lists it.'
+                      : // The same sentence the Test section shows, so a disabled button is never
+                        // a mystery to somebody who has not scrolled to it yet.
+                        (testProblems[0] ?? undefined)
+                  }
+                  onClick={run((tenant, assignment) =>
+                    agentBuilderApi.test(tenant, assignment, sampleInput, expectedOutcome),
+                  )}
+                >
+                  <Icon name="bolt" size={16} />
+                  Test agent
+                </Button>
+              </span>
+              <span
+                className={activateJustOpened ? 'uboss-just-enabled' : undefined}
+                onAnimationEnd={clearActivateCue}
+              >
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={busy || !selected.readiness.readyToActivate}
+                  title={
+                    selected.readiness.readyToActivate
+                      ? undefined
+                      : 'A passing test and complete setup come first.'
+                  }
+                  onClick={run((tenant, assignment) =>
+                    agentBuilderApi.activate(tenant, assignment),
+                  )}
+                >
+                  Publish agent
+                </Button>
+              </span>
+            </>
+          )
+        }
       />
 
       {error === null ? null : <Banner tone="danger">{error}</Banner>}
       {notice === null ? null : <Banner tone="ok">{notice}</Banner>}
 
-      {assignments.length === 0 ? (
+      {/*
+        "Nothing here" is only said when it is true.
+
+        Found in a browser proof: somebody without the grant who typed the URL got the refusal and
+        then the whole builder underneath it — the filter chips, and an empty list reading "No
+        objective needs an agent". Two messages, and the louder one was false: it describes a
+        company with no AI work, when the truth is that this person may not see any.
+      */}
+      {!refused && assignments.length === 0 ? (
         <Card>
           <CardBody>
             <p className="uboss-muted">
@@ -297,57 +602,35 @@ function AgentBuilderInner() {
         </Card>
       ) : null}
 
-      {assignments.length > 1 ? (
-        <Card style={{ marginBottom: 14 }}>
-          <CardBody>
-            <DataTable
-              caption="Assigned AI work"
-              rows={assignments}
-              rowKey={(row) => row.assignmentId}
-              columns={[
-                {
-                  key: 'work',
-                  header: 'AI work',
-                  render: (row) => row.prefill.assignedWork,
-                },
-                {
-                  key: 'objective',
-                  header: 'Objective',
-                  render: (row) => row.prefill.objectiveName,
-                },
-                {
-                  key: 'state',
-                  header: 'State',
-                  render: (row) =>
-                    row.engineAgent === null ? (
-                      <StatusBadge
-                        tone={row.missing.length === 0 ? 'blue' : 'warn'}
-                        status={row.missing.length === 0 ? 'Ready to test' : 'Needs setup'}
-                      />
-                    ) : (
-                      <StatusBadge tone="success" status={row.engineAgent.status} />
-                    ),
-                },
-                {
-                  key: 'open',
-                  header: '',
-                  render: (row) => (
-                    <Button size="sm" onClick={() => setSelected(row)}>
-                      Open
-                    </Button>
-                  ),
-                },
-              ]}
-              emptyTitle="Nothing assigned"
-              emptyDescription="Assigned AI work appears here."
-            />
-          </CardBody>
-        </Card>
+      {/*
+        Agent Builder, organised by objective.
+
+        The client's rule, and the reason the flat table went: somebody arrives from an objective
+        they have just defined, and the first question they have is which objectives still need
+        agents. A list of unrelated AI work items cannot answer that — four rows saying "needs
+        setup" might be one objective or four.
+      */}
+      {refused ? null : selected === null ? (
+        <AgentObjectiveList
+          assignments={assignments}
+          openObjectiveId={openObjectiveId}
+          onOpenObjective={setOpenObjectiveId}
+          onOpenAgent={(assignment) => setSelected(assignment)}
+        />
       ) : null}
 
+
+      {/*
+        Full width, one column, in the Objective form's own rhythm.
+
+        This used to be a `1fr 320px` grid, which squeezed the overview into a half-width column
+        and put a twelve-column spreadsheet in a 320px rail beside it. The Objective form is the
+        page it is meant to continue from, and that form is the whole width: actions, then fields,
+        then the grid underneath. Reading the two side by side is what makes this feel like one
+        product rather than two.
+      */}
       {selected === null ? null : (
-        <div className="uboss-grid" style={{ gridTemplateColumns: '1fr 320px' }}>
-          {/* ---- Left: inherited context, then only what is missing ---- */}
+        <>
           <Card>
             <CardBody>
               {selected.engineAgent !== null ? (
@@ -379,271 +662,407 @@ function AgentBuilderInner() {
                 </Banner>
               )}
 
-              <div className="uboss-section-label">Inherited from objective (read-only)</div>
-              <div className="uboss-kv">
-                <span className="uboss-kv-key">Agent name</span>
-                <span className="uboss-kv-value">
-                  {selected.engineAgent?.name ?? selected.prefill.suggestedAgentName}
-                </span>
-              </div>
-              <div className="uboss-kv">
-                <span className="uboss-kv-key">Assigned objective</span>
-                <span className="uboss-kv-value">
-                  {selected.prefill.objectiveCode} · {selected.prefill.objectiveName}
-                </span>
-              </div>
-              <div className="uboss-kv">
-                <span className="uboss-kv-key">Assigned AI work</span>
-                <span className="uboss-kv-value">{selected.prefill.assignedWork}</span>
-              </div>
-              <div className="uboss-kv">
-                <span className="uboss-kv-key">Owner</span>
-                <span className="uboss-kv-value uboss-mono uboss-muted-3">
-                  {selected.prefill.ownerUserId === null
-                    ? 'Not named by the plan'
-                    : selected.prefill.ownerUserId.slice(0, 8)}
-                </span>
-              </div>
               {/*
-                Attached Skills, and the one control on this panel that is not read-only.
+                A — Skill / Job Overview.
 
-                The rest of this card is what the objective decided and a builder may not contradict.
-                Which Skills do the work is different: the analysis proposes them, and somebody who
-                knows the work may swap one. The server re-checks published, entitled, this-company
-                and not-yet-live on save, so the button cannot widen anything — and it is absent
-                once the work is running, because changing a live agent is a new version of it.
+                The approved reference's own section, and its own rule: every field here is already
+                answered by the objective, the workflow, the hierarchy or policy, so none of it is
+                re-typed. The chip beside each label says which of those four decided it — without
+                that, a greyed box reads as the product refusing to let you type rather than as a
+                question somebody already answered.
+
+                The gaps come after, as real controls, because a gap is the only thing on this
+                screen that is genuinely somebody's to fill.
               */}
-              <div className="uboss-kv">
-                <span className="uboss-kv-key">Attached Skills</span>
-                <span className="uboss-kv-value uboss-mono">
-                  {selected.prefill.skillVersionIds.length === 0 ? (
-                    <span className="uboss-muted-3">None matched yet</span>
-                  ) : (
-                    selected.prefill.skillVersionIds.map((id) => id.slice(0, 8)).join(', ')
+              <div className="uboss-af-h">
+                <span className="uboss-tag">A</span> Skill / Job Overview
+                <span className="uboss-muted-3">
+                  prefilled from Objective · Workflow · Hierarchy · Policy — edit where allowed
+                </span>
+              </div>
+
+              {overview === null ? (
+                <div className="uboss-row-2">
+                  {inherited(
+                    'agentName',
+                    'Skill / Agent Name',
+                    selected.engineAgent?.name ?? selected.prefill.suggestedAgentName,
+                    'Objective',
+                    true,
                   )}
-                </span>
-              </div>
-              {selected.engineAgent === null && tenantId !== null ? (
-                <div className="uboss-actions" style={{ marginTop: 6, marginBottom: 10 }}>
-                  <Button disabled={busy} onClick={() => setPickingSkills(true)}>
-                    <Icon name="plus" size={15} />
-                    {selected.prefill.skillVersionIds.length === 0
-                      ? 'Add Skill'
-                      : 'Add or replace Skills'}
-                  </Button>
+                  {inherited(
+                    'agentObjective',
+                    'Objective',
+                    `${selected.prefill.objectiveCode} · ${selected.prefill.objectiveName}`,
+                    'Objective',
+                    true,
+                  )}
                 </div>
-              ) : null}
-              <div className="uboss-kv">
-                <span className="uboss-kv-key">Approval required</span>
-                <span className="uboss-kv-value">
-                  {selected.prefill.approvalRequired ? 'Yes — derived from policy' : 'No'}
-                </span>
-              </div>
-              <div className="uboss-kv">
-                <span className="uboss-kv-key">Completion evidence</span>
-                <span className="uboss-kv-value">{selected.prefill.completionEvidence}</span>
-              </div>
+              ) : (
+                /*
+                 * Two to a row, in the order the document lists them.
+                 *
+                 * Paired by position rather than by meaning: the source document's order is what a
+                 * reader is matching this against, and regrouping it into tidier pairs would make
+                 * that diff harder for no gain.
+                 */
+                Array.from(
+                  { length: Math.ceil(FORM3_JOB_LEVEL_FIELDS.length / 2) },
+                  (unused, row) => FORM3_JOB_LEVEL_FIELDS.slice(row * 2, row * 2 + 2),
+                ).map((pair) => (
+                  <div className="uboss-row-2" key={pair[0]?.key ?? 'row'}>
+                    {pair.map((field) =>
+                      inherited(
+                        field.key,
+                        field.label,
+                        overview[field.key] ?? '',
+                        FORM3_FIELD_SOURCE[field.key],
+                        field.required,
+                      ),
+                    )}
+                  </div>
+                ))
+              )}
 
               {selected.engineAgent !== null ? null : (
                 <>
-                  <div className="uboss-section-label">Missing setup (only what&apos;s needed)</div>
-                  {askingNothing ? (
-                    <p className="uboss-notice-min">
-                      <Icon name="check" size={14} />
-                      Nothing to ask. The objective, the workflow, policy and your approved
-                      connections already answer everything this agent needs.
-                    </p>
-                  ) : (
-                    selected.missing.map((entry) => controlFor(entry.field, entry.label, entry.why))
-                  )}
-                </>
-              )}
-            </CardBody>
-          </Card>
-
-          {/* ---- Right: readiness, test, activate ---- */}
-          <Card>
-            <CardBody>
-              <div className="uboss-section-label" style={{ marginTop: 0 }}>
-                Readiness
-              </div>
-
-              <div className="uboss-kv">
-                <span className="uboss-kv-key">Connection</span>
-                <span className="uboss-kv-value">
-                  {selected.readiness.connection === null ? (
-                    <span className="uboss-muted-3">
-                      {selected.needsConnection ? 'Not chosen' : 'Not needed'}
-                    </span>
-                  ) : (
-                    <StatusBadge
-                      tone={
-                        selected.readiness.connection.state === 'Connected' ? 'success' : 'warn'
-                      }
-                      status={selected.readiness.connection.state}
-                    />
-                  )}
-                </span>
-              </div>
-              <div className="uboss-kv">
-                <span className="uboss-kv-key">Schedule</span>
-                <span className="uboss-kv-value">
-                  {selected.setup.triggerOrFrequency ??
-                    (selected.setup.runType === null ? '—' : 'Not required')}
-                </span>
-              </div>
-
-              {selected.lastTest.at === null ? (
-                <p className="uboss-notice-min">
-                  <Icon name="alert" size={14} />
-                  Not tested yet.
-                </p>
-              ) : (
-                <>
-                  <div className="uboss-kv">
-                    <span className="uboss-kv-key">Last test</span>
-                    <span className="uboss-kv-value">
-                      <StatusBadge
-                        tone={selected.lastTest.passed ? 'success' : 'danger'}
-                        status={selected.lastTest.passed ? 'Passed' : 'Failed'}
-                      />
-                    </span>
-                  </div>
-                  {/* Never presented as a real provider result when it was not one. */}
-                  <p className="uboss-notice-min">
-                    <Icon name="shield" size={14} />
-                    {selected.lastTest.wasReal
-                      ? 'Ran against a live model provider.'
-                      : 'Ran against the built-in mock model, not a live provider.'}{' '}
-                    {selected.lastTest.summary}
-                  </p>
-                </>
-              )}
-
-              {selected.readiness.findings.length > 0 ? (
-                <>
-                  <div className="uboss-section-label">What is standing in the way</div>
-                  {selected.readiness.findings.map((finding) => (
-                    /*
-                     * Keyed by what it says, not by its index, so resolving the first blocker does
-                     * not rewrite the text of the second. `layout` closes the gap the resolved one
-                     * left, which is what makes progress visible.
-                     *
-                     * The item itself is not animated out. It would stay in the accessibility tree
-                     * while it left, reading out a blocker that no longer applies — the same
-                     * reason a deleted workflow row goes immediately.
-                     */
-                    <motion.p
-                      className="uboss-notice-min uboss-readiness-finding"
-                      key={finding.summary}
-                      layout
-                      transition={transition('panel', 'standard')}
-                    >
-                      <Icon name={finding.severity === 'Blocker' ? 'shield' : 'alert'} size={14} />
-                      {finding.summary}
-                    </motion.p>
-                  ))}
-                </>
-              ) : null}
-
-              {selected.engineAgent === null ? (
-                <>
-                  {/* Says the gate has just opened, once, and only when it really did. */}
-                  <span
-                    className={testJustOpened ? 'uboss-just-enabled' : undefined}
-                    onAnimationEnd={clearTestCue}
-                    style={{ display: 'block' }}
-                  >
-                    <Button
-                      size="sm"
-                      disabled={busy || !selected.readiness.readyToTest}
-                      onClick={run((tenant, assignment) => agentBuilderApi.test(tenant, assignment))}
-                      style={{ marginTop: 12, width: '100%' }}
-                    >
-                      <Icon name="bolt" size={16} />
-                      Test agent
-                    </Button>
-                  </span>
-                  <span
-                    className={activateJustOpened ? 'uboss-just-enabled' : undefined}
-                    onAnimationEnd={clearActivateCue}
-                    style={{ display: 'block' }}
-                  >
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      disabled={busy || !selected.readiness.readyToActivate}
-                      onClick={run((tenant, assignment) =>
-                        agentBuilderApi.activate(tenant, assignment),
+                  {askingNothing ? null : (
+                    <>
+                      <div className="uboss-section-label">
+                        What the objective did not answer
+                      </div>
+                      {selected.missing.map((entry) =>
+                        controlFor(entry.field, entry.label, entry.why),
                       )}
-                      style={{ marginTop: 8, width: '100%' }}
-                    >
-                      Activate agent
-                    </Button>
-                  </span>
+                    </>
+                  )}
                 </>
-              ) : (
-                <p className="uboss-notice-min">
-                  <Icon name="bot" size={14} />
-                  This work runs on a reusable Engine Agent. Changing how it runs is a new version
-                  of that agent, not an edit here.
-                </p>
               )}
 
               <p className="uboss-notice-min">
-                <Icon name="key" size={14} />A connection is chosen by identity. No credential is
-                ever shown on this screen.
+                <Icon name="shield" size={13} />
+                Zero-question rule: everything above is already known, so nothing is re-entered.
+                Your input is the Job Method below.
               </p>
             </CardBody>
           </Card>
-        </div>
-      )}
+
+
+        {selected === null || tenantId === null ? null : (
+          <>
+            {/*
+              The Objective form's own grid header, for the same reason it has one there.
+
+              A toolbar outside the card rather than a heading inside it: the grid is the widest
+              thing on the page and its controls belong beside its title, not indented within a
+              card that then has to be as wide as the grid anyway.
+            */}
+            <div className="uboss-wfg-toolbar">
+              <div className="uboss-section-label" style={{ margin: 0, border: 0 }}>
+                Job method (source grid — {JOB_METHOD_COLUMNS.length} columns)
+              </div>
+              <div className="uboss-wfg-toolbar-actions">
+                {/*
+                  A toggle, and it says which way it is about to go. It stays enabled for a reader:
+                  reading a long cell is the one thing somebody without edit rights most needs.
+                */}
+                <Button
+                  size="sm"
+                  aria-pressed={methodExpanded}
+                  onClick={() => setMethodExpanded((current) => !current)}
+                >
+                  {methodExpanded ? 'Collapse long text' : 'Expand long text'}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={busy || !methodDirty}
+                  title={methodDirty ? undefined : 'Nothing has changed'}
+                  onClick={saveMethod}
+                >
+                  Save steps
+                </Button>
+              </div>
+            </div>
+
+            <Card>
+              <CardBody>
+                <JobMethodGrid
+                  rows={methodRows}
+                  onChange={(rows) => {
+                    setMethodRows(rows);
+                    setMethodDirty(true);
+                  }}
+                  readOnly={!can(myAccess, 'agent-builder', 'EditDraft')}
+                  expanded={methodExpanded}
+                />
+              </CardBody>
+            </Card>
+          </>
+        )}
+
 
       {/*
-        Prompt 40A (CR-03) §4 — Download Job Method Form / Upload Completed Job Method.
+        The test, between the form and the readiness checklist.
 
-        Added *after* the approved two-column layout rather than inside it. The client approved A.
-        Skill / Job Overview and B. One-time Job Method + Skill Design with Save Draft, Test Agent,
-        Activate Agent and View Objective Form; CR-03 adds two controls and does not license moving
-        any of that, so nothing above this line changed.
-
-        `canImport` is the real grant, read from `/my-access`. Download deliberately needs none: the
-        person who knows how the work is done is often exactly the person who cannot open this screen.
+        Directly under what it tests and directly above the reasons it might refuse to run, which
+        is the order somebody moves through: configure, try, find out why not.
       */}
-      {selected === null || tenantId === null ? null : (
-        <JobMethodImportExport
-          tenantId={tenantId}
-          assignmentId={selected.assignmentId}
-          assignmentTitle={selected.prefill.assignedWork}
-          objectiveName={selected.prefill.objectiveName}
-          assignedToLabel={assignedToLabel}
-          canImport={can(myAccess, 'agent-builder', 'EditDraft')}
-          onImported={() => void load()}
-        />
-      )}
+      <Card>
+        <CardBody>
+          <div className="uboss-section-label" style={{ marginTop: 0 }}>
+            Test
+          </div>
+
+          <label className="uboss-field">
+            <span className="uboss-field-label">Test input *</span>
+            <textarea
+              className="uboss-input"
+              rows={4}
+              value={sampleInput}
+              placeholder="Paste a real example of what this agent will receive."
+              onChange={(event) => setSampleInput(event.target.value)}
+            />
+          </label>
+
+          <label className="uboss-field">
+            <span className="uboss-field-label">What you expect</span>
+            <textarea
+              className="uboss-input"
+              rows={3}
+              value={expectedOutcome}
+              placeholder="Optional. Describe the answer you are hoping for."
+              onChange={(event) => setExpectedOutcome(event.target.value)}
+            />
+            <span className="uboss-field-note">{AGENT_TEST_EXPECTATION_NOTE}</span>
+          </label>
+
+          {testProblems.length > 0 && sampleInput.trim() !== '' ? (
+            <Banner tone="warn">{testProblems.join(' ')}</Banner>
+          ) : null}
+
+          {/*
+            The result, below the form.
+
+            The newest run in full — what went in, what came back, and what it cost in time — so
+            the comparison the admin is actually making does not need two screens.
+          */}
+          {latestTest === null ? (
+            <p className="uboss-muted-3" style={{ marginTop: 12 }}>
+              Not tested yet. Give it something to work on and press Test agent.
+            </p>
+          ) : (
+            <div className="uboss-test-result">
+              <div className="uboss-kv">
+                <span className="uboss-kv-key">Result</span>
+                <span className="uboss-kv-value">
+                  <StatusBadge
+                    tone={
+                      AGENT_TEST_STATUS_TONES[latestTest.status] === 'ok'
+                        ? 'success'
+                        : AGENT_TEST_STATUS_TONES[latestTest.status] === 'warn'
+                          ? 'warn'
+                          : 'danger'
+                    }
+                    status={AGENT_TEST_STATUS_LABELS[latestTest.status]}
+                  />{' '}
+                  <span className="uboss-muted-3">
+                    {latestTest.durationMs} ms
+                    {latestTest.capability === null ? '' : ` · ${latestTest.capability}`}
+                    {latestTest.wasReal ? '' : ' · mock gateway'}
+                  </span>
+                </span>
+              </div>
+
+              <div className="uboss-test-pane">
+                <span className="uboss-test-pane-label">Input</span>
+                <pre className="uboss-pre">{latestTest.sampleInput}</pre>
+              </div>
+
+              {latestTest.expectedOutcome === null ? null : (
+                <div className="uboss-test-pane">
+                  <span className="uboss-test-pane-label">Expected</span>
+                  <pre className="uboss-pre">{latestTest.expectedOutcome}</pre>
+                </div>
+              )}
+
+              <div className="uboss-test-pane">
+                <span className="uboss-test-pane-label">Output</span>
+                {latestTest.output === null ? (
+                  <p className="uboss-muted-3">Nothing came back.</p>
+                ) : (
+                  <pre className="uboss-pre">{latestTest.output}</pre>
+                )}
+              </div>
+
+              {latestTest.warnings.map((warning) => (
+                <Banner key={warning} tone="warn">
+                  {warning}
+                </Banner>
+              ))}
+              {latestTest.errors.map((problem) => (
+                <Banner key={problem} tone="danger">
+                  {problem}
+                </Banner>
+              ))}
+            </div>
+          )}
+
+          {/*
+            Everything before it.
+
+            Publishing is a decision made by comparing attempts — "the last one dropped the tax
+            line, this one keeps it" — and that comparison is impossible if each test erases the
+            one before, which is what this screen used to do.
+          */}
+          {earlierTests.length === 0 ? null : (
+            <>
+              <div className="uboss-section-label">Earlier tests</div>
+              <ul className="uboss-test-history">
+                {earlierTests.map((entry) => (
+                  <li key={entry.id}>
+                    <StatusBadge
+                      tone={
+                        AGENT_TEST_STATUS_TONES[entry.status] === 'ok'
+                          ? 'success'
+                          : AGENT_TEST_STATUS_TONES[entry.status] === 'warn'
+                            ? 'warn'
+                            : 'danger'
+                      }
+                      status={AGENT_TEST_STATUS_LABELS[entry.status]}
+                    />
+                    <span className="uboss-muted-3">
+                      {new Date(entry.at).toLocaleString()}
+                      {entry.ranByName === null ? '' : ` · ${entry.ranByName}`}
+                      {` · ${entry.durationMs} ms`}
+                      {entry.wasReal ? '' : ' · mock'}
+                    </span>
+                    <span className="uboss-test-history-line">
+                      {entry.output ?? entry.errors[0] ?? 'Nothing came back.'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </CardBody>
+      </Card>
 
       {/*
-        The Skill picker. Mounted beside the panel rather than inside it so closing the drawer
-        never unmounts the card behind it mid-save.
+        Readiness, under the form rather than beside it.
+
+        It is a checklist of reasons, read once when something is disabled and ignored the rest of
+        the time — which is exactly the thing that should not take a third of the width away from
+        the grid somebody is working in.
       */}
-      {selected === null || tenantId === null ? null : (
-        <SkillPicker
-          tenantId={tenantId}
-          attached={selected.prefill.skillVersionIds}
-          open={pickingSkills}
-          onClose={() => setPickingSkills(false)}
-          onSave={async (skillVersionIds) => {
-            const updated = await agentBuilderApi.setSkills(
-              tenantId,
-              selected.assignmentId,
-              skillVersionIds,
-            );
-            setSelected(updated);
-            setNotice('Attached Skills updated. The versions shown are pinned.');
-            void load();
-          }}
-        />
+      <Card>
+        <CardBody>
+          <div className="uboss-section-label" style={{ marginTop: 0 }}>
+            Readiness
+          </div>
+
+          <div className="uboss-kv">
+            <span className="uboss-kv-key">Connection</span>
+            <span className="uboss-kv-value">
+              {selected.readiness.connection === null ? (
+                <span className="uboss-muted-3">
+                  {selected.needsConnection ? 'Not chosen' : 'Not needed'}
+                </span>
+              ) : (
+                <StatusBadge
+                  tone={
+                    selected.readiness.connection.state === 'Connected' ? 'success' : 'warn'
+                  }
+                  status={selected.readiness.connection.state}
+                />
+              )}
+            </span>
+          </div>
+          <div className="uboss-kv">
+            <span className="uboss-kv-key">Schedule</span>
+            <span className="uboss-kv-value">
+              {selected.setup.triggerOrFrequency ??
+                (selected.setup.runType === null ? '—' : 'Not required')}
+            </span>
+          </div>
+
+          {selected.lastTest.at === null ? (
+            <p className="uboss-notice-min">
+              <Icon name="alert" size={14} />
+              Not tested yet.
+            </p>
+          ) : (
+            <>
+              <div className="uboss-kv">
+                <span className="uboss-kv-key">Last test</span>
+                <span className="uboss-kv-value">
+                  <StatusBadge
+                    tone={selected.lastTest.passed ? 'success' : 'danger'}
+                    status={selected.lastTest.passed ? 'Passed' : 'Failed'}
+                  />
+                </span>
+              </div>
+              {/* Never presented as a real provider result when it was not one. */}
+              <p className="uboss-notice-min">
+                <Icon name="shield" size={14} />
+                {selected.lastTest.wasReal
+                  ? 'Ran against a live model provider.'
+                  : 'Ran against the built-in mock model, not a live provider.'}{' '}
+                {selected.lastTest.summary}
+              </p>
+            </>
+          )}
+
+          {selected.readiness.findings.length > 0 ? (
+            <>
+              <div className="uboss-section-label">What is standing in the way</div>
+              {selected.readiness.findings.map((finding) => (
+                /*
+                 * Keyed by what it says, not by its index, so resolving the first blocker does
+                 * not rewrite the text of the second. `layout` closes the gap the resolved one
+                 * left, which is what makes progress visible.
+                 *
+                 * The item itself is not animated out. It would stay in the accessibility tree
+                 * while it left, reading out a blocker that no longer applies — the same
+                 * reason a deleted workflow row goes immediately.
+                 */
+                <motion.p
+                  className="uboss-notice-min uboss-readiness-finding"
+                  key={finding.summary}
+                  layout
+                  transition={transition('panel', 'standard')}
+                >
+                  <Icon name={finding.severity === 'Blocker' ? 'shield' : 'alert'} size={14} />
+                  {finding.summary}
+                </motion.p>
+              ))}
+            </>
+          ) : null}
+
+          {selected.engineAgent === null ? (
+            // The buttons for these are in the header. What stays here is the checklist above,
+            // which is the reason a button is or is not enabled.
+            null
+          ) : (
+            <p className="uboss-notice-min">
+              <Icon name="bot" size={14} />
+              This work runs on a reusable Engine Agent. Changing how it runs is a new version
+              of that agent, not an edit here.
+            </p>
+          )}
+
+          <p className="uboss-notice-min">
+            <Icon name="key" size={14} />A connection is chosen by identity. No credential is
+            ever shown on this screen.
+          </p>
+        </CardBody>
+      </Card>
+
+        </>
       )}
+
+
+
     </RoutedAppShell>
   );
 }

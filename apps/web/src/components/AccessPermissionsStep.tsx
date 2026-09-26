@@ -92,6 +92,14 @@ export function AccessPermissionsStep({
       // The server's refusal, verbatim. It names the capability and says why — paraphrasing it
       // into "not allowed" would send an administrator to support.
       setError(caught instanceof ApiError ? caught.message : 'That change could not be saved.');
+      /*
+       * Re-read, so the box goes back to what the server actually holds.
+       *
+       * The tick is a controlled input, but the click already set the DOM property and React does
+       * not overwrite it when the prop it renders from has not changed — which is exactly the case
+       * after a refusal. Without this the row keeps showing a capability that was never granted.
+       */
+      await load();
     } finally {
       setBusy(null);
     }

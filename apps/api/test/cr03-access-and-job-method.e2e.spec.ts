@@ -58,6 +58,7 @@ import {
   reachabilityFailureReason,
   resetTestDatabase,
   type TestContext,
+  grantBuilderAccess,
 } from './support/test-database.js';
 
 /**
@@ -228,6 +229,23 @@ describe('CR-03 access, Job Method and photo (e2e)', () => {
           },
         });
       }
+
+      /*
+       * The manager authors agents by explicit grant, not by role.
+       *
+       * The client's 2026-09-25 rule moved agent authoring to the Admin: Head and Manager now hold
+       * View and Comment on `agent-builder` and nothing more. This fixture's manager builds an
+       * agent for an employee, which is the case CR-03 is about, so they are given the capability
+       * the way an Admin would give it — by name, at the reach they already have.
+       */
+      await grantBuilderAccess(ctx, {
+        tenantId,
+        userId: managerId,
+        grantedByUserId: ownerId,
+        scopeKind: 'MultipleDepartments',
+        departmentIds: [departmentId],
+        canPublish: true,
+      });
 
       // An objective with a live version, a workflow draft, one piece of assigned AI work, and an
       // agent the manager built **for** the employee. That last relationship is the case CR-03 is
@@ -610,6 +628,109 @@ describe('CR-03 access, Job Method and photo (e2e)', () => {
 
       const after = await app.get(AuthorizationService).contextFor(scope(), employeeId);
       assert.equal(after.granted['agent-builder'], undefined);
+    });
+
+    /*
+     * Three people, one capability.
+     *
+     * A grant used to create a CustomRole named after the capability, and `custom_roles` is unique
+     * on (tenant_id, display_name) — so the first person in a company succeeded and everybody
+     * after them hit the unique index, which surfaced as a bare 500 while the screen left the box
+     * ticked. A company could give each capability to exactly one person.
+     *
+     * Three subjects rather than two, because two passes with a per-pair role as well; the third
+     * is what makes "one role for the company" the only arrangement that can satisfy this.
+     */
+    it('gives the same capability to three different people', async () => {
+      for (const subjectUserId of [managerId, employeeId, otherEmployeeId]) {
+        // Not a throw, whoever is third. The old code reached the unique index here.
+        await capabilities().grant({
+          scope: scope(),
+          actorUserId: adminId,
+          subjectUserId,
+          capabilities: ['SeeTeamReports'],
+        });
+      }
+
+      for (const subjectUserId of [managerId, employeeId, otherEmployeeId]) {
+        const held = await capabilities().capabilitiesOf(scope(), subjectUserId);
+        assert.ok(
+          held.includes('SeeTeamReports'),
+          `${subjectUserId} should hold the capability`,
+        );
+      }
+    });
+
+    it('writes one capability role for the company, not one per grant', async () => {
+      for (const subjectUserId of [managerId, employeeId, otherEmployeeId]) {
+        await capabilities().grant({
+          scope: scope(),
+          actorUserId: adminId,
+          subjectUserId,
+          capabilities: ['SeeTeamReports'],
+        });
+      }
+
+      const roles = await ctx.prisma.runAsPlatformOperation(async () =>
+        ctx.prisma.client.customRole.findMany({
+          where: { tenantId, displayName: 'Capability: SeeTeamReports' },
+          select: { id: true },
+        }),
+      );
+      assert.equal(roles.length, 1, 'one role, shared by everybody who holds the capability');
+      const roleId = roles[0]?.id;
+      assert.ok(roleId !== undefined);
+
+      /*
+       * And nobody holds it twice. Not "three assignments": somebody whose role template already
+       * carries the capability is reported as already holding it and gets no second grant, which
+       * is the behaviour the idempotence test above covers. What matters here is that the shared
+       * role did not collect a duplicate row for anyone.
+       */
+      const rows = await ctx.prisma.runAsPlatformOperation(async () =>
+        ctx.prisma.client.roleAssignment.findMany({
+          where: { tenantId, customRoleId: roleId },
+          select: { userId: true },
+        }),
+      );
+      assert.equal(
+        new Set(rows.map((row) => row.userId)).size,
+        rows.length,
+        'one assignment per person, never two',
+      );
+      assert.ok(rows.length >= 1, 'and the shared role is actually assigned to somebody');
+    });
+
+    /*
+     * The other half of sharing a role: revoking has to take the assignment and leave the role.
+     * Deleting the role would strip the capability from everybody else holding it, which is the
+     * failure the one-role-per-grant arrangement was hiding.
+     */
+    it('takes it from one person without taking it from the others', async () => {
+      for (const subjectUserId of [managerId, employeeId, otherEmployeeId]) {
+        await capabilities().grant({
+          scope: scope(),
+          actorUserId: adminId,
+          subjectUserId,
+          capabilities: ['SeeTeamReports'],
+        });
+      }
+
+      const removed = await capabilities().revoke({
+        scope: scope(),
+        actorUserId: adminId,
+        subjectUserId: employeeId,
+        capability: 'SeeTeamReports',
+      });
+      assert.equal(removed.revoked, true);
+
+      const gone = await capabilities().capabilitiesOf(scope(), employeeId);
+      assert.ok(!gone.includes('SeeTeamReports'), 'the one revoked from has lost it');
+
+      for (const subjectUserId of [managerId, otherEmployeeId]) {
+        const held = await capabilities().capabilitiesOf(scope(), subjectUserId);
+        assert.ok(held.includes('SeeTeamReports'), 'everybody else still holds it');
+      }
     });
 
     it('does not widen reach when it widens capability', async () => {
@@ -1415,55 +1536,81 @@ describe('CR-03 access, Job Method and photo (e2e)', () => {
       await assert.rejects(() => as(employeeId, () => operatorRoutes().myRuns(agentId)));
     });
 
+    /**
+     * A response that records what the handler actually wrote.
+     *
+     * The point of the helper is the `send`. A fake with only `setHeader` cannot tell a route
+     * that writes bytes from one that returns them, and the difference between those two is a
+     * file Excel opens and a file Excel refuses.
+     */
+    const captureResponse = () => {
+      const headers: Record<string, string> = {};
+      let sent: unknown = null;
+      return {
+        headers,
+        response: {
+          setHeader(name: string, value: string) {
+            headers[name.toLowerCase()] = value;
+          },
+          send(payload: unknown) {
+            sent = payload;
+          },
+        },
+        body: () => sent as Buffer,
+      };
+    };
+
     // ---- the real .xlsx, over the route ----
 
-    it('serves a real workbook, not JSON, under a filename naming the work', async () => {
-      const headers: Record<string, string> = {};
-      const response = {
-        setHeader(name: string, value: string) {
-          headers[name.toLowerCase()] = value;
-        },
-      };
+    it('writes real workbook bytes to the response, under a filename naming the work', async () => {
+      /*
+       * Asserted on what was **sent**, not on what the handler returned.
+       *
+       * The earlier version of this test took the handler's return value, which was a perfectly
+       * good Buffer — and the route shipped `{"type":"Buffer","data":[80,75,3,4,…]}` to the
+       * browser, because returning a Buffer from a `passthrough` handler hands it to Nest's
+       * serialiser. Excel refused the file and the test stayed green, because the bytes were right
+       * and nothing checked what happened to them on the way out.
+       */
+      const written = captureResponse();
 
-      const body = await as(employeeId, () =>
-        jobMethodRoutes().downloadWorkbook(assignmentId, response as never),
+      await as(employeeId, () =>
+        jobMethodRoutes().downloadWorkbook(assignmentId, written.response as never),
       );
 
-      // A real OOXML package is a zip, so its first two bytes are "PK". This is the assertion the
-      // amendment turns on: "The Job Method must NOT remain JSON-only."
-      assert.ok(Buffer.isBuffer(body));
+      const body = written.body();
+      // A real OOXML package is a zip, so its first two bytes are "PK".
+      assert.ok(Buffer.isBuffer(body), 'the route sent something that is not bytes');
       assert.equal(body.subarray(0, 2).toString('latin1'), 'PK');
+      // And specifically not the JSON shape a serialised Buffer takes.
+      assert.ok(
+        !body.subarray(0, 16).toString('latin1').includes('type'),
+        'the route sent a JSON description of the bytes rather than the bytes',
+      );
 
-      assert.match(headers['content-disposition'] ?? '', /^attachment; filename="/);
-      assert.match(headers['content-disposition'] ?? '', /\.xlsx"$/);
+      assert.match(written.headers['content-disposition'] ?? '', /^attachment; filename="/);
+      assert.match(written.headers['content-disposition'] ?? '', /\.xlsx"$/);
     });
 
-    it('declares the spreadsheet content type on the route rather than leaving it to guesswork', async () => {
-      // Set by `@Header` at the route, so it is asserted from the route's own metadata — a browser
-      // handed `application/json` would show the bytes instead of saving them.
-      const declared = Reflect.getMetadata(
-        '__headers__',
-        JobMethodController.prototype.downloadWorkbook,
-      ) as { name: string; value: string }[] | undefined;
+    it('declares the spreadsheet content type on the response it writes', async () => {
+      // On the response rather than in route metadata: a header the handler sets is the one the
+      // browser gets, and a browser handed `application/json` shows the bytes instead of saving
+      // them. Reading it off the decorator proved the decorator existed, not that it applied.
+      const written = captureResponse();
 
-      assert.ok(declared);
-      assert.ok(
-        declared.some(
-          (header) =>
-            header.name.toLowerCase() === 'content-type' &&
-            header.value.includes('spreadsheetml.sheet'),
-        ),
+      await as(employeeId, () =>
+        jobMethodRoutes().downloadWorkbook(assignmentId, written.response as never),
       );
+
+      assert.match(written.headers['content-type'] ?? '', /spreadsheetml\.sheet/);
     });
 
     it('round-trips: the workbook it serves is one it can read back', async () => {
-      const body = await as(employeeId, () =>
-        jobMethodRoutes().downloadWorkbook(assignmentId, {
-          setHeader() {
-            /* not under test here */
-          },
-        } as never),
+      const written = captureResponse();
+      await as(employeeId, () =>
+        jobMethodRoutes().downloadWorkbook(assignmentId, written.response as never),
       );
+      const body = written.body();
 
       await capabilities().grant({
         scope: scope(),
@@ -1533,13 +1680,11 @@ describe('CR-03 access, Job Method and photo (e2e)', () => {
     });
 
     it('refuses the upload route to somebody with no builder access', async () => {
-      const body = await as(employeeId, () =>
-        jobMethodRoutes().downloadWorkbook(assignmentId, {
-          setHeader() {
-            /* not under test here */
-          },
-        } as never),
+      const written = captureResponse();
+      await as(employeeId, () =>
+        jobMethodRoutes().downloadWorkbook(assignmentId, written.response as never),
       );
+      const body = written.body();
 
       // Download needed no builder grant. Upload does, and the asymmetry is the point.
       await assert.rejects(() =>

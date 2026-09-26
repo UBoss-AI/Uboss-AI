@@ -2,6 +2,7 @@ import { Global, Module } from '@nestjs/common';
 
 import { HumanTaskController } from './human-task.controller.js';
 import { HumanTaskService } from './human-task.service.js';
+import { WorkReleaseService } from './work-release.service.js';
 
 /**
  * The Human To-do list.
@@ -17,7 +18,7 @@ import { HumanTaskService } from './human-task.service.js';
 @Global()
 @Module({
   controllers: [HumanTaskController],
-  providers: [HumanTaskService],
-  exports: [HumanTaskService],
+  providers: [HumanTaskService, WorkReleaseService],
+  exports: [HumanTaskService, WorkReleaseService],
 })
 export class TasksModule {}
