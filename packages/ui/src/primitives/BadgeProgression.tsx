@@ -1,5 +1,5 @@
 import { cn } from '../lib/class-names';
-import { BADGE_LADDER, MedalBadge, type BadgeLadderTier } from './StatusBadge';
+import { BADGE_LADDER, BADGE_LADDER_LABELS, MedalBadge, type BadgeLadderTier } from './StatusBadge';
 
 export interface BadgeProgressionProps {
   /** The level held now. */
@@ -34,7 +34,7 @@ export function BadgeProgression({ current, thresholds, className }: BadgeProgre
   return (
     <div className={cn('uboss-ladder', className)}>
       <p className="uboss-sr-only">
-        Current level {current}, rung {reached + 1} of {BADGE_LADDER.length}.
+        Current level {BADGE_LADDER_LABELS[current]}, rung {reached + 1} of {BADGE_LADDER.length}.
       </p>
       {BADGE_LADDER.map((tier, index) => {
         const attained = index <= reached;

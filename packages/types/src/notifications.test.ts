@@ -19,12 +19,16 @@ import {
  * to prove that is where it lives.
  */
 
-test('the catalogue is exactly the client’s six initial sources', () => {
-  assert.equal(NOTIFICATION_KINDS.length, 6);
-  assert.equal(NOTIFICATION_KIND_DEFINITIONS.length, 6);
+test('the catalogue is the client’s six initial sources plus the dependency release', () => {
+  // Six were the initial list. WorkReady is the seventh, added when the rule arrived that a step
+  // unlocking its successor has to tell the person. A kind is vocabulary, so the count is pinned:
+  // an eighth should be a decision somebody made, not something that appeared.
+  assert.equal(NOTIFICATION_KINDS.length, 7);
+  assert.equal(NOTIFICATION_KIND_DEFINITIONS.length, 7);
+  assert.ok(NOTIFICATION_KINDS.includes('WorkReady'));
 
   const kinds = NOTIFICATION_KIND_DEFINITIONS.map((definition) => definition.kind);
-  assert.deepEqual(new Set(kinds).size, 6, 'no duplicate kinds');
+  assert.deepEqual(new Set(kinds).size, 7, 'no duplicate kinds');
   for (const kind of NOTIFICATION_KINDS) {
     assert.ok(kinds.includes(kind), kind);
   }

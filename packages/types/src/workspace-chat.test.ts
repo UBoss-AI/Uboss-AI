@@ -9,7 +9,9 @@ import {
   CONTEXT_STANCE,
   CONVERSATION_KIND_LABELS,
   CONVERSATION_KINDS,
+  departmentWorkshopTitle,
   directConversationKey,
+  isDepartmentWorkshop,
   EXCLUDED_BY_DESIGN,
   MAX_GROUP_PARTICIPANTS,
   mentionHandles,
@@ -26,12 +28,58 @@ import {
 } from './workspace-chat.js';
 import { MODULE_KEYS } from './authorization.js';
 
-describe('conversations come in two shapes and no more', () => {
-  it('labels both', () => {
-    assert.deepEqual([...CONVERSATION_KINDS], ['Direct', 'Group']);
+describe('conversations come in three shapes and no more', () => {
+  it('labels all three', () => {
+    // A workshop is the third, added when every department was given one. The count is pinned
+    // because a fourth should be a decision somebody wrote down, not something that appeared.
+    assert.deepEqual([...CONVERSATION_KINDS], ['Direct', 'Group', 'DepartmentWorkshop']);
     for (const kind of CONVERSATION_KINDS) {
       assert.ok(CONVERSATION_KIND_LABELS[kind].length > 0, kind);
     }
+  });
+
+  it('gives a workshop no ceiling, because a department is however large it is', () => {
+    /*
+     * The group limit is a statement about what a small named conversation should be. Applying it
+     * to a department would refuse a workshop to exactly the departments that most need one.
+     */
+    const thirty = Array.from({ length: 30 }, (unused, index) => 'person-' + String(index));
+    assert.deepEqual(
+      participantProblems({
+        kind: 'DepartmentWorkshop',
+        participantUserIds: thirty,
+        createdByUserId: 'person-0',
+        title: 'Field Operations Workshop',
+      }),
+      [],
+    );
+  });
+
+  it('refuses a group of the same size, so the limit still means something', () => {
+    const thirty = Array.from({ length: 30 }, (unused, index) => 'person-' + String(index));
+    const problems = participantProblems({
+      kind: 'Group',
+      participantUserIds: thirty,
+      createdByUserId: 'person-0',
+      title: 'Everybody',
+    });
+    assert.ok(problems.length > 0);
+  });
+
+  it('names a workshop after its department, in one place', () => {
+    assert.equal(departmentWorkshopTitle('Field Operations'), 'Field Operations Workshop');
+    assert.ok(isDepartmentWorkshop('DepartmentWorkshop'));
+    assert.ok(!isDepartmentWorkshop('Group'));
+  });
+
+  it('insists a workshop is named', () => {
+    const problems = participantProblems({
+      kind: 'DepartmentWorkshop',
+      participantUserIds: ['a', 'b'],
+      createdByUserId: 'a',
+      title: '  ',
+    });
+    assert.ok(problems.some((problem) => /named after its department/i.test(problem)));
   });
 
   it('accepts a direct message between two people with no name', () => {

@@ -58,7 +58,17 @@ export interface NavGroup {
 export const COMPANY_NAV: readonly NavGroup[] = [
   {
     group: 'Home',
-    items: [{ key: 'dashboard', label: 'Dashboard', icon: 'grid', href: '/dashboard' }],
+    items: [
+      /*
+       * Operations, above the Dashboard and first in the product.
+       *
+       * For somebody who does the work rather than defines it, this is the whole application: what
+       * they can start, what they are waiting on, what they finished. It is gated on `todo`
+       * because that is where their work lives — a person with no To-do has no operations.
+       */
+      { key: 'operations', label: 'Operations', icon: 'ops', href: '/operations', module: 'todo' },
+      { key: 'dashboard', label: 'Dashboard', icon: 'grid', href: '/dashboard' },
+    ],
   },
   {
     group: 'Builders',
@@ -190,7 +200,15 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     personalLabel: 'My Agent Preferences',
     description: 'Engine Agent governance.',
   },
-  { key: 'skills', label: 'Skills & AI', description: 'Skill library and governance.' },
+  /*
+   * Skills & AI is deliberately absent.
+   *
+   * Browsing and governing a catalogue of four hundred Skills is not something a company admin
+   * does in the course of running work — the Skills an agent uses are settled when the agent is
+   * built, not administered separately afterwards. The panel, its API and every stored Skill are
+   * untouched: published agents pin the Skill versions they were built from, so the catalogue is
+   * still what gives those pins a meaning. This removes a door, not a room.
+   */
   { key: 'providers', label: 'AI Providers', description: 'Providers and model profiles.' },
   { key: 'tokens', label: 'Tokens & Cost', description: 'Budgets and the AI cost lifecycle.' },
   { key: 'schedules', label: 'Schedules', description: 'Scheduling policy for recurring work.' },

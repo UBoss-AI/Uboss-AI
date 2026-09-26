@@ -99,7 +99,10 @@ describe('approval type to module mapping', () => {
     };
     const outcome = everyApprovalTypeIsDecidable(noApproveAnywhere);
     assert.equal(outcome.ok, false);
-    assert.equal(outcome.undecidable.length, 8);
+    // Every type, which is the point: none of them is decidable by a role that holds no
+    // Approve anywhere. Counted against the vocabulary rather than written as a literal, so
+    // adding a type cannot quietly weaken this into checking only the old ones.
+    assert.equal(outcome.undecidable.length, APPROVAL_REQUEST_TYPES.length);
   });
   it('does not govern everything by the approvals module', () => {
     // Otherwise one Approve grant on `approvals` would let an expense approver publish a

@@ -10,6 +10,11 @@ import {
   APPROVAL_REQUEST_TYPES,
   ASSIGNMENT_CHECK_LABELS,
   ASSIGNMENT_CHECKS,
+  CHANGE_REQUEST_KIND_LABELS,
+  CHANGE_REQUEST_KINDS,
+  changeRequestProblems,
+  MAX_CHANGE_REQUEST_REASON,
+  dependenciesSatisfied,
   EXECUTOR_EXPECTATION_KINDS,
   EXECUTOR_EXPECTATION_LABELS,
   HUMAN_TASK_STATUS_LABELS,
@@ -20,6 +25,7 @@ import {
   isHumanTaskOverdue,
   mayMoveApproval,
   mayMoveHumanTask,
+  mayReleaseHumanTask,
   TASK_NOTE_KINDS,
   TERMINAL_HUMAN_TASK_STATUSES,
   validateTaskSubmission,
@@ -80,6 +86,51 @@ describe('human task statuses', () => {
     assert.ok(mayMoveHumanTask('WaitingApproval', 'InProgress'));
   });
 
+  it('offers a waiting step nothing but cancellation', () => {
+    /*
+     * The whole enforcement in one assertion.
+     *
+     * If any other move out of Waiting were permitted, the person the step is assigned to could
+     * start work the plan says is not startable, and the dependency would be a decoration.
+     */
+    assert.deepEqual([...ALLOWED_HUMAN_TASK_TRANSITIONS.Waiting], ['Cancelled']);
+    assert.ok(!mayMoveHumanTask('Waiting', 'InProgress'));
+    assert.ok(!mayMoveHumanTask('Waiting', 'Assigned'));
+    assert.ok(!mayMoveHumanTask('Waiting', 'Submitted'));
+    assert.ok(!mayMoveHumanTask('Waiting', 'Completed'));
+  });
+
+  it('refuses to submit a step that is still waiting on another one', () => {
+    const problems = validateTaskSubmission({
+      status: 'Waiting',
+      evidenceRequirement: '',
+      evidenceCount: 0,
+      blockedReason: null,
+    });
+    assert.ok(problems.length > 0);
+    assert.match(problems.join(' '), /cannot be submitted/);
+  });
+
+  it('never calls a waiting step late', () => {
+    /*
+     * The product refuses to let this person start the task. Reporting them as overdue for not
+     * having started it would be blaming somebody for obeying a rule the product enforced — and
+     * this number is read as an individual's record.
+     */
+    const yesterday = new Date(Date.now() - 86_400_000).toISOString();
+    assert.equal(isHumanTaskOverdue({ status: 'Waiting', dueAt: yesterday }), false);
+    // The same task, once it is theirs to do, is late like any other.
+    assert.equal(isHumanTaskOverdue({ status: 'Assigned', dueAt: yesterday }), true);
+  });
+
+  it('releases only from Waiting', () => {
+    assert.ok(mayReleaseHumanTask('Waiting'));
+    for (const status of HUMAN_TASK_STATUSES) {
+      if (status === 'Waiting') continue;
+      assert.ok(!mayReleaseHumanTask(status), status);
+    }
+  });
+
   it('lets a submission be sent back for more work', () => {
     assert.ok(mayMoveHumanTask('Submitted', 'InProgress'));
   });
@@ -87,6 +138,30 @@ describe('human task statuses', () => {
   it('refuses a jump straight from Assigned to Completed', () => {
     // Completing work nobody started is the shape of a mis-click or a script, not of work.
     assert.ok(!mayMoveHumanTask('Assigned', 'Completed'));
+  });
+
+  it('waits while any planned dependency is unfinished', () => {
+    const planned = new Set(['engine', 'sub-engine', 'executor']);
+    assert.ok(!dependenciesSatisfied(['engine'], new Set(), planned));
+    assert.ok(dependenciesSatisfied(['engine'], new Set(['engine']), planned));
+    // Two dependencies, one done: still waiting. Partial is not satisfied.
+    assert.ok(!dependenciesSatisfied(['engine', 'sub-engine'], new Set(['engine']), planned));
+    assert.ok(
+      dependenciesSatisfied(['engine', 'sub-engine'], new Set(['engine', 'sub-engine']), planned),
+    );
+  });
+
+  it('starts a step with no dependencies at all', () => {
+    assert.ok(dependenciesSatisfied([], new Set(), new Set(['engine'])));
+  });
+
+  it('does not wait for a node the plan does not contain', () => {
+    /*
+     * A dependency naming a step that was deleted, or a Goal or Condition that produces no work,
+     * is satisfied rather than pending. The alternative is a task nothing in the world can ever
+     * release, which is a worse failure than starting slightly early.
+     */
+    assert.ok(dependenciesSatisfied(['a-deleted-step'], new Set(), new Set(['engine'])));
   });
 
   it('names only statuses that exist in every transition list', () => {
@@ -310,5 +385,64 @@ describe('task notes', () => {
     // A clarification is a question somebody is waiting on an answer to, and that is what makes
     // a task visibly stalled rather than merely quiet.
     assert.deepEqual([...TASK_NOTE_KINDS], ['Comment', 'Clarification']);
+  });
+});
+
+describe('asking for a change', () => {
+  it('offers the client’s six kinds and no more', () => {
+    assert.deepEqual(
+      [...CHANGE_REQUEST_KINDS],
+      ['Hierarchy', 'Objective', 'WorkReassignment', 'AgentCorrection', 'Access', 'Other'],
+    );
+    for (const kind of CHANGE_REQUEST_KINDS) {
+      assert.ok(CHANGE_REQUEST_KIND_LABELS[kind].length > 0, kind);
+    }
+  });
+
+  it('keeps an escape hatch, so the other five stay meaningful', () => {
+    /*
+     * A closed list with nowhere to put an odd request teaches people to file everything under
+     * whichever option is nearest, and then none of the categories describes anything.
+     */
+    assert.deepEqual(changeRequestProblems({ kind: 'Other', reason: 'The rota is wrong again.' }), []);
+  });
+
+  it('refuses a kind nobody asked about', () => {
+    const problems = changeRequestProblems({ kind: 'Salary', reason: 'A perfectly good reason.' });
+    assert.ok(problems.some((problem) => /not a kind of change/i.test(problem)));
+  });
+
+  it('refuses a reason nobody could act on', () => {
+    // Somebody has to decide this, and "fix it" is not a thing anybody can decide.
+    for (const reason of ['', '   ', 'fix it']) {
+      const problems = changeRequestProblems({ kind: 'Access', reason });
+      assert.ok(problems.length > 0, JSON.stringify(reason));
+    }
+  });
+
+  it('accepts a short but real reason', () => {
+    assert.deepEqual(
+      changeRequestProblems({ kind: 'Access', reason: 'Cannot open the Field Ops workshop.' }),
+      [],
+    );
+  });
+
+  it('refuses a reason longer than the column holds', () => {
+    const problems = changeRequestProblems({
+      kind: 'Other',
+      reason: 'x'.repeat(MAX_CHANGE_REQUEST_REASON + 1),
+    });
+    assert.ok(problems.length > 0);
+  });
+
+  it('is an approval like every other, so deciding it is somebody’s authority', () => {
+    /*
+     * The client's rule: "Do not give the employee direct configuration power simply because they
+     * requested a change." Filing one creates an ApprovalRequest, and an ApprovalRequest changes
+     * nothing until it is decided — which is why this is a type here rather than a table of its
+     * own with its own idea of who may act on it.
+     */
+    assert.ok((APPROVAL_REQUEST_TYPES as readonly string[]).includes('ChangeRequest'));
+    assert.ok(APPROVAL_REQUEST_TYPE_LABELS.ChangeRequest.length > 0);
   });
 });

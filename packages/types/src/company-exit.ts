@@ -235,6 +235,15 @@ export const TABLE_DISPOSITION: Record<string, Disposition> = {
   // The financial record. A closed account still has to reconcile.
   tenant_subscriptions: 'Accountability',
   commercial_change_requests: 'Accountability',
+  // What the company was actually charged. An invoice is the document a closed account reconciles
+  // against, and it is the customer's evidence as much as ours — deleting it on exit would remove
+  // the only record either side has of what was paid for.
+  billing_invoices: 'Accountability',
+  // Why a subscription moved. Each row is a signed statement from the payment provider, and a
+  // subscription transition with no surviving cause is a money decision nobody can explain. It is
+  // also the idempotency record that stops one provider retry being charged as two events, which
+  // only works for as long as it is kept.
+  stripe_webhook_events: 'Accountability',
   cost_ledger_entries: 'Accountability',
   credit_grants: 'Accountability',
   credit_requests: 'Accountability',
@@ -280,6 +289,11 @@ export const TABLE_DISPOSITION: Record<string, Disposition> = {
   human_task_notes: 'Content',
   human_task_evidence: 'Content',
   ai_work_assignments: 'Content',
+  /// Rehearsals of one company's agent against one company's sample data, which is their content
+  /// twice over. That the test happened is accountability and lives in `audit_events`, which this
+  /// exit preserves; what the agent was fed and what it said back does not outlive the company
+  /// that owned both.
+  agent_builder_test_runs: 'Content',
   engine_agents: 'Content',
   engine_agent_versions: 'Content',
   agent_runs: 'Content',

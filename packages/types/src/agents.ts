@@ -36,6 +36,7 @@
  * about whether a question needs asking.
  */
 
+import type { ExecutionStage } from './objective-analysis.js';
 import type { StepApprovalKind } from './objectives.js';
 
 // ---------------------------------------------------------------------------
@@ -208,6 +209,98 @@ export function emptyAgentExecutionSetup(): AgentExecutionSetup {
   };
 }
 
+// ---------------------------------------------------------------------------
+// What a single run still needs from the person operating it
+// ---------------------------------------------------------------------------
+
+/** One question asked of the person starting a run, derived from the published agent. */
+export interface RuntimeInputField {
+  key: RuntimeInputKey;
+  label: string;
+  /** One line under the control, saying what the answer is for. */
+  hint: string;
+  required: boolean;
+}
+
+export const RUNTIME_INPUT_KEYS = ['subject', 'destination', 'missingData', 'note'] as const;
+export type RuntimeInputKey = (typeof RUNTIME_INPUT_KEYS)[number];
+
+/** What the person answered. Absent keys were not asked. */
+export type RuntimeInputs = Partial<Record<RuntimeInputKey, string>>;
+
+/**
+ * The few questions this run still needs, worked out from the agent's own setup.
+ *
+ * ## Why this is derived rather than a fixed list
+ *
+ * The client asks for "approximately 3–4 questions genuinely required for THIS run" and is
+ * explicit that they must not be hard-coded per agent: they come from the published definition. So
+ * each question here is asked **only when the setup did not already answer it**. An agent whose
+ * builder named a destination does not ask for one again — re-asking what the company already
+ * decided is the duplicate data entry the whole restructure is against.
+ *
+ * ## What is always asked, and why it is not duplication
+ *
+ * `subject` — what this run works on — is always asked, because it is the one thing that is
+ * genuinely different every time. An agent that validates invoices is configured once; *which*
+ * invoices is this run's question and nobody can answer it in advance. `note` is always offered
+ * and never required: a person who has nothing to add leaves it empty and the run is unaffected.
+ *
+ * At most four questions come back, and for a fully configured agent it is two.
+ */
+export function runtimeInputsFor(setup: AgentExecutionSetup | null): RuntimeInputField[] {
+  const fields: RuntimeInputField[] = [
+    {
+      key: 'subject',
+      label: 'What should this run work on?',
+      hint: 'The batch, period or records this run covers. The only thing that changes every time.',
+      required: true,
+    },
+  ];
+
+  if (setup?.outputDestination === null || setup?.outputDestination === undefined || setup.outputDestination.trim() === '') {
+    fields.push({
+      key: 'destination',
+      label: 'Where should the result go?',
+      hint: 'Asked because the published agent does not name a destination.',
+      required: true,
+    });
+  }
+
+  if (setup?.missingDataBehaviour === null || setup?.missingDataBehaviour === undefined) {
+    fields.push({
+      key: 'missingData',
+      label: 'What should it do if something it needs is missing?',
+      hint: 'Asked because the published agent does not say. Say it here and the run follows it.',
+      required: true,
+    });
+  }
+
+  fields.push({
+    key: 'note',
+    label: 'Anything specific to this run?',
+    hint: 'Optional. A constraint or instruction that applies this time only.',
+    required: false,
+  });
+
+  return fields;
+}
+
+/**
+ * Whether the person has answered enough to start.
+ *
+ * Returns the questions still unanswered rather than a boolean, so the screen and the server can
+ * say the same thing — and so the server's refusal names what is missing instead of "invalid".
+ */
+export function unansweredRuntimeInputs(
+  fields: readonly RuntimeInputField[],
+  answers: RuntimeInputs,
+): RuntimeInputField[] {
+  return fields.filter(
+    (field) => field.required && (answers[field.key] ?? '').trim() === '',
+  );
+}
+
 /** One question the builder still has to ask, and why it cannot be answered from what is known. */
 export interface MissingSetupField {
   field: keyof AgentExecutionSetup;
@@ -305,6 +398,106 @@ export function setupIsComplete(setup: AgentExecutionSetup, needsConnection: boo
 }
 
 // ---------------------------------------------------------------------------
+// Testing an agent before it is published
+// ---------------------------------------------------------------------------
+
+/**
+ * How a test ended.
+ *
+ * `Failed` and `Error` are kept apart deliberately. `Failed` is the agent producing nothing
+ * usable — a fact about the configuration, and a reason to change it. `Error` is the test not
+ * completing at all — a fact about the infrastructure, and no evidence about the agent either
+ * way. Collapsing them would tell an admin to rewrite a working agent because a provider was
+ * briefly unreachable.
+ */
+export const AGENT_TEST_STATUSES = ['Passed', 'Failed', 'Error'] as const;
+export type AgentTestStatus = (typeof AGENT_TEST_STATUSES)[number];
+
+export const AGENT_TEST_STATUS_LABELS: Record<AgentTestStatus, string> = {
+  Passed: 'Passed',
+  Failed: 'Failed',
+  Error: 'Could not run',
+};
+
+export const AGENT_TEST_STATUS_TONES: Record<AgentTestStatus, 'ok' | 'warn' | 'danger'> = {
+  Passed: 'ok',
+  Failed: 'warn',
+  Error: 'danger',
+};
+
+/** Long enough that the agent has something to work on; a one-word input tests nothing. */
+export const MIN_AGENT_TEST_INPUT = 10;
+/** The gateway is given 400 tokens of answer; an input past this is a data load, not a sample. */
+export const MAX_AGENT_TEST_INPUT = 4000;
+export const MAX_AGENT_TEST_EXPECTATION = 2000;
+
+/**
+ * What is wrong with a proposed test, in the words the screen shows.
+ *
+ * Shared so the button can disable itself for the same reasons the server would refuse, rather
+ * than the person discovering the rule by pressing it.
+ */
+export function agentTestProblems(input: {
+  sampleInput: string;
+  expectedOutcome?: string | null;
+}): string[] {
+  const problems: string[] = [];
+  const sample = input.sampleInput.trim();
+
+  if (sample.length === 0) {
+    problems.push('A test needs sample data to work on.');
+  } else if (sample.length < MIN_AGENT_TEST_INPUT) {
+    problems.push(
+      `Give the agent something real to work on — at least ${MIN_AGENT_TEST_INPUT} characters.`,
+    );
+  } else if (sample.length > MAX_AGENT_TEST_INPUT) {
+    problems.push(
+      `That is ${sample.length} characters. A test takes a sample, not a data load — keep it ` +
+        `under ${MAX_AGENT_TEST_INPUT}.`,
+    );
+  }
+
+  const expectation = (input.expectedOutcome ?? '').trim();
+  if (expectation.length > MAX_AGENT_TEST_EXPECTATION) {
+    problems.push(`Keep what you expect under ${MAX_AGENT_TEST_EXPECTATION} characters.`);
+  }
+
+  return problems;
+}
+
+/** One recorded test, as the screen reads it. */
+export interface AgentTestRunView {
+  id: string;
+  status: AgentTestStatus;
+  /** What was given to the agent, verbatim. A result nobody can reproduce is an anecdote. */
+  sampleInput: string;
+  /** What the admin said they expected, if they said. Never machine-compared — see below. */
+  expectedOutcome: string | null;
+  output: string | null;
+  warnings: readonly string[];
+  errors: readonly string[];
+  durationMs: number;
+  /** False for a mock run. Never presented as a real provider result. */
+  wasReal: boolean;
+  capability: string | null;
+  ranByName: string | null;
+  at: string;
+}
+
+/**
+ * Why `expectedOutcome` is never checked automatically.
+ *
+ * Comparing two pieces of free English and calling the result a pass would be a guess wearing the
+ * clothes of a check, and an admin would trust it. The expectation is recorded and shown beside
+ * the output so the person who wrote it does the comparing. `Passed` means only what it can
+ * honestly mean: the agent produced something.
+ */
+export const AGENT_TEST_EXPECTATION_NOTE =
+  'What you expected is shown beside what came back so you can compare them. UBoss does not ' +
+  'judge one against the other — a machine verdict on free text would be a guess, and passing ' +
+  'here only means the agent produced an answer.';
+
+// ---------------------------------------------------------------------------
 // Form 3 — the canonical job method
 // ---------------------------------------------------------------------------
 
@@ -333,6 +526,78 @@ export const FORM3_JOB_LEVEL_FIELDS = [
 ] as const;
 
 export type Form3JobLevelFieldKey = (typeof FORM3_JOB_LEVEL_FIELDS)[number]['key'];
+
+/**
+ * Where a piece of assigned AI work sits in its objective.
+ *
+ * ## Why the builder carries this at all
+ *
+ * The client's rule is that Agent Builder is the continuation of Objective Builder, not a separate
+ * product: somebody arrives having already defined the work, and re-asking them which objective it
+ * belongs to, which department owns it or what comes before it is asking them to retype what they
+ * just wrote. So the objective's own answers travel with the assignment.
+ *
+ * It is also what lets the builder be organised by objective rather than as a flat list of
+ * unrelated AI work — "which objectives still need agents?" is the question somebody opens this
+ * screen with, and a list of work items cannot answer it.
+ */
+export interface AgentObjectiveContext {
+  objectiveId: string;
+  objectiveCode: string;
+  objectiveName: string;
+  objectiveStatus: string;
+  departmentName: string | null;
+  /** The objective's owner, by name. An id is not a person. */
+  ownerName: string | null;
+  expectedOutcome: string | null;
+  /** The workflow node this work is, so the step can be named rather than numbered. */
+  nodeId: string;
+  stepLabel: string;
+  /** Engine, Sub-Engine or Executor — derived from the plan, never stored. Null for a lone step. */
+  stage: ExecutionStage | null;
+  /** The steps this one comes after, by name. Empty when it starts the chain. */
+  comesAfter: string[];
+  updatedAt: string;
+}
+
+/** Where a prefilled value came from. The four records Form 3 is composed of. */
+export const FIELD_SOURCES = ['Objective', 'Workflow', 'Hierarchy', 'Policy'] as const;
+export type FieldSource = (typeof FIELD_SOURCES)[number];
+
+export const FIELD_SOURCE_LABELS: Record<FieldSource, string> = {
+  Objective: 'From Objective',
+  Workflow: 'From Workflow',
+  Hierarchy: 'From Hierarchy',
+  Policy: 'From Policy',
+};
+
+/**
+ * Which record each overview field was filled from.
+ *
+ * ## Why this is a separate map and not a property on the field list
+ *
+ * `FORM3_JOB_LEVEL_FIELDS` is transcribed from the approved document, down to its spacing, so that
+ * a later reader can diff it against the source. Adding a property to every entry would break that
+ * diff for something the document does not say — the source is UBoss's own answer to "where did
+ * this value come from", not part of Form 3.
+ *
+ * ## Why the screen shows it at all
+ *
+ * The zero-question rule only reads as a courtesy if somebody can see *why* a field is already
+ * answered. "From Objective" beside a greyed box says the objective decided it; a greyed box on
+ * its own says the product will not let you type, which is the same screen read as an obstruction.
+ */
+export const FORM3_FIELD_SOURCE: Record<Form3JobLevelFieldKey, FieldSource> = {
+  objectiveNameDepartment: 'Objective',
+  jobIdName: 'Objective',
+  // The person and their role are the company's structure, not the plan's.
+  jobOwnerCurrentPersonRole: 'Hierarchy',
+  triggerFrequency: 'Workflow',
+  highLevelWork: 'Objective',
+  jobStartRequirement: 'Workflow',
+  jobCompletionEvidence: 'Workflow',
+  normalCompletionTime: 'Objective',
+};
 
 /** The document's seventeen detailed action columns, in its order and wording. */
 export const FORM3_ACTION_COLUMNS = [

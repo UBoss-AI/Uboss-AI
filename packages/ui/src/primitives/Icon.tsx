@@ -48,6 +48,19 @@ const ICON_PATHS = {
    */
   'arrow-up': 'M12 19V5M6 11l6-6 6 6',
   'arrow-down': 'M12 5v14M6 13l6 6 6-6',
+  /*
+   * The four the org chart's frame needs.
+   *
+   * `minus` is the pair to `plus` and had never been needed before, because nothing in the
+   * product took anything away one step at a time until zoom did. The other three are the arrows
+   * every chart viewer uses for the same three jobs, drawn in this set's 24x24 stroke idiom rather
+   * than borrowed as glyphs — a Unicode arrow renders in the text font and matches nothing beside
+   * it.
+   */
+  minus: 'M5 12h14',
+  expand: 'M4 9V4h5M20 15v5h-5M15 4h5v5M9 20H4v-5',
+  collapse: 'M9 4v5H4M15 20v-5h5M20 9h-5V4M4 15h5v5',
+  frame: 'M8 10h8v4H8z',
 } as const;
 
 /** Extra shapes that cannot be expressed as a single path. */
@@ -55,6 +68,8 @@ const ICON_SHAPES: Partial<Record<IconName, ReactNode>> = {
   search: <circle cx="11" cy="11" r="7" />,
   clock: <circle cx="12" cy="12" r="9" />,
   card: <rect x="3" y="5" width="18" height="14" rx="2" />,
+  // Fit: a drawing brought inside a frame. The outer rect is the frame, the path is the drawing.
+  frame: <rect x="3" y="5" width="18" height="14" rx="2" />,
   key: <circle cx="7" cy="15" r="4" />,
   medal: <circle cx="12" cy="9" r="6" />,
   panel: <rect x="3" y="4" width="18" height="16" rx="2" />,

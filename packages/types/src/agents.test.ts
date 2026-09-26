@@ -10,6 +10,8 @@ import {
   ALLOWED_ENGINE_AGENT_TRANSITIONS,
   DEFAULT_AGENT_MEMORY_MODE,
   emptyEngineAgentHealth,
+  runtimeInputsFor,
+  unansweredRuntimeInputs,
   ENGINE_AGENT_ACTION_LABELS,
   ENGINE_AGENT_ACTIONS,
   engineAgentActionsFor,
@@ -483,5 +485,80 @@ describe('versionActivationNeedsApproval — the prompt’s "where required"', (
   it('needs no approval for an agent nothing relies on yet', () => {
     const outcome = versionActivationNeedsApproval({ ...base, affectedObjectiveCount: 0 });
     assert.equal(outcome.required, false);
+  });
+});
+
+describe('what a single run still has to be told', () => {
+  const configured = {
+    runType: 'Scheduled' as const,
+    triggerOrFrequency: 'Every weekday at 07:00',
+    inputConnectionId: 'conn-1',
+    whereWorkHappens: 'UBoss',
+    outputDestination: 'The finance shared drive',
+    missingDataBehaviour: 'AskUser' as const,
+  };
+
+  it('asks two things of a fully configured agent, and neither is already known', () => {
+    /*
+     * The point of the whole feature: an agent configured once is not re-configured every run.
+     * What is left is what genuinely changes — which work this time, and anything to add.
+     */
+    const fields = runtimeInputsFor(configured);
+    assert.deepEqual(
+      fields.map((field) => field.key),
+      ['subject', 'note'],
+    );
+    assert.equal(fields.find((field) => field.key === 'subject')?.required, true);
+    assert.equal(fields.find((field) => field.key === 'note')?.required, false);
+  });
+
+  it('asks for a destination only when the agent does not name one', () => {
+    const fields = runtimeInputsFor({ ...configured, outputDestination: null });
+    assert.ok(fields.some((field) => field.key === 'destination'));
+    // And says why it is asking, rather than presenting it as a question everybody gets.
+    assert.match(
+      fields.find((field) => field.key === 'destination')?.hint ?? '',
+      /does not name a destination/,
+    );
+  });
+
+  it('treats a blank destination as no destination', () => {
+    // A field somebody tabbed through is not an answer.
+    const fields = runtimeInputsFor({ ...configured, outputDestination: '   ' });
+    assert.ok(fields.some((field) => field.key === 'destination'));
+  });
+
+  it('asks what to do about missing data only when the agent does not say', () => {
+    const fields = runtimeInputsFor({ ...configured, missingDataBehaviour: null });
+    assert.ok(fields.some((field) => field.key === 'missingData'));
+  });
+
+  it('never asks more than four things', () => {
+    // The client's ceiling, and the worst case is an agent that answered nothing.
+    const fields = runtimeInputsFor(null);
+    assert.ok(fields.length <= 4, `asked ${fields.length} questions`);
+    assert.deepEqual(
+      fields.map((field) => field.key),
+      ['subject', 'destination', 'missingData', 'note'],
+    );
+  });
+
+  it('holds the run until the required answers are there', () => {
+    const fields = runtimeInputsFor(configured);
+    assert.deepEqual(
+      unansweredRuntimeInputs(fields, {}).map((field) => field.key),
+      ['subject'],
+    );
+    assert.deepEqual(unansweredRuntimeInputs(fields, { subject: 'March invoices' }), []);
+    // Whitespace is not an answer here either.
+    assert.deepEqual(
+      unansweredRuntimeInputs(fields, { subject: '  ' }).map((field) => field.key),
+      ['subject'],
+    );
+  });
+
+  it('does not hold the run for the optional one', () => {
+    const fields = runtimeInputsFor(configured);
+    assert.deepEqual(unansweredRuntimeInputs(fields, { subject: 'March invoices' }), []);
   });
 });

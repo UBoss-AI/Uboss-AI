@@ -450,3 +450,103 @@ describe('OrgChart — the hover-only reveal, as declared', () => {
     expect(reduced.slice(0, 700)).toContain('transform: none');
   });
 });
+
+/*
+ * The frame.
+ *
+ * jsdom has no layout, so zoom, Fit and full screen are proved in a real browser rather than here
+ * — apps/web/tmp/org-frame.mjs measures the scale actually applied, that Fit puts the whole
+ * drawing inside the frame, and that a drag pans while a press still opens a card.
+ *
+ * What is held here is what a browser proof is a clumsy way to hold: that the frame is the
+ * caller's decision rather than the chart's, and that the controls a keyboard has to reach are
+ * named. Both are the kind of thing that breaks silently — a chart that stops offering zoom, or a
+ * button whose label was only ever a tooltip.
+ */
+describe('OrgChart — the frame', () => {
+  it('renders no frame and no controls unless the caller asks for them', () => {
+    const { container } = render(<OrgChart root={tree} />);
+    expect(container.querySelector('.uboss-org-tools')).toBeNull();
+    expect(container.querySelector('.uboss-org-frame')).toBeNull();
+    // The chart itself is untouched: it is still a chart in the flow of the page.
+    expect(container.querySelector('.uboss-org svg')).not.toBeNull();
+  });
+
+  it('gives the frame five named controls, so none of them is a tooltip only', () => {
+    render(<OrgChart root={tree} controls />);
+    for (const label of [
+      'Zoom out',
+      'Zoom in',
+      'Fit the whole chart',
+      'Full screen',
+    ]) {
+      expect(screen.getByLabelText(label)).toBeTruthy();
+    }
+    // The readout says what it is and what pressing it does, because its own text says neither.
+    expect(screen.getByLabelText(/Zoom is 100 per cent\. Reset to 100 per cent/)).toBeTruthy();
+  });
+
+  it('opens at 100%, the size the cards were drawn to be read at', () => {
+    const { container } = render(<OrgChart root={tree} controls />);
+    expect(container.querySelector('.uboss-org-zoom')?.textContent).toBe('100%');
+  });
+
+  it('cannot zoom out below the readable floor by pressing minus', () => {
+    const { container } = render(<OrgChart root={tree} controls />);
+    const out = screen.getByLabelText('Zoom out');
+    for (let press = 0; press < 12; press += 1) fireEvent.click(out);
+    expect(container.querySelector('.uboss-org-zoom')?.textContent).toBe('40%');
+    expect((out as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('cannot zoom in past the ceiling either', () => {
+    const { container } = render(<OrgChart root={tree} controls />);
+    const into = screen.getByLabelText('Zoom in');
+    for (let press = 0; press < 12; press += 1) fireEvent.click(into);
+    expect(container.querySelector('.uboss-org-zoom')?.textContent).toBe('200%');
+    expect((into as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('resets when the readout is pressed', () => {
+    const { container } = render(<OrgChart root={tree} controls />);
+    fireEvent.click(screen.getByLabelText('Zoom in'));
+    expect(container.querySelector('.uboss-org-zoom')?.textContent).not.toBe('100%');
+    fireEvent.click(container.querySelector('.uboss-org-zoom') as HTMLElement);
+    expect(container.querySelector('.uboss-org-zoom')?.textContent).toBe('100%');
+  });
+
+  /*
+   * Zoom and pan are the only way to reach part of a chart wider than the window, so a reader who
+   * cannot use a pointer would otherwise see one corner of their own company and no way past it.
+   */
+  it('zooms and pans from the keyboard, and says so', () => {
+    const { container } = render(<OrgChart root={tree} controls />);
+    const frame = container.querySelector('.uboss-org-frame') as HTMLElement;
+    expect(frame.getAttribute('tabindex')).toBe('0');
+    expect(frame.getAttribute('aria-label')).toContain('Plus and minus zoom');
+
+    fireEvent.keyDown(frame, { key: '+' });
+    expect(container.querySelector('.uboss-org-zoom')?.textContent).toBe('120%');
+    fireEvent.keyDown(frame, { key: '0' });
+    expect(container.querySelector('.uboss-org-zoom')?.textContent).toBe('100%');
+
+    const stage = container.querySelector('.uboss-org-stage') as HTMLElement;
+    fireEvent.keyDown(frame, { key: 'ArrowRight' });
+    expect(stage.style.transform).toContain('-60px');
+  });
+
+  it('presses a card rather than panning when the pointer did not move', () => {
+    const onSelectPerson = vi.fn();
+    const { container } = render(
+      <OrgChart root={tree} controls onSelectPerson={onSelectPerson} />,
+    );
+    const frame = container.querySelector('.uboss-org-frame') as HTMLElement;
+    const card = screen.getByLabelText('Rajiv Mehta. Head of Operations');
+
+    fireEvent.pointerDown(frame, { button: 0, clientX: 100, clientY: 100, pointerId: 1 });
+    fireEvent.pointerUp(frame, { clientX: 100, clientY: 100, pointerId: 1 });
+    fireEvent.click(card);
+
+    expect(onSelectPerson).toHaveBeenCalledWith('user-2');
+  });
+});

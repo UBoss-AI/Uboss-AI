@@ -81,6 +81,28 @@ export const BADGE_LADDER: readonly BadgeLadderTier[] = [
   'Diamond',
 ] as const;
 
+/**
+ * What each rung is called.
+ *
+ * ## Why the stored value and the shown name differ
+ *
+ * The rungs are stored as `Bronze` … `Diamond` and the client asked for `Starter` … `Legend`.
+ * Renaming the stored values would rewrite every badge somebody has already earned and every audit
+ * row that names one — history saying a person reached a level that, under the new vocabulary,
+ * never existed. So the ladder keeps its identity and gains a label.
+ *
+ * That is also the client's own rule read literally: "do not let badge UI override actual
+ * performance/audit logic". This is the badge UI, and it overrides nothing — the thresholds, the
+ * events and the score are untouched, and a person moves up for the same reasons as before.
+ */
+export const BADGE_LADDER_LABELS: Record<BadgeLadderTier, string> = {
+  Bronze: 'Starter',
+  Silver: 'Skilled',
+  Gold: 'Pro',
+  Platinum: 'Elite',
+  Diamond: 'Legend',
+};
+
 export interface MedalBadgeProps {
   tier: BadgeLadderTier;
   className?: string;
@@ -88,8 +110,13 @@ export interface MedalBadgeProps {
 
 export function MedalBadge({ tier, className }: MedalBadgeProps) {
   return (
-    <span className={cn('uboss-medal', `uboss-medal--${tier.toLowerCase()}`, className)}>
-      {tier}
+    <span
+      className={cn('uboss-medal', `uboss-medal--${tier.toLowerCase()}`, className)}
+      // The stored rung, for anybody reading a screenshot against an audit row. The shown name is
+      // what the company calls it; this is what the record calls it, and both are true.
+      title={`${BADGE_LADDER_LABELS[tier]} (${tier})`}
+    >
+      {BADGE_LADDER_LABELS[tier]}
     </span>
   );
 }

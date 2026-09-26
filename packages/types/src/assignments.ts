@@ -30,12 +30,20 @@ export type WorkItemType = (typeof WORK_ITEM_TYPES)[number];
 /**
  * The states a human task moves through.
  *
+ * **`Waiting` is not something a person chooses.** It is the state of a step whose dependencies
+ * have not finished yet: the plan says this cannot start until something else is done, so it is
+ * not offered to anybody. It is separate from `Blocked` on purpose. `Blocked` is a person saying
+ * "I cannot proceed, here is why", and they can lift it themselves — which is exactly right for a
+ * reason they know about and wrong for a dependency, because a step that unlocks itself is not a
+ * dependency at all. Only completing what it waits on moves it, and only the server does that.
+ *
  * **`Overdue` is deliberately not here.** The approved UI shows it as a status, but it is derived
  * from the due time — a task can be both "waiting on somebody else" and late, and storing one
  * status would lose the real state. `humanTaskDisplayStatus` is what the screen shows;
  * `isHumanTaskOverdue` is what the Executor Agent's "Human Task Overdue" exception asks.
  */
 export const HUMAN_TASK_STATUSES = [
+  'Waiting',
   'Assigned',
   'InProgress',
   'Blocked',
@@ -48,6 +56,7 @@ export const HUMAN_TASK_STATUSES = [
 export type HumanTaskStatus = (typeof HUMAN_TASK_STATUSES)[number];
 
 export const HUMAN_TASK_STATUS_LABELS: Record<HumanTaskStatus, string> = {
+  Waiting: 'Waiting',
   Assigned: 'Assigned',
   InProgress: 'In progress',
   Blocked: 'Blocked',
@@ -60,6 +69,7 @@ export const HUMAN_TASK_STATUS_LABELS: Record<HumanTaskStatus, string> = {
 
 /** Tones from the shared `StatusTone` set, so two screens cannot colour one status differently. */
 export const HUMAN_TASK_STATUS_TONES: Record<HumanTaskStatus, string> = {
+  Waiting: 'grey',
   Assigned: 'blue',
   InProgress: 'cyan',
   Blocked: 'danger',
@@ -86,6 +96,14 @@ export function isHumanTaskFinished(status: HumanTaskStatus): boolean {
  * because the evidence and timestamps on it are what a performance record reads.
  */
 export const ALLOWED_HUMAN_TASK_TRANSITIONS: Record<HumanTaskStatus, readonly HumanTaskStatus[]> = {
+  /*
+   * Cancelled and nothing else.
+   *
+   * Not an omission. Every other move out of Waiting would be somebody starting work the plan
+   * says is not startable, and the release to Assigned is deliberately absent here because it is
+   * not a move anybody is allowed to ask for — see `mayReleaseHumanTask`.
+   */
+  Waiting: ['Cancelled'],
   Assigned: ['InProgress', 'Blocked', 'NeedsInput', 'Cancelled'],
   InProgress: ['Blocked', 'NeedsInput', 'WaitingApproval', 'Submitted', 'Cancelled'],
   Blocked: ['InProgress', 'NeedsInput', 'Cancelled'],
@@ -101,12 +119,48 @@ export function mayMoveHumanTask(from: HumanTaskStatus, to: HumanTaskStatus): bo
 }
 
 /**
+ * Whether the server may release a task from `Waiting`.
+ *
+ * Kept out of `ALLOWED_HUMAN_TASK_TRANSITIONS` rather than added to it, because that table
+ * answers "may this person ask for this?" and the answer for this move is always no. This one
+ * answers a different question — "has the plan been satisfied?" — and only the code that just
+ * finished a step calls it.
+ */
+export function mayReleaseHumanTask(status: HumanTaskStatus): boolean {
+  return status === 'Waiting';
+}
+
+/**
+ * Whether every step this one waits on has finished.
+ *
+ * `finishedNodeIds` is what the caller considers done, which differs by node kind: a human step
+ * is done when its task is Completed, an AI step when its assignment has run. A dependency naming
+ * a node that produced no work item at all counts as satisfied — an empty plan step is not
+ * something to wait on forever, and the alternative is a task nothing can ever release.
+ */
+export function dependenciesSatisfied(
+  dependsOnNodeIds: readonly string[],
+  finishedNodeIds: ReadonlySet<string>,
+  plannedNodeIds: ReadonlySet<string>,
+): boolean {
+  return dependsOnNodeIds.every(
+    (nodeId) => !plannedNodeIds.has(nodeId) || finishedNodeIds.has(nodeId),
+  );
+}
+
+/**
  * Whether a task is late.
  *
  * A task with no due time is never overdue — plenty of real work is triggered by an event rather
  * than a clock, and reporting "overdue" against a date nobody set would be noise. A finished task
  * is never overdue either, however late it was: that belongs to its completion record, not to a
  * list of things needing attention now.
+ *
+ * **Nor is a task that is still `Waiting`.** The product refuses to let that person start it, so
+ * calling them late for not having started is blaming somebody for obeying a rule the product
+ * enforced. The objective may well be running late, and that is a fact about the objective and
+ * about whoever is holding the step in front — both of which are visible where the delay actually
+ * is. This is the individual's record, and it stays truthful.
  */
 export function isHumanTaskOverdue(
   task: { status: HumanTaskStatus; dueAt: Date | string | null },
@@ -114,6 +168,7 @@ export function isHumanTaskOverdue(
 ): boolean {
   if (task.dueAt === null) return false;
   if (isHumanTaskFinished(task.status)) return false;
+  if (task.status === 'Waiting') return false;
   return new Date(task.dueAt).getTime() < now.getTime();
 }
 
@@ -253,10 +308,83 @@ export const APPROVAL_REQUEST_TYPES = [
   'BudgetOverride',
   'GuestAccess',
   'WorkflowStepApproval',
+  'ChangeRequest',
 ] as const;
 export type ApprovalRequestType = (typeof APPROVAL_REQUEST_TYPES)[number];
 
+// ---------------------------------------------------------------------------
+// Change requests
+// ---------------------------------------------------------------------------
+
+/**
+ * The kinds of change somebody can ask for.
+ *
+ * The client's own list. `Other` is last and deliberately present: a closed list with no escape
+ * teaches people to file everything under whichever option is nearest, and then the list describes
+ * nothing. What `Other` costs is a category somebody has to read; what it buys is that the other
+ * five stay meaningful.
+ */
+export const CHANGE_REQUEST_KINDS = [
+  'Hierarchy',
+  'Objective',
+  'WorkReassignment',
+  'AgentCorrection',
+  'Access',
+  'Other',
+] as const;
+export type ChangeRequestKind = (typeof CHANGE_REQUEST_KINDS)[number];
+
+export const CHANGE_REQUEST_KIND_LABELS: Record<ChangeRequestKind, string> = {
+  Hierarchy: 'A hierarchy change',
+  Objective: 'An objective change',
+  WorkReassignment: 'Work reassignment',
+  AgentCorrection: 'An agent correction',
+  Access: 'An access problem',
+  Other: 'Something else',
+};
+
+/** How short a reason may be before it is not a reason. */
+export const MIN_CHANGE_REQUEST_REASON = 10;
+export const MAX_CHANGE_REQUEST_REASON = 4_000;
+
+/**
+ * Whether a change request can be filed as written.
+ *
+ * ## Why the reason has a floor
+ *
+ * A request reaches an Admin who has to decide it, and "please fix" is not something anybody can
+ * decide. The floor is short on purpose — ten characters refuses an empty box and a shrug without
+ * pretending to judge whether the words are any good, which is not a thing software can tell.
+ *
+ * Asking for a change never grants it. That is enforced where the decision is made, not here: the
+ * request is an `ApprovalRequest` like every other, and it changes nothing until somebody who
+ * holds the authority decides it.
+ */
+export function changeRequestProblems(input: {
+  kind: string;
+  reason: string;
+}): string[] {
+  const problems: string[] = [];
+
+  if (!(CHANGE_REQUEST_KINDS as readonly string[]).includes(input.kind)) {
+    problems.push(`"${input.kind}" is not a kind of change this asks about.`);
+  }
+
+  const reason = input.reason.trim();
+  if (reason.length < MIN_CHANGE_REQUEST_REASON) {
+    problems.push(
+      'Say what needs changing and why. Somebody has to decide this, and they can only decide ' +
+        'what you tell them.',
+    );
+  } else if (reason.length > MAX_CHANGE_REQUEST_REASON) {
+    problems.push(`A reason is at most ${MAX_CHANGE_REQUEST_REASON} characters.`);
+  }
+
+  return problems;
+}
+
 export const APPROVAL_REQUEST_TYPE_LABELS: Record<ApprovalRequestType, string> = {
+  ChangeRequest: 'Change request',
   ObjectiveReview: 'Objective review',
   WorkflowPublish: 'Workflow publish',
   AgentActivation: 'Agent activation',

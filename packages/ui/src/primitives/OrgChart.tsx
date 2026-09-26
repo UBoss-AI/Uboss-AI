@@ -1,6 +1,8 @@
-import { useId } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import { cn } from '../lib/class-names';
+import { Icon } from './Icon';
+import { exportChartAsPng } from './org-chart-export';
 
 /** One node of the chart. Recursive, and the three kinds render differently. */
 export interface OrgChartNode {
@@ -53,8 +55,44 @@ export interface OrgChartProps {
   onArchiveDepartment?: (id: string) => void;
   /** Shown instead of the chart when a company has departments but nobody recorded. */
   emptyMessage?: string;
+  /**
+   * Put the chart in a frame with zoom, pan, fit and full screen.
+   *
+   * Off by default, and deliberately. A chart rendered inline in a document — the design-system
+   * page shows several — wants to be the size it is and to sit in the flow. A chart that is the
+   * screen wants a frame. The difference is the caller's to state, because only the caller knows
+   * which of the two it is asking for.
+   */
+  controls?: boolean;
   className?: string;
 }
+
+/**
+ * The range stepping stays inside.
+ *
+ * Below 40% a name is a grey smear and the chart answers nothing a screenshot would not; above
+ * 200% a card is bigger than it was designed to be read at and the frame shows two of them. So
+ * pressing minus never takes somebody somewhere they cannot read.
+ */
+const MIN_ZOOM = 0.4;
+const MAX_ZOOM = 2;
+const ZOOM_STEP = 0.2;
+
+/**
+ * How far Fit may go, which is further.
+ *
+ * A real company is wide: eleven people across five departments is already 5,700px, and fitting
+ * that into a 1,270px frame needs 22%. Holding Fit to the readable floor would give a button
+ * labelled "Fit the whole chart" that does not — it would stop at 40% and leave two thirds of the
+ * company off screen, which is worse than not offering it.
+ *
+ * So Fit is allowed below the floor, because somebody who presses it has asked for the shape of
+ * the company rather than for the names. Minus is disabled once it is there; plus climbs back into
+ * the readable range in one press.
+ */
+const FIT_MIN_ZOOM = 0.08;
+
+const clampZoom = (value: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
 
 /**
  * Box geometry.
@@ -503,6 +541,7 @@ export function OrgChart({
   onEditDepartment,
   onArchiveDepartment,
   emptyMessage,
+  controls,
   className,
 }: OrgChartProps) {
   /*
@@ -511,6 +550,159 @@ export function OrgChart({
    * every photo would be clipped by the first chart's geometry.
    */
   const idPrefix = useId().replace(/[^a-zA-Z0-9-]/g, '');
+
+  /*
+   * The frame's state.
+   *
+   * Declared here, above the early return for an empty company, because hooks cannot be called
+   * conditionally — and a company with departments and nobody in them is exactly the case that
+   * returns early.
+   */
+  const shell = useRef<HTMLDivElement>(null);
+  const frame = useRef<HTMLDivElement>(null);
+  const drawing = useRef<SVGSVGElement>(null);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [full, setFull] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  /*
+   * What the last export could not carry, for the caller to say out loud.
+   *
+   * Null means nothing has been exported yet or the last one was complete. A photograph that could
+   * not be embedded becomes the silhouette the chart already draws, and a missing typeface becomes
+   * the system one — neither is worth refusing an export over, and both are worth mentioning
+   * rather than leaving somebody to wonder why the file differs from the screen.
+   */
+  const [exportNote, setExportNote] = useState<string | null>(null);
+  const drag = useRef<{ x: number; y: number; from: { x: number; y: number } } | null>(null);
+  /*
+   * How far the pointer travelled since it went down.
+   *
+   * A ref rather than state: it is read during the click that follows the release, and a state
+   * update scheduled on pointermove has no guarantee of having been applied by then.
+   */
+  const travelled = useRef(0);
+  /*
+   * Whether this component took the pointer capture.
+   *
+   * Remembered rather than asked of the element. `hasPointerCapture` is not everywhere — it is
+   * absent under jsdom, where asking threw — and releasing a capture that is not held throws in
+   * its own right. Both questions are answered by the one thing that knows: the code that took it.
+   */
+  const captured = useRef(false);
+
+  /*
+   * Fit means: the whole company, as large as it will go.
+   *
+   * Read off the drawing's own attributes rather than a measurement, because a measurement is of
+   * the scaled element and fitting from it would chase its own tail. It never scales past 100% —
+   * a two-person company blown up to fill a widescreen monitor looks like a mistake.
+   */
+  const fit = useCallback(() => {
+    const frameEl = frame.current;
+    const svgEl = drawing.current;
+    if (frameEl === null || svgEl === null) return;
+    const box = frameEl.getBoundingClientRect();
+    const drawnWidth = Number(svgEl.getAttribute('width'));
+    const drawnHeight = Number(svgEl.getAttribute('height'));
+    if (!drawnWidth || !drawnHeight) return;
+    const wanted = Math.min(1, (box.width - 40) / drawnWidth, (box.height - 40) / drawnHeight);
+    setZoom(Math.max(FIT_MIN_ZOOM, wanted));
+    setPan({ x: 0, y: 0 });
+  }, []);
+
+  const reset = useCallback(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, []);
+
+  /**
+   * Download the chart as a picture.
+   *
+   * Exported at its own drawn size, not at the current zoom: the file is the whole company, and
+   * whatever magnification somebody happened to be reading at is not a property of the chart.
+   */
+  const download = useCallback(() => {
+    const svgEl = drawing.current;
+    const shellEl = shell.current;
+    if (svgEl === null || exporting) return;
+
+    setExporting(true);
+    setExportNote(null);
+
+    const surface = shellEl === null ? '#ffffff' : getComputedStyle(shellEl).backgroundColor;
+    const safeName = root.name.replace(/[^a-zA-Z0-9 _-]/g, '').trim() || 'organization';
+
+    void exportChartAsPng(svgEl, {
+      fileName: safeName + ' org chart.png',
+      background: surface,
+    })
+      .then((result) => {
+        const missing = [
+          result.photosEmbedded ? null : 'some photographs',
+          result.fontEmbedded ? null : 'the chart typeface',
+        ].filter((item): item is string => item !== null);
+        setExportNote(
+          missing.length === 0
+            ? null
+            : 'Downloaded without ' + missing.join(' and ') + '. Everything else is exact.',
+        );
+      })
+      .catch((error: unknown) =>
+        setExportNote(
+          error instanceof Error ? error.message : 'The chart could not be downloaded.',
+        ),
+      )
+      .finally(() => setExporting(false));
+  }, [exporting, root.name]);
+
+  /*
+   * Full screen is asked of the browser rather than faked with a fixed position.
+   *
+   * A div stretched over the viewport is still inside the page: the operating system's chrome,
+   * the browser's tab strip and the product's own top bar all stay, which on a laptop is most of
+   * the height the reader was trying to gain.
+   */
+  const toggleFull = useCallback(() => {
+    const el = shell.current;
+    if (el === null) return;
+    if (document.fullscreenElement === el) void document.exitFullscreen();
+    else void el.requestFullscreen().catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    const onChange = () => {
+      const isFull = document.fullscreenElement === shell.current;
+      setFull(isFull);
+      // Leaving full screen leaves a zoom chosen for a much larger frame, so the chart would come
+      // back cropped. Refitting is the only answer that is right for every chart size.
+      if (!isFull) requestAnimationFrame(() => fit());
+    };
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, [fit]);
+
+  /*
+   * The wheel, attached by hand because it has to be able to refuse the page.
+   *
+   * React attaches wheel listeners passively, and a passive listener may not call
+   * preventDefault — so ctrl+wheel would zoom the chart *and* the browser, and a plain wheel would
+   * scroll the page out from under a chart the reader was reading.
+   */
+  useEffect(() => {
+    const frameEl = frame.current;
+    if (frameEl === null) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      if (event.ctrlKey || event.metaKey) {
+        setZoom((current) => clampZoom(current - Math.sign(event.deltaY) * ZOOM_STEP));
+        return;
+      }
+      setPan((current) => ({ x: current.x - event.deltaX, y: current.y - event.deltaY }));
+    };
+    frameEl.addEventListener('wheel', onWheel, { passive: false });
+    return () => frameEl.removeEventListener('wheel', onWheel);
+  }, []);
 
   const hasPeople = root.children.some((department) => department.children.length > 0);
 
@@ -532,16 +724,16 @@ export function OrgChart({
   };
   collect(placed);
 
-  return (
-    <div className={cn('uboss-org', className)}>
-      <svg
-        width={width}
-        height={height}
-        viewBox={`0 0 ${width} ${height}`}
-        role="tree"
-        aria-label={`${root.name} organization chart`}
-        fontFamily="Inter, system-ui, sans-serif"
-      >
+  const chart = (
+    <svg
+      ref={drawing}
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      role="tree"
+      aria-label={`${root.name} organization chart`}
+      fontFamily="Inter, system-ui, sans-serif"
+    >
         <defs>
           <linearGradient id="uboss-org-logo" x1="0" y1="0" x2="1" y2="1">
             <stop offset="0" stopColor="var(--uboss-ai-bright)" />
@@ -581,8 +773,220 @@ export function OrgChart({
             {...(onEditDepartment === undefined ? {} : { onEditDepartment })}
             {...(onArchiveDepartment === undefined ? {} : { onArchiveDepartment })}
           />
-        ))}
-      </svg>
+      ))}
+    </svg>
+  );
+
+  if (controls !== true) {
+    return <div className={cn('uboss-org', className)}>{chart}</div>;
+  }
+
+  const percent = Math.round(zoom * 100);
+
+  return (
+    <div className={cn('uboss-org', 'uboss-org--framed', className)} ref={shell}>
+      <div className="uboss-org-tools">
+        <button
+          type="button"
+          className="uboss-org-tool"
+          onClick={() => setZoom((current) => clampZoom(current - ZOOM_STEP))}
+          disabled={zoom <= MIN_ZOOM}
+          aria-label="Zoom out"
+          title="Zoom out"
+        >
+          <Icon name="minus" size={15} />
+        </button>
+
+        {/*
+          The readout is the reset.
+
+          It is the one control whose label already says what pressing it would undo, so a separate
+          Reset button beside it would be a second way to say 100%.
+        */}
+        <button
+          type="button"
+          className="uboss-org-zoom"
+          onClick={reset}
+          aria-label={`Zoom is ${percent} per cent. Reset to 100 per cent`}
+          title="Reset to 100%"
+        >
+          {percent}%
+        </button>
+
+        <button
+          type="button"
+          className="uboss-org-tool"
+          onClick={() => setZoom((current) => clampZoom(current + ZOOM_STEP))}
+          disabled={zoom >= MAX_ZOOM}
+          aria-label="Zoom in"
+          title="Zoom in"
+        >
+          <Icon name="plus" size={15} />
+        </button>
+
+        <span className="uboss-org-tool-gap" aria-hidden="true" />
+
+        <button
+          type="button"
+          className="uboss-org-tool"
+          onClick={fit}
+          aria-label="Fit the whole chart"
+          title="Fit the whole chart"
+        >
+          <Icon name="frame" size={15} />
+        </button>
+
+        <button
+          type="button"
+          className="uboss-org-tool"
+          onClick={download}
+          disabled={exporting}
+          aria-label="Download the chart"
+          title="Download the chart as a picture"
+        >
+          <Icon name={exporting ? 'clock' : 'arrow-down'} size={15} />
+        </button>
+
+        <button
+          type="button"
+          className="uboss-org-tool"
+          onClick={toggleFull}
+          aria-label={full ? 'Leave full screen' : 'Full screen'}
+          title={full ? 'Leave full screen' : 'Full screen'}
+        >
+          <Icon name={full ? 'collapse' : 'expand'} size={15} />
+        </button>
+      </div>
+
+      {/*
+        The frame.
+
+        Focusable and driven by the keyboard as well as the pointer, because zoom and pan are the
+        only way to reach part of a large chart and a reader who cannot use a mouse would otherwise
+        be able to see one corner of their own company.
+      */}
+      <div
+        className="uboss-org-frame"
+        ref={frame}
+        tabIndex={0}
+        role="group"
+        aria-label="Chart viewport. Plus and minus zoom, arrow keys pan, 0 resets."
+        onKeyDown={(event) => {
+          const nudge = 60;
+          if (event.key === '+' || event.key === '=') setZoom((z) => clampZoom(z + ZOOM_STEP));
+          else if (event.key === '-') setZoom((z) => clampZoom(z - ZOOM_STEP));
+          else if (event.key === '0') reset();
+          else if (event.key === 'ArrowLeft') setPan((o) => ({ ...o, x: o.x + nudge }));
+          else if (event.key === 'ArrowRight') setPan((o) => ({ ...o, x: o.x - nudge }));
+          else if (event.key === 'ArrowUp') setPan((o) => ({ ...o, y: o.y + nudge }));
+          else if (event.key === 'ArrowDown') setPan((o) => ({ ...o, y: o.y - nudge }));
+          else return;
+          event.preventDefault();
+        }}
+        /*
+         * A press that moved was a pan, not a choice.
+         *
+         * The first version of this only panned from the background, on the reasoning that the
+         * cards are the chart's controls. On a real company there is almost no background: the
+         * drawing is wider than the frame in every direction, so nearly every point under the
+         * pointer is a card and the chart could barely be moved at all.
+         *
+         * So a drag starts anywhere, and what separates the two is distance. Under four pixels is
+         * a press — the card opens. Past it, the chart moves and the click that follows the
+         * release is stopped here, before it reaches the card underneath.
+         */
+        onClickCapture={(event) => {
+          if (travelled.current <= 4) return;
+          event.stopPropagation();
+          event.preventDefault();
+        }}
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          drag.current = { x: event.clientX, y: event.clientY, from: pan };
+          travelled.current = 0;
+          captured.current = false;
+        }}
+        onPointerMove={(event) => {
+          const from = drag.current;
+          if (from === null) return;
+          const dx = event.clientX - from.x;
+          const dy = event.clientY - from.y;
+          travelled.current = Math.max(travelled.current, Math.abs(dx) + Math.abs(dy));
+          if (travelled.current <= 4) return;
+          /*
+           * The pointer is captured here, once the press has become a drag — never on the press
+           * itself.
+           *
+           * Capturing on pointerdown retargets the compatibility mouse events to the capturing
+           * element, and the click that follows is then dispatched at the frame rather than at
+           * whatever was pressed. Every card silently stopped opening: the chart looked right, the
+           * cursor was right, and pressing a person did nothing at all.
+           *
+           * Taken here instead, a press that does not move is never captured and reaches its card,
+           * while a real drag still keeps receiving moves after the pointer leaves the frame.
+           */
+          if (!captured.current) {
+            event.currentTarget.setPointerCapture(event.pointerId);
+            captured.current = true;
+          }
+          setPan({ x: from.from.x + dx, y: from.from.y + dy });
+        }}
+        onPointerUp={(event) => {
+          drag.current = null;
+          if (captured.current) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+            captured.current = false;
+          }
+        }}
+        onPointerCancel={() => {
+          drag.current = null;
+          captured.current = false;
+        }}
+      >
+        {/*
+          What the export could not carry.
+
+          On the chart rather than in a toast, because it is about the file that just downloaded
+          and the person is looking here. It clears on the next export.
+        */}
+        {exportNote === null ? null : (
+          <p className="uboss-org-note" role="status">
+            {exportNote}
+            <button
+              type="button"
+              className="uboss-org-note-close"
+              onClick={() => setExportNote(null)}
+              aria-label="Dismiss"
+            >
+              <Icon name="close" size={13} />
+            </button>
+          </p>
+        )}
+
+        <div
+          className="uboss-org-stage"
+          style={{ transform: `translate(${pan.x}px, ${pan.y}px)` }}
+        >
+          {/*
+            The box is told the size the drawing ends up, because a transform does not tell it.
+
+            `scale()` paints smaller and leaves the element's layout box at its original size. So a
+            chart fitted to 22% still occupied 692px of height, and centring it in the frame
+            centred that phantom box — the drawing stayed pinned to the top with five hundred
+            pixels of empty frame beneath it, which reads as a chart that failed to finish loading.
+          */}
+          <div
+            className="uboss-org-scale"
+            style={{
+              width: width * zoom,
+              height: height * zoom,
+              transform: `scale(${zoom})`,
+            }}
+          >
+            {chart}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

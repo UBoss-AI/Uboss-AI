@@ -13,7 +13,7 @@ import { ProgressStep } from './ProgressStep';
 import { SearchField } from './SearchField';
 import { SecurityMetric } from './SecurityMetric';
 import { SkeletonText } from './Skeleton';
-import { BADGE_LADDER, MedalBadge, StatusBadge } from './StatusBadge';
+import { BADGE_LADDER, BADGE_LADDER_LABELS, MedalBadge, StatusBadge } from './StatusBadge';
 
 describe('Button', () => {
   it('defaults to type="button" so it cannot accidentally submit a form', () => {
@@ -83,7 +83,13 @@ describe('MedalBadge', () => {
     expect([...BADGE_LADDER]).toEqual(['Bronze', 'Silver', 'Gold', 'Platinum', 'Diamond']);
   });
 
-  it('renders each tier with its name', () => {
+  it('shows the company’s name for each rung, and keeps the stored one readable', () => {
+    /*
+     * The rungs are stored as Bronze..Diamond and shown as Starter..Legend. Renaming the stored
+     * values would rewrite badges people have already earned, so the ladder keeps its identity and
+     * gains a label — and the tooltip carries the stored name so a screenshot can still be matched
+     * against an audit row.
+     */
     render(
       <>
         {BADGE_LADDER.map((tier) => (
@@ -93,8 +99,20 @@ describe('MedalBadge', () => {
     );
 
     for (const tier of BADGE_LADDER) {
-      expect(screen.getByText(tier)).toBeInTheDocument();
+      const shown = BADGE_LADDER_LABELS[tier];
+      expect(screen.getByText(shown)).toBeInTheDocument();
+      expect(screen.getByText(shown)).toHaveAttribute('title', `${shown} (${tier})`);
     }
+  });
+
+  it('gives the client’s five names, in the ladder’s order', () => {
+    expect(BADGE_LADDER.map((tier) => BADGE_LADDER_LABELS[tier])).toEqual([
+      'Starter',
+      'Skilled',
+      'Pro',
+      'Elite',
+      'Legend',
+    ]);
   });
 });
 

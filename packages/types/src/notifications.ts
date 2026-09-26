@@ -14,6 +14,7 @@ export const NOTIFICATION_KINDS = [
   'ConnectionExpiry',
   'BudgetThreshold',
   'SecurityEvent',
+  'WorkReady',
 ] as const;
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
@@ -53,8 +54,11 @@ export interface NotificationKindDefinition {
 /**
  * Every kind, with its governance.
  *
- * Six, exactly the client's initial list. A seventh would be vocabulary nobody asked for, and the
- * per-kind preference table's unique key means an unknown kind cannot even be stored.
+ * Six were the client's initial list. `WorkReady` is the seventh and was asked for later, by the
+ * rule that a step unlocking its successor must tell the person: "Engine completes -> Sub-Engine
+ * automatically becomes Ready -> notification generated". Without a kind of its own it would have
+ * to borrow one, and `Overdue` telling somebody their work has *started* is the kind of lie that
+ * makes a notification centre worth ignoring.
  */
 export const NOTIFICATION_KIND_DEFINITIONS: readonly NotificationKindDefinition[] = [
   {
@@ -101,6 +105,22 @@ export const NOTIFICATION_KIND_DEFINITIONS: readonly NotificationKindDefinition[
     escalatesAfterSetting: null,
     module: 'settings',
     producedBy: 'live — Plans & Entitlements (Prompt 11)',
+  },
+  {
+    kind: 'WorkReady',
+    label: 'Work ready for you',
+    description: 'A step you own is no longer waiting on anything else, and can be started.',
+    alwaysMandatory: false,
+    /*
+     * It does not escalate.
+     *
+     * Escalation is for something a person is failing to do, and at the moment this is raised they
+     * have not failed at anything — they have just been handed the work. Being late with it
+     * afterwards is what `Overdue` is for, and that one does escalate.
+     */
+    escalatesAfterSetting: null,
+    module: 'todo',
+    producedBy: 'live — dependency release (Phase 6/7)',
   },
   {
     kind: 'SecurityEvent',
@@ -188,6 +208,13 @@ export const notificationDedupeKey = {
     `budget:${subscriptionId}:${percent}`,
   /** Per security event: the event id is already unique and each one is worth saying once. */
   securityEvent: (eventId: string) => `security:${eventId}`,
+  /**
+   * Per task, so a step is announced as ready exactly once.
+   *
+   * The task id rather than the node id: a node is a line in a plan and may be re-published, while
+   * the task is the actual piece of work this person was handed.
+   */
+  workReady: (taskId: string) => `work-ready:${taskId}`,
   /** An escalation is its own notification, keyed to what it escalated. */
   escalation: (fromNotificationId: string, toUserId: string) =>
     `escalation:${fromNotificationId}:${toUserId}`,

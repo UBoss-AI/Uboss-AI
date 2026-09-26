@@ -6,9 +6,15 @@ import { ROLE_TEMPLATES } from './role-templates.js';
 import {
   csvCell,
   DASHBOARD_ALLOWED_KEYS,
-  DASHBOARD_SLICE_DESTINATIONS,
-  DASHBOARD_SLICE_LABELS,
-  DASHBOARD_SLICES,
+  DASHBOARD_LANE_LABELS,
+  DASHBOARD_LANE_MEASURE,
+  DASHBOARD_LANES,
+  DASHBOARD_TILE_DESTINATIONS,
+  DASHBOARD_TILE_LANE,
+  DASHBOARD_TILE_LABELS,
+  DASHBOARD_TILE_MEASURE,
+  DASHBOARD_TILE_MODULE,
+  DASHBOARD_TILES,
   MAX_REPORT_RANGE_DAYS,
   permissionsForReport,
   REPORT_EXPORT_PERMISSION,
@@ -22,28 +28,108 @@ import {
 } from './reports.js';
 
 /**
- * Reporting and the locked dashboard — Prompt 37.
+ * Reporting and the orchestration dashboard — Prompt 37, as revised.
  *
- * The weight is on the three things a wrong answer makes dangerous: **the dashboard staying two
- * slices**, **a report requiring its source module's permission as well as `reports:View`**, and
- * **an empty scope meaning nobody rather than everybody**.
+ * The weight is on the three things a wrong answer makes dangerous: **every tile being gated on a
+ * module that really exists**, **a report requiring its source module's permission as well as
+ * `reports:View`**, and **an empty scope meaning nobody rather than everybody**.
+ *
+ * The dashboard used to be two slices and nothing else, and these tests used to hold that line.
+ * The client replaced that rule with an orchestration view, so what they hold now is the discipline
+ * that replaced it: a tile is gated, a tile goes somewhere, a number means something stated, and
+ * money never appears here.
  */
-describe('the locked Company Workspace Dashboard', () => {
-  it('has exactly two slices, and they are Agents and Pending Jobs', () => {
-    assert.deepEqual([...DASHBOARD_SLICES], ['agents', 'pendingJobs']);
-    assert.equal(DASHBOARD_SLICE_LABELS.agents, 'Agents');
-    assert.equal(DASHBOARD_SLICE_LABELS.pendingJobs, 'Pending Jobs');
+describe('the Company Workspace Dashboard', () => {
+  it('offers the seven work areas, and no eighth', () => {
+    assert.deepEqual(
+      [...DASHBOARD_TILES],
+      ['objectives', 'tasks', 'agents', 'approvals', 'exceptions', 'performance', 'reports'],
+    );
   });
 
-  it('sends each slice somewhere', () => {
-    assert.equal(DASHBOARD_SLICE_DESTINATIONS.agents, '/agents');
-    assert.equal(DASHBOARD_SLICE_DESTINATIONS.pendingJobs, '/todo');
+  it('gates every tile on a module that actually exists', () => {
+    for (const tile of DASHBOARD_TILES) {
+      const module = DASHBOARD_TILE_MODULE[tile];
+      assert.ok(
+        (COMPANY_MODULES as readonly string[]).includes(module),
+        `${tile} is gated on "${module}", which is not a company module`,
+      );
+    }
+  });
+
+  it('sends every tile somewhere, and labels every one', () => {
+    for (const tile of DASHBOARD_TILES) {
+      assert.ok(
+        DASHBOARD_TILE_DESTINATIONS[tile].startsWith('/'),
+        `${tile} has no destination`,
+      );
+      assert.ok(DASHBOARD_TILE_LABELS[tile].length > 0, `${tile} has no label`);
+    }
+  });
+
+  /*
+   * A number with no stated meaning is the thing two people read two different ways — and on this
+   * screen two people with different scopes legitimately see different numbers. So a tile either
+   * says what its count measures, or it carries no count at all.
+   */
+  it('states what every count measures, or carries no count', () => {
+    for (const tile of DASHBOARD_TILES) {
+      const measure = DASHBOARD_TILE_MEASURE[tile];
+      assert.ok(
+        measure === null || measure.length > 0,
+        `${tile} has a count with nothing said about what it counts`,
+      );
+    }
+    // The two the client named that have no single honest number.
+    assert.equal(DASHBOARD_TILE_MEASURE.performance, null);
+    assert.equal(DASHBOARD_TILE_MEASURE.reports, null);
+  });
+
+  /*
+   * The map is drawn from this, so a tile with no side has nowhere to be drawn — and the failure
+   * is not an exception, it is a work area that silently stops appearing on the dashboard for
+   * everybody. That is the kind of thing nobody notices until somebody asks where Approvals went.
+   */
+  it('puts every work area on one of the two sides', () => {
+    for (const tile of DASHBOARD_TILES) {
+      const lane = DASHBOARD_TILE_LANE[tile];
+      assert.ok(
+        (DASHBOARD_LANES as readonly string[]).includes(lane),
+        `${tile} is on "${lane}", which is not a side of the dashboard`,
+      );
+    }
+  });
+
+  it('uses both sides, and says what each is for', () => {
+    // A split with everything on one side is not a split; it is a heading over the whole screen.
+    for (const lane of DASHBOARD_LANES) {
+      const on = DASHBOARD_TILES.filter((tile) => DASHBOARD_TILE_LANE[tile] === lane);
+      assert.ok(on.length > 0, `nothing is on the "${lane}" side`);
+      assert.ok(DASHBOARD_LANE_LABELS[lane].length > 0, `"${lane}" has no label`);
+      assert.ok(DASHBOARD_LANE_MEASURE[lane].length > 0, `"${lane}" does not say what it is for`);
+    }
+  });
+
+  /*
+   * Which side a work area is on is a statement about the product, so it is checked rather than
+   * left to whoever edits the map next. Approvals drifting to "Execution" would put the thing that
+   * checks work in the column for doing it.
+   */
+  it('keeps deciding and reviewing on the oversight side', () => {
+    assert.equal(DASHBOARD_TILE_LANE.objectives, 'execution');
+    assert.equal(DASHBOARD_TILE_LANE.tasks, 'execution');
+    assert.equal(DASHBOARD_TILE_LANE.agents, 'execution');
+    assert.equal(DASHBOARD_TILE_LANE.approvals, 'oversight');
+    assert.equal(DASHBOARD_TILE_LANE.exceptions, 'oversight');
+    assert.equal(DASHBOARD_TILE_LANE.performance, 'oversight');
+    assert.equal(DASHBOARD_TILE_LANE.reports, 'oversight');
   });
 
   it('permits no third key on the dashboard payload', () => {
-    // The failure mode is additive: nobody deletes the donut, somebody adds a card beside it.
-    assert.deepEqual([...DASHBOARD_ALLOWED_KEYS], ['agents', 'pendingJobs', 'scope']);
-    for (const forbidden of ['cost', 'tokens', 'notifications', 'kpis', 'objectives', 'badges']) {
+    // Still asserted, and still for the original reason: adding to this screen has to be a
+    // decision somebody takes on purpose rather than something that accumulates.
+    assert.deepEqual([...DASHBOARD_ALLOWED_KEYS], ['tiles', 'scope']);
+    for (const forbidden of ['cost', 'tokens', 'spend', 'budget', 'kpis', 'badges']) {
       assert.equal(
         DASHBOARD_ALLOWED_KEYS.includes(forbidden),
         false,
@@ -53,10 +139,17 @@ describe('the locked Company Workspace Dashboard', () => {
   });
 });
 
-describe('the ten reports', () => {
-  it('is exactly the ten the prompt names', () => {
-    assert.equal(REPORT_KEYS.length, 10);
-    assert.equal(REPORTS.length, 10);
+describe('the report catalogue', () => {
+  it('is the prompt’s ten plus the one the sequence made possible', () => {
+    /*
+     * Ten came from the prompt. `DependencyWaiting` is the eleventh and was added when a step
+     * whose predecessors are unfinished became a real state: from outside, an objective with four
+     * waiting steps looks exactly like one nobody has got round to, and that difference is worth a
+     * report. The count stays pinned so a twelfth is a decision somebody wrote down here.
+     */
+    assert.equal(REPORT_KEYS.length, 11);
+    assert.equal(REPORTS.length, 11);
+    assert.ok((REPORT_KEYS as readonly string[]).includes('DependencyWaiting'));
   });
 
   it('gives every report a question rather than only a title', () => {

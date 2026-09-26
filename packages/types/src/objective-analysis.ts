@@ -213,6 +213,98 @@ export interface AnalysisNode {
   triggerEvent: string | null;
 }
 
+// ---------------------------------------------------------------------------
+// Engine, Sub-Engine, Executor
+// ---------------------------------------------------------------------------
+
+export const EXECUTION_STAGES = ['Engine', 'SubEngine', 'Executor'] as const;
+export type ExecutionStage = (typeof EXECUTION_STAGES)[number];
+
+export const EXECUTION_STAGE_LABELS: Record<ExecutionStage, string> = {
+  Engine: 'Engine',
+  SubEngine: 'Sub-Engine',
+  Executor: 'Executor',
+};
+
+/**
+ * Which stage of the chain each step is, derived from what it waits on.
+ *
+ * ## Why this is derived and not stored
+ *
+ * The client names three positions — Engine, Sub-Engine, Executor — and they are positions, not
+ * job titles: the Engine is whoever goes first, the Executor is whoever finishes. Storing the
+ * label on the node would create a second source of truth that could disagree with the
+ * dependencies, and then a plan could say "Executor" about a step that three others wait on. The
+ * dependency graph already knows, so it is asked.
+ *
+ * Depth is the longest path to a step, not the shortest: a step that waits on both the first and
+ * the second stage belongs after the second. Everything at depth 0 is an Engine, everything at
+ * the deepest level is an Executor, and what lies between is a Sub-Engine. A plan with one stage
+ * has an Engine and nothing else, which is the truth about a plan with one step.
+ *
+ * ## Only work gets a position
+ *
+ * Goals, conditions and approval gates are given none. The three names describe people doing work
+ * — the Executor is whoever finishes the job, not the approval that follows it — and a plan whose
+ * last node is a sign-off would otherwise report that nobody executed anything and the gate did.
+ * They still count for **depth**, because a step after a gate genuinely waits for it; they are
+ * simply not candidates for a name.
+ *
+ * A dependency naming a node that is not in the graph is ignored rather than treated as depth —
+ * the same rule `dependenciesSatisfied` applies, for the same reason.
+ */
+export function executionStages(
+  nodes: readonly { id: string; kind: string; dod: { dependencies: string[] } }[],
+): Map<string, ExecutionStage> {
+  const depth = executionDepths(nodes);
+
+  const work = nodes.filter((node) => node.kind === 'Human' || node.kind === 'Ai');
+  const deepest = Math.max(0, ...work.map((node) => depth.get(node.id) ?? 0));
+
+  const stages = new Map<string, ExecutionStage>();
+  for (const node of work) {
+    const level = depth.get(node.id) ?? 0;
+    stages.set(node.id, level === 0 ? 'Engine' : level === deepest ? 'Executor' : 'SubEngine');
+  }
+  return stages;
+}
+
+/**
+ * How many steps deep into the plan each node is.
+ *
+ * Exported because a diagram has to be drawn in the order the work happens. The stored node array
+ * is in the order the analysis built it — every human step, then every AI step — so drawing it as
+ * it comes puts a later step above an earlier one and joins them with a connector, which is a
+ * picture of a sequence that does not exist. Sorting by this, with the original position breaking
+ * ties, turns the array back into the chain.
+ */
+export function executionDepths(
+  nodes: readonly { id: string; dod: { dependencies: string[] } }[],
+): Map<string, number> {
+  const present = new Set(nodes.map((node) => node.id));
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const depth = new Map<string, number>();
+
+  const depthOf = (id: string, seen: Set<string>): number => {
+    const cached = depth.get(id);
+    if (cached !== undefined) return cached;
+    // A cycle is a broken plan, not a crash. It is given depth 0 and the editor's own validation
+    // is what reports it; guessing a deeper number here would hide the problem behind a label.
+    if (seen.has(id)) return 0;
+
+    const node = byId.get(id);
+    const waits = (node?.dod.dependencies ?? []).filter((dependency) => present.has(dependency));
+    const next = new Set(seen).add(id);
+    const value =
+      waits.length === 0 ? 0 : Math.max(...waits.map((dependency) => depthOf(dependency, next) + 1));
+    depth.set(id, value);
+    return value;
+  };
+
+  for (const node of nodes) depthOf(node.id, new Set());
+  return depth;
+}
+
 export interface AnalysisEdge {
   fromNodeId: string;
   toNodeId: string;

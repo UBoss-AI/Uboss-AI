@@ -374,6 +374,10 @@ export {
   ANALYSIS_STAGE_LABELS,
   ANALYSIS_STAGES,
   analysisStageIndex,
+  EXECUTION_STAGE_LABELS,
+  EXECUTION_STAGES,
+  executionDepths,
+  executionStages,
   isAnalysisRunFinished,
   isReadableSchemaVersion,
   mayCancelAnalysis,
@@ -391,6 +395,7 @@ export type {
   AnalysisRisk,
   AnalysisRunStatus,
   AnalysisStage,
+  ExecutionStage,
   NodeShape,
   WorkflowDraft,
 } from './objective-analysis.js';
@@ -437,6 +442,12 @@ export {
   APPROVAL_REQUEST_TYPES,
   ASSIGNMENT_CHECK_LABELS,
   ASSIGNMENT_CHECKS,
+  CHANGE_REQUEST_KIND_LABELS,
+  CHANGE_REQUEST_KINDS,
+  changeRequestProblems,
+  MAX_CHANGE_REQUEST_REASON,
+  MIN_CHANGE_REQUEST_REASON,
+  dependenciesSatisfied,
   EXECUTOR_EXPECTATION_KINDS,
   EXECUTOR_EXPECTATION_LABELS,
   HUMAN_TASK_STATUS_LABELS,
@@ -447,6 +458,7 @@ export {
   isHumanTaskOverdue,
   mayMoveApproval,
   mayMoveHumanTask,
+  mayReleaseHumanTask,
   TASK_NOTE_KINDS,
   TERMINAL_HUMAN_TASK_STATUSES,
   validateTaskSubmission,
@@ -459,6 +471,7 @@ export type {
   ApprovalRequestType,
   AssignmentCheck,
   AssignmentRefusal,
+  ChangeRequestKind,
   HumanTaskStatus,
   TaskNoteKind,
   WorkItemType,
@@ -485,11 +498,17 @@ export {
   behaviourContinuesPastBadData,
   BEHAVIOURS_THAT_CONTINUE,
   emptyAgentExecutionSetup,
+  RUNTIME_INPUT_KEYS,
+  runtimeInputsFor,
+  unansweredRuntimeInputs,
   ENGINE_AGENT_STATUS_LABELS,
   ENGINE_AGENT_STATUS_TONES,
   ENGINE_AGENT_STATUSES,
   FORM3_ACTION_COLUMNS,
   FORM3_JOB_LEVEL_FIELDS,
+  FIELD_SOURCE_LABELS,
+  FIELD_SOURCES,
+  FORM3_FIELD_SOURCE,
   mayMoveEngineAgent,
   MISSING_DATA_BEHAVIOUR_LABELS,
   MISSING_DATA_BEHAVIOURS,
@@ -498,16 +517,44 @@ export {
   setupIsComplete,
 } from './agents.js';
 export type {
+  AgentObjectiveContext,
   AgentExecutionSetup,
+  RuntimeInputField,
+  RuntimeInputKey,
+  RuntimeInputs,
   AgentRunType,
   EngineAgentStatus,
   Form3ActionColumn,
   Form3ActionRow,
+  FieldSource,
   Form3JobLevelFieldKey,
   Form3View,
   MissingDataBehaviour,
   MissingSetupField,
 } from './agents.js';
+
+// ---- Testing an agent before it is published ----
+//
+// A test used to take no input and keep no result: it called the gateway with the configuration
+// alone, wrote a sentence about what happened, and the next test overwrote it. That answered "is
+// this wired up" when the question an admin is actually asking is "does it do the right thing
+// with my data" — which needs their data, the whole answer, and the attempt before this one.
+//
+// `agentTestProblems` is shared so the screen disables the button for the reasons the server
+// would refuse, and `AGENT_TEST_EXPECTATION_NOTE` says out loud that what you expected is shown
+// beside the output rather than compared with it: a machine verdict on free English would be a
+// guess that an admin would believe.
+export {
+  AGENT_TEST_EXPECTATION_NOTE,
+  AGENT_TEST_STATUS_LABELS,
+  AGENT_TEST_STATUS_TONES,
+  AGENT_TEST_STATUSES,
+  agentTestProblems,
+  MAX_AGENT_TEST_EXPECTATION,
+  MAX_AGENT_TEST_INPUT,
+  MIN_AGENT_TEST_INPUT,
+} from './agents.js';
+export type { AgentTestRunView, AgentTestStatus } from './agents.js';
 
 // ---- Engine Agent registry, memory mode and versioning (Prompt 25) ----
 //
@@ -1139,9 +1186,18 @@ export {
   csvCell,
   DASHBOARD_ALLOWED_KEYS,
   DASHBOARD_CONTRACT,
-  DASHBOARD_SLICE_DESTINATIONS,
-  DASHBOARD_SLICE_LABELS,
-  DASHBOARD_SLICES,
+  DASHBOARD_LANE_LABELS,
+  DASHBOARD_LANE_MEASURE,
+  DASHBOARD_LANES,
+  DASHBOARD_TILE_DESTINATIONS,
+  DASHBOARD_TILE_LABELS,
+  DASHBOARD_TILE_LANE,
+  DASHBOARD_TILE_MEASURE,
+  DASHBOARD_TILE_MODULE,
+  DASHBOARD_TILES,
+  emptyOrchestrationCounts,
+  EXECUTION_STAGE_ORDER,
+  ORCHESTRATION_STAGE_LABELS,
   DEFAULT_REPORT_RANGE,
   EXPORT_FORMATS,
   MAX_REPORT_RANGE_DAYS,
@@ -1160,7 +1216,14 @@ export {
   scopeIsEmpty,
   toCsv,
   type DashboardCounts,
-  type DashboardSlice,
+  type DashboardLane,
+  type DashboardTile,
+  type OrchestrationCounts,
+  type OrchestrationDepartmentRow,
+  type OrchestrationStage,
+  type OrchestrationStageRow,
+  type OrchestrationView,
+  type DashboardTileCount,
   type ExportFormat,
   type ReportDefinition,
   type ReportKey,
@@ -1365,7 +1428,9 @@ export {
   CONTEXT_STANCE,
   CONVERSATION_KIND_LABELS,
   CONVERSATION_KINDS,
+  departmentWorkshopTitle,
   directConversationKey,
+  isDepartmentWorkshop,
   EXCLUDED_BY_DESIGN,
   MAX_ATTACHMENTS_PER_MESSAGE,
   MAX_CONVERSATION_TITLE,

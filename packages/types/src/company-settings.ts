@@ -140,6 +140,25 @@ export interface SettingDefinition {
    * for everything is what keeps the history readable.
    */
   material: boolean;
+  /**
+   * Whether somebody who cannot change this still needs to read it.
+   *
+   * Read permissions alone decided what a person saw, and they were chosen to be generous — a
+   * company's working days are on `dashboard:View` because everybody's deadlines depend on them.
+   * The effect, added up, was that an employee opened Settings onto eighteen company policies,
+   * every one of them read-only. None of it was a leak and none of it was useful: they could not
+   * act on a single one, and the four that genuinely affect their day were buried among fourteen
+   * that do not.
+   *
+   * So there are two questions now, not one. The read permission still decides whether somebody
+   * *may* see a setting. This decides whether it is worth their while when they cannot change it:
+   * true for the facts people work by — the timezone, the working week, whether their objective
+   * needs a sign-off — and false for company policy, which is the administrator's screen.
+   *
+   * It does nothing at all to somebody who can edit the setting. An administrator sees
+   * everything, exactly as before.
+   */
+  readableWithoutEditing: boolean;
   /** Present when a setting is stored elsewhere and shown here for completeness. */
   managedElsewhere?: string;
 }
@@ -158,6 +177,7 @@ const GENERAL: SettingDefinition[] = [
     writePermission: { module: 'settings', action: 'Administer' },
     readPermission: { module: 'settings', action: 'View' },
     material: true,
+    readableWithoutEditing: true,
   },
   {
     key: 'general.timezone',
@@ -171,6 +191,7 @@ const GENERAL: SettingDefinition[] = [
     writePermission: { module: 'settings', action: 'Administer' },
     readPermission: { module: 'dashboard', action: 'View' },
     material: true,
+    readableWithoutEditing: true,
   },
   {
     key: 'general.week_starts_on',
@@ -189,6 +210,7 @@ const GENERAL: SettingDefinition[] = [
     writePermission: { module: 'settings', action: 'Administer' },
     readPermission: { module: 'dashboard', action: 'View' },
     material: false,
+    readableWithoutEditing: true,
   },
   {
     key: 'general.working_days',
@@ -212,6 +234,7 @@ const GENERAL: SettingDefinition[] = [
     writePermission: { module: 'settings', action: 'Administer' },
     readPermission: { module: 'dashboard', action: 'View' },
     material: true,
+    readableWithoutEditing: true,
   },
   {
     key: 'general.holidays',
@@ -233,6 +256,7 @@ const GENERAL: SettingDefinition[] = [
     writePermission: { module: 'settings', action: 'Administer' },
     readPermission: { module: 'dashboard', action: 'View' },
     material: true,
+    readableWithoutEditing: true,
   },
   {
     key: 'runs.missed_run_policy',
@@ -254,6 +278,7 @@ const GENERAL: SettingDefinition[] = [
     writePermission: { module: 'settings', action: 'Administer' },
     readPermission: { module: 'agents', action: 'View' },
     material: true,
+    readableWithoutEditing: true,
   },
   {
     key: 'runs.overlap_policy',
@@ -275,6 +300,7 @@ const GENERAL: SettingDefinition[] = [
     writePermission: { module: 'settings', action: 'Administer' },
     readPermission: { module: 'agents', action: 'View' },
     material: true,
+    readableWithoutEditing: true,
   },
   {
     key: 'runs.max_attempts',
@@ -289,6 +315,7 @@ const GENERAL: SettingDefinition[] = [
     writePermission: { module: 'settings', action: 'Administer' },
     readPermission: { module: 'agents', action: 'View' },
     material: true,
+    readableWithoutEditing: true,
   },
 ];
 
@@ -306,6 +333,7 @@ const APPEARANCE: SettingDefinition[] = [
     writePermission: { module: 'settings', action: 'Administer' },
     readPermission: { module: 'dashboard', action: 'View' },
     material: false,
+    readableWithoutEditing: false,
   },
   {
     key: 'appearance.density',
@@ -323,6 +351,7 @@ const APPEARANCE: SettingDefinition[] = [
     writePermission: { module: 'settings', action: 'Administer' },
     readPermission: { module: 'dashboard', action: 'View' },
     material: false,
+    readableWithoutEditing: false,
   },
   {
     key: 'appearance.reduce_motion',
@@ -337,6 +366,7 @@ const APPEARANCE: SettingDefinition[] = [
     writePermission: { module: 'settings', action: 'Administer' },
     readPermission: { module: 'dashboard', action: 'View' },
     material: false,
+    readableWithoutEditing: false,
   },
 ];
 
@@ -355,6 +385,7 @@ const NOTIFICATIONS: SettingDefinition[] = [
     writePermission: { module: 'settings', action: 'Administer' },
     readPermission: { module: 'approvals', action: 'View' },
     material: true,
+    readableWithoutEditing: true,
   },
   {
     key: 'notifications.escalate_after_hours',
@@ -368,6 +399,7 @@ const NOTIFICATIONS: SettingDefinition[] = [
     writePermission: { module: 'settings', action: 'Administer' },
     readPermission: { module: 'approvals', action: 'View' },
     material: true,
+    readableWithoutEditing: true,
   },
   {
     key: 'notifications.notify_on_agent_exception',
@@ -381,6 +413,7 @@ const NOTIFICATIONS: SettingDefinition[] = [
     writePermission: { module: 'settings', action: 'Administer' },
     readPermission: { module: 'executor', action: 'View' },
     material: false,
+    readableWithoutEditing: false,
   },
   {
     key: 'notifications.digest',
@@ -399,6 +432,7 @@ const NOTIFICATIONS: SettingDefinition[] = [
     writePermission: { module: 'settings', action: 'Administer' },
     readPermission: { module: 'dashboard', action: 'View' },
     material: false,
+    readableWithoutEditing: false,
   },
 ];
 
@@ -420,6 +454,7 @@ const ORGANIZATION: SettingDefinition[] = [
     writePermission: { module: 'settings', action: 'Administer' },
     readPermission: { module: 'hierarchy', action: 'View' },
     material: false,
+    readableWithoutEditing: false,
   },
   {
     key: 'organization.employee_id_uniqueness',
@@ -437,6 +472,7 @@ const ORGANIZATION: SettingDefinition[] = [
     writePermission: { module: 'settings', action: 'Administer' },
     readPermission: { module: 'hierarchy', action: 'View' },
     material: true,
+    readableWithoutEditing: false,
   },
 ];
 
@@ -474,6 +510,7 @@ const OBJECTIVE: SettingDefinition[] = [
     // Material: an auditor reconstructing why an objective was closed by one person needs to know
     // what the rule was at the time.
     material: true,
+    readableWithoutEditing: true,
   },
 ];
 
@@ -513,6 +550,7 @@ const SECURITY: SettingDefinition[] = [
     // Material: reconstructing why a support session was allowed in March needs the rule that was
     // in force in March.
     material: true,
+    readableWithoutEditing: false,
   },
 ];
 
@@ -531,6 +569,7 @@ const PORTABLE_PROFILE: SettingDefinition[] = [
     writePermission: { module: 'settings', action: 'Administer' },
     readPermission: { module: 'settings', action: 'View' },
     material: true,
+    readableWithoutEditing: true,
   },
   {
     key: 'security.portable_performance_sharing',
@@ -557,6 +596,7 @@ const PORTABLE_PROFILE: SettingDefinition[] = [
     // it is about is entitled to an answer to.
     readPermission: { module: 'settings', action: 'View' },
     material: true,
+    readableWithoutEditing: true,
   },
 ];
 

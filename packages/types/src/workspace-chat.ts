@@ -43,13 +43,37 @@
  * group/team conversation", and a hierarchy of containers is the thing that makes chat products
  * large.
  */
-export const CONVERSATION_KINDS = ['Direct', 'Group'] as const;
+export const CONVERSATION_KINDS = ['Direct', 'Group', 'DepartmentWorkshop'] as const;
 export type ConversationKind = (typeof CONVERSATION_KINDS)[number];
 
 export const CONVERSATION_KIND_LABELS: Record<ConversationKind, string> = {
   Direct: 'Direct message',
   Group: 'Group conversation',
+  DepartmentWorkshop: 'Department workshop',
 };
+
+/**
+ * A department's own conversation.
+ *
+ * ## Why it is a third kind and not a Group with a good name
+ *
+ * A group's membership is a list somebody typed. A workshop's membership is *whoever works in the
+ * department*, which changes when somebody transfers in or out — and a typed list would go stale
+ * the first time that happened, quietly leaving a leaver in and a joiner out. So the kind carries
+ * a department and the membership is derived from it.
+ *
+ * It also follows from that difference that a workshop has no participant ceiling: a department of
+ * thirty people is a department of thirty people, and refusing to give it a workshop because the
+ * group limit says twenty would be applying a rule written about something else.
+ */
+export function isDepartmentWorkshop(kind: ConversationKind): boolean {
+  return kind === 'DepartmentWorkshop';
+}
+
+/** The name a department's workshop is given, so two screens cannot disagree about it. */
+export function departmentWorkshopTitle(departmentName: string): string {
+  return `${departmentName} Workshop`;
+}
 
 /**
  * How many people may be in one group conversation.
@@ -97,6 +121,20 @@ export function participantProblems(input: {
     }
     if (input.title !== undefined && input.title.trim() !== '') {
       problems.push('A direct message does not have a name.');
+    }
+  } else if (input.kind === 'DepartmentWorkshop') {
+    /*
+     * No ceiling, and no minimum beyond one.
+     *
+     * A department is however large it is. The group limit is a statement about what a small named
+     * conversation should be, and applying it here would refuse a workshop to exactly the
+     * departments that most need one. A department of one still gets a workshop: somebody joins
+     * next month and the history is already there.
+     */
+    if ((input.title ?? '').trim() === '') {
+      problems.push('A workshop is named after its department.');
+    } else if ((input.title ?? '').length > MAX_CONVERSATION_TITLE) {
+      problems.push(`A name is at most ${MAX_CONVERSATION_TITLE} characters.`);
     }
   } else {
     if (unique.size < 2) {

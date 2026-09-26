@@ -114,6 +114,15 @@ export const APPROVAL_TYPE_MODULE: Record<ApprovalRequestType, CompanyModuleKey>
   HighRiskAction: 'approvals',
   BudgetOverride: 'approvals',
   GuestAccess: 'approvals',
+  /*
+   * Generic, like the four above it, and for the same reason.
+   *
+   * A change request can be about the hierarchy, an objective, an agent or access, so no single
+   * module governs it — and picking one would mean a person who may decide hierarchy changes could
+   * not decide an access problem filed by the same employee. `approvals` is what "somebody with
+   * authority decides this" already means here.
+   */
+  ChangeRequest: 'approvals',
 };
 
 /**
@@ -552,4 +561,7 @@ export const APPROVAL_TYPE_RISK: Record<ApprovalRequestType, ApprovalRisk> = {
   BudgetOverride: 'High',
   HighRiskAction: 'High',
   GuestAccess: 'High',
+  // Low: asking for a change commits the company to nothing. What the Admin then *does* about it
+  // is a separate act with its own authority, and that is where the risk lives.
+  ChangeRequest: 'Low',
 };

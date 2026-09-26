@@ -8,6 +8,8 @@ import {
   ANALYSIS_STAGE_LABELS,
   ANALYSIS_STAGES,
   analysisStageIndex,
+  EXECUTION_STAGE_LABELS,
+  executionStages,
   isAnalysisRunFinished,
   isReadableSchemaVersion,
   mayCancelAnalysis,
@@ -648,5 +650,105 @@ describe('the Definition of Done is validated as a structure', () => {
       }),
     );
     assert.ok(problems.length > 0, 'a self-dependency was accepted');
+  });
+});
+
+describe('Engine, Sub-Engine and Executor', () => {
+  /*
+   * The client's own example: Aman goes first, Ram waits on Aman, Vikram waits on Ram.
+   *
+   * The names are positions rather than titles, which is why they are derived here instead of
+   * stored on the node — a stored label could disagree with the dependencies, and then a plan
+   * would claim somebody is the Executor while three other steps wait on them.
+   */
+  it('names the three positions of a straight chain', () => {
+    const stages = executionStages([
+      { id: 'aman', kind: 'Human', dod: { dependencies: [] } },
+      { id: 'ram', kind: 'Human', dod: { dependencies: ['aman'] } },
+      { id: 'vikram', kind: 'Human', dod: { dependencies: ['ram'] } },
+    ]);
+
+    assert.equal(stages.get('aman'), 'Engine');
+    assert.equal(stages.get('ram'), 'SubEngine');
+    assert.equal(stages.get('vikram'), 'Executor');
+  });
+
+  it('calls the only step an Engine, because it is the one that goes first', () => {
+    const stages = executionStages([{ id: 'alone', kind: 'Human', dod: { dependencies: [] } }]);
+    assert.equal(stages.get('alone'), 'Engine');
+  });
+
+  it('has no Sub-Engine when nothing sits in the middle', () => {
+    const stages = executionStages([{ id: 'first', kind: 'Human', dod: { dependencies: [] } }, { id: 'second', kind: 'Human', dod: { dependencies: ['first'] } }]);
+    assert.equal(stages.get('first'), 'Engine');
+    assert.equal(stages.get('second'), 'Executor');
+    assert.ok(![...stages.values()].includes('SubEngine'));
+  });
+
+  it('starts every independent step as an Engine', () => {
+    // Two things can genuinely begin at once. Neither waits, so neither is anybody's successor.
+    const stages = executionStages([
+      { id: 'left', kind: 'Human', dod: { dependencies: [] } },
+      { id: 'right', kind: 'Human', dod: { dependencies: [] } },
+      { id: 'join', kind: 'Human', dod: { dependencies: ['left', 'right'] } },
+    ]);
+    assert.equal(stages.get('left'), 'Engine');
+    assert.equal(stages.get('right'), 'Engine');
+    assert.equal(stages.get('join'), 'Executor');
+  });
+
+  it('places a step after the last thing it waits on, not the first', () => {
+    /*
+     * `join` waits on both the first and the second stage. Taking the shortest path would call it
+     * a Sub-Engine sitting beside `second`, which is wrong: it cannot start until `second` is done.
+     */
+    const stages = executionStages([
+      { id: 'first', kind: 'Human', dod: { dependencies: [] } },
+      { id: 'second', kind: 'Human', dod: { dependencies: ['first'] } },
+      { id: 'join', kind: 'Human', dod: { dependencies: ['first', 'second'] } },
+      { id: 'last', kind: 'Human', dod: { dependencies: ['join'] } },
+    ]);
+    assert.equal(stages.get('first'), 'Engine');
+    assert.equal(stages.get('second'), 'SubEngine');
+    assert.equal(stages.get('join'), 'SubEngine');
+    assert.equal(stages.get('last'), 'Executor');
+  });
+
+  it('ignores a dependency on a step the plan does not contain', () => {
+    // A deleted step. Treating it as depth would push everything after a node nothing can finish.
+    const stages = executionStages([{ id: 'only', kind: 'Human', dod: { dependencies: ['deleted'] } }]);
+    assert.equal(stages.get('only'), 'Engine');
+  });
+
+  it('survives a cycle rather than hanging on it', () => {
+    // A broken plan. The editor's validation is what reports it; this must still answer.
+    const stages = executionStages([{ id: 'a', kind: 'Human', dod: { dependencies: ['b'] } }, { id: 'b', kind: 'Human', dod: { dependencies: ['a'] } }]);
+    assert.equal(stages.size, 2);
+    for (const stage of stages.values()) {
+      assert.ok(['Engine', 'SubEngine', 'Executor'].includes(stage));
+    }
+  });
+
+  it('gives an approval gate no position, because a sign-off is not the Executor', () => {
+    /*
+     * The gate is the last node in the plan, and that is exactly the trap: naming it the Executor
+     * would report that nobody did the final work and the approval did. It still counts for depth,
+     * so the step before it keeps its own place in the chain.
+     */
+    const stages = executionStages([
+      { id: 'first', kind: 'Human', dod: { dependencies: [] } },
+      { id: 'last', kind: 'Human', dod: { dependencies: ['first'] } },
+      { id: 'gate', kind: 'Approval', dod: { dependencies: ['last'] } },
+    ]);
+
+    assert.equal(stages.get('first'), 'Engine');
+    assert.equal(stages.get('last'), 'Executor');
+    assert.equal(stages.get('gate'), undefined);
+  });
+
+  it('gives every position a label a person would recognise', () => {
+    assert.equal(EXECUTION_STAGE_LABELS.SubEngine, 'Sub-Engine');
+    assert.equal(EXECUTION_STAGE_LABELS.Engine, 'Engine');
+    assert.equal(EXECUTION_STAGE_LABELS.Executor, 'Executor');
   });
 });

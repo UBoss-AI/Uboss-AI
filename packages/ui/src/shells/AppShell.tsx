@@ -52,6 +52,8 @@ interface AppShellCommonProps {
   /** How many need acknowledging — a state an unread count of zero cannot express. */
   awaitingAcknowledgement?: number;
   onOpenNotifications?: () => void;
+  /** What drops out of the bell. Passed straight to the top bar, which owns the anchor. */
+  notificationPanel?: React.ReactNode;
   /** Entries above the separator in the top bar account menu. See TopBarProps.accountMenu. */
   accountMenu?: readonly AccountMenuItem[] | undefined;
   /** Runs a workspace-wide search. Absent renders the field disabled. See TopBarProps.onSearch. */
@@ -64,7 +66,9 @@ interface AppShellCommonProps {
  * The two UBoss application shells.
  *
  * `company` renders the Company Workspace shell and requires the active workspace name, because
- * every authenticated company screen must display `UBOSS AI AMS | {Active Workspace Name}`.
+ * every authenticated company screen must display the workspace it belongs to. The sidebar's
+ * brand line reads `UBOSS AI Chief Agent` above that name — the coordinating layer the product
+ * is named for, rather than the internal product code it used to show.
  * `master` renders the UBoss Master Console shell, a separate platform control plane with its
  * own dark treatment and no tenant workspace name.
  */
@@ -84,6 +88,7 @@ export function AppShell(props: AppShellProps) {
     unreadNotifications,
     awaitingAcknowledgement,
     onOpenNotifications,
+    notificationPanel,
     accountMenu,
     onSearch,
     children,
@@ -151,7 +156,7 @@ export function AppShell(props: AppShellProps) {
       )}
     >
       <Sidebar
-        brand={isMaster ? 'UBoss' : 'UBOSS AI AMS'}
+        brand={isMaster ? 'UBoss' : 'UBOSS AI Chief Agent'}
         brandSub={isMaster ? 'Master Console' : props.workspaceName}
         groups={groups}
         activeKey={activeKey}
@@ -179,6 +184,7 @@ export function AppShell(props: AppShellProps) {
             unreadNotifications={unreadNotifications}
             awaitingAcknowledgement={awaitingAcknowledgement}
             onOpenNotifications={onOpenNotifications}
+            notificationPanel={notificationPanel}
             accountMenu={accountMenu}
             onSearch={onSearch}
             onToggleSidebar={() => setMobileOpen((value) => !value)}
@@ -195,6 +201,7 @@ export function AppShell(props: AppShellProps) {
             unreadNotifications={unreadNotifications}
             awaitingAcknowledgement={awaitingAcknowledgement}
             onOpenNotifications={onOpenNotifications}
+            notificationPanel={notificationPanel}
             accountMenu={accountMenu}
             onSearch={onSearch}
             onToggleSidebar={() => setMobileOpen((value) => !value)}

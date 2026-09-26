@@ -49,6 +49,14 @@ export type TopBarProps = (
    */
   awaitingAcknowledgement?: number | undefined;
   onOpenNotifications?: (() => void) | undefined;
+  /**
+   * What drops out of the bell, rendered by whoever has the notifications.
+   *
+   * This package has no API and no business knowing what a notification is, so the panel arrives
+   * as a node and this component only decides *where* it hangs. `null` means closed — the panel is
+   * not in the document at all rather than hidden, so nothing behind it is focusable.
+   */
+  notificationPanel?: React.ReactNode;
   /** Signed-in identity, shown as the avatar at the end of the bar. */
   user?: SidebarUser | undefined;
   /** Ends the session. Rendered as the separated last entry of the account menu. */
@@ -91,6 +99,7 @@ export function TopBar(props: TopBarProps) {
     unreadNotifications = 0,
     awaitingAcknowledgement = 0,
     onOpenNotifications,
+    notificationPanel,
     onToggleSidebar,
     user,
     onSignOut,
@@ -185,10 +194,19 @@ export function TopBar(props: TopBarProps) {
       />
 
       <div className="uboss-top-actions">
+        {/*
+          The bell and whatever hangs off it, in one positioned box.
+
+          The panel is anchored to the button rather than to the bar, so it stays under the bell at
+          every width instead of drifting as the bar's contents reflow.
+        */}
+        <div className="uboss-bell-anchor">
         <button
           type="button"
           className="uboss-icon-btn"
           onClick={onOpenNotifications}
+          aria-haspopup="dialog"
+          aria-expanded={notificationPanel != null}
           aria-label={notificationLabel(
             unreadNotifications,
             awaitingAcknowledgement,
@@ -212,6 +230,9 @@ export function TopBar(props: TopBarProps) {
             <span className="uboss-icon-btn-dot" aria-hidden="true" />
           ) : null}
         </button>
+
+        {notificationPanel}
+        </div>
 
         {/*
           The avatar is the account control, and the only way out of the session.

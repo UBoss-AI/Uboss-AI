@@ -32,7 +32,13 @@ export type { PageHeaderProps } from './primitives/PageHeader';
 export { MetricCard } from './primitives/MetricCard';
 export type { MetricCardProps, MetricTrend } from './primitives/MetricCard';
 
-export { BADGE_LADDER, MedalBadge, STATUS_TONES, StatusBadge } from './primitives/StatusBadge';
+export {
+  BADGE_LADDER,
+  BADGE_LADDER_LABELS,
+  MedalBadge,
+  STATUS_TONES,
+  StatusBadge,
+} from './primitives/StatusBadge';
 export type {
   BadgeLadderTier,
   MedalBadgeProps,

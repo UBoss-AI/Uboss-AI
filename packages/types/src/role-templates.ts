@@ -199,7 +199,10 @@ export const ROLE_TEMPLATES: Record<Exclude<RoleKind, 'Custom'>, RoleTemplate> =
       hierarchy: COLLABORATE,
       objective: ['View', 'Comment', 'Create', 'EditDraft', 'Assign'],
       // CONTRIBUTE plus `Run`: a manager may activate the agent for work in their team.
-      'agent-builder': ['View', 'Comment', 'Create', 'EditDraft', 'Run'],
+      // Reading only. The client's 2026-09-25 rule is that the Admin builds Agents and
+      // everybody else operates them; a Manager who genuinely needs to author one is given
+      // that capability explicitly, which is the mechanism the product already has.
+      'agent-builder': ['View', 'Comment'],
       todo: ['View', 'Comment', 'Create', 'EditDraft', 'Assign'],
       agents: ['View', 'Comment', 'Run', 'Schedule', 'Pause'],
       executor: COLLABORATE,
@@ -232,7 +235,10 @@ export const ROLE_TEMPLATES: Record<Exclude<RoleKind, 'Custom'>, RoleTemplate> =
       objective: ['View', 'Comment', 'Create', 'EditDraft', 'Assign', 'Approve', 'Publish'],
       // `Run` activates an agent; `Publish` is the authority over the canonical job method
       // (Form 3) and over releasing a reusable agent's configuration to the company.
-      'agent-builder': ['View', 'Comment', 'Create', 'EditDraft', 'Run', 'Publish'],
+      // Reading only. The client's 2026-09-25 rule is that the Admin builds Agents and
+      // everybody else operates them; a Head who genuinely needs to author one is given
+      // that capability explicitly, which is the mechanism the product already has.
+      'agent-builder': ['View', 'Comment'],
       todo: ['View', 'Comment', 'Create', 'EditDraft', 'Assign'],
       agents: ['View', 'Comment', 'Run', 'Schedule', 'Pause', 'Publish'],
       executor: ['View', 'Comment', 'Pause'],
@@ -251,15 +257,34 @@ export const ROLE_TEMPLATES: Record<Exclude<RoleKind, 'Custom'>, RoleTemplate> =
   },
 
   /**
-   * Company Admin — administers the company.
+   * Company Admin — the company's primary controller.
    *
    * The only company role with `ManageAccess` and `Administer`, and the only one whose default
    * scope is the whole company.
    *
-   * It deliberately does **not** carry `Approve` on `objective` or `approvals`. Administering a
-   * company is not the same as being an approver in its workflow, and giving an administrator
-   * blanket approval rights is how "the admin approved their own change" happens. An admin who
-   * must also approve is additionally assigned the Approver role — a separate, visible decision.
+   * ## The 2026-09-25 client rule, and what it changed
+   *
+   * The client's rule is now explicit: *the initial Company Admin chosen at provisioning is the
+   * primary full-control Admin*, and that control names hierarchy, objectives, Agent Builder,
+   * agent testing and publishing, reports, performance, settings and authority assignment.
+   * Everybody else is an operator until this Admin grants otherwise.
+   *
+   * This role previously held only `View`, `Comment` and `Export` on `objective` and only
+   * `View`/`Comment` on `agent-builder` — the reading being that an administrator configures the
+   * company rather than doing its work. Under the new rule that reading is wrong: an Admin who
+   * cannot create an Objective cannot run the company's work at all, and the product would be
+   * unusable for a company whose only privileged person is its Admin, which is every new company.
+   *
+   * So authoring is granted here. What is **not** granted is approval.
+   *
+   * ## Why `Approve` still does not appear
+   *
+   * Because the client's own rules ask for both things at once: full company control, and no
+   * unnecessary approval layers with separation of duties intact. An administrator who can author
+   * *and* approve is how "the admin approved their own change" happens, and the four-eyes and
+   * no-self-approval rules exist precisely to stop it. An Admin who must also approve is
+   * additionally assigned the Approver role — a separate, visible decision on the assignment
+   * record rather than one implied by a job title.
    */
   CompanyAdmin: {
     kind: 'CompanyAdmin',
@@ -271,10 +296,14 @@ export const ROLE_TEMPLATES: Record<Exclude<RoleKind, 'Custom'>, RoleTemplate> =
     permissions: {
       dashboard: READ_ONLY,
       hierarchy: ['View', 'Comment', 'Create', 'EditDraft', 'Administer'],
-      objective: ['View', 'Comment', 'Export'],
-      'agent-builder': ['View', 'Comment'],
-      todo: READ_ONLY,
-      agents: ['View', 'Comment', 'Pause'],
+      // Authoring, publishing and closing an objective — everything except deciding its approval.
+      objective: ['View', 'Comment', 'Create', 'EditDraft', 'Assign', 'Publish', 'Export'],
+      // Building, running and releasing an agent: the client's "Agent Builder, agent testing and
+      // publishing", which is one person's job in a company whose only privileged person is this.
+      'agent-builder': ['View', 'Comment', 'Create', 'EditDraft', 'Run', 'Publish'],
+      // The Admin has operational work of their own — the client's rule says so explicitly.
+      todo: ['View', 'Comment', 'Create', 'EditDraft', 'Assign'],
+      agents: ['View', 'Comment', 'Run', 'Schedule', 'Pause', 'Publish'],
       executor: ['View', 'Comment', 'Pause', 'Administer'],
       approvals: READ_ONLY,
       // `Administer` is new at Prompt 12B: the performance policy — the points per outcome and

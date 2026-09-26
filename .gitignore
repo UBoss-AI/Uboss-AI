@@ -46,3 +46,8 @@ logs/
 tmp/
 temp/
 .cache/
+
+# A separate marketing site that lives beside the product but is not part of it. It carries its
+# own node_modules and its own lockfile; tracking it here would put a second application into
+# this repository by accident.
+uboss-website/
