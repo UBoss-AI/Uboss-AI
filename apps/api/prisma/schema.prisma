@@ -122,6 +122,7 @@ model Tenant {
   securityEvents       SecurityEvent[]
   breakGlassRequests   BreakGlassRequest[]
   subscription         TenantSubscription?
+  billingInvoices      BillingInvoice[]
   aiSettings           TenantAiSettings?
   aiBudgetPolicy       TenantAiBudgetPolicy?
   setupTasks           CompanySetupTask[]
@@ -167,6 +168,7 @@ model Tenant {
   exceptionEvents      ExecutorExceptionEvent[]
   agentRunEvents       AgentRunEvent[]
   engineAgentVersions  EngineAgentVersion[]
+  agentBuilderTestRuns AgentBuilderTestRun[]
   aiWorkAssignments    AiWorkAssignment[]
   approvalRequests     ApprovalRequest[]
   approvalDecisions    ApprovalDecisionRecord[]
@@ -254,6 +256,7 @@ model User {
   securityEventsActed   SecurityEvent[]          @relation("SecurityEventActor")
   securityEventsSubject SecurityEvent[]          @relation("SecurityEventSubject")
   platformRoles         PlatformRoleAssignment[]
+  agentBuilderTestRuns  AgentBuilderTestRun[]
 
   // ---- Prompt 12: the global person registry ----
   //
@@ -2085,6 +2088,29 @@ model Plan {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
   version   Int      @default(1) @map("row_version")
 
+  // ---- What this plan is, over at the payment provider ----
+  //
+  // The plan's own numbers stay the source of truth. These are the provider's names for the same
+  // thing, written when a platform administrator publishes the plan, so that a Checkout Session
+  // can be opened against a price the provider already knows. Null means "never published", which
+  // is why a plan cannot be bought until somebody does it.
+  //
+  // A monthly and an annual price, because a provider price carries its own interval and a
+  // company chooses its billing cycle. A plan published for one and not the other can be bought
+  // on that cycle only, and the API says so rather than falling back to the wrong interval.
+
+  /// The provider's product for this plan.
+  stripeProductId           String?   @map("stripe_product_id") @db.VarChar(80)
+  /// The provider's price for each cycle. Prices are immutable there, so changing this plan's
+  /// price means publishing a new one and pointing these at it.
+  stripeMonthlyPriceId      String?   @map("stripe_monthly_price_id") @db.VarChar(80)
+  stripeAnnualPriceId       String?   @map("stripe_annual_price_id") @db.VarChar(80)
+  /// The minor-unit price these provider prices were published from. If the plan's price later
+  /// differs, the screen can say the published price is stale instead of quietly charging the old
+  /// one — a provider price cannot be edited, so drift is the normal failure here.
+  stripePublishedPriceMinor Int?      @map("stripe_published_price_minor")
+  stripePublishedAt         DateTime? @map("stripe_published_at") @db.Timestamptz(6)
+
   subscriptions        TenantSubscription[]
   pendingSubscriptions TenantSubscription[] @relation("PendingPlan")
 
@@ -2175,6 +2201,37 @@ model TenantSubscription {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
   version   Int      @default(1) @map("row_version")
 
+  // ---- The provider's side of this subscription ----
+  //
+  // Held here rather than on the tenant because it is a fact about the commercial arrangement,
+  // and it ends when the arrangement does.
+
+  /// The provider's customer for this company. Created once and reused: a second customer for the
+  /// same company would split its invoices and its saved payment methods across two records
+  /// nobody can reconcile afterwards.
+  stripeCustomerId String? @unique @map("stripe_customer_id") @db.VarChar(80)
+
+  /// The provider's subscription, once one exists.
+  stripeSubscriptionId String? @unique @map("stripe_subscription_id") @db.VarChar(80)
+
+  /// The provider's own status word, kept verbatim.
+  ///
+  /// `state` and `billingState` are this product's vocabulary and are derived from it. Keeping
+  /// the provider's word as well means a disagreement between the two can be seen rather than
+  /// guessed at — and `trialing`, `incomplete_expired` and `unpaid` have no UBoss equivalent, so
+  /// mapping them away would lose the only record of what actually happened.
+  stripeStatus String? @map("stripe_status") @db.VarChar(40)
+
+  /// The end of the period the company has actually paid for, as the provider reports it.
+  ///
+  /// This is what access should be judged on, not `renewsAt`: `renewsAt` is the term this product
+  /// recorded, and the two differ the moment a payment fails.
+  stripeCurrentPeriodEnd DateTime? @map("stripe_current_period_end") @db.Timestamptz(6)
+
+  /// When the provider last told us anything about this subscription. A stale timestamp beside a
+  /// healthy-looking state is how a silently broken webhook becomes visible.
+  stripeSyncedAt DateTime? @map("stripe_synced_at") @db.Timestamptz(6)
+
   tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   plan        Plan   @relation(fields: [planId], references: [id])
   pendingPlan Plan?  @relation("PendingPlan", fields: [pendingPlanId], references: [id])
@@ -2183,6 +2240,117 @@ model TenantSubscription {
   @@index([billingState, renewsAt])
   @@index([state, renewsAt])
   @@map("tenant_subscriptions")
+}
+
+/// One invoice, as the payment provider issued it.
+///
+/// ## Why the invoice is stored here at all
+///
+/// The provider is the record of truth for what was charged, and this table never becomes a
+/// second opinion about that: every money field is copied from the provider verbatim and nothing
+/// in this product computes one. What it buys is that a company and the platform can see their
+/// billing history without either of them needing an account at the provider, and that the
+/// history survives the provider being swapped.
+///
+/// ## Why it is tenant-owned
+///
+/// An invoice belongs to one company and must never be readable by another, so it carries
+/// `tenant_id`, leads its indexes with it, and is covered by row-level security like every other
+/// tenant-owned table.
+model BillingInvoice {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  tenantId String @map("tenant_id") @db.Uuid
+
+  /// The provider's id, and the reason this table is idempotent: the same invoice arriving twice
+  /// on two webhook deliveries updates one row rather than creating two.
+  stripeInvoiceId String @unique @map("stripe_invoice_id") @db.VarChar(80)
+
+  /// The provider's human-facing number, e.g. `A1B2C3D4-0001`. Absent until the invoice is
+  /// finalised, which is exactly when it becomes a document somebody can be asked to pay.
+  number String? @db.VarChar(60)
+
+  /// The provider's status word, verbatim: draft, open, paid, uncollectible, void.
+  status String @db.VarChar(30)
+
+  /// Money, in minor units and integers. Never a float: a rounding difference here is an invoice
+  /// dispute.
+  amountDueMinor  Int    @map("amount_due_minor")
+  amountPaidMinor Int    @map("amount_paid_minor")
+  currency        String @db.VarChar(3)
+
+  periodStart DateTime? @map("period_start") @db.Timestamptz(6)
+  periodEnd   DateTime? @map("period_end") @db.Timestamptz(6)
+  paidAt      DateTime? @map("paid_at") @db.Timestamptz(6)
+  dueAt       DateTime? @map("due_at") @db.Timestamptz(6)
+
+  /// The provider's own pages for this invoice. Stored rather than composed, because the format
+  /// of a provider URL is the provider's business and a composed one breaks silently.
+  hostedInvoiceUrl String? @map("hosted_invoice_url") @db.VarChar(1000)
+  invoicePdfUrl    String? @map("invoice_pdf_url") @db.VarChar(1000)
+
+  /// Why the last payment attempt failed, in the provider's words. Null while nothing has failed.
+  lastPaymentError String? @map("last_payment_error") @db.VarChar(500)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([tenantId, status])
+  @@map("billing_invoices")
+}
+
+/// A webhook delivery from the payment provider, recorded before it is acted on.
+///
+/// ## Why this table exists
+///
+/// The provider retries a delivery it did not get a clean answer to — for up to three days in
+/// live mode — and it does not promise to deliver in order. Without a record of what has already
+/// been handled, a retry of `invoice.paid` is a second payment applied, and a late
+/// `customer.subscription.updated` can overwrite a newer state with an older one.
+///
+/// So every delivery is written here first, keyed by the provider's event id. A second delivery of
+/// the same id finds the row and does nothing. The row also keeps the outcome, which is what makes
+/// a webhook that is quietly failing visible instead of merely absent.
+///
+/// ## Platform-owned
+///
+/// A delivery is not a company's data — one event can concern any company, and the id space is the
+/// provider's. It carries the tenant it resolved to, when it resolved to one, for support rather
+/// than for isolation.
+model StripeWebhookEvent {
+  /// The provider's event id, verbatim, as the primary key. This is the idempotency.
+  id String @id @db.VarChar(80)
+
+  type String @db.VarChar(80)
+
+  /// Whether this delivery is from the provider's test mode. A live event arriving at a
+  /// deployment configured for test keys — or the reverse — is a misconfiguration worth seeing
+  /// rather than a mystery.
+  livemode Boolean @default(false)
+
+  /// The provider's own creation time, which is the only ordering that means anything. The
+  /// receipt order is the network's opinion, not the provider's.
+  occurredAt DateTime @map("occurred_at") @db.Timestamptz(6)
+
+  receivedAt  DateTime  @default(now()) @map("received_at") @db.Timestamptz(6)
+  processedAt DateTime? @map("processed_at") @db.Timestamptz(6)
+
+  /// Which company it turned out to concern, where it concerns one.
+  tenantId String? @map("tenant_id") @db.Uuid
+
+  /// What was done with it, in a word: applied, ignored, or failed.
+  outcome String? @db.VarChar(20)
+
+  /// Why, when it was ignored or failed. Never the payload: an event body can carry a customer's
+  /// name and address, and this table is read by support.
+  detail String? @db.VarChar(500)
+
+  @@index([type, occurredAt(sort: Desc)])
+  @@index([tenantId, occurredAt(sort: Desc)])
+  @@map("stripe_webhook_events")
 }
 
 /// A feature flag and its staged rollout.
@@ -2918,6 +3086,9 @@ model Department {
   objectives        Objective[]
   objectiveVersions ObjectiveVersion[]
 
+  /// The department Workshop, the one conversation this department itself owns.
+  workshops         ChatConversation[]
+
   /// A department name is unique within a company, so two "Quality Assurance" departments
   /// cannot exist and make every scope decision ambiguous.
   @@unique([tenantId, name])
@@ -3594,6 +3765,8 @@ enum NotificationKind {
   BudgetThreshold
   /// A security event concerning this person or this company. **Never mutable.**
   SecurityEvent
+  /// A step this person owns has stopped waiting on other work and can now be started.
+  WorkReady
 
   @@map("notification_kind")
 }
@@ -5392,11 +5565,78 @@ model AiWorkAssignment {
   objectiveVersion ObjectiveVersion       @relation(fields: [tenantId, objectiveVersionId], references: [tenantId, id], onDelete: Cascade)
   workflowDraft    ObjectiveWorkflowDraft @relation(fields: [tenantId, workflowDraftId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
   engineAgent      EngineAgent?           @relation(fields: [tenantId, engineAgentId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  testRuns         AgentBuilderTestRun[]
 
   @@unique([tenantId, objectiveVersionId, nodeId])
   @@unique([tenantId, id])
   @@index([tenantId, status])
   @@map("ai_work_assignments")
+}
+
+/// One controlled test of an agent under construction, kept.
+///
+/// The builder already recorded a last result on the assignment itself, which answered "is this
+/// ready" and nothing else: each test overwrote the one before, and the model's actual output was
+/// thrown away in favour of a sentence about it. An admin deciding whether to activate an agent is
+/// asking a different question — *does it do the right thing with my data* — and that question
+/// needs the input they gave, the output they got, and what happened the previous times.
+///
+/// The columns on `AiWorkAssignment` stay. They are what the readiness banner reads, and they are
+/// cheap; this table is the evidence behind them, not a replacement for them.
+model AgentBuilderTestRun {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  tenantId String @map("tenant_id") @db.Uuid
+
+  aiWorkAssignmentId String @map("ai_work_assignment_id") @db.Uuid
+
+  /// The sample data the admin supplied, verbatim. Stored because a result nobody can reproduce
+  /// is an anecdote: reading an old run has to show what was actually put in.
+  sampleInput String @map("sample_input") @db.Text
+
+  /// What the admin said they expected, if they said. Never compared automatically — a machine
+  /// verdict on free text would be a guess presented as a check. It is here so the person reading
+  /// the run can compare it themselves.
+  expectedOutcome String? @map("expected_outcome") @db.Text
+
+  /// What the model actually produced. Null only when nothing came back at all.
+  output String? @db.Text
+
+  /// Passed, Failed or Error. Failed is the agent producing nothing usable; Error is the test not
+  /// completing — an infrastructure problem must never read as the work being impossible.
+  status String @db.VarChar(20)
+
+  /// Things worth knowing that did not stop the run — an unanswered setup field, a mock gateway.
+  /// A string array.
+  warnings Json @default("[]") @db.JsonB
+
+  /// Why it did not work. A string array, empty on a pass.
+  errors Json @default("[]") @db.JsonB
+
+  /// Wall clock for the gateway call, in milliseconds. What the screen shows as execution time.
+  durationMs Int @map("duration_ms")
+
+  /// False whenever the run went to the mock gateway, which is what ships today. Carried per run,
+  /// not inferred later, so no screen can present a mock result as a real provider run.
+  wasReal Boolean @default(false) @map("was_real")
+
+  /// Which model capability answered, when one did.
+  capability String? @db.VarChar(60)
+
+  ranByUserId String @map("ran_by_user_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignment AiWorkAssignment @relation(fields: [tenantId, aiWorkAssignmentId], references: [tenantId, id], onDelete: Cascade)
+  /// A user is global: `User` carries no tenant, because a person keeps one identity across
+  /// companies and belongs to each through a membership. Isolation on this table is its own
+  /// `tenantId` and the row policy, not this reference.
+  ranBy      User             @relation(fields: [ranByUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, aiWorkAssignmentId, createdAt])
+  @@map("agent_builder_test_runs")
 }
 
 /// An approval waiting on somebody. **The** approvals table, for every domain.
@@ -5429,6 +5669,12 @@ model ApprovalRequest {
   objectiveId        String? @map("objective_id") @db.Uuid
   objectiveVersionId String? @map("objective_version_id") @db.Uuid
   workflowNodeId     String? @map("workflow_node_id") @db.VarChar(80)
+
+  /// What a change request is about. Null for every other type, and a database CHECK says so.
+  ///
+  /// A change request is an approval like any other, so it lives here rather than in a table of
+  /// its own: asking for a change must not be the same act as making one.
+  changeKind         String? @map("change_kind") @db.VarChar(40)
 
   requestedByUserId String @map("requested_by_user_id") @db.Uuid
 
@@ -5834,6 +6080,10 @@ model AgentRun {
   progressMessage String? @map("progress_message") @db.VarChar(500)
 
   output        Json?   @db.JsonB
+
+  /// What the person starting this run answered, for this run only. Shape: RuntimeInputs.
+  /// Null for a scheduler tick, which has nobody to ask.
+  runtimeInputs Json?   @map("runtime_inputs") @db.JsonB
   /// Every non-completed ending says why, in words a person can act on.
   failureReason String? @map("failure_reason") @db.VarChar(2000)
 
@@ -7787,6 +8037,12 @@ model ChatConversation {
   /// that presents as lost messages and is very hard to explain.
   directKey String? @map("direct_key") @db.VarChar(120)
 
+  /// The department a Workshop belongs to. Null for a Direct or Group conversation.
+  ///
+  /// A workshop is not a group with a good name: a group has a membership somebody typed, and a
+  /// workshop has whoever works in the department, which changes when somebody moves.
+  departmentId String? @map("department_id") @db.Uuid
+
   createdByUserId String   @map("created_by_user_id") @db.Uuid
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -7796,11 +8052,15 @@ model ChatConversation {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// `NoAction`: a department is archived rather than deleted, and what people said stays said.
+  department   Department?         @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
   participants ChatParticipant[]
   messages     ChatMessage[]
   contextRefs  ChatContextRefRow[]
 
   @@unique([tenantId, directKey], map: "one_direct_conversation_per_pair")
+  /// One workshop per department. Partial in SQL, so it constrains only that kind.
+  @@index([tenantId, departmentId])
   @@index([tenantId, lastMessageAt])
   @@map("chat_conversations")
 }
