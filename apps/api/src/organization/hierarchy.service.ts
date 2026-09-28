@@ -65,6 +65,8 @@ export interface HierarchyView {
     ubossUniqueId: string;
     accountState: string | null;
     employmentState: string;
+    /** Their last day, when a notice period is running. Null for everybody else. */
+    lastDayOn: string | null;
     /**
      * Masked, and **present only when the caller may see it** — somebody who can administer the
      * hierarchy, or the person themselves. Omitted rather than nulled, so a screen cannot render
@@ -182,10 +184,26 @@ export class HierarchyService {
       throw new NotFoundException('No such company.');
     }
 
-    const [departments, rows] = await Promise.all([
+    const [departments, rows, leaving] = await Promise.all([
       this.organization.listDepartments(scope, true),
       this.organization.listHierarchy(scope),
+      /*
+       * Who is serving notice, and when their last day is.
+       *
+       * Read here rather than derived from the employment record, because a person serving notice
+       * is still `Active` — that is the whole point of a notice period. The chart draws them
+       * differently, and somebody looking at it should be able to see who is about to leave
+       * without opening every card.
+       */
+      this.prisma.runInTenantTransaction(scope, () =>
+        this.prisma.client.offboarding.findMany({
+          where: { tenantId: scope.tenantId, state: 'Requested' },
+          select: { subjectUserId: true, effectiveAt: true },
+        }),
+      ),
     ]);
+
+    const lastDayOf = new Map(leaving.map((row) => [row.subjectUserId, row.effectiveAt]));
 
     const headcount = new Map<string, number>();
     for (const row of rows) {
@@ -216,6 +234,13 @@ export class HierarchyService {
         ubossUniqueId: row.ubossUniqueId,
         accountState: row.accountState,
         employmentState: row.state,
+        /**
+         * Their last day, when one has been set.
+         *
+         * Null for everybody else, which is the ordinary case. A date here means they are working
+         * their notice: still employed, still doing the work, and leaving on the day named.
+         */
+        lastDayOn: lastDayOf.get(row.userId)?.toISOString() ?? null,
         ...(maySeeIdentifiers || row.userId === userId
           ? { aadhaarMasked: maskedAadhaar(row.aadhaarLastFour) }
           : {}),

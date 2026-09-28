@@ -5,6 +5,7 @@ import {
   IsEmail,
   IsIn,
   IsISO8601,
+  IsDefined,
   IsInt,
   IsObject,
   IsOptional,
@@ -196,6 +197,19 @@ export class ProvisionCompanyDto {
   logo?: LogoMetadataDto;
 
   // ---- Step 2: initial Company Super Admin ----
+  /*
+   * `@IsDefined()` beside `@ValidateNested()`, on every required nested object here.
+   *
+   * `@ValidateNested()` alone does not fail when the value is missing — it has nothing to walk,
+   * so it passes. The request then reached the controller, which read `body.budget.monthly`
+   * -`AllowanceMinor` on `undefined` and returned a bare **500 Internal server error**. Proven
+   * against the running product by provisioning a company without a `budget`.
+   *
+   * Provisioning is the first thing done for a new customer, and being told "Internal server
+   * error" when a field was simply left out is the worst possible first answer. These three are
+   * declared non-optional; now they are enforced that way.
+   */
+  @IsDefined({ message: 'admin is required: a company is created with its first administrator.' })
   @ValidateNested()
   @Type(() => InitialAdminDto)
   admin!: InitialAdminDto;
@@ -296,11 +310,13 @@ export class ProvisionCompanyDto {
   customSkillCapability?: boolean;
 
   // ---- Step 7: AI budget policy ----
+  @IsDefined({ message: 'budget is required: a company is created with an AI budget policy.' })
   @ValidateNested()
   @Type(() => AiBudgetDto)
   budget!: AiBudgetDto;
 
   // ---- Step 8: security defaults ----
+  @IsDefined({ message: 'security is required: a company is created with its security defaults.' })
   @ValidateNested()
   @Type(() => SecurityDefaultsDto)
   security!: SecurityDefaultsDto;

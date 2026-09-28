@@ -8,15 +8,15 @@ import './globals.css';
 import { SIDEBAR_BOOT_SCRIPT, THEME_BOOT_SCRIPT } from '../lib/theme';
 
 export const metadata: Metadata = {
-  title: 'UBOSS AI AMS',
-  description: 'UBoss — enterprise AI workforce and operations platform.',
+  title: 'Chief Agent | Powered by UBoss AI',
+  description: 'Chief Agent, powered by UBoss AI — governed AI workforce and operations platform.',
 };
 
 /**
  * Root layout.
  *
  * This is a bootstrap shell only. The real application shells — UBoss Master Console sidebar,
- * Company Workspace sidebar (with the `UBOSS AI AMS | {Active Workspace Name}` header) and the
+ * Company Workspace sidebar (with the `Chief Agent | {Active Workspace Name}` header) and the
  * Settings shell — are built at Prompt 2 from the client's approved UI reference.
  */
 export default function RootLayout({ children }: { children: ReactNode }) {

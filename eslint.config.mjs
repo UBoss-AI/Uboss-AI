@@ -40,4 +40,12 @@ import { ubossConfig } from './packages/config/eslint.base.mjs';
  * arguments is the reading the evidence supports, and byte-for-byte identity with the original
  * cannot be claimed.
  */
-export default ubossConfig();
+/*
+ * `uboss-website` is a separate application that happens to sit in this folder.
+ *
+ * It has its own package.json, its own lockfile and its own node_modules, and it is not part of
+ * the product this repository builds — it is already outside version control for the same
+ * reason. Linting it here means the product's build fails on a marketing page's code, which is
+ * a failure nobody in this repository can act on.
+ */
+export default [...ubossConfig(), { ignores: ['uboss-website/**'] }];

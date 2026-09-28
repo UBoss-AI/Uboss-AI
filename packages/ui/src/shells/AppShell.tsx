@@ -67,7 +67,7 @@ interface AppShellCommonProps {
  *
  * `company` renders the Company Workspace shell and requires the active workspace name, because
  * every authenticated company screen must display the workspace it belongs to. The sidebar's
- * brand line reads `UBOSS AI Chief Agent` above that name — the coordinating layer the product
+ * brand line reads `Chief Agent` above that name — the coordinating layer the product
  * is named for, rather than the internal product code it used to show.
  * `master` renders the UBoss Master Console shell, a separate platform control plane with its
  * own dark treatment and no tenant workspace name.
@@ -156,7 +156,7 @@ export function AppShell(props: AppShellProps) {
       )}
     >
       <Sidebar
-        brand={isMaster ? 'UBoss' : 'UBOSS AI Chief Agent'}
+        brand={isMaster ? 'UBoss' : 'Chief Agent'}
         brandSub={isMaster ? 'Master Console' : props.workspaceName}
         groups={groups}
         activeKey={activeKey}

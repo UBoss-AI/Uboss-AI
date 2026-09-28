@@ -193,6 +193,9 @@ export default function ObjectivesPage() {
             {
               key: 'objective',
               header: 'Objective',
+              // The name sits over its code, so this cell is two lines and cannot live inside a
+              // fixed row height without looking crushed.
+              stacked: true,
               render: (row: ObjectiveListRow) => (
                 <Link href={`/objective/form?objectiveId=${encodeURIComponent(row.id)}`}>
                   <b>{row.objectiveName}</b>
@@ -204,6 +207,7 @@ export default function ObjectivesPage() {
             {
               key: 'department',
               header: 'Department',
+              width: '170px',
               // Both of these columns used to print the first eight characters of a UUID, which
               // reads as "01a084c1" — noise a person cannot scan a list by, and identical-looking
               // across departments that share a prefix. The API now returns the names.
@@ -212,6 +216,7 @@ export default function ObjectivesPage() {
             {
               key: 'responsible',
               header: 'Responsible manager',
+              width: '180px',
               render: (row: ObjectiveListRow) =>
                 row.responsibleOwnerUserId === null ? (
                   // Not yet routed. Said plainly rather than shown as a blank cell.
@@ -223,6 +228,7 @@ export default function ObjectivesPage() {
             {
               key: 'status',
               header: 'Status',
+              width: '160px',
               render: (row: ObjectiveListRow) => (
                 <StatusBadge
                   tone={OBJECTIVE_STATUS_TONES[row.status] as StatusTone}
@@ -233,6 +239,7 @@ export default function ObjectivesPage() {
             {
               key: 'version',
               header: 'Version',
+              width: '110px',
               render: (row: ObjectiveListRow) => (
                 <StatusBadge
                   tone={row.live ? 'success' : 'grey'}
@@ -243,11 +250,13 @@ export default function ObjectivesPage() {
             {
               key: 'target',
               header: 'Target',
+              width: '130px',
               render: (row: ObjectiveListRow) => targetOf(row),
             },
             {
               key: 'updated',
               header: 'Updated',
+              width: '110px',
               render: (row: ObjectiveListRow) => (
                 <span className="uboss-muted">{new Date(row.updatedAt).toLocaleDateString()}</span>
               ),

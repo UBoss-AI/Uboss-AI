@@ -1,4 +1,13 @@
-import { Body, Controller, Delete, Get, Param, Post, UnauthorizedException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  UnauthorizedException,
+} from '@nestjs/common';
 import {
   IsArray,
   IsIn,
@@ -250,7 +259,7 @@ export class ConnectionController {
   /** Revoke a grant. Kept as a row: "who could do this in March" must stay answerable. */
   @Delete('tool-permissions/:grantId')
   @RequirePermission({ module: 'settings', action: 'Administer' })
-  async revoke(@Param('grantId') grantId: string, @Body() body: ReasonDto): Promise<unknown> {
+  async revoke(@Param('grantId', new ParseUUIDPipe()) grantId: string, @Body() body: ReasonDto): Promise<unknown> {
     return this.connections.revokeToolPermission({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),

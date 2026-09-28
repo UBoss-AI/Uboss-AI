@@ -18,6 +18,7 @@ import {
   APPROVAL_TYPE_MODULE,
   approvalEscalationDue,
   DECISION_RESULT,
+  decisionPermissionFor,
   DEFAULT_APPROVAL_AGING_HOURS,
   decisionNeedsReason,
   decisionSettlesRequest,
@@ -475,9 +476,22 @@ export class ApprovalService {
       }
 
       const additional = this.sodPoliciesFor(request);
+
+      /*
+       * The permission that decides this type, which is not always `Approve` on its module.
+       *
+       * A Change Request is addressed to the CompanyAdmin and decided with `settings:Administer`,
+       * which only a CompanyAdmin holds. Before this, the request was addressed to a role that
+       * could not act on it and no one in the company could resolve one — see
+       * `decisionPermissionFor` for the whole account.
+       *
+       * Everything around this is unchanged: `isAddressedTo` above still decides who it is for,
+       * and `additional` still carries no-self-approval and four-eyes, which this cannot satisfy.
+       */
+      const permission = decisionPermissionFor(type);
       await this.authorization.assertCan(context, {
-        module,
-        action: 'Approve',
+        module: permission.module,
+        action: permission.action,
         resource: this.resourceFor({
           row: request,
           departmentId,

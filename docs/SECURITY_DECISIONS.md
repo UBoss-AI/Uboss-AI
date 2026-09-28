@@ -8,8 +8,7 @@ Security choices and their reasoning, recorded as they are made.
 
 ### S-001 — No secret ever lands in a tracked file
 
-`.env.example` files at the root, `apps/api` and `apps/web` contain **placeholders only**.
-`.gitignore` ignores `.env` and `.env.*` while re-including `*.example`, and also ignores `*.pem`,
+No environment files are tracked. `.gitignore` ignores `.env` and `.env.*`, as well as `*.pem`,
 `*.key` and `*.p12`. Variables that will hold secret material are named as _references_
 (`SESSION_SECRET_REF=vault://…`, `AI_PROVIDER_KEY_REF=vault://…`) to make the intended indirection
 obvious before the code exists.
@@ -19,9 +18,8 @@ fields. From Prompt 5 onward, secret material resolves through KMS / Secrets Man
 
 ### S-002 — `NEXT_PUBLIC_` is a publication boundary
 
-Anything prefixed `NEXT_PUBLIC_` is inlined into the client bundle. The `.env.example` files state
-this explicitly so no future prompt places a secret behind that prefix. Only
-`NEXT_PUBLIC_API_BASE_URL` uses it, and a base URL is not sensitive.
+Anything prefixed `NEXT_PUBLIC_` is inlined into the client bundle. Treat that prefix as public;
+only non-secret settings such as a base URL may use it.
 
 ### S-003 — Security headers on by default
 
@@ -126,9 +124,8 @@ database and must not when Prompt 5 lands.
 
 ### S-012 — local database credentials are deliberately visible, and deliberately local-only
 
-`infra/docker-compose.yml` and the `.env.example` files contain `uboss:uboss_local_dev`. These are
-development-only credentials for a container bound to a local port, and treating them as secrets
-would be theatre. They are documented as non-secrets so nobody is tempted to reuse them.
+`infra/docker-compose.yml` contains `uboss:uboss_local_dev`. These are development-only
+credentials for a container bound to a local port, and must never be reused outside local work.
 
 Every real environment injects `DATABASE_URL` from a secret manager; `.env` is gitignored, and
 `schema.prisma` no longer contains a connection string at all (Prisma 7 moved it to

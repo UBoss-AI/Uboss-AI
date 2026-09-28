@@ -14,6 +14,13 @@ import { PrismaService } from '../persistence/prisma.service.js';
 import type { TenantScope } from '../persistence/tenant-context.js';
 import { ReportScopeService } from './report-scope.service.js';
 
+/** The one currency a set of ledger entries is in, or nothing at all. See its use below. */
+function currencyOf(entries: { currency: string }[]): { currency?: string } {
+  const seen = new Set(entries.map((entry) => entry.currency));
+  const only = [...seen][0];
+  return seen.size === 1 && only !== undefined ? { currency: only } : {};
+}
+
 export interface ReportResult {
   /** The columns, in order. An export emits these and nothing else. */
   columns: string[];
@@ -97,12 +104,30 @@ export class ReportsService {
       });
       const byVersion = new Map(reviews.map((review) => [review.objectiveVersionId, review]));
 
+      /*
+       * The owners, by name.
+       *
+       * This column printed a raw user id — `01a0a903-683d-7229-…` — in every row, which is not
+       * an owner in any sense a reader can use: you cannot recognise a colleague by it, you
+       * cannot sort a list by it, and an exported CSV of them is a spreadsheet nobody can act on.
+       * The dependency report already resolves names this way; this one had been left behind.
+       */
+      const ownerName = await this.names(
+        versions
+          .map((version) => version.objectiveOwnerUserId)
+          .filter((id): id is string => id !== null),
+      );
+
       const rows = versions.slice(0, REPORT_ROW_LIMIT).map((version) => {
         const review = byVersion.get(version.id);
         return {
           objective: version.objectiveName,
           status: version.status,
-          owner: version.objectiveOwnerUserId,
+          // An em dash for somebody who has left, rather than an id nobody can look up.
+          owner:
+            version.objectiveOwnerUserId === null
+              ? '—'
+              : (ownerName.get(version.objectiveOwnerUserId) ?? '—'),
           verdict: review?.verdict ?? '—',
           slaOutcome: review?.slaOutcome ?? '—',
           closedAt: review?.closedAt?.toISOString() ?? '—',
@@ -379,7 +404,7 @@ export class ReportsService {
     window: ReportWindow;
     now: Date;
   }): Promise<ReportResult> {
-    const columns = ['userId', 'open', 'overdue', 'completed'];
+    const columns = ['person', 'open', 'overdue', 'completed'];
     if (ReportsService.empty(input.reportScope)) return ReportsService.none(columns);
 
     return this.prisma.runInTenantTransaction(input.scope, async () => {
@@ -411,8 +436,17 @@ export class ReportsService {
         byUser.set(task.assignedToUserId, entry);
       }
 
+      /*
+       * Who, by name.
+       *
+       * A workload report exists to be looked at and acted on — this person has fourteen open
+       * items, go and help them. A column of identifiers cannot be acted on, and it cannot be
+       * charted either: the bar labels would be forty hex characters apiece.
+       */
+      const names = await this.names([...byUser.keys()]);
+
       const rows = [...byUser.entries()]
-        .map(([userId, counts]) => ({ userId, ...counts }))
+        .map(([userId, counts]) => ({ person: names.get(userId) ?? '—', ...counts }))
         .sort((left, right) => right.open - left.open)
         .slice(0, REPORT_ROW_LIMIT);
 
@@ -719,6 +753,9 @@ export class ReportsService {
           amountMinor: true,
           inputTokens: true,
           outputTokens: true,
+          // Carried so the figures can be rendered as money rather than as a bare integer of
+          // minor units. A chart of cost with no currency on it is a chart of nothing.
+          currency: true,
         },
         take: 20_000,
       });
@@ -756,6 +793,15 @@ export class ReportsService {
           // 100 here would be the one place money is a float.
           totalMinor: rows.reduce((total, row) => total + row.amountMinor, 0),
           totalTokens: rows.reduce((total, row) => total + row.inputTokens + row.outputTokens, 0),
+          /*
+           * The currency these amounts are in, when there is exactly one.
+           *
+           * A company is denominated in a single currency, so in practice there always is. On the
+           * chance a period ever held two, the key is left out altogether and the screen prints
+           * the numbers bare — where labelling a mixed total with one of its currencies would be
+           * a figure that is simply wrong.
+           */
+          ...currencyOf(entries),
         },
         truncated: entries.length >= 20_000,
       };
@@ -823,7 +869,7 @@ export class ReportsService {
     reportScope: ReportScope;
     window: ReportWindow;
   }): Promise<ReportResult> {
-    const columns = ['userId', 'points', 'events', 'currentBadge', 'badgeChanges'];
+    const columns = ['person', 'points', 'events', 'currentBadge', 'badgeChanges'];
     if (ReportsService.empty(input.reportScope)) return ReportsService.none(columns);
 
     return this.prisma.runInTenantTransaction(input.scope, async () => {
@@ -861,12 +907,14 @@ export class ReportsService {
         }
       }
 
+      const names = await this.names([...byUser.keys()]);
+
       const rows = [...byUser.entries()]
         .map(([userId, bucket]) => {
           const mine = badges.filter((badge) => badge.subjectUserId === userId);
           const current = mine.find((badge) => badge.endedAt === null);
           return {
-            userId,
+            person: names.get(userId) ?? '—',
             points: bucket.points,
             events: bucket.events,
             currentBadge: current?.level ?? '—',
@@ -902,5 +950,31 @@ export class ReportsService {
 
   private static none(columns: string[]): ReportResult {
     return { columns, rows: [], summary: {}, truncated: false };
+  }
+
+  /**
+   * Identifiers in, display names out.
+   *
+   * Three reports name a person in a column, and each of them used to print the raw id. That is
+   * unreadable on screen, useless in an exported spreadsheet, and — now that the rows are also
+   * charted — it would make every bar label forty hex characters wide.
+   *
+   * Called inside the tenant transaction the report already opened, so it reads under the same
+   * row-level security as everything else. `User` is global and carries no tenant column, but
+   * the ids handed to it came out of tenant-scoped rows, so nothing outside the company can be
+   * named by asking.
+   *
+   * Somebody who has left leaves their id unresolved rather than absent, and the caller decides
+   * what to print — an em dash, everywhere it does.
+   */
+  private async names(ids: string[]): Promise<Map<string, string>> {
+    const distinct = [...new Set(ids)];
+    if (distinct.length === 0) return new Map();
+
+    const people = await this.prisma.client.user.findMany({
+      where: { id: { in: distinct } },
+      select: { id: true, displayName: true },
+    });
+    return new Map(people.map((person) => [person.id, person.displayName]));
   }
 }

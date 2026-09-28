@@ -314,6 +314,58 @@ export const REPORT_KEYS = [
 ] as const;
 export type ReportKey = (typeof REPORT_KEYS)[number];
 
+/**
+ * How a report draws itself, when a picture says it better than the table does.
+ *
+ * Declared per report rather than guessed by the screen, and deliberately narrow: a chart is
+ * built by counting rows that share a value in one column, or by reading two numbers the report
+ * already computed. Nothing is interpolated, smoothed or projected — if the report does not
+ * already know it, the chart does not show it.
+ *
+ * `groupBy` counts rows per distinct value: statuses, people, departments. `compare` reads named
+ * figures out of the summary the report returned. A report with neither simply has no chart, and
+ * that is a better answer than a decorative one.
+ */
+export type ReportChart =
+  /**
+   * Count the rows that share a value: statuses, severities, badges.
+   *
+   * Right only when a row is one *thing* — one objective, one exception, one person. On a report
+   * whose rows are already totals, counting them gives every bar a height of one and says
+   * nothing, which is why each use below names the row it is counting.
+   */
+  | { kind: 'groupBy'; column: string; title: string; note?: string }
+  /**
+   * One bar per row, reading its height out of a column the report already totalled.
+   *
+   * This is the shape for a report that aggregated before it returned — cost per day, events per
+   * action, open items per person. Nothing is summed here that the report did not sum itself.
+   */
+  | {
+      kind: 'series';
+      labelColumn: string;
+      valueColumn: string;
+      title: string;
+      note?: string;
+      /** Minor units rendered as money. Anything else is a plain count. */
+      format?: 'money';
+    }
+  /**
+   * Bin a number the rows carry: how many waited one day, three, a week.
+   *
+   * `edges` are the lower bounds after the first band, so [1, 3, 7] gives under a day, one to
+   * three, three to seven, and seven or more. Aging is the one question a distribution of
+   * statuses cannot answer, and it is the question an approvals queue is opened with.
+   */
+  | {
+      kind: 'buckets';
+      column: string;
+      edges: number[];
+      unit: string;
+      title: string;
+      note?: string;
+    };
+
 export interface ReportDefinition {
   key: ReportKey;
   label: string;
@@ -336,6 +388,14 @@ export interface ReportDefinition {
    * module's own aggregate rather than another module's rows.
    */
   sourcePermission: { module: CompanyModuleKey; action: Action } | null;
+  /**
+   * How this report draws itself, when a picture reads better than the table.
+   *
+   * Absent means no chart, which is the honest answer for a report whose rows are a list of
+   * events rather than a distribution of anything.
+   */
+  chart?: ReportChart;
+
   /** Whether the report is meaningfully scoped by the reporting tree. */
   scoped: boolean;
 }
@@ -343,6 +403,12 @@ export interface ReportDefinition {
 export const REPORTS: readonly ReportDefinition[] = [
   {
     key: 'ObjectiveProgress',
+    chart: {
+      kind: 'groupBy',
+      column: 'status',
+      title: 'Where the objectives are',
+      note: 'Every objective in this period, counted by the state it is in now.',
+    },
     label: 'Objective Progress / Outcome / SLA',
     question:
       'Which objectives are on track, how did the finished ones turn out, and were they on time?',
@@ -351,6 +417,13 @@ export const REPORTS: readonly ReportDefinition[] = [
   },
   {
     key: 'HumanVsAiWorkMix',
+    chart: {
+      kind: 'series',
+      labelColumn: 'kind',
+      valueColumn: 'completed',
+      title: 'Work finished, by who finished it',
+      note: 'Completed items only. The table beside it carries what failed and what is still running.',
+    },
     label: 'Human vs AI Work Mix',
     question: 'How much of the work is being done by people and how much by agents?',
     sourcePermission: null,
@@ -358,6 +431,13 @@ export const REPORTS: readonly ReportDefinition[] = [
   },
   {
     key: 'EmployeeWorkload',
+    chart: {
+      kind: 'series',
+      labelColumn: 'person',
+      valueColumn: 'open',
+      title: 'How the work is spread',
+      note: 'Open items per person. One tall bar beside short ones is the queue to look at.',
+    },
     label: 'Employee Workload',
     question: 'Who is carrying how much, and who is overdue?',
     sourcePermission: { module: 'todo', action: 'View' },
@@ -365,6 +445,11 @@ export const REPORTS: readonly ReportDefinition[] = [
   },
   {
     key: 'EngineAgentHealth',
+    chart: {
+      kind: 'groupBy',
+      column: 'status',
+      title: 'Agents by state',
+    },
     label: 'Engine Agent Health',
     question: 'Which agents are succeeding, which are failing, and which have stopped being used?',
     sourcePermission: { module: 'agents', action: 'View' },
@@ -372,6 +457,12 @@ export const REPORTS: readonly ReportDefinition[] = [
   },
   {
     key: 'SkillUsageAndQuality',
+    chart: {
+      kind: 'groupBy',
+      column: 'status',
+      title: 'Skill versions by state',
+      note: 'One bar per state. How many are published and running, and how many never left draft.',
+    },
     label: 'Skill Usage & Quality',
     question: 'Which Skills are actually used, and what do reviewers say about what they produce?',
     sourcePermission: { module: 'agents', action: 'View' },
@@ -379,6 +470,12 @@ export const REPORTS: readonly ReportDefinition[] = [
   },
   {
     key: 'DependencyWaiting',
+    chart: {
+      kind: 'groupBy',
+      column: 'objective',
+      title: 'What is waiting, by objective',
+      note: 'Steps that cannot start because something before them is unfinished.',
+    },
     label: 'Waiting on a dependency',
     question: 'What cannot start yet, what is it waiting for, and who is holding it up?',
     /*
@@ -393,6 +490,11 @@ export const REPORTS: readonly ReportDefinition[] = [
   },
   {
     key: 'ExecutorExceptions',
+    chart: {
+      kind: 'groupBy',
+      column: 'severity',
+      title: 'Exceptions by severity',
+    },
     label: 'Executor Agent Exceptions',
     question: 'What did the Executor Agent stop, escalate or flag, and is any of it still open?',
     sourcePermission: { module: 'executor', action: 'View' },
@@ -400,6 +502,14 @@ export const REPORTS: readonly ReportDefinition[] = [
   },
   {
     key: 'ApprovalAging',
+    chart: {
+      kind: 'buckets',
+      column: 'waitingDays',
+      edges: [1, 3, 7, 14],
+      unit: 'day',
+      title: 'How long approvals have waited',
+      note: 'The last band is the one somebody has been blocked behind the longest.',
+    },
     label: 'Approval Aging',
     question: 'What is waiting for a decision, and how long has it been waiting?',
     sourcePermission: { module: 'approvals', action: 'View' },
@@ -407,6 +517,21 @@ export const REPORTS: readonly ReportDefinition[] = [
   },
   {
     key: 'AiUsageAndCost',
+    /*
+     * Cost per day, which is what the rows already are.
+     *
+     * The report groups its ledger by day before returning it, so each bar is a day's total
+     * rather than a charge — the one reading that does not turn a list of charges into a
+     * trend it never measured.
+     */
+    chart: {
+      kind: 'series',
+      labelColumn: 'day',
+      valueColumn: 'amountMinor',
+      format: 'money',
+      title: 'What AI work cost, by day',
+      note: 'One bar per day in the period.',
+    },
     label: 'AI Usage & Cost',
     question: 'What has AI work cost, and where did it go?',
     sourcePermission: { module: 'settings', action: 'Administer' },
@@ -414,6 +539,19 @@ export const REPORTS: readonly ReportDefinition[] = [
   },
   {
     key: 'AuditActivity',
+    /*
+     * Events per action, which the report has already counted.
+     *
+     * This does not attempt to picture the trail itself — a sequence of distinct events has no
+     * shape worth drawing. It answers the narrower question the rows do support: which kinds of
+     * change happened most in this period.
+     */
+    chart: {
+      kind: 'series',
+      labelColumn: 'action',
+      valueColumn: 'events',
+      title: 'What kinds of change happened most',
+    },
     label: 'Audit Activity',
     question: 'What changed in this company, who changed it, and when?',
     sourcePermission: { module: 'settings', action: 'Audit' },
@@ -421,6 +559,12 @@ export const REPORTS: readonly ReportDefinition[] = [
   },
   {
     key: 'PerformanceAndBadges',
+    chart: {
+      kind: 'groupBy',
+      column: 'currentBadge',
+      title: 'People by badge',
+      note: 'Each person counted once, under the badge they hold now.',
+    },
     label: 'Performance / Badge History',
     question: 'How have people scored over time, and what have they earned?',
     sourcePermission: { module: 'performance', action: 'View' },

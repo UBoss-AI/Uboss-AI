@@ -521,7 +521,10 @@ export function SignInFlow({ plane }: SignInFlowProps) {
                       const builds = ['hierarchy', 'objective', 'agent-builder'].some((module) =>
                         access.visibleModules.includes(module),
                       );
-                      router.push(builds ? '/dashboard' : '/operations');
+                      // Their To-do, which is where a person who does the work actually starts.
+                      // It used to be an Operations landing page in front of it, and that page
+                      // showed the same list one click later.
+                      router.push(builds ? '/dashboard' : '/todo');
                     })
                     .catch(() => router.push('/dashboard'));
                 }}
@@ -736,7 +739,7 @@ export function SignInFlow({ plane }: SignInFlowProps) {
     <LoginPresentation variant={plane === 'platform' ? 'platform' : 'customer'}>
       <form onSubmit={handlePassword} noValidate>
         <h1>Welcome back</h1>
-        <p className="uboss-login-card-sub">Sign in to your UBoss workspace.</p>
+        <p className="uboss-login-card-sub">Sign in to Chief Agent, powered by UBoss AI.</p>
 
         {step.kind === 'error' ? (
           <div style={{ marginBottom: 16 }}>

@@ -1,0 +1,21 @@
+FROM node:24-bookworm-slim AS build
+
+WORKDIR /site
+COPY uboss-website/package.json uboss-website/package-lock.json ./
+RUN npm ci
+COPY uboss-website ./
+ARG NEXT_PUBLIC_PRODUCT_LOGIN_URL=https://app.ubossai.com/login
+ENV NEXT_PUBLIC_PRODUCT_LOGIN_URL=$NEXT_PUBLIC_PRODUCT_LOGIN_URL
+RUN npm run build
+
+FROM node:24-bookworm-slim AS runtime
+ENV NODE_ENV=production PORT=3100 HOSTNAME=0.0.0.0
+WORKDIR /site
+COPY --from=build --chown=node:node /site/package.json ./package.json
+COPY --from=build --chown=node:node /site/package-lock.json ./package-lock.json
+COPY --from=build --chown=node:node /site/node_modules ./node_modules
+COPY --from=build --chown=node:node /site/public ./public
+COPY --from=build --chown=node:node /site/.next ./.next
+USER node
+EXPOSE 3100
+CMD ["npm", "run", "start"]

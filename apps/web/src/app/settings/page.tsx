@@ -20,7 +20,6 @@ import {
 } from '@uboss/ui';
 
 import { useAccountMenu } from '../../lib/use-account-menu';
-import { can, useMyAccess } from '../../lib/use-my-access';
 import { useSignedInUser } from '../../lib/use-signed-in-user';
 import { RoutedAppShell } from '../../components/RoutedAppShell';
 import {
@@ -30,6 +29,7 @@ import {
 } from '../../lib/active-workspace';
 import { ConnectionsPanel } from '../../components/ConnectionsPanel';
 import { NotificationPreferences } from '../../components/NotificationPreferences';
+import { RolesPanel } from '../../components/RolesPanel';
 import { SkillsPanel } from '../../components/SkillsPanel';
 import {
   ApiError,
@@ -189,8 +189,14 @@ export default function CompanySettingsPage() {
    * (access.controller.ts). Manager holds exactly ["View"] and keeps the button; Approver and
    * Employee hold nothing on this module and no longer see it.
    */
-  const myAccess = useMyAccess();
-  const mayOpenUsersScreen = can(myAccess, 'users', 'View');
+  /*
+   * The Users & Access grant is no longer checked here.
+   *
+   * It gated an *Open Users & Access* button, which is gone: the section itself opens the
+   * screen now. Which people are offered that section is already decided upstream —
+   * `CATEGORY_VISIBILITY` requires `users:ManageAccess` for it, which is stricter than the
+   * `users:View` this checked, so nobody who would be refused is being offered it.
+   */
 
   const materialDirty = useMemo(
     () =>
@@ -262,13 +268,31 @@ export default function CompanySettingsPage() {
       setDraft({});
       setReason('');
       setHistory(null);
+
+      /*
+       * Four sections are screens, and selecting one opens it.
+       *
+       * Each used to show a sentence and a button reading *Open X* — a panel whose only purpose
+       * was to offer a second click. The section is the entry point; pressing it should do the
+       * thing, not describe it.
+       */
+      const SCREENS: Record<string, string> = {
+        users: '/settings/users',
+        billing: '/settings/billing',
+      };
+      const screen = SCREENS[key];
+      if (screen !== undefined) {
+        router.push(screen);
+        return;
+      }
+
       setActive(key);
       // Put the section in the address bar so it can be linked to, reloaded and gone Back from.
       // The sidebar's "Roles & Permissions" item depends on this: it is a section here, not a
       // route of its own, and before this it had nowhere to point.
       window.history.replaceState(null, '', `?section=${encodeURIComponent(key)}`);
     },
-    [dirty],
+    [dirty, router],
   );
 
   // Honour ?section= on arrival. Read after mount rather than during render: this page
@@ -384,7 +408,16 @@ export default function CompanySettingsPage() {
         </Card>
       ) : (
         <>
-          {view.withheldCategories > 0 ? (
+          {/*
+            Counted for an administrator, not for everybody.
+
+            An employee opening Settings does not need to be told that thirteen categories exist
+            which they cannot read — it is a list of doors with their names on, and none of them
+            is a door they wanted. For somebody who does administer, the count is worth having:
+            a shorter list than they expected means a permission boundary rather than a missing
+            feature, and that is a real question they would otherwise raise.
+          */}
+          {mayAdministerAnything && view.withheldCategories > 0 ? (
             <Banner tone="info">
               {view.withheldCategories} categor
               {view.withheldCategories === 1 ? 'y is' : 'ies are'} not shown because your role
@@ -402,7 +435,7 @@ export default function CompanySettingsPage() {
             can only look at. Saying "your role cannot read it" here would be untrue, and a
             refusal a person can catch out is worse than no message at all.
           */}
-          {view.administrativeCategories > 0 ? (
+          {mayAdministerAnything && view.administrativeCategories > 0 ? (
             <Banner tone="info">
               {view.administrativeCategories} further categor
               {view.administrativeCategories === 1 ? 'y holds' : 'ies hold'} company administration
@@ -420,13 +453,43 @@ export default function CompanySettingsPage() {
           >
             <Card>
               <CardHeader
-                title={activeSection?.label ?? ''}
+                /*
+                 * The same words as the sidebar.
+                 *
+                 * Six categories carry a personal label — the sidebar used it and this heading
+                 * did not, so somebody clicked "How this company works" and landed on a card
+                 * titled "General". Two names for one place is how a screen makes a person
+                 * wonder whether they are where they think they are.
+                 */
+                title={
+                  (mayAdministerAnything
+                    ? activeSection?.label
+                    : (activeSection?.personalLabel ?? activeSection?.label)) ?? ''
+                }
                 aside={
-                  category?.anyEditable ? null : <StatusBadge status="Read only" tone="grey" />
+                  /*
+                   * "Read only" means the settings in this category are, and some categories
+                   * hold no settings at all.
+                   *
+                   * Roles is one of them: it has no rows in `company_settings` and never will,
+                   * because a role is not a setting — so `anyEditable` is false and the badge
+                   * appeared above a panel where an administrator writes roles. A badge that
+                   * contradicts the button underneath it teaches people to ignore badges.
+                   */
+                  active === 'roles' || category?.anyEditable === true ? null : (
+                    <StatusBadge status="Read only" tone="grey" />
+                  )
                 }
               />
               <CardBody>
-                <p className="uboss-muted-3">{activeSection?.description}</p>
+                {/*
+                  The one-line description, except where the panel opens with its own. Two
+                  sentences saying the same thing, one above the other, is the filler this
+                  screen was asked to lose.
+                */}
+                {active === 'roles' ? null : (
+                  <p className="uboss-muted-3">{activeSection?.description}</p>
+                )}
 
                 {/* Tokens & Cost is the reference's `setTokens()`: a bespoke panel rather than
                     a list of generic setting controls — an allowance bar, the per-level budgets
@@ -439,8 +502,24 @@ export default function CompanySettingsPage() {
                     for the same subject. */}
                 {active === 'tokens' && <CreditsPanel tenantId={tenantId} />}
 
+                {/*
+                  Roles & Permissions, as a screen rather than a sentence.
+
+                  It held one paragraph and a *Read only* badge: true, and useless as the whole
+                  content of the section named after permissions — an administrator opened it and
+                  could not see a single permission. The catalogue is now spelled out, and the
+                  roles a company writes for itself are made here rather than nowhere.
+                */}
+                {active === 'roles' && tenantId !== null ? (
+                  <RolesPanel tenantId={tenantId} mayAdminister={mayAdministerAnything} />
+                ) : null}
+
                 {category === null ? (
                   <SkeletonText lines={3} />
+                ) : active === 'roles' ? (
+                  // The panel above is this category's content. The generic "nothing configured
+                  // here" banner would print the paragraph it replaced, underneath it.
+                  null
                 ) : category.settings.length === 0 ? (
                   <Banner tone="info">
                     {category.note ??
@@ -622,21 +701,13 @@ export default function CompanySettingsPage() {
                   <NotificationPreferences tenantId={tenantId} />
                 ) : null}
 
-                {/* The two categories that are real screens elsewhere, linked rather than duplicated. */}
-                {active === 'users' && mayOpenUsersScreen ? (
-                  <div className="uboss-actions">
-                    <Button variant="navy" onClick={() => router.push('/settings/users')}>
-                      Open Users &amp; Access
-                    </Button>
-                  </div>
-                ) : null}
-                {active === 'billing' ? (
-                  <div className="uboss-actions">
-                    <Button variant="navy" onClick={() => router.push('/settings/billing')}>
-                      Open Billing
-                    </Button>
-                  </div>
-                ) : null}
+                {/*
+                  The *Open X* buttons are gone.
+
+                  Selecting one of those sections now opens its screen directly — the panel that
+                  used to sit here existed only to offer a second click, and its whole content
+                  was a sentence saying where the thing really was.
+                */}
                 {active === 'agent' ? <MemoryAndFeedbackPanel tenantId={tenantId} /> : null}
                 {active === 'knowledge' ? <KnowledgeAndDataPanel tenantId={tenantId} /> : null}
                 {active === 'appearance' ? <AppearancePanel /> : null}

@@ -8,6 +8,8 @@ import {
   EVALUATION_ASSERTIONS,
   evaluateOutput,
   mayTransitionCandidate,
+  inputConcepts,
+  matchDeclaredInputs,
   meaningfulWords,
   REGRESSION_VERDICTS,
   ROUTER_MAX_RESULTS,
@@ -110,7 +112,19 @@ test('a Skill needing a tool the work does not permit is disqualified', () => {
   assert.match((outcome as { disqualifier: string }).disqualifier, /fail part-way/i);
 });
 
-test('a Skill needing an input that is not available is disqualified', () => {
+test('a Skill needing one input it cannot get is offered, with the shortfall named', () => {
+  /*
+   * This test asserted a hard disqualification, and that rule was wrong.
+   *
+   * Comparing input names as strings meant a Skill declaring `submissionList` could never serve a
+   * step whose input cell said "The consolidated submission list" — and 402 of the 403 published
+   * Skills in the development catalogue declare a required input, so essentially nothing could
+   * ever be matched to an Objective step. The capability was there; only the wording differed.
+   *
+   * So a shortfall is now carried on the match instead of hiding it. The Skill is still ranked
+   * below one that has everything, and the step is not ready until the input is supplied — but
+   * the administrator is told *which* input, rather than being told no Skill exists.
+   */
   const outcome = scoreSkillForContext(CONTEXT, {
     ...PUBLISHED,
     declaredInputs: [
@@ -118,8 +132,14 @@ test('a Skill needing an input that is not available is disqualified', () => {
       { name: 'priorBidHistory', required: true },
     ],
   });
-  assert.ok('disqualifier' in outcome);
-  assert.match((outcome as { disqualifier: string }).disqualifier, /priorBidHistory/);
+
+  assert.ok(!('disqualifier' in outcome), JSON.stringify(outcome));
+  const match = outcome as { reasons: string[]; unmetInputs: string[] };
+  assert.deepEqual(match.unmetInputs, ['priorBidHistory']);
+  assert.ok(
+    match.reasons.some((reason) => reason.includes('Still needs priorBidHistory')),
+    match.reasons.join(' | '),
+  );
 });
 
 test('an optional input that is missing does not disqualify', () => {
@@ -440,4 +460,177 @@ test('a Candidate has no path to published, and both endings are final', () => {
   assert.equal(mayTransitionCandidate('UnderReview', 'Rejected'), true);
   assert.equal(mayTransitionCandidate('Accepted', 'Rejected'), false);
   assert.equal(mayTransitionCandidate('Rejected', 'UnderReview'), false);
+});
+
+
+/*
+ * ---------------------------------------------------------------------------
+ * Matching a step's inputs to a Skill's declared inputs
+ * ---------------------------------------------------------------------------
+ *
+ * These exist because the router was, in practice, unusable. Inputs were compared as strings: a
+ * Skill declares `submissionList` and an Objective step says "The consolidated submission list",
+ * because that is what somebody types into a grid cell. Measured on the development catalogue,
+ * 402 of 403 published Skills declare a required input and every one of them was disqualified from
+ * every step; the single Skill declaring no inputs was the only one the router ever returned, so no
+ * Objective containing AI work could be assigned at all.
+ *
+ * The rule now is containment by concept, and the tests below fix the two directions that matter:
+ * wording must not decide the answer, and meaning must still be able to say no.
+ */
+
+const RECONCILE: RoutableSkillVersion = {
+  ...PUBLISHED,
+  skillId: 'skill-reconcile',
+  skillVersionId: 'version-reconcile',
+  skillKey: 'ledger-reconcile',
+  skillName: 'Reconcile submissions against the ledger',
+  category: 'Analysis',
+  purpose: 'Compare branch cash submissions against the general ledger and mark every mismatch',
+  whenToUse: 'When a consolidated submission list exists and the ledger for that day is closed',
+  whenNotToUse: 'Never while the ledger is still open',
+  declaredInputs: [
+    { name: 'submissionList', required: true },
+    { name: 'ledgerExtract', required: true },
+    { name: 'toleranceMinorUnits', required: false },
+  ],
+};
+
+const RECONCILE_CONTEXT: SkillRouterContext = {
+  aiTask: 'Reconcile the consolidated submission list against the general ledger and mark every mismatch',
+  availableInputs: ['The consolidated submission list', 'The general ledger extract for the day'],
+  allowedToolCategories: ['Read', 'Write'],
+  requiresApproval: true,
+  category: 'Analysis',
+};
+
+test('an input written as a sentence covers one declared as an identifier', () => {
+  const matched = matchDeclaredInputs(
+    ['The consolidated submission list', 'The general ledger extract for the day'],
+    [
+      { name: 'submissionList', required: true },
+      { name: 'ledgerExtract', required: true },
+    ],
+  );
+
+  assert.deepEqual(matched.unmet, [], 'nothing should be unmet');
+  assert.equal(matched.mapped.length, 2);
+  assert.equal(
+    matched.mapped.find((pair) => pair.declared === 'submissionList')?.suppliedBy,
+    'The consolidated submission list',
+  );
+});
+
+test('a synonym counts as the same input', () => {
+  // "register" for "list", "book" for "ledger" — the same thing to a reader, so the same here.
+  const matched = matchDeclaredInputs(
+    ['branch submission register', 'the general book extract'],
+    [
+      { name: 'submissionList', required: true },
+      { name: 'ledgerExtract', required: true },
+    ],
+  );
+
+  assert.deepEqual(matched.unmet, []);
+  assert.equal(matched.mapped.length, 2);
+});
+
+test('a genuinely missing input is named rather than silently matched', () => {
+  const matched = matchDeclaredInputs(
+    ['The consolidated submission list'],
+    [
+      { name: 'submissionList', required: true },
+      { name: 'ledgerExtract', required: true },
+    ],
+  );
+
+  assert.deepEqual(matched.unmet, ['ledgerExtract']);
+  assert.equal(matched.mapped.length, 1, 'the one that is available still maps');
+});
+
+test('a partial word overlap is not a match', () => {
+  /*
+   * "submission list" shares "list" with "ledgerExtract"? It does not — but this guards the
+   * shape of the rule rather than one example. Containment means every concept in the declared
+   * name must be present, so a name that merely shares a word with an offered input is unmet.
+   */
+  const matched = matchDeclaredInputs(
+    ['a list of branches'],
+    [{ name: 'submissionList', required: true }],
+  );
+
+  assert.deepEqual(matched.unmet, ['submissionList']);
+});
+
+test('a step whose inputs are all missing is still refused outright', () => {
+  const outcome = scoreSkillForContext(
+    { ...RECONCILE_CONTEXT, availableInputs: ['a photograph of the branch'] },
+    RECONCILE,
+  );
+
+  assert.ok('disqualifier' in outcome, 'nothing it needs can be supplied, so it must not be offered');
+  assert.match((outcome as { disqualifier: string }).disqualifier, /can be supplied here/i);
+});
+
+test('a relevant Skill whose inputs are available is matched and says what covers what', () => {
+  const outcome = scoreSkillForContext(RECONCILE_CONTEXT, RECONCILE);
+
+  assert.ok(!('disqualifier' in outcome), JSON.stringify(outcome));
+  const match = outcome as { confidence: number; reasons: string[]; unmetInputs: string[] };
+  assert.deepEqual(match.unmetInputs, []);
+  assert.ok(
+    match.reasons.some((reason) => reason.includes('Its inputs are available here')),
+    match.reasons.join(' | '),
+  );
+});
+
+test('a shortfall lowers the score and is carried on the match, not hidden', () => {
+  const outcome = scoreSkillForContext(
+    { ...RECONCILE_CONTEXT, availableInputs: ['The consolidated submission list'] },
+    RECONCILE,
+  );
+
+  assert.ok(!('disqualifier' in outcome), JSON.stringify(outcome));
+  const match = outcome as { confidence: number; reasons: string[]; unmetInputs: string[] };
+  assert.deepEqual(match.unmetInputs, ['ledgerExtract']);
+  assert.ok(
+    match.reasons.some((reason) => reason.includes('Still needs ledgerExtract')),
+    match.reasons.join(' | '),
+  );
+});
+
+test('an unrelated Skill is still not offered, however well its inputs line up', () => {
+  /*
+   * The guarantee that matters most. Loosening the input rule must not become a way for a Skill
+   * that is not *for* this work to be selected — relevance is decided separately and still says no.
+   */
+  const birthdays: RoutableSkillVersion = {
+    ...PUBLISHED,
+    skillId: 'skill-birthday',
+    skillVersionId: 'version-birthday',
+    skillKey: 'birthday-note',
+    skillName: 'Birthday message writer',
+    category: 'Analysis',
+    purpose: 'Write a warm birthday message for a colleague',
+    whenToUse: 'When somebody in the company has a birthday',
+    whenNotToUse: 'Never for anything financial',
+    declaredInputs: [{ name: 'submissionList', required: true }],
+  };
+
+  const outcome = scoreSkillForContext(RECONCILE_CONTEXT, birthdays);
+  assert.ok('disqualifier' in outcome, JSON.stringify(outcome));
+});
+
+test('routeSkills returns the capable Skill rather than reporting the capability missing', () => {
+  const result = routeSkills(RECONCILE_CONTEXT, [RECONCILE]);
+
+  assert.equal(result.capabilityMissing, false, JSON.stringify(result.rejected));
+  assert.equal(result.matches.length, 1);
+  assert.equal(result.matches[0]?.skillVersionId, 'version-reconcile');
+  assert.deepEqual(result.matches[0]?.unmetInputs, []);
+});
+
+test('an identifier and a sentence reduce to the same concepts', () => {
+  assert.deepEqual(inputConcepts('submissionList'), inputConcepts('submission list'));
+  assert.deepEqual(inputConcepts('submission_list'), inputConcepts('submissionList'));
 });

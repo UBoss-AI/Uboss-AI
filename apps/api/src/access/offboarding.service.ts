@@ -244,6 +244,15 @@ export class OffboardingService {
     subjectUserId: string;
     successorUserId?: string | undefined;
     reason: string;
+    /**
+     * How long they keep working before their last day.
+     *
+     * Zero, or absent, ends it today — which is what this method always did and what a dismissal
+     * needs. Anything more starts a notice period: their access and employment continue, the
+     * successor takes the reporting line straight away so the two can hand over, and the rest
+     * happens on the day itself.
+     */
+    noticeDays?: number | undefined;
   }): Promise<OffboardingOutcome> {
     const context = await this.authorization.contextFor(input.scope, input.actorUserId);
     await this.authorization.assertCan(context, { module: 'users', action: 'ManageAccess' });
@@ -259,6 +268,13 @@ export class OffboardingService {
     }
     if (input.successorUserId === input.subjectUserId) {
       throw new BadRequestException('The successor has to be somebody else.');
+    }
+
+    const noticeDays = Math.trunc(input.noticeDays ?? 0);
+    if (noticeDays < 0 || noticeDays > 365) {
+      throw new BadRequestException(
+        'A notice period is between 0 and 365 days. Zero ends the employment today.',
+      );
     }
 
     const open = await this.access.findOpenOffboarding(input.scope, input.subjectUserId);
@@ -331,6 +347,91 @@ export class OffboardingService {
             : `${directReports.length} direct report(s) now report to the successor.`,
         moved: directReports.length,
       };
+
+      /*
+       * A notice period, if one was given.
+       *
+       * Nothing else happens today. Their roles stay, their employment stays Active, and they
+       * keep working — which is what a notice period is. The direct reports moved to the
+       * successor above, so the successor sees the work from now rather than from the day the
+       * person disappears.
+       *
+       * `effectiveAt` is their last day. `completeDue` finishes it when that day arrives, and
+       * the authorization path refuses them once it has passed whether or not the tick has run
+       * — a sweep that has not fired must never be the thing standing between somebody who has
+       * left and the company.
+       */
+      if (noticeDays > 0) {
+        const lastDay = new Date(Date.now() + noticeDays * 24 * 60 * 60 * 1000);
+
+        /*
+         * Their access is given an end date, and that is what actually ends it.
+         *
+         * Not the tick below. `listLiveAssignments` already refuses an assignment whose
+         * `expiresAt` has passed — every authorization call in the product goes through it — so
+         * on the morning after their last day they have no permissions, whether or not anybody
+         * swept the table. The tick then tidies the rows; it is bookkeeping rather than the
+         * boundary.
+         *
+         * An assignment that already expires sooner is left alone: notice extends nothing.
+         */
+        await this.prisma.client.roleAssignment.updateMany({
+          where: {
+            tenantId: input.scope.tenantId,
+            userId: input.subjectUserId,
+            OR: [{ expiresAt: null }, { expiresAt: { gt: lastDay } }],
+          },
+          data: { expiresAt: lastDay, version: { increment: 1 } },
+        });
+
+        handover['noticePeriod'] = {
+          status: 'serving',
+          detail:
+            `${noticeDays} day(s) of notice. Their access and employment continue until ` +
+            `${lastDay.toDateString()}, and the handover is finished on that day.`,
+          moved: 0,
+        };
+
+        const pending = await this.prisma.client.offboarding.create({
+          data: {
+            tenantId: input.scope.tenantId,
+            subjectUserId: input.subjectUserId,
+            ...(input.successorUserId === undefined
+              ? {}
+              : { successorUserId: input.successorUserId }),
+            state: 'Requested',
+            reason: input.reason.trim(),
+            handover: handover as never,
+            requestedByUserId: input.actorUserId,
+            effectiveAt: lastDay,
+          },
+        });
+
+        await this.auditEvents.appendWithinCurrentScope(input.scope.tenantId, {
+          action: 'access.offboarding_notice_started',
+          resourceType: 'offboarding',
+          resourceId: pending.id,
+          actorUserId: input.actorUserId,
+          summary: 'Started a notice period and moved the reporting line to the successor.',
+          reason: input.reason.trim(),
+          metadata: {
+            subjectUserId: input.subjectUserId,
+            successorUserId: input.successorUserId ?? null,
+            directReportsMoved: directReports.length,
+            lastDay: lastDay.toISOString(),
+            noticeDays,
+            nothingDeleted: true,
+          },
+        });
+
+        return {
+          offboardingId: pending.id,
+          subjectUserId: input.subjectUserId,
+          successorUserId: input.successorUserId ?? null,
+          handover,
+          nothingDeleted: true as const,
+        };
+      }
 
       // 2. Roles are revoked, not transferred — see the class comment.
       const revoked = await this.prisma.client.roleAssignment.deleteMany({
@@ -539,6 +640,121 @@ export class OffboardingService {
         nothingDeleted: true as const,
       };
     });
+  }
+
+  /**
+   * Finish every notice period whose last day has arrived.
+   *
+   * ## Why a tick rather than a timer
+   *
+   * The same shape the run scheduler uses: a route somebody calls, rather than a process holding
+   * a clock. Two instances ticking at once cannot double-finish anybody, because each completion
+   * only touches an offboarding that is still `Requested` and the update is conditional on that.
+   *
+   * ## The tick is not what ends their access
+   *
+   * If nobody calls this for a week, somebody who left a week ago must still not be able to work.
+   * So the authorization path refuses a person whose last day has passed, and this only tidies the
+   * rows behind that decision. A sweep that has not run is never the thing standing between
+   * somebody who has left and the company.
+   *
+   * What it does on the day is what an immediate offboarding does at once: revoke the roles, mark
+   * the account Offboarded, end the employment, and freeze the performance record where it stands.
+   */
+  async completeDue(input: {
+    scope: TenantScope;
+    actorUserId: string;
+    now?: Date | undefined;
+  }): Promise<{ completed: string[]; note: string }> {
+    const context = await this.authorization.contextFor(input.scope, input.actorUserId);
+    await this.authorization.assertCan(context, { module: 'users', action: 'ManageAccess' });
+
+    const now = input.now ?? new Date();
+
+    const due = await this.prisma.runInTenantTransaction(input.scope, () =>
+      this.prisma.client.offboarding.findMany({
+        where: {
+          tenantId: input.scope.tenantId,
+          state: 'Requested',
+          effectiveAt: { lte: now },
+        },
+        select: { id: true, subjectUserId: true },
+      }),
+    );
+
+    const completed: string[] = [];
+
+    for (const row of due) {
+      await this.prisma.runInTenantTransaction(input.scope, async () => {
+        /*
+         * Claimed before anything is done to the person.
+         *
+         * `updateMany` with the state in the filter is the claim: a second tick running at the
+         * same moment updates nothing and skips the row, so nobody is offboarded twice and no
+         * second audit entry is written for one departure.
+         */
+        const claimed = await this.prisma.client.offboarding.updateMany({
+          where: { id: row.id, state: 'Requested' },
+          data: { state: 'Completed', completedAt: now, version: { increment: 1 } },
+        });
+        if (claimed.count === 0) return;
+
+        const revoked = await this.prisma.client.roleAssignment.deleteMany({
+          where: { tenantId: input.scope.tenantId, userId: row.subjectUserId },
+        });
+
+        await this.prisma.client.tenantMembership.updateMany({
+          where: { tenantId: input.scope.tenantId, userId: row.subjectUserId },
+          data: { accountState: 'Offboarded', version: { increment: 1 } },
+        });
+
+        await this.prisma.client.employmentRecord.updateMany({
+          where: { tenantId: input.scope.tenantId, userId: row.subjectUserId },
+          // `employment_end_state_and_date_agree`: the state and the date are written together,
+          // because a record that says Ended without saying when is not an employment history.
+          data: { state: 'Ended', endedAt: now, version: { increment: 1 } },
+        });
+
+        // Frozen where it stands. Without this the history would keep re-deriving against a
+        // policy that changes after they have gone, so the level they are recorded as having
+        // held could move years later.
+        await this.performance.snapshotOnExitWithinCurrentScope(input.scope, row.subjectUserId);
+
+        await this.auditEvents.appendWithinCurrentScope(input.scope.tenantId, {
+          action: 'access.offboarded',
+          resourceType: 'offboarding',
+          resourceId: row.id,
+          actorUserId: input.actorUserId,
+          summary: 'The notice period ended; access was revoked and the employment closed.',
+          reason: 'The last day recorded when the notice period began has arrived.',
+          metadata: {
+            subjectUserId: row.subjectUserId,
+            rolesRevoked: revoked.count,
+            completedOnNotice: true,
+            nothingDeleted: true,
+          },
+        });
+
+        await this.securityEvents.recordWithinCurrentScope({
+          action: SECURITY_ACTIONS.accountOffboarded,
+          tenantId: input.scope.tenantId,
+          actorUserId: input.actorUserId,
+          subjectUserId: row.subjectUserId,
+          resourceType: 'offboarding',
+          resourceId: row.id,
+          summary: `Notice period ended; ${revoked.count} role assignment(s) revoked.`,
+        });
+
+        completed.push(row.id);
+      });
+    }
+
+    return {
+      completed,
+      note:
+        'Only notice periods whose last day has passed are finished. Nothing is deleted: the ' +
+        'membership, the employment record and the audit trail all remain.',
+    };
   }
 
   async list(scope: TenantScope, actorUserId: string): Promise<Offboarding[]> {

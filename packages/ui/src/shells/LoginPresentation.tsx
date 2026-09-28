@@ -69,8 +69,8 @@ export function LoginPresentation({ children, variant = 'customer' }: LoginPrese
             U
           </div>
           <div>
-            <b>UBOSS AI AMS</b>
-            <span>Enterprise AI Workforce &amp; Operations</span>
+            <b>Chief Agent</b>
+            <span>Powered by UBoss AI</span>
           </div>
         </div>
 

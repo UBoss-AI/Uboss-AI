@@ -7,7 +7,10 @@ import {
   agingBucketFor,
   APPROVAL_DECISION_LABELS,
   APPROVAL_DECISIONS,
+  APPROVAL_TYPE_ADDRESSED_ROLE,
   APPROVAL_TYPE_MODULE,
+  decisionPermissionFor,
+  everyAddressedRoleCanDecide,
   approvalEscalationDue,
   DECISION_RESULT,
   decisionNeedsReason,
@@ -90,6 +93,55 @@ describe('approval type to module mapping', () => {
     const outcome = everyApprovalTypeIsDecidable(ROLE_TEMPLATES);
     assert.deepEqual(outcome.undecidable, []);
     assert.equal(outcome.ok, true);
+  });
+
+  it('lets the role a request is addressed to actually decide it', () => {
+    /*
+     * The deadlock the test above could not see.
+     *
+     * Deciding takes two things — being the role it was addressed to, and holding the permission
+     * — and nothing compared them. A Change Request is addressed to `CompanyAdmin`, and a
+     * CompanyAdmin deliberately does not hold `approvals:Approve`; a Head holds that but is not
+     * the addressee. The type passed "somebody can decide this" on the strength of the Head, and
+     * in the running product an employee's request sat Pending with nobody able to move it.
+     */
+    const outcome = everyAddressedRoleCanDecide(ROLE_TEMPLATES);
+    assert.deepEqual(outcome.stuck, []);
+    assert.equal(outcome.ok, true);
+  });
+
+  it('decides a Change Request with a permission only the CompanyAdmin holds', () => {
+    const permission = decisionPermissionFor('ChangeRequest');
+    assert.deepEqual(permission, { module: 'settings', action: 'Administer' });
+    assert.equal(APPROVAL_TYPE_ADDRESSED_ROLE['ChangeRequest'], 'CompanyAdmin');
+
+    // Narrow on purpose: this must not have handed anybody the general approval power.
+    for (const [name, template] of Object.entries(ROLE_TEMPLATES)) {
+      const approvals = template.permissions.approvals ?? [];
+      if (name === 'CompanyAdmin') {
+        assert.ok(
+          !approvals.includes('Approve'),
+          'the CompanyAdmin must still not hold approvals:Approve — that was the point',
+        );
+      }
+    }
+
+    // And only the CompanyAdmin can reach it.
+    const holders = Object.entries(ROLE_TEMPLATES)
+      .filter(([, template]) => (template.permissions.settings ?? []).includes('Administer'))
+      .map(([name]) => name);
+    assert.deepEqual(holders, ['CompanyAdmin']);
+  });
+
+  it('leaves every other type deciding on Approve, exactly as before', () => {
+    for (const type of APPROVAL_REQUEST_TYPES) {
+      if (type === 'ChangeRequest') continue;
+      assert.deepEqual(
+        decisionPermissionFor(type),
+        { module: APPROVAL_TYPE_MODULE[type], action: 'Approve' },
+        `${type} should still be decided by Approve on its own module`,
+      );
+    }
   });
 
   it('reports an undecidable mapping rather than passing quietly', () => {

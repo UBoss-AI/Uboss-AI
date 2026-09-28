@@ -8,6 +8,7 @@ import {
   Button,
   Card,
   CardBody,
+  DataTable,
   FormField,
   MedalBadge,
   Modal,
@@ -20,6 +21,7 @@ import {
 
 import {
   ApiError,
+  auditApi,
   authApi,
   organizationApi,
   performanceApi,
@@ -84,6 +86,21 @@ function accountTone(state: string | null): StatusTone {
  * entered for matching only and is **not verified** — there is no state in the system that could
  * say otherwise. A viewer without `hierarchy:Administer` does not get the row at all.
  */
+/**
+ * One line of somebody's activity, from either trail.
+ *
+ * Two sources, one timeline: the audit trail says what this person did, and the security trail
+ * says what was done to their account. Merged into a single shape so the table does not have to
+ * know which half a row came from — except through `kind`, which is the part a reader wants.
+ */
+interface ActivityRow {
+  id: string;
+  action: string;
+  summary: string | null;
+  occurredAt: string;
+  kind: 'did' | 'happened';
+}
+
 export default function EmployeeProfilePage() {
   // Prompt 40A (CR-03): the sidebar follows this person's real grants, never a role label.
   const navGroups = useCompanyNavigation();
@@ -96,6 +113,16 @@ export default function EmployeeProfilePage() {
   const [performance, setPerformance] = useState<PerformanceView | null>(null);
   /** Why the performance panels are empty, when they are. A refusal is not a blank figure. */
   const [performanceNote, setPerformanceNote] = useState<string | null>(null);
+  const [tab, setTab] = useState('employment');
+
+  /**
+   * What they have done and what has been done to them.
+   *
+   * Straight from the audit trail: `actorUserId` is their own work and `subjectUserId` is what
+   * an administrator did to their account, and "what has happened with this person" means both.
+   */
+  const [activity, setActivity] = useState<ActivityRow[] | null>(null);
+  const [activityNote, setActivityNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -170,6 +197,59 @@ export default function EmployeeProfilePage() {
         ),
       );
   }, [tenantId, userId]);
+
+  /*
+   * Their activity, once somebody opens the tab.
+   *
+   * Not loaded with the page: an audit query is heavier than everything else here, and most
+   * people opening a profile want the employment record. A refusal says so — reading the trail
+   * needs the Audit permission, which most administrators do not hold.
+   */
+  useEffect(() => {
+    if (tenantId === null || tab !== 'access' || activity !== null) return;
+    let current = true;
+
+    void Promise.all([
+      auditApi.events(tenantId, { actorUserId: userId, limit: 25 }),
+      // What was done to their account, which is the security trail rather than the audit one:
+      // `subjectUserId` is a filter there and nowhere else.
+      auditApi.securityEvents(tenantId, { subjectUserId: userId, limit: 25 }),
+    ])
+      .then(([did, happened]) => {
+        if (!current) return;
+        const rows: ActivityRow[] = [
+          ...did.rows.map((row) => ({
+            id: row.id,
+            action: row.action,
+            summary: row.summary,
+            occurredAt: row.occurredAt,
+            kind: 'did' as const,
+          })),
+          ...happened.rows.map((row) => ({
+            id: row.id,
+            action: row.action,
+            // A security event explains itself in `reason`; an audit event in `summary`.
+            summary: row.reason,
+            occurredAt: row.occurredAt,
+            kind: 'happened' as const,
+          })),
+        ];
+        rows.sort((left, right) => right.occurredAt.localeCompare(left.occurredAt));
+        setActivity(rows.slice(0, 40));
+      })
+      .catch((caught: unknown) => {
+        if (!current) return;
+        setActivityNote(
+          caught instanceof ApiError && caught.statusCode === 403
+            ? 'Not shown — reading the audit trail needs the Audit permission.'
+            : 'Could not load their activity.',
+        );
+      });
+
+    return () => {
+      current = false;
+    };
+  }, [activity, tab, tenantId, userId]);
 
   useEffect(load, [load]);
 
@@ -369,24 +449,30 @@ export default function EmployeeProfilePage() {
                   { id: 'achievements', label: 'Achievements' },
                   { id: 'access', label: 'Access / Activity' },
                 ]}
-                activeId="employment"
-                onChange={(id) => {
-                  // Performance and Achievements are their own screens in the approved
-                  // reference, reached from this pill — not panels inside this card.
-                  if (id === 'performance') {
-                    router.push(`/performance?userId=${encodeURIComponent(userId)}`);
-                  }
-                  if (id === 'achievements') {
-                    router.push(`/performance/badges?userId=${encodeURIComponent(userId)}`);
-                  }
-                }}
+                activeId={tab}
+                /*
+                 * Four tabs that are actually tabs.
+                 *
+                 * Two of them used to navigate: Performance opened the Performance screen and
+                 * Achievements opened the badge screen. Both of those are headed by whoever is
+                 * signed in, so an administrator who pressed Performance on somebody else's
+                 * profile landed on a page with their own name at the top and reasonably read it
+                 * as their own record. A control shaped like a tab that leaves the page is the
+                 * bug; this is the fix.
+                 */
+                onChange={setTab}
               />
 
               {/*
                 The reference's two mini cards. Real numbers now that the performance engine
                 exists — and where the viewer may not read this person's performance, the panel
                 says so rather than showing a blank figure that would read as a score of nothing.
+
+                Kept on the Employment tab because they are the headline somebody wants when they
+                open a person at all; the Performance tab below is the detail behind them.
               */}
+              {tab !== 'employment' ? null : (
+              <>
               <div className="uboss-row-2">
                 <Card>
                   <CardBody>
@@ -463,13 +549,140 @@ export default function EmployeeProfilePage() {
                 — authorized cross-company search uses the UBoss Unique ID.
               </Banner>
 
-              <div className="uboss-section-label">Not built yet</div>
-              <ul className="uboss-muted-3">
-                <li>
-                  <b>Access / Activity</b> — arrives with Users &amp; Access, where account
-                  lifecycle is managed.
-                </li>
-              </ul>
+              </>
+              )}
+
+              {/* ---- Performance, in place ---- */}
+              {tab !== 'performance' ? null : performance === null ? (
+                <p className="uboss-muted-3">{performanceNote ?? 'Loading…'}</p>
+              ) : (
+                <>
+                  <div className="uboss-section-label" style={{ marginTop: 0 }}>
+                    What their score is made of
+                  </div>
+                  {performance.recentEvents.length === 0 ? (
+                    <p className="uboss-muted-3">Nothing has been recorded for them yet.</p>
+                  ) : (
+                    <DataTable
+                      caption="Recorded performance events"
+                      columns={[
+                        { key: 'kind', header: 'Event', render: (row) => row.kind },
+                        {
+                          key: 'points',
+                          header: 'Points',
+                          render: (row) => String(row.points),
+                        },
+                        {
+                          key: 'when',
+                          header: 'When',
+                          render: (row) => new Date(row.occurredAt).toLocaleDateString(),
+                        },
+                      ]}
+                      rows={performance.recentEvents}
+                      rowKey={(row) =>
+                        `${row.sourceKind}:${row.sourceId}:${row.occurredAt}`
+                      }
+                    />
+                  )}
+                  <p className="uboss-muted-3">{performance.note}</p>
+                </>
+              )}
+
+              {/* ---- Achievements, from the same record ---- */}
+              {tab !== 'achievements' ? null : performance === null ? (
+                <p className="uboss-muted-3">{performanceNote ?? 'Loading…'}</p>
+              ) : performance.badgeHistory.length === 0 ? (
+                <p className="uboss-muted-3">
+                  No badge period has closed for them yet. A badge is awarded for a period that
+                  has finished, so a new joiner having none is the ordinary case rather than a
+                  gap.
+                </p>
+              ) : (
+                <DataTable
+                  caption="Badge periods"
+                  columns={[
+                    {
+                      key: 'held',
+                      header: 'Held',
+                      render: (row) =>
+                        `${new Date(row.startedAt).toLocaleDateString()} — ${
+                          row.endedAt === null
+                            ? 'now'
+                            : new Date(row.endedAt).toLocaleDateString()
+                        }`,
+                    },
+                    {
+                      key: 'level',
+                      header: 'Level',
+                      render: (row) => <MedalBadge tier={row.level} />,
+                    },
+                    {
+                      key: 'score',
+                      header: 'Score at the change',
+                      render: (row) => String(row.scoreAtChange),
+                    },
+                    {
+                      key: 'exit',
+                      header: '',
+                      // The final period, written when their employment ended and never
+                      // recalculated afterwards. Said out loud, because a level that stopped
+                      // moving looks like one that failed to update.
+                      render: (row) =>
+                        row.isExitSnapshot ? (
+                          <span className="uboss-muted-3">final, on leaving</span>
+                        ) : null,
+                    },
+                  ]}
+                  rows={performance.badgeHistory}
+                  rowKey={(row) => row.startedAt}
+                />
+              )}
+
+              {/* ---- Access / Activity, from the audit trail ---- */}
+              {tab !== 'access' ? null : activity === null ? (
+                <p className="uboss-muted-3">{activityNote ?? 'Loading…'}</p>
+              ) : activity.length === 0 ? (
+                <p className="uboss-muted-3">Nothing has been recorded about them yet.</p>
+              ) : (
+                <DataTable
+                  caption="What this person did, and what was done to their account"
+                  columns={[
+                    {
+                      key: 'when',
+                      header: 'When',
+                      render: (row: ActivityRow) => new Date(row.occurredAt).toLocaleString(),
+                    },
+                    {
+                      key: 'what',
+                      header: 'What',
+                      render: (row: ActivityRow) => (
+                        <>
+                          <b>{row.action}</b>
+                          {row.summary === null ? null : (
+                            <>
+                              <br />
+                              <small className="uboss-muted-3">{row.summary}</small>
+                            </>
+                          )}
+                        </>
+                      ),
+                    },
+                    {
+                      key: 'kind',
+                      header: '',
+                      // Which half of the story this line is. Without it, a password reset and a
+                      // report they ran read as the same kind of event.
+                      render: (row: ActivityRow) => (
+                        <span className="uboss-muted-3">
+                          {row.kind === 'did' ? 'they did this' : 'done to their account'}
+                        </span>
+                      ),
+                    },
+                  ]}
+                  rows={activity}
+                  rowKey={(row) => row.id}
+                />
+              )}
             </CardBody>
           </Card>
 

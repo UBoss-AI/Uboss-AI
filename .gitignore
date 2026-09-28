@@ -47,7 +47,12 @@ tmp/
 temp/
 .cache/
 
-# A separate marketing site that lives beside the product but is not part of it. It carries its
-# own node_modules and its own lockfile; tracking it here would put a second application into
-# this repository by accident.
-uboss-website/
+# The marketing site is a first-class part of the ubossai.com deployment. Its own lockfile stays
+# tracked; the global node_modules, .next and environment-file rules above still exclude local data.
+uboss-website/AGENTS.md
+uboss-website/CLAUDE.md
+uboss-website/DESIGN-V2-NOTES.md
+uboss-website/WEBSITE-3D-PLAN.md
+uboss-website/image.png
+apps/api/scripts/provision-spm-medicare.mjs
+docs/UBOSS_MASTER_*.md

@@ -1,0 +1,45 @@
+name: Deploy Chief Agent to Hostinger VPS
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - 'uboss-website/**'
+      - 'deploy/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/deploy-hostinger.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ubossai-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy ubossai.com
+    if: ${{ vars.HOSTINGER_VM_ID != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Deploy to Hostinger VPS
+        uses: hostinger/deploy-on-vps@b0868cec74bfa63af6bfa7bdb0dfee2f9bef13ea # v2
+        with:
+          api-key: ${{ secrets.HOSTINGER_API_KEY }}
+          virtual-machine: ${{ vars.HOSTINGER_VM_ID }}
+          project-name: ubossai
+          docker-compose-path: deploy/docker-compose.yaml
+          environment-variables: |
+            POSTGRES_PASSWORD=${{ secrets.UBOSS_POSTGRES_PASSWORD }}
+            APP_DB_PASSWORD=${{ secrets.UBOSS_APP_DB_PASSWORD }}
+            AUTH_ENCRYPTION_KEYS=${{ secrets.UBOSS_AUTH_ENCRYPTION_KEYS }}
+            UBOSS_INITIAL_ADMIN_EMAIL=dev@ubossai.com
+            UBOSS_INITIAL_ADMIN_NAME=Chief Agent Admin
+            UBOSS_INITIAL_ADMIN_PASSWORD=${{ secrets.UBOSS_INITIAL_ADMIN_PASSWORD }}

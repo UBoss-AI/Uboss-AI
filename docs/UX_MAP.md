@@ -385,8 +385,11 @@ and building half of it early would have to be undone.
 
 **Three deliberate divergences, all recorded rather than silent:**
 
-1. **Full screen and Download are not built.** Both are presentation features over the chart. The
-   toolbar omits them instead of shipping buttons that do nothing.
+1. **Download is not built; full screen now is.** The chart sits in a frame with zoom, a
+   percentage readout that resets, Fit and Full screen. Fit is allowed below the readable floor —
+   this company's chart is 5,700px wide and fitting it needs 22% — because somebody who presses it
+   has asked for the shape of the company rather than for the names. Download remains omitted
+   rather than shipped as a button that does nothing.
 2. **The profile's Performance, Achievements and Access tabs render, and say they are not built.**
    The reference shows a score of 82 and 96% on-time; those come from a feature area that does
    not exist. Putting invented numbers on a real person's profile is the worst kind of
@@ -1946,3 +1949,88 @@ this is what the roles are actually offered:
 Every item each role is offered was opened and watched for a refusal. None refuses. That property
 is the rule the navigation now holds, and it is checked rather than assumed: a visible sidebar item
 must route to a screen the same person can open.
+
+## The 2026-09-25 restructure — sequence and the run
+
+The client replaced the earlier UI direction with a simpler model: the Admin defines the work, the
+employee operates it, and UBoss controls the order between human and AI execution. Two parts of
+that are built and proven; the rest is listed at the end.
+
+### Engine → Sub-Engine → Executor is enforced, not drawn
+
+A published workflow has always recorded `dependsOnNodeIds` on every step. Nothing read it back, so
+all three people in a three-stage chain received their work at the same moment and the order the
+diagram drew was a suggestion.
+
+What changed, end to end:
+
+| Where | What it does now |
+| --- | --- |
+| `objective-analysis.service` | Projects the sequential edges it just built onto each node's `dod.dependencies`. A generated plan carries its own order. |
+| `assignment.service` | Creates a task whose dependencies are unfinished as `Waiting` rather than `Assigned`. |
+| `work-release.service` (new) | On any completion, re-examines every waiting step in the objective version and releases the ones whose dependencies are all finished. |
+| `human-task.service`, `approval.service`, `run-engine.service` | The four completion points that call it: a task submitted, a task completed by approval, an approval gate approved, an agent run finished. |
+
+`Waiting` is a new task status and is **not** `Blocked`. `Blocked` is a person saying they cannot
+proceed, and they can lift it themselves — right for a reason they know about, wrong for a
+dependency, because a step that unlocks itself is not a dependency. Its only permitted transition is
+`Cancelled`; the release to `Assigned` is a server move with no user-facing path to it.
+
+What counts as finished differs by step kind and is deliberately strict: a human step when its task
+is `Completed`; an AI step when its assignment has an `AgentRun` in state `Completed`, never merely
+because an agent was mapped to it; an approval gate when the request is `Approved`. `Cancelled`
+counts as finished in all three — a cancelled step will never produce anything, and waiting on it is
+waiting for ever. A `Rejected` approval does **not**: the work goes back for rework.
+
+A seventh notification kind, `WorkReady`, tells the person whose step just became startable. It is
+raised after the transaction commits, so a notification failure can never roll back somebody's
+finished work, and it is deduped per task so a step is announced once.
+
+**Proven.** Six e2e tests in `assignment.e2e.spec.ts` including the negative one that matters — the
+server refuses `start` on a waiting task with *"A task that is Waiting cannot become In progress"*,
+a 400 rather than a 403, because the person genuinely holds the permission and it is the plan's
+order that refuses them. Nineteen browser assertions across three signed-in people watched a real
+chain hand over: Kavya's step visible but not startable and naming what it waited for, Aman
+finishing his through the UI, Kavya's becoming startable on its own with the bell carrying
+"Ready to start", and Neha's still waiting.
+
+### Run Objective
+
+The button is the client's own word, and the generated workflow moved out of the 380px right rail
+into the wide column — measured at 1010px of a 1370px grid rather than asserted from the stylesheet.
+The seven analysis stages were already real, written at stage boundaries onto a durable run; they
+did not need changing.
+
+`POST /objectives/:id/analysis` no longer waits for the pipeline. It held the request open for the
+better part of a minute, so anything between the browser and the API timed out and the person was
+told their run had failed while it was running perfectly well. It now answers as soon as the run row
+is committed, and the screen polls — which is what it was built to do and what it already told the
+person it would do. In-process callers keep the blocking behaviour through `awaitCompletion`,
+defaulted to true, so a test that starts an analysis still gets a deterministic answer.
+
+Each drawn step now carries the four things Part 7 asks for: whether it is human or agent work, who
+owns it **by name**, what it comes after, and its Engine / Sub-Engine / Executor position. That
+position is derived from the dependency graph rather than stored, because the three names are
+positions and not job titles — the Executor is whoever finishes. Storing the label would create a
+second source of truth that could contradict the dependencies. Goals, conditions and approval gates
+get no position: they count for depth, but naming a sign-off "the Executor" would report that
+nobody did the final work and the approval did.
+
+The diagram is also drawn in dependency order. The stored node array is the order the analysis built
+it — every human step, then every AI step — so drawing it as it came put a later step above an
+earlier one and joined them with a connector, a picture of a sequence the plan does not describe.
+
+### The Admin rule, as it lands on the workflow editor
+
+The client's rule that the initial Company Admin controls the company gave that role
+`objective:EditDraft`, which two tests in `workflow-editor.e2e.spec.ts` had pinned the other way
+("lets a CompanyAdmin read the plan but not edit it"). They now assert the new rule, and a third was
+added so the change does not quietly widen: an Approver, who holds real work in the company and no
+authoring rights, is still refused at the route.
+
+### Not built yet
+
+Phases 8 through 19 of the client's order: the Human Task operations detail, the simplified
+Admin-only Agent Builder and its form round trip, test-and-publish reusable agents, the employee
+agent runtime form, Workshop Chat and department workshops, Change Requests, the orchestration
+dashboard, performance badges and report cleanup, settings cleanup, and the responsive pass.

@@ -1,11 +1,12 @@
 import {
-  Put,
   BadRequestException,
   Body,
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
   Post,
+  Put,
   Res,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -148,7 +149,7 @@ export class JobMethodController {
    */
   @Get(':aiWorkAssignmentId/form.xlsx')
   async downloadWorkbook(
-    @Param('aiWorkAssignmentId') aiWorkAssignmentId: string,
+    @Param('aiWorkAssignmentId', new ParseUUIDPipe()) aiWorkAssignmentId: string,
     @Res() response: Response,
   ): Promise<void> {
     const form = await this.jobMethods.downloadForm({
@@ -168,7 +169,7 @@ export class JobMethodController {
 
   /** The same form as JSON, for a client that renders it rather than downloading it. */
   @Get(':aiWorkAssignmentId/form')
-  async download(@Param('aiWorkAssignmentId') aiWorkAssignmentId: string): Promise<unknown> {
+  async download(@Param('aiWorkAssignmentId', new ParseUUIDPipe()) aiWorkAssignmentId: string): Promise<unknown> {
     return this.jobMethods.downloadForm({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -178,7 +179,7 @@ export class JobMethodController {
 
   /** What has been captured, its provenance, and how many agents it looks like. */
   @Get(':aiWorkAssignmentId')
-  async view(@Param('aiWorkAssignmentId') aiWorkAssignmentId: string): Promise<unknown> {
+  async view(@Param('aiWorkAssignmentId', new ParseUUIDPipe()) aiWorkAssignmentId: string): Promise<unknown> {
     return this.jobMethods.view({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -200,7 +201,7 @@ export class JobMethodController {
    */
   @Put(':aiWorkAssignmentId/rows')
   async saveRows(
-    @Param('aiWorkAssignmentId') aiWorkAssignmentId: string,
+    @Param('aiWorkAssignmentId', new ParseUUIDPipe()) aiWorkAssignmentId: string,
     @Body() body: SaveJobMethodRowsDto,
   ): Promise<unknown> {
     return this.jobMethods.saveRows({
@@ -213,7 +214,7 @@ export class JobMethodController {
 
   @Post(':aiWorkAssignmentId/import')
   async import(
-    @Param('aiWorkAssignmentId') aiWorkAssignmentId: string,
+    @Param('aiWorkAssignmentId', new ParseUUIDPipe()) aiWorkAssignmentId: string,
     @Body() body: ImportFormDto,
   ): Promise<unknown> {
     return this.jobMethods.importForm({
@@ -240,7 +241,7 @@ export class JobMethodController {
    */
   @Post(':aiWorkAssignmentId/import-workbook')
   async importWorkbook(
-    @Param('aiWorkAssignmentId') aiWorkAssignmentId: string,
+    @Param('aiWorkAssignmentId', new ParseUUIDPipe()) aiWorkAssignmentId: string,
     @Body() body: ImportWorkbookDto,
   ): Promise<unknown> {
     const bytes = Buffer.from(body.contentBase64, 'base64');

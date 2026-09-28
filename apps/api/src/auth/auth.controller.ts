@@ -8,6 +8,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
   Req,
@@ -289,7 +290,7 @@ export class AuthController {
   @Delete('sessions/:sessionId')
   @Authenticated()
   @HttpCode(HttpStatus.NO_CONTENT)
-  async revokeSession(@Param('sessionId') sessionId: string) {
+  async revokeSession(@Param('sessionId', new ParseUUIDPipe()) sessionId: string) {
     const userId = requireUserId();
     const revoked = await this.sessions.revokeOwn(userId, sessionId);
 
@@ -431,7 +432,7 @@ export class AuthController {
   @Delete('admin/sessions/:sessionId')
   @PlatformOnly()
   @HttpCode(HttpStatus.NO_CONTENT)
-  async adminRevokeSession(@Param('sessionId') sessionId: string) {
+  async adminRevokeSession(@Param('sessionId', new ParseUUIDPipe()) sessionId: string) {
     const actor = getActor();
     if (!isPlatformActor(actor)) {
       throw new ForbiddenException('Platform administrator access is required.');
@@ -805,7 +806,7 @@ export class AuthController {
   @AllowAnonymous()
   @HttpCode(HttpStatus.OK)
   async backchannelLogout(
-    @Param('connectionId') connectionId: string,
+    @Param('connectionId', new ParseUUIDPipe()) connectionId: string,
     @Body() body: BackchannelLogoutDto,
   ) {
     const result = await this.sso.handleBackchannelLogout(connectionId, body.logout_token);

@@ -520,7 +520,73 @@ describe('organization hierarchy (e2e)', () => {
 
   // =========================================================================
   describe('Add Employee — six mandatory fields, no invitation', () => {
-    it('serves exactly the six mandatory field keys', async () => {
+    it('refuses an employee the company cannot reach', async () => {
+      /*
+       * CR-04: a work email and a work phone are required.
+       *
+       * They were optional, and the consequence was a hierarchy of people nobody could contact —
+       * work is handed over by email and chased by phone. Enforced in the service rather than on
+       * the form, because a rule only the screen applies is a rule the API does not have: the
+       * same payload over HTTP would have been accepted.
+       */
+      const base = {
+        scope: scope(),
+        actorUserId: adminId,
+        employeeName: 'Unreachable Person',
+        designation: 'Associate',
+        departmentId: secondDepartmentId,
+        reportingManagerUserId: adminId,
+      };
+
+      await assert.rejects(
+        () =>
+          employment().addEmployee({
+            ...base,
+            employeeId: 'E-NOEMAIL',
+            workPhone: '+91 90000 11111',
+            aadhaarNumber: aadhaar('410000000000'),
+          }),
+        /required/i,
+      );
+
+      await assert.rejects(
+        () =>
+          employment().addEmployee({
+            ...base,
+            employeeId: 'E-NOPHONE',
+            workEmail: 'reachable@uboss.local',
+            aadhaarNumber: aadhaar('420000000000'),
+          }),
+        /required/i,
+      );
+
+      // And the shape is checked, because a filled field is not the same as a usable one.
+      await assert.rejects(
+        () =>
+          employment().addEmployee({
+            ...base,
+            employeeId: 'E-BADMAIL',
+            workEmail: 'not-an-address',
+            workPhone: '+91 90000 22222',
+            aadhaarNumber: aadhaar('430000000000'),
+          }),
+        /email address/i,
+      );
+
+      await assert.rejects(
+        () =>
+          employment().addEmployee({
+            ...base,
+            employeeId: 'E-BADPHONE',
+            workEmail: 'reachable@uboss.local',
+            workPhone: '12',
+            aadhaarNumber: aadhaar('440000000000'),
+          }),
+        /phone number/i,
+      );
+    });
+
+    it('serves exactly the mandatory field keys, and no more', async () => {
       const response = await as(
         agent().get(`/tenants/${tenantId}/organization/employee-fields`),
         adminUboss,
@@ -535,6 +601,10 @@ describe('organization hierarchy (e2e)', () => {
           'designation',
           'departmentId',
           'reportingManagerUserId',
+          // CR-04 added these two. Work is handed over by email and chased by phone, and a
+          // hierarchy of people nobody can contact is a directory of names.
+          'workEmail',
+          'workPhone',
           'aadhaarNumber',
         ],
       );
@@ -550,6 +620,8 @@ describe('organization hierarchy (e2e)', () => {
         designation: 'Head, Regulatory Affairs',
         departmentId: secondDepartmentId,
         reportingManagerUserId: null,
+        workEmail: 'fixture-1@uboss.local',
+        workPhone: '+91 90000 00000',
         aadhaarNumber: AADHAAR.top,
       });
 
@@ -570,6 +642,8 @@ describe('organization hierarchy (e2e)', () => {
         designation: 'Head, Regulatory Affairs',
         departmentId: secondDepartmentId,
         reportingManagerUserId: null,
+        workEmail: 'fixture-2@uboss.local',
+        workPhone: '+91 90000 00000',
         aadhaarNumber: AADHAAR.top,
       });
 
@@ -600,6 +674,8 @@ describe('organization hierarchy (e2e)', () => {
         designation: 'Head, Regulatory Affairs',
         departmentId: secondDepartmentId,
         reportingManagerUserId: null,
+        workEmail: 'fixture-3@uboss.local',
+        workPhone: '+91 90000 00000',
         aadhaarNumber: AADHAAR.top,
       });
 
@@ -634,6 +710,8 @@ describe('organization hierarchy (e2e)', () => {
         designation: 'Head, Regulatory Affairs',
         departmentId: secondDepartmentId,
         reportingManagerUserId: null,
+        workEmail: 'fixture-4@uboss.local',
+        workPhone: '+91 90000 00000',
         aadhaarNumber: AADHAAR.top,
       });
 
@@ -657,6 +735,8 @@ describe('organization hierarchy (e2e)', () => {
         designation: 'Head, Regulatory Affairs',
         departmentId: secondDepartmentId,
         reportingManagerUserId: null,
+        workEmail: 'fixture-5@uboss.local',
+        workPhone: '+91 90000 00000',
         aadhaarNumber: AADHAAR.top,
       });
 
@@ -688,6 +768,8 @@ describe('organization hierarchy (e2e)', () => {
         designation: 'Consultant',
         departmentId: otherDepartment!.id,
         reportingManagerUserId: null,
+        workEmail: 'fixture-6@uboss.local',
+        workPhone: '+91 90000 00000',
         aadhaarNumber: AADHAAR.top,
       });
 
@@ -707,6 +789,8 @@ describe('organization hierarchy (e2e)', () => {
         designation: 'Head, Regulatory Affairs',
         departmentId: secondDepartmentId,
         reportingManagerUserId: null,
+        workEmail: 'fixture-7@uboss.local',
+        workPhone: '+91 90000 00000',
         aadhaarNumber: AADHAAR.top,
       });
 
@@ -716,6 +800,7 @@ describe('organization hierarchy (e2e)', () => {
           tenantId: otherTenantId,
           actorUserId: adminId,
           employeeName: 'Priya Nair',
+          workEmail: 'fixture-8@uboss.local',
           aadhaarNumber: AADHAAR.top,
         }),
       );
@@ -742,6 +827,8 @@ describe('organization hierarchy (e2e)', () => {
         designation: 'Head, Regulatory Affairs',
         departmentId: secondDepartmentId,
         reportingManagerUserId: null,
+        workEmail: 'fixture-9@uboss.local',
+        workPhone: '+91 90000 00000',
         aadhaarNumber: AADHAAR.top,
       });
 
@@ -755,6 +842,8 @@ describe('organization hierarchy (e2e)', () => {
             designation: 'Consultant',
             departmentId: secondDepartmentId,
             reportingManagerUserId: null,
+            workEmail: 'fixture-10@uboss.local',
+            workPhone: '+91 90000 00000',
             aadhaarNumber: AADHAAR.middle,
           }),
         /Reporting Manager is required/i,
@@ -774,6 +863,8 @@ describe('organization hierarchy (e2e)', () => {
             designation: 'Associate',
             departmentId: secondDepartmentId,
             reportingManagerUserId: managerId,
+            workEmail: 'fixture-11@uboss.local',
+            workPhone: '+91 90000 00000',
             aadhaarNumber: AADHAAR.fresh,
           }),
         /already used in this company/i,
@@ -800,6 +891,8 @@ describe('organization hierarchy (e2e)', () => {
             designation: 'Associate',
             departmentId: secondDepartmentId,
             reportingManagerUserId: outsider.id,
+            workEmail: 'fixture-12@uboss.local',
+            workPhone: '+91 90000 00000',
             aadhaarNumber: AADHAAR.fresh,
           }),
         /must already be employed by this company/i,
@@ -813,6 +906,8 @@ describe('organization hierarchy (e2e)', () => {
           employeeId: 'E-500',
           designation: 'Associate',
           departmentId: secondDepartmentId,
+          workEmail: 'fixture-13@uboss.local',
+          workPhone: '+91 90000 00000',
           aadhaarNumber: 'not-a-number',
         })
         .expect(400);
@@ -829,6 +924,8 @@ describe('organization hierarchy (e2e)', () => {
           employeeId: 'E-501',
           designation: 'Associate',
           departmentId: secondDepartmentId,
+          workEmail: 'fixture-14@uboss.local',
+          workPhone: '+91 90000 00000',
           aadhaarNumber: broken,
         })
         .expect(400);
@@ -843,6 +940,8 @@ describe('organization hierarchy (e2e)', () => {
           employeeId: 'E-666',
           designation: 'Associate',
           departmentId: secondDepartmentId,
+          workEmail: 'fixture-15@uboss.local',
+          workPhone: '+91 90000 00000',
           aadhaarNumber: AADHAAR.fresh,
         })
         .expect(403);
@@ -1015,6 +1114,10 @@ describe('organization hierarchy (e2e)', () => {
           designation: 'Associate',
           departmentId: secondDepartmentId,
           reportingManagerUserId: manager,
+          // Per level, because a work email is a sign-in address and those are unique across
+          // UBoss. Twenty people sharing one collided on the second.
+          workEmail: `level-${level}@uboss.local`,
+          workPhone: `+91 90000 ${String(level).padStart(5, '0')}`,
           // An eleven-digit body plus a computed check digit, distinct per level. Built rather
           // than hard-coded so the numbers are guaranteed checksum-valid and unique.
           aadhaarNumber: aadhaar(`3${String(level).padStart(2, '0')}00000000`),
@@ -1154,6 +1257,8 @@ describe('organization hierarchy (e2e)', () => {
         designation: 'Head, Regulatory Affairs',
         departmentId: secondDepartmentId,
         reportingManagerUserId: null,
+        workEmail: 'fixture-17@uboss.local',
+        workPhone: '+91 90000 00000',
         aadhaarNumber: AADHAAR.top,
       });
       await buildChain();
@@ -1205,6 +1310,8 @@ describe('organization hierarchy (e2e)', () => {
         designation: 'Head, Regulatory Affairs',
         departmentId: secondDepartmentId,
         reportingManagerUserId: null,
+        workEmail: 'fixture-18@uboss.local',
+        workPhone: '+91 90000 00000',
         aadhaarNumber: AADHAAR.top,
       });
 
@@ -1237,6 +1344,8 @@ describe('organization hierarchy (e2e)', () => {
         designation: 'Head, Regulatory Affairs',
         departmentId: secondDepartmentId,
         reportingManagerUserId: null,
+        workEmail: 'fixture-19@uboss.local',
+        workPhone: '+91 90000 00000',
         aadhaarNumber: AADHAAR.top,
       });
 

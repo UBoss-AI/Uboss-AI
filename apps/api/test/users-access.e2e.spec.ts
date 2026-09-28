@@ -372,6 +372,10 @@ describe('users & access (e2e)', () => {
       designation: 'Associate',
       departmentId,
       reportingManagerUserId: manager,
+      // Required since CR-04. Derived from the employee id so each fixture person has their own:
+      // a work email becomes a sign-in address, and those are unique across UBoss.
+      workEmail: `${empId.toLowerCase()}@uboss.local`,
+      workPhone: '+91 90000 00000',
       aadhaarNumber: aadhaar(aadhaarBody),
     });
     // A role, so the readiness gate is satisfied.
@@ -632,7 +636,23 @@ describe('users & access (e2e)', () => {
     });
 
     it('sets the real work email over the synthesised placeholder', async () => {
+      /*
+       * The placeholder is constructed here rather than arrived at.
+       *
+       * CR-04 made a work email mandatory when somebody is added to the chart, so
+       * `addEmployee` no longer produces a `…@person.uboss.invalid` address — that path is
+       * closed. The address still exists for people who reached the company another way, and
+       * replacing it is still what an invitation does, so the state is set up directly rather
+       * than the test being deleted along with the way it used to occur.
+       */
       const person = await addHierarchyPerson('Kavya Reddy', 'E-201', '40218837551', adminId);
+      await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.user.update({
+          where: { id: person.userId },
+          data: { email: `${person.ubossUniqueId.toLowerCase()}@person.uboss.invalid` },
+        }),
+      );
+
       const before = await ctx.prisma.runAsPlatformOperation(() =>
         ctx.prisma.client.user.findUnique({ where: { id: person.userId } }),
       );
@@ -652,7 +672,18 @@ describe('users & access (e2e)', () => {
     });
 
     it('refuses when there is nowhere to send it', async () => {
+      // Same reason as above: a person added to the chart now always has a real address, so the
+      // "nowhere to send it" state is reached deliberately. The guard is still the thing worth
+      // proving — an invitation sent to an invalid domain is one nobody receives and nobody
+      // chases.
       const person = await addHierarchyPerson('No Email', 'E-202', '29876543210', adminId);
+      await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.user.update({
+          where: { id: person.userId },
+          data: { email: `${person.ubossUniqueId.toLowerCase()}@person.uboss.invalid` },
+        }),
+      );
+
       await assert.rejects(
         () =>
           invitations().inviteExistingPerson({
@@ -676,6 +707,8 @@ describe('users & access (e2e)', () => {
         designation: 'Associate',
         departmentId,
         reportingManagerUserId: adminId,
+        workEmail: 'norole-initial@uboss.local',
+        workPhone: '+91 90000 00001',
         aadhaarNumber: aadhaar('78901234567'),
       });
 
@@ -1079,6 +1112,176 @@ describe('users & access (e2e)', () => {
       assert.equal(outcome.handover['roleAssignments']?.status, 'revoked');
     });
 
+    it('serves a notice period instead of ending it today', async () => {
+      /*
+       * CR-04. Offboarding used to end everything the moment it was recorded, which is right for
+       * a dismissal and wrong for a resignation: somebody working a month's notice still has
+       * work to finish and somebody to hand it to.
+       *
+       * So the two halves separate. Today: the successor takes the reporting line, and the
+       * person keeps their access. On their last day: the access ends and the employment closes.
+       */
+      const leaver = await addHierarchyPerson('Leaver', 'E-901', '40218837551', adminId);
+      const report = await addHierarchyPerson('Their Report', 'E-902', '29876543210', leaver.userId);
+
+      const outcome = await offboardings().offboard({
+        scope: scope(),
+        actorUserId: adminId,
+        subjectUserId: leaver.userId,
+        successorUserId: adminId,
+        reason: 'Resigned, serving thirty days of notice.',
+        noticeDays: 30,
+      });
+
+      const after = await ctx.prisma.runAsPlatformOperation(async () => ({
+        membership: await ctx.prisma.client.tenantMembership.findFirst({
+          where: { tenantId, userId: leaver.userId },
+          select: { accountState: true },
+        }),
+        employment: await ctx.prisma.client.employmentRecord.findFirst({
+          where: { tenantId, userId: leaver.userId },
+          select: { state: true, endedAt: true },
+        }),
+        roles: await ctx.prisma.client.roleAssignment.findMany({
+          where: { tenantId, userId: leaver.userId },
+          select: { expiresAt: true },
+        }),
+        offboarding: await ctx.prisma.client.offboarding.findFirst({
+          where: { tenantId, subjectUserId: leaver.userId },
+          select: { state: true, effectiveAt: true },
+        }),
+        movedReport: await ctx.prisma.client.employmentRecord.findFirst({
+          where: { tenantId, userId: report.userId },
+          select: { reportingManagerUserId: true },
+        }),
+      }));
+
+      /*
+       * Still here, still working.
+       *
+       * Not `Active`: somebody added to the chart is `NotInvited` until an invitation goes out,
+       * and being invited has nothing to do with serving notice. What matters is that the state
+       * did not move to `Offboarded`.
+       */
+      assert.notEqual(after.membership?.accountState, 'Offboarded');
+      assert.equal(after.employment?.state, 'Active');
+      assert.equal(after.employment?.endedAt, null);
+      assert.equal(after.offboarding?.state, 'Requested');
+
+      // The successor has the reporting line from today, which is the point of a notice period:
+      // the two of them can actually hand over.
+      assert.equal(after.movedReport?.reportingManagerUserId, adminId);
+
+      /*
+       * And their access already has an end date.
+       *
+       * This is what ends it, not the sweep. `listLiveAssignments` refuses an assignment whose
+       * `expiresAt` has passed, and every authorization call goes through it — so the morning
+       * after their last day they have no permissions whether or not anybody ran the tick.
+       */
+      assert.ok(after.roles.length > 0, 'the fixture lost its premise');
+      for (const role of after.roles) {
+        assert.ok(role.expiresAt !== null, 'a role outlived the notice period');
+        assert.ok(
+          role.expiresAt.getTime() > Date.now(),
+          'the notice ended before it began',
+        );
+        assert.ok(
+          role.expiresAt.getTime() < Date.now() + 31 * 24 * 60 * 60 * 1000,
+          'the end date is further away than the notice given',
+        );
+      }
+
+      assert.ok(outcome.nothingDeleted);
+    });
+
+    it('finishes a notice period once the last day has passed, and not before', async () => {
+      const leaver = await addHierarchyPerson('Later Leaver', 'E-903', '78901234567', adminId);
+      await offboardings().offboard({
+        scope: scope(),
+        actorUserId: adminId,
+        subjectUserId: leaver.userId,
+        successorUserId: adminId,
+        reason: 'Resigned, serving a week of notice.',
+        noticeDays: 7,
+      });
+
+      // A tick today finds nothing: the last day has not arrived.
+      const early = await offboardings().completeDue({ scope: scope(), actorUserId: adminId });
+      assert.deepEqual(early.completed, []);
+
+      const stillHere = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.tenantMembership.findFirst({
+          where: { tenantId, userId: leaver.userId },
+          select: { accountState: true },
+        }),
+      );
+      assert.notEqual(stillHere?.accountState, 'Offboarded');
+
+      // A tick on the far side of it finishes the job. The clock is passed in rather than waited
+      // for: a test that slept a week would not be a test.
+      const later = new Date(Date.now() + 8 * 24 * 60 * 60 * 1000);
+      const done = await offboardings().completeDue({
+        scope: scope(),
+        actorUserId: adminId,
+        now: later,
+      });
+      assert.equal(done.completed.length, 1);
+
+      const closed = await ctx.prisma.runAsPlatformOperation(async () => ({
+        membership: await ctx.prisma.client.tenantMembership.findFirst({
+          where: { tenantId, userId: leaver.userId },
+          select: { accountState: true },
+        }),
+        employment: await ctx.prisma.client.employmentRecord.findFirst({
+          where: { tenantId, userId: leaver.userId },
+          select: { state: true, endedAt: true },
+        }),
+        roles: await ctx.prisma.client.roleAssignment.count({
+          where: { tenantId, userId: leaver.userId },
+        }),
+      }));
+
+      assert.equal(closed.membership?.accountState, 'Offboarded');
+      assert.equal(closed.employment?.state, 'Ended');
+      assert.ok(closed.employment?.endedAt !== null, 'an ended employment must say when');
+      assert.equal(closed.roles, 0);
+
+      // Ticking again changes nothing. Two schedulers running at once must not offboard somebody
+      // twice or write a second audit entry for one departure.
+      const again = await offboardings().completeDue({
+        scope: scope(),
+        actorUserId: adminId,
+        now: later,
+      });
+      assert.deepEqual(again.completed, []);
+    });
+
+    it('still ends it today when no notice is given', async () => {
+      // The original behaviour, unchanged: a dismissal needs the access gone now.
+      const leaver = await addHierarchyPerson('Dismissed', 'E-904', '29876543210', adminId);
+      await offboardings().offboard({
+        scope: scope(),
+        actorUserId: adminId,
+        subjectUserId: leaver.userId,
+        successorUserId: adminId,
+        reason: 'Dismissed with immediate effect.',
+      });
+
+      const after = await ctx.prisma.runAsPlatformOperation(async () => ({
+        membership: await ctx.prisma.client.tenantMembership.findFirst({
+          where: { tenantId, userId: leaver.userId },
+          select: { accountState: true },
+        }),
+        roles: await ctx.prisma.client.roleAssignment.count({
+          where: { tenantId, userId: leaver.userId },
+        }),
+      }));
+
+      assert.equal(after.membership?.accountState, 'Offboarded');
+      assert.equal(after.roles, 0);
+    });
+
     it('moves direct reports to the successor', async () => {
       const lead = await addHierarchyPerson('Team Lead', 'E-401', '40218837551', adminId);
       const report = await addHierarchyPerson('Team Member', 'E-402', '29876543210', lead.userId);
@@ -1290,7 +1493,9 @@ describe('users & access (e2e)', () => {
   describe('bulk operations', () => {
     const csv = (rows: string[]) =>
       [
-        'Employee Name,Employee ID,Designation,Department,Reporting Manager,Aadhaar Number',
+        // Work Email and Work Phone are required columns since CR-04: an import is the fastest
+        // way to build a hierarchy of people nobody can contact.
+        'Employee Name,Employee ID,Designation,Department,Reporting Manager,Work Email,Work Phone,Aadhaar Number',
         ...rows,
       ].join('\n');
 
@@ -1317,7 +1522,7 @@ describe('users & access (e2e)', () => {
         actorUserId: adminId,
         kind: 'ImportEmployees',
         content: csv([
-          `Kavya Reddy,E-501,Associate,General,Access Admin,${aadhaar('40218837551')}`,
+          `Kavya Reddy,E-501,Associate,General,Access Admin,e-501@uboss.local,+91 90000 00001,${aadhaar('40218837551')}`,
         ]),
         sourceFileName: 'joiners.csv',
       });
@@ -1340,7 +1545,7 @@ describe('users & access (e2e)', () => {
         actorUserId: adminId,
         kind: 'ImportEmployees',
         content: csv([
-          `Good Row,E-502,Associate,General,Access Admin,${aadhaar('40218837551')}`,
+          `Good Row,E-502,Associate,General,Access Admin,e-502@uboss.local,+91 90000 00002,${aadhaar('40218837551')}`,
           ',,,Nonexistent Department,Nobody At All,123',
         ]),
       });
@@ -1364,8 +1569,8 @@ describe('users & access (e2e)', () => {
         actorUserId: adminId,
         kind: 'ImportEmployees',
         content: csv([
-          `Kavya Reddy,E-601,Associate,General,Access Admin,${aadhaar('40218837551')}`,
-          `Arun Mehta,E-602,Analyst,General,Access Admin,${aadhaar('29876543210')}`,
+          `Kavya Reddy,E-601,Associate,General,Access Admin,e-601@uboss.local,+91 90000 00003,${aadhaar('40218837551')}`,
+          `Arun Mehta,E-602,Analyst,General,Access Admin,e-602@uboss.local,+91 90000 00004,${aadhaar('29876543210')}`,
           ',,,Nonexistent,Nobody,999',
         ]),
       });
@@ -1399,7 +1604,7 @@ describe('users & access (e2e)', () => {
         actorUserId: adminId,
         kind: 'ImportEmployees',
         content: csv([
-          `Kavya Reddy,E-701,Associate,General,Access Admin,${aadhaar('40218837551')}`,
+          `Kavya Reddy,E-701,Associate,General,Access Admin,e-701@uboss.local,+91 90000 00005,${aadhaar('40218837551')}`,
         ]),
       });
       await bulk().apply({
@@ -1426,7 +1631,7 @@ describe('users & access (e2e)', () => {
         actorUserId: adminId,
         kind: 'ImportEmployees',
         content: csv([
-          `Kavya Reddy,E-801,Associate,General,Access Admin,${aadhaar('40218837551')}`,
+          `Kavya Reddy,E-801,Associate,General,Access Admin,e-801@uboss.local,+91 90000 00006,${aadhaar('40218837551')}`,
         ]),
       });
 
@@ -1558,7 +1763,7 @@ describe('users & access (e2e)', () => {
         actorUserId: adminId,
         kind: 'ImportEmployees',
         content: csv([
-          `Kavya Reddy,E-950,Associate,General,Access Admin,${aadhaar('40218837551')}`,
+          `Kavya Reddy,E-950,Associate,General,Access Admin,e-950@uboss.local,+91 90000 00007,${aadhaar('40218837551')}`,
         ]),
       });
 
@@ -1583,7 +1788,7 @@ describe('users & access (e2e)', () => {
         actorUserId: adminId,
         kind: 'ImportEmployees',
         content: csv([
-          `Kavya Reddy,E-960,Associate,General,Access Admin,${aadhaar('40218837551')}`,
+          `Kavya Reddy,E-960,Associate,General,Access Admin,e-960@uboss.local,+91 90000 00008,${aadhaar('40218837551')}`,
         ]),
       });
 

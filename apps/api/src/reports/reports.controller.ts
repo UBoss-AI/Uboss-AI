@@ -21,7 +21,6 @@ import {
   DASHBOARD_TILE_MODULE,
   DASHBOARD_TILES,
   DEFAULT_REPORT_RANGE,
-  permissionsForReport,
   REPORT_RANGE_LABELS,
   REPORT_RANGES,
   REPORT_SCOPE_STANCE,
@@ -195,17 +194,22 @@ export class ReportsController {
     const userId = this.currentUserId();
     const context = await this.authorization.contextFor(scope, userId);
 
+    /*
+     * The list and the route answer to the same rule.
+     *
+     * `mayRead` is `forReport` without the throw, so a report in this list is a report that
+     * will open, and one that is missing is one the route would refuse. Two implementations of
+     * "may you read this" is how a catalogue starts offering something that then 403s — or,
+     * worse, stops offering something that still opens by URL.
+     *
+     * Sequential rather than `Promise.all`: each call resolves scope against the same Prisma
+     * client, and overlapping queries on one connection throw "already executing a query".
+     */
     const permitted: ReportDefinition[] = [];
     for (const report of REPORTS) {
-      let allowed = true;
-      for (const permission of permissionsForReport(report)) {
-        const decision = await this.authorization.authorize(context, permission);
-        if (!decision.allowed) {
-          allowed = false;
-          break;
-        }
+      if (await this.reportScope.mayRead({ scope, actorUserId: userId, report })) {
+        permitted.push(report);
       }
-      if (allowed) permitted.push(report);
     }
 
     const exportDecision = await this.authorization.authorize(context, {

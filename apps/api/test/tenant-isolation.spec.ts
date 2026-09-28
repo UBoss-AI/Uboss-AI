@@ -677,4 +677,59 @@ describe('tenant isolation (integration)', () => {
       assert.throws(() => tenantScopeForPlatformOperation("' OR 1=1 --"), /must be a UUID/);
     });
   });
+
+  describe('the connected role', () => {
+    /*
+     * Everything above is worth nothing under a role that can bypass Row-Level Security.
+     *
+     * PostgreSQL skips policies entirely for `SUPERUSER` or `BYPASSRLS`, including where the
+     * table says `FORCE ROW LEVEL SECURITY`. The failure is silent — queries simply return more
+     * rows — so the only defence is to check the role and refuse to serve.
+     *
+     * This was not hypothetical. `.env.example` shipped `DATABASE_URL` pointing at `uboss`,
+     * the container's superuser, while the application is designed for `uboss_app`. Measured on
+     * the development database: as `uboss`, a read of `tenant_memberships` with no tenant
+     * declared returned 55 rows across 19 companies; as `uboss_app`, none. Anybody deploying
+     * from the example would have had no isolation and nothing to tell them.
+     */
+    it('is one that Row-Level Security actually applies to', async () => {
+      const [role] = await ctx.prisma.unsafeRootClient.$queryRawUnsafe<
+        { name: string; superuser: boolean; bypass: boolean }[]
+      >(
+        'SELECT rolname AS name, rolsuper AS superuser, rolbypassrls AS bypass ' +
+          'FROM pg_roles WHERE rolname = current_user',
+      );
+
+      assert.ok(role !== undefined, 'could not read the connected role');
+      assert.equal(
+        role.superuser,
+        false,
+        `the suite is connected as "${role.name}", a SUPERUSER — every policy below is skipped ` +
+          'for it, so these tests would pass while proving nothing',
+      );
+      assert.equal(
+        role.bypass,
+        false,
+        `the suite is connected as "${role.name}", which has BYPASSRLS`,
+      );
+    });
+
+    it('is checked at startup, so a misconfigured deployment refuses to serve', async () => {
+      const { PrismaService } = await import('../src/persistence/prisma.service.js');
+
+      // The owner/superuser role the example file used to hand out.
+      const asSuperuser = new PrismaService(
+        'postgresql://uboss:uboss_local_dev@localhost:5442/uboss_test?schema=public',
+      );
+      try {
+        await assert.rejects(
+          () => asSuperuser.onModuleInit(),
+          /SUPERUSER|BYPASSRLS/,
+          'a role that bypasses RLS must stop the process, not start it',
+        );
+      } finally {
+        await asSuperuser.onModuleDestroy().catch(() => undefined);
+      }
+    });
+  });
 });

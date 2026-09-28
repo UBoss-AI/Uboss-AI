@@ -405,6 +405,21 @@ export class BulkOperationService {
       require('employeeId', 'Employee ID');
       require('designation', 'Designation');
       const departmentName = require('department', 'Department');
+      /*
+       * Required since CR-04, on the same footing as the rest.
+       *
+       * An import is the fastest way to build a hierarchy of people nobody can contact, so the
+       * rule has to be here as well as on the form — the row is refused with the reason rather
+       * than imported and left half-useful.
+       */
+      const rowEmail = require('email', 'Work Email');
+      const rowPhone = require('phone', 'Work Phone');
+      if (rowEmail !== '' && !rowEmail.includes('@')) {
+        errors.push('Work Email: that does not look like an email address.');
+      }
+      if (rowPhone !== '' && rowPhone.replace(/[^0-9]/g, '').length < 7) {
+        errors.push('Work Phone: that does not look like a phone number.');
+      }
       const aadhaar = require('aadhaarNumber', 'Aadhaar Number');
 
       if (aadhaar !== '') {
@@ -590,6 +605,7 @@ export class BulkOperationService {
           reportingManagerUserId: manager?.userId ?? null,
           aadhaarNumber: values['aadhaarNumber'] ?? '',
           ...(values['email']?.trim() ? { workEmail: values['email'].trim() } : {}),
+          ...(values['phone']?.trim() ? { workPhone: values['phone'].trim() } : {}),
         });
         break;
       }
@@ -601,6 +617,7 @@ export class BulkOperationService {
           actorUserId: input.actorUserId,
           subjectUserId: person,
           ...(values['email']?.trim() ? { workEmail: values['email'].trim() } : {}),
+          ...(values['phone']?.trim() ? { workPhone: values['phone'].trim() } : {}),
         });
         break;
       }
@@ -832,6 +849,8 @@ export class BulkOperationService {
     emailaddress: 'email',
     phone: 'phone',
     workphone: 'phone',
+    mobile: 'phone',
+    contactnumber: 'phone',
     ubossuniqueid: 'ubossUniqueId',
     ubossid: 'ubossUniqueId',
     action: 'action',

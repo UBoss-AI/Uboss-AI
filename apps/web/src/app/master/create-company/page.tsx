@@ -491,7 +491,7 @@ export default function MasterCreateCompanyPage() {
                   <FormField
                     label="Display name"
                     required
-                    hint="Shown as UBOSS AI AMS | {name} in the company workspace."
+                    hint="Shown as Chief Agent | {name} in the company workspace."
                   >
                     {(wiring) => (
                       <input

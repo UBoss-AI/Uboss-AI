@@ -1,0 +1,31 @@
+FROM node:24-bookworm-slim AS build
+
+WORKDIR /workspace
+COPY package.json package-lock.json ./
+COPY apps/api/package.json apps/api/package.json
+COPY apps/web/package.json apps/web/package.json
+COPY packages/types/package.json packages/types/package.json
+COPY packages/ui/package.json packages/ui/package.json
+RUN npm ci
+
+COPY apps/web apps/web
+COPY packages/types packages/types
+COPY packages/ui packages/ui
+RUN npm run build:packages && npm run build --workspace @uboss/web
+
+FROM node:24-bookworm-slim AS runtime
+ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0
+WORKDIR /workspace
+COPY --from=build --chown=node:node /workspace/package.json ./package.json
+COPY --from=build --chown=node:node /workspace/package-lock.json ./package-lock.json
+COPY --from=build --chown=node:node /workspace/node_modules ./node_modules
+COPY --from=build --chown=node:node /workspace/apps/web/package.json ./apps/web/package.json
+COPY --from=build --chown=node:node /workspace/apps/api/package.json ./apps/api/package.json
+COPY --from=build --chown=node:node /workspace/packages/ui/package.json ./packages/ui/package.json
+COPY --from=build --chown=node:node /workspace/apps/web/next.config.ts ./apps/web/next.config.ts
+COPY --from=build --chown=node:node /workspace/apps/web/.next ./apps/web/.next
+COPY --from=build --chown=node:node /workspace/packages/types ./packages/types
+COPY --from=build --chown=node:node /workspace/packages/ui ./packages/ui
+USER node
+EXPOSE 3000
+CMD ["npm", "run", "start", "--workspace", "@uboss/web", "--", "--hostname", "0.0.0.0"]

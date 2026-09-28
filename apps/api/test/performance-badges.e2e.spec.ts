@@ -1292,4 +1292,37 @@ describe('performance score and badges (e2e)', () => {
       assert.equal(event?.actorUserId, adminId);
     });
   });
+/*
+   * ---------------------------------------------------------------------------
+   * A malformed id is the caller's mistake, and must say so
+   * ---------------------------------------------------------------------------
+   */
+  describe('a malformed identifier in the path', () => {
+    it('answers 400, not 500, and names nothing about the database', async () => {
+      /*
+       * A path segment that is not a UUID reached Prisma, PostgreSQL refused the cast, and the
+       * request came back as a bare **500 Internal server error** — proven against the running
+       * product with `/performance/not-a-uuid`. Nothing leaked, because the body is the generic
+       * message and the driver's text stays in the log. But a malformed request is the caller's
+       * mistake: answering 500 tells an operator the server is broken and buries real faults
+       * under whatever scans the API.
+       *
+       * Eighty route parameters across eighteen controllers are parsed for this reason.
+       * `tenantId` is left out because `TenantGuard` already validates it and refuses with 403,
+       * and `nodeId` is left out because a workflow node is called `step-1`, not a UUID.
+       */
+      for (const bad of ['not-a-uuid', "' OR 1=1--", '../../etc/passwd']) {
+        const response = await as(
+          agent().get(`/tenants/${tenantId}/performance/${encodeURIComponent(bad)}`),
+          adminUboss,
+        );
+
+        assert.equal(response.status, 400, `"${bad}" answered ${response.status}`);
+        assert.ok(
+          !/prisma|postgres|invalid input syntax|driverAdapter/i.test(JSON.stringify(response.body)),
+          `the answer names the database: ${JSON.stringify(response.body)}`,
+        );
+      }
+    });
+  });
 });

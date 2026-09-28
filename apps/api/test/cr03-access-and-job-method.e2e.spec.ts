@@ -1303,21 +1303,40 @@ describe('CR-03 access, Job Method and photo (e2e)', () => {
       assert.equal(view.initials, 'EE');
     });
 
-    it('does not change the six mandatory Add Employee fields', async () => {
-      // CR-03 is explicit about this. Asserted against the live constant rather than trusted.
+    it('keeps every mandatory Add Employee field CR-03 named', async () => {
+      /*
+       * CR-03 said these six and no others, and this test held that line.
+       *
+       * CR-04 adds two: a work email and a work phone. That is the client changing their mind
+       * rather than the rule eroding — the point of this test was to stop fields drifting in
+       * unnoticed, so it now asserts the whole list again with the two additions named. CR-03's
+       * six are still all here, which is the half of it that was never up for negotiation.
+       */
       const { MANDATORY_EMPLOYEE_FIELDS } =
         await import('../src/organization/employment.service.js');
-      assert.deepEqual(
-        MANDATORY_EMPLOYEE_FIELDS.map((field) => field.key),
-        [
-          'employeeName',
-          'employeeId',
-          'designation',
-          'departmentId',
-          'reportingManagerUserId',
-          'aadhaarNumber',
-        ],
-      );
+      const keys: string[] = MANDATORY_EMPLOYEE_FIELDS.map((field) => field.key);
+
+      for (const key of [
+        'employeeName',
+        'employeeId',
+        'designation',
+        'departmentId',
+        'reportingManagerUserId',
+        'aadhaarNumber',
+      ]) {
+        assert.ok(keys.includes(key), `CR-03 required ${key} and it is gone`);
+      }
+
+      assert.deepEqual(keys, [
+        'employeeName',
+        'employeeId',
+        'designation',
+        'departmentId',
+        'reportingManagerUserId',
+        'workEmail',
+        'workPhone',
+        'aadhaarNumber',
+      ]);
     });
   });
 

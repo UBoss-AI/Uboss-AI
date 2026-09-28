@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Post, UnauthorizedException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { IsIn, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 
 import {
@@ -95,7 +103,7 @@ export class ObjectiveClosureController {
   /** The comparison and what is outstanding, before anybody signs anything. */
   @Get('readiness')
   @RequirePermission({ module: 'objective', action: 'View' })
-  async readiness(@Param('objectiveId') objectiveId: string): Promise<unknown> {
+  async readiness(@Param('objectiveId', new ParseUUIDPipe()) objectiveId: string): Promise<unknown> {
     return this.closure.readiness({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -105,7 +113,7 @@ export class ObjectiveClosureController {
 
   @Get('review')
   @RequirePermission({ module: 'objective', action: 'View' })
-  async review(@Param('objectiveId') objectiveId: string): Promise<unknown> {
+  async review(@Param('objectiveId', new ParseUUIDPipe()) objectiveId: string): Promise<unknown> {
     return {
       review: await this.closure.reviewOf({
         scope: this.tenantContext.requireScope(),
@@ -117,7 +125,7 @@ export class ObjectiveClosureController {
 
   @Get('pauses')
   @RequirePermission({ module: 'objective', action: 'View' })
-  async pauses(@Param('objectiveId') objectiveId: string): Promise<unknown> {
+  async pauses(@Param('objectiveId', new ParseUUIDPipe()) objectiveId: string): Promise<unknown> {
     return {
       pauses: await this.closure.pauses({
         scope: this.tenantContext.requireScope(),
@@ -129,7 +137,7 @@ export class ObjectiveClosureController {
 
   @Post('pause')
   @RequirePermission({ module: 'objective', action: 'Publish' })
-  async pause(@Param('objectiveId') objectiveId: string, @Body() body: PauseDto): Promise<unknown> {
+  async pause(@Param('objectiveId', new ParseUUIDPipe()) objectiveId: string, @Body() body: PauseDto): Promise<unknown> {
     return this.closure.pause({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -142,7 +150,7 @@ export class ObjectiveClosureController {
   @Post('resume')
   @RequirePermission({ module: 'objective', action: 'Publish' })
   async resume(
-    @Param('objectiveId') objectiveId: string,
+    @Param('objectiveId', new ParseUUIDPipe()) objectiveId: string,
     @Body() body: ResumeDto,
   ): Promise<unknown> {
     return this.closure.resume({
@@ -155,7 +163,7 @@ export class ObjectiveClosureController {
 
   @Post('complete')
   @RequirePermission({ module: 'objective', action: 'Publish' })
-  async complete(@Param('objectiveId') objectiveId: string): Promise<unknown> {
+  async complete(@Param('objectiveId', new ParseUUIDPipe()) objectiveId: string): Promise<unknown> {
     return this.closure.complete({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -166,7 +174,7 @@ export class ObjectiveClosureController {
   @Post('review')
   @RequirePermission({ module: 'objective', action: 'Approve' })
   async writeReview(
-    @Param('objectiveId') objectiveId: string,
+    @Param('objectiveId', new ParseUUIDPipe()) objectiveId: string,
     @Body() body: ReviewDto,
   ): Promise<unknown> {
     return this.closure.review({
@@ -188,7 +196,7 @@ export class ObjectiveClosureController {
    */
   @Post('sign-off')
   @RequirePermission({ module: 'objective', action: 'View' })
-  async signOff(@Param('objectiveId') objectiveId: string): Promise<unknown> {
+  async signOff(@Param('objectiveId', new ParseUUIDPipe()) objectiveId: string): Promise<unknown> {
     return this.closure.signOff({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -198,7 +206,7 @@ export class ObjectiveClosureController {
 
   @Post('close')
   @RequirePermission({ module: 'objective', action: 'Publish' })
-  async close(@Param('objectiveId') objectiveId: string, @Body() body: CloseDto): Promise<unknown> {
+  async close(@Param('objectiveId', new ParseUUIDPipe()) objectiveId: string, @Body() body: CloseDto): Promise<unknown> {
     return this.closure.close({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -211,7 +219,7 @@ export class ObjectiveClosureController {
 
   @Post('archive')
   @RequirePermission({ module: 'objective', action: 'Publish' })
-  async archive(@Param('objectiveId') objectiveId: string): Promise<unknown> {
+  async archive(@Param('objectiveId', new ParseUUIDPipe()) objectiveId: string): Promise<unknown> {
     return this.closure.archive({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),

@@ -90,6 +90,16 @@ export interface SkillMatch {
   confidence: number;
   /** Why it matched, in the order the signals were considered. */
   reasons: string[];
+  /**
+   * Required inputs this Skill asked for that nothing here supplies.
+   *
+   * Empty on a Skill that can run as things stand. Non-empty means the capability is right and
+   * the *data* is not there yet, which is a readiness problem for the step rather than a reason
+   * to pretend no Skill exists. The screen names them; it never quietly runs anyway.
+   */
+  unmetInputs: string[];
+  /** Which offered input covers which declared input, for the reader who asks. */
+  mappedInputs: InputMapping[];
 }
 
 export interface SkillRejection {
@@ -180,6 +190,62 @@ function stem(word: string): string {
   return word.length > 3 && word.endsWith('s') && !word.endsWith('ss') ? word.slice(0, -1) : word;
 }
 
+/**
+ * Business words that mean the same thing to a reader and should mean the same thing here.
+ *
+ * Deliberately small and one-directional-free: every group is a set of equals, so adding a word
+ * to a group can only ever make two things that already meant the same thing match. It is not a
+ * thesaurus and it is not a model — a selection has to stay explainable, and "these words are
+ * synonyms in this business" is explainable in a way that "the embedding was close" is not.
+ *
+ * Nothing here can cause an unrelated Skill to be chosen: relevance is decided separately, by
+ * what the Skill says it is *for*. These groups only decide whether an input a step can supply
+ * counts as the input a Skill asked for.
+ */
+const INPUT_SYNONYMS: readonly (readonly string[])[] = [
+  ['ledger', 'gl', 'generalledger', 'book', 'account'],
+  ['list', 'sheet', 'register', 'schedule', 'table', 'log'],
+  ['submission', 'entry', 'filing', 'return'],
+  ['invoice', 'bill'],
+  ['statement', 'extract', 'export', 'dump'],
+  ['report', 'summary', 'pack'],
+  ['consolidated', 'combined', 'merged', 'aggregate'],
+  ['reconciliation', 'reconcile', 'match'],
+  ['document', 'doc', 'file', 'attachment'],
+  ['customer', 'client', 'account'],
+  ['vendor', 'supplier'],
+  ['employee', 'staff', 'person', 'people'],
+  ['amount', 'value', 'total', 'sum'],
+  ['date', 'day', 'period'],
+  ['tolerance', 'threshold', 'limit'],
+  ['branch', 'site', 'location', 'office'],
+  ['data', 'record', 'dataset', 'input'],
+];
+
+/** Word to the id of the group it belongs to, so two members compare equal. */
+const SYNONYM_GROUP = new Map<string, number>(
+  INPUT_SYNONYMS.flatMap((group, index) => group.map((word) => [stem(word), index] as const)),
+);
+
+/** A word, or the group it stands for. Two words in one group produce the same key. */
+function conceptOf(word: string): string {
+  const group = SYNONYM_GROUP.get(word);
+  return group === undefined ? word : 'g' + String(group);
+}
+
+/**
+ * Split an input name into the concepts it is made of.
+ *
+ * Handles the three ways a name is written in this product and treats them identically:
+ * `submissionList` (a Skill's declared input), `submission_list`, and "The consolidated
+ * submission list" (what an administrator typed into the Objective grid). Splitting camel case is
+ * the whole reason this exists — without it an identifier and a sentence can never overlap.
+ */
+export function inputConcepts(text: string): string[] {
+  const spaced = text.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+  return [...new Set(meaningfulWords(spaced).map(conceptOf))];
+}
+
 export function meaningfulWords(text: string): string[] {
   return [
     ...new Set(
@@ -190,6 +256,81 @@ export function meaningfulWords(text: string): string[] {
         .map(stem),
     ),
   ];
+}
+
+/** One declared input, and the thing the caller can supply for it. */
+export interface InputMapping {
+  /** The Skill's declared input name, as the Skill wrote it. */
+  declared: string;
+  /** What the caller offered that covers it, as the caller wrote it. */
+  suppliedBy: string;
+}
+
+export interface InputMatch {
+  mapped: InputMapping[];
+  /** Required inputs nothing offered covers. Named, never silently ignored. */
+  unmet: string[];
+}
+
+/**
+ * Which of a Skill's declared inputs the caller can actually supply.
+ *
+ * ## Why this is not string equality
+ *
+ * It was. A Skill declares `submissionList`; an Objective step says its input is "The
+ * consolidated submission list", because that is what an administrator types into a grid cell.
+ * Compared as strings those never match, so **every** Skill that declared a required input was
+ * disqualified from **every** Objective step. Measured on the development catalogue: 402 of 403
+ * published Skills declare a required input, and the single Skill that declares none was the only
+ * one the router ever returned. The effect was that no Objective containing AI work could be
+ * assigned at all.
+ *
+ * So the comparison is by concept: both sides are split into words — camel case included — stemmed,
+ * and mapped through a small table of business synonyms. `submissionList` becomes
+ * {submission, list} and "The consolidated submission list" becomes {consolidated, submission,
+ * list}; the first is contained in the second, so the input is covered.
+ *
+ * ## Containment, not overlap
+ *
+ * A declared input is covered only when **every** concept in its name is present in one offered
+ * input. Overlap alone would let `ledgerExtract` be satisfied by "submission list" on the word
+ * they share, which is exactly the silent wrong match this is supposed to prevent. Requiring
+ * containment means a partial word-hit is not a match.
+ *
+ * ## What is not decided here
+ *
+ * Relevance. Whether a Skill is *for* this work is settled by its own "when to use", purpose and
+ * output, and a Skill that fails that test is rejected whatever its inputs look like. This
+ * function cannot cause an unrelated Skill to be selected; it can only stop a relevant one being
+ * discarded over a difference in wording.
+ */
+export function matchDeclaredInputs(
+  availableInputs: readonly string[],
+  declaredInputs: readonly { name: string; required: boolean }[],
+): InputMatch {
+  const offered = availableInputs.map((text) => ({ text, concepts: new Set(inputConcepts(text)) }));
+
+  const mapped: InputMapping[] = [];
+  const unmet: string[] = [];
+
+  for (const input of declaredInputs) {
+    const wanted = inputConcepts(input.name);
+
+    // A name that carries no meaningful word at all ("data", "x") cannot be matched by concept.
+    // Fall back to the old exact comparison rather than matching everything.
+    const cover =
+      wanted.length === 0
+        ? offered.find((candidate) => candidate.text === input.name)
+        : offered.find((candidate) => wanted.every((concept) => candidate.concepts.has(concept)));
+
+    if (cover !== undefined) {
+      mapped.push({ declared: input.name, suppliedBy: cover.text });
+    } else if (input.required) {
+      unmet.push(input.name);
+    }
+  }
+
+  return { mapped, unmet };
 }
 
 /**
@@ -203,7 +344,9 @@ export function meaningfulWords(text: string): string[] {
 export function scoreSkillForContext(
   context: SkillRouterContext,
   candidate: RoutableSkillVersion,
-): { confidence: number; reasons: string[] } | { disqualifier: string } {
+):
+  | { confidence: number; reasons: string[]; unmetInputs: string[]; mappedInputs: InputMapping[] }
+  | { disqualifier: string } {
   // ---- Hard rules first. Each one prevents a specific wrong outcome. ----
 
   if (candidate.status !== 'Published') {
@@ -245,15 +388,26 @@ export function scoreSkillForContext(
     };
   }
 
-  const missingInputs = candidate.declaredInputs
-    .filter((input) => input.required)
-    .map((input) => input.name)
-    .filter((name) => !context.availableInputs.includes(name));
-  if (missingInputs.length > 0) {
+  /*
+   * Inputs are mapped, not compared.
+   *
+   * This used to be a hard disqualification on exact string equality, and it made the router
+   * unusable: see `matchDeclaredInputs` for the measurement. A shortfall is now carried on the
+   * match as `unmetInputs` so the screen can say which input is missing, and the caller decides
+   * whether that blocks the work.
+   *
+   * It is not simply ignored. A Skill that cannot be given what it asked for is ranked below one
+   * that can, and a Skill whose *every* required input is unmet is still rejected outright —
+   * offering that would be the silent wrong match this design exists to prevent.
+   */
+  const inputs = matchDeclaredInputs(context.availableInputs, candidate.declaredInputs);
+  const requiredCount = candidate.declaredInputs.filter((input) => input.required).length;
+
+  if (requiredCount > 0 && inputs.unmet.length === requiredCount) {
     return {
       disqualifier:
-        `Requires input${missingInputs.length === 1 ? '' : 's'} not available here: ` +
-        `${missingInputs.join(', ')}.`,
+        `None of the input${requiredCount === 1 ? '' : 's'} it requires can be supplied here: ` +
+        `${inputs.unmet.join(', ')}. Nothing offered covers them, even read as the same words.`,
     };
   }
 
@@ -386,7 +540,37 @@ export function scoreSkillForContext(
     };
   }
 
-  return { confidence: Math.max(0, Math.min(100, confidence)), reasons };
+  /*
+   * Being able to supply what it asked for is evidence, and not being able to is a cost.
+   *
+   * Named in the reasons either way, because "why did it pick that one" has to be answerable
+   * from the result alone.
+   */
+  if (inputs.mapped.length > 0) {
+    confidence += 6;
+    reasons.push(
+      'Its inputs are available here: ' +
+        inputs.mapped
+          .slice(0, 4)
+          .map((pair) => `${pair.declared} from "${pair.suppliedBy}"`)
+          .join('; ') +
+        '.',
+    );
+  }
+  if (inputs.unmet.length > 0) {
+    confidence -= 10;
+    reasons.push(
+      `Still needs ${inputs.unmet.join(', ')}, which nothing here supplies. The step is not ` +
+        'ready to run until that is provided.',
+    );
+  }
+
+  return {
+    confidence: Math.max(0, Math.min(100, confidence)),
+    reasons,
+    unmetInputs: inputs.unmet,
+    mappedInputs: inputs.mapped,
+  };
 }
 
 /**
@@ -437,6 +621,8 @@ export function routeSkills(
       skillName: candidate.skillName,
       confidence: outcome.confidence,
       reasons: outcome.reasons,
+      unmetInputs: outcome.unmetInputs,
+      mappedInputs: outcome.mappedInputs,
     });
   }
 

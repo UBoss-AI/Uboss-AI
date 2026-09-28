@@ -11,13 +11,13 @@ import type { SidebarUser } from './Sidebar';
  *
  * ## What changed, and why it is worth saying
  *
- * It used to read `UBOSS AI AMS | {Active Workspace Name}`, and that wording was a locked rule
+ * It used to read `UBOSS AI AMS | {Active Workspace Name}`. The current product name is Chief Agent.
  * from the approved reference. The client asked for the product name to give up that slot to the
  * name of the section the person is actually in, because every screen was announcing itself twice
  * — once here and again in the page heading immediately below.
  *
  * The workspace name stays, so the bar still answers "whose data am I looking at". The product
- * name has not left the screen either: the sidebar's header carries `UBOSS AI AMS` above the same
+ * name has not left the screen either: the sidebar's header carries `Chief Agent` above the same
  * workspace name, which is where it now lives.
  *
  * The variant is a discriminated union so it is impossible to render a company header without
@@ -88,7 +88,7 @@ export type TopBarProps = (
  * The product name. No longer in the top bar — the sidebar's header renders it — and kept exported
  * because that is where the tests and the design-system page name it from.
  */
-export const COMPANY_HEADER_PREFIX = 'UBOSS AI AMS';
+export const COMPANY_HEADER_PREFIX = 'Chief Agent';
 export const MASTER_HEADER_LABEL = 'UBoss Master Console';
 
 export function TopBar(props: TopBarProps) {
@@ -169,29 +169,32 @@ export function TopBar(props: TopBarProps) {
         </span>
       ) : null}
 
-      <SearchField
-        label={isMaster ? 'Search companies, users, invoices' : 'Search people, objectives, agents'}
-        placeholder={
-          onSearch === undefined
-            ? 'Search is not available yet'
-            : isMaster
-              ? 'Search companies, users, invoices'
-              : 'Search people, objectives, agents'
-        }
-        disabled={onSearch === undefined}
-        {...(onSearch === undefined
-          ? {
-              title:
-                'Workspace-wide search is not built yet. Each screen has its own filter, and people can be looked up on UBoss Profile Search.',
-            }
-          : {
-              onKeyDown: (event) => {
-                if (event.key !== 'Enter') return;
-                event.preventDefault();
-                onSearch(event.currentTarget.value.trim());
-              },
-            })}
-      />
+      {/*
+        The search field, only once there is a search.
+
+        Nothing in the product passes `onSearch` — workspace-wide search is not built — so this
+        rendered on every screen as a wide, permanently disabled box reading "Search is not
+        available yet". A control that never works teaches people to stop reading controls, and
+        it was taking the most valuable strip of the screen to do it.
+
+        The prop and the wiring stay. The day search exists, passing `onSearch` brings the field
+        back with no other change. Looking a person up already works, on UBoss Profile Search.
+      */}
+      {onSearch === undefined ? null : (
+        <SearchField
+          label={
+            isMaster ? 'Search companies, users, invoices' : 'Search people, objectives, agents'
+          }
+          placeholder={
+            isMaster ? 'Search companies, users, invoices' : 'Search people, objectives, agents'
+          }
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            onSearch(event.currentTarget.value.trim());
+          }}
+        />
+      )}
 
       <div className="uboss-top-actions">
         {/*

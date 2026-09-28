@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, Query, UnauthorizedException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  UnauthorizedException,
+} from '@nestjs/common';
 import {
   Allow,
   IsArray,
@@ -235,7 +244,7 @@ export class SkillRouterController {
 
   @Get('skills/:skillId/cases')
   @RequirePermission({ module: 'settings', action: 'View' })
-  async cases(@Param('skillId') skillId: string): Promise<unknown> {
+  async cases(@Param('skillId', new ParseUUIDPipe()) skillId: string): Promise<unknown> {
     return this.router.listCases({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -245,7 +254,7 @@ export class SkillRouterController {
 
   @Post('skills/:skillId/cases')
   @RequirePermission({ module: 'settings', action: 'Administer' })
-  async addCase(@Param('skillId') skillId: string, @Body() body: AddCaseDto): Promise<unknown> {
+  async addCase(@Param('skillId', new ParseUUIDPipe()) skillId: string, @Body() body: AddCaseDto): Promise<unknown> {
     return this.router.addCase({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -291,7 +300,7 @@ export class SkillRouterController {
 
   @Post('versions/:versionId/compare')
   @RequirePermission({ module: 'settings', action: 'View' })
-  async compare(@Param('versionId') versionId: string): Promise<unknown> {
+  async compare(@Param('versionId', new ParseUUIDPipe()) versionId: string): Promise<unknown> {
     return this.router.compare({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -301,7 +310,7 @@ export class SkillRouterController {
 
   @Get('skills/:skillId/comparisons')
   @RequirePermission({ module: 'settings', action: 'View' })
-  async comparisons(@Param('skillId') skillId: string): Promise<unknown> {
+  async comparisons(@Param('skillId', new ParseUUIDPipe()) skillId: string): Promise<unknown> {
     return this.router.comparisonsFor({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),

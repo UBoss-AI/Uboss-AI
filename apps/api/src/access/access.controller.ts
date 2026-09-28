@@ -45,6 +45,8 @@ import { actorUserId } from '../request-context/authenticated-actor.js';
 import { getActor } from '../request-context/request-context.js';
 import { TenantScoped } from '../tenancy/tenancy.decorators.js';
 import { TenantContextService } from '../tenancy/tenant-context.service.js';
+import { AuthorizationService } from '../authorization/authorization.service.js';
+import { CreateCustomRoleDto } from '../authorization/authorization.dto.js';
 import { RoleAdministrationService } from '../authorization/role-administration.service.js';
 import { CapabilityService } from './capability.service.js';
 import {
@@ -114,6 +116,19 @@ export class OffboardDto {
   @IsOptional()
   @IsUUID()
   successorUserId?: string;
+
+  /**
+   * How many days they keep working.
+   *
+   * Absent or zero ends it today, which is what a dismissal needs. Anything more starts a notice
+   * period: their access carries that end date from the moment it is recorded, so it expires on
+   * the day whether or not anybody runs the sweep.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(365)
+  noticeDays?: number;
 
   @IsString()
   @MinLength(5, { message: 'reason must explain why this person is leaving.' })
@@ -210,6 +225,24 @@ class GrantRoleDto {
   @IsIn(SCOPE_KINDS, { message: `scopeKind must be one of: ${SCOPE_KINDS.join(', ')}.` })
   scopeKind!: ScopeKind;
 
+  /**
+   * The company-written role this grant names, when `roleKind` is `Custom`.
+   *
+   * Without it an administrator could write a custom role and never assign one: the platform
+   * console accepted a `customRoleId` and this route silently did not, so the body was rejected
+   * by `forbidNonWhitelisted` before anything read it. Every role a company writes for itself —
+   * including the "Reports, own work only" grant CR-03 §9 requires an employee to be given
+   * explicitly — depends on this field existing here.
+   *
+   * Whether it pairs with the role kind is settled in `RoleAdministrationService.assign`, which
+   * refuses a `Custom` assignment that names nothing and checks the role belongs to this company.
+   */
+  @IsOptional()
+  // No version pinned: UBoss mints v7 identifiers, and every sibling field here validates the
+  // same way. Asking for v4 rejected every id the product actually issues.
+  @IsUUID(undefined, { message: 'customRoleId must be the id of a role this company wrote.' })
+  customRoleId?: string;
+
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(200)
@@ -245,6 +278,7 @@ export class AccessController {
     private readonly bulk: BulkOperationService,
     private readonly capabilities: CapabilityService,
     private readonly roles: RoleAdministrationService,
+    private readonly authorization: AuthorizationService,
     private readonly tenantContext: TenantContextService,
   ) {}
 
@@ -351,7 +385,28 @@ export class AccessController {
       actorUserId: this.currentUserId(),
       subjectUserId: userId,
       successorUserId: body.successorUserId,
+      noticeDays: body.noticeDays,
       reason: body.reason,
+    });
+  }
+
+  /**
+   * Finish every notice period whose last day has passed.
+   *
+   * A route rather than a timer, matching the run scheduler: something an operator or a cron
+   * calls, and observable when it runs. Idempotent — a second call finds nothing, because each
+   * completion claims its row first.
+   *
+   * It is not what ends somebody's access. That is the end date written onto their roles when
+   * the notice began, which every authorization call already honours. This tidies the rows behind
+   * that decision.
+   */
+  @Post('offboardings/complete-due')
+  @RequirePermission({ module: 'users', action: 'ManageAccess' })
+  async completeDueOffboardings(): Promise<unknown> {
+    return this.offboardings.completeDue({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
     });
   }
 
@@ -523,7 +578,7 @@ export class AccessController {
   /** What an administrator may offer this person, and what they already hold. */
   @Get('capabilities/:userId')
   @RequirePermission({ module: 'users', action: 'ManageAccess' })
-  async capabilityStep(@Param('userId') userId: string): Promise<unknown> {
+  async capabilityStep(@Param('userId', new ParseUUIDPipe()) userId: string): Promise<unknown> {
     return this.capabilities.stepFor({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -534,7 +589,7 @@ export class AccessController {
   @Post('capabilities/:userId')
   @RequirePermission({ module: 'users', action: 'ManageAccess' })
   async grantCapabilities(
-    @Param('userId') userId: string,
+    @Param('userId', new ParseUUIDPipe()) userId: string,
     @Body() body: GrantCapabilitiesDto,
   ): Promise<unknown> {
     return this.capabilities.grant({
@@ -548,7 +603,7 @@ export class AccessController {
   @Delete('capabilities/:userId/:capability')
   @RequirePermission({ module: 'users', action: 'ManageAccess' })
   async revokeCapability(
-    @Param('userId') userId: string,
+    @Param('userId', new ParseUUIDPipe()) userId: string,
     @Param('capability') capability: string,
   ): Promise<unknown> {
     return this.capabilities.revoke({
@@ -610,6 +665,62 @@ export class AccessController {
     };
   }
 
+  /**
+   * The roles this company wrote for itself.
+   *
+   * Custom roles existed only on the platform-operator console, which meant a company that
+   * needed a combination the built-in roles do not offer had to ask UBoss for it. The rule the
+   * client states is that the administrator controls their own company's authority, so the
+   * capability belongs here.
+   *
+   * It is safe to move because of the bound already inside `createCustomRole`: **a custom role
+   * cannot grant what its creator does not have.** Without that, "may write roles" would be
+   * equivalent to "may do anything", and an administrator could quietly mint themselves past
+   * their own ceiling. With it, this widens who may express a role and nobody's reach.
+   */
+  @Get('custom-roles')
+  @RequirePermission({ module: 'users', action: 'ManageAccess' })
+  async listCompanyCustomRoles(): Promise<unknown> {
+    return { roles: await this.roles.listCustomRoles(this.tenantContext.requireScope()) };
+  }
+
+  @Post('custom-roles')
+  @RequirePermission({ module: 'users', action: 'ManageAccess' })
+  async writeCompanyCustomRole(@Body() body: CreateCustomRoleDto): Promise<unknown> {
+    const scope = this.tenantContext.requireScope();
+    const actor = this.currentUserId();
+
+    /*
+     * What this person may do, handed to the service as the ceiling.
+     *
+     * Read from the authorization engine rather than assembled here: "what may an administrator
+     * grant" is a question with one answer, and a second copy of it in this controller would
+     * eventually disagree with the first.
+     */
+    const context = await this.authorization.contextFor(scope, actor);
+
+    return this.roles.createCustomRole(
+      scope,
+      {
+        displayName: body.displayName,
+        ...(body.description === undefined ? {} : { description: body.description }),
+        permissions: body.permissions,
+        maxScope: body.maxScope,
+      },
+      actor,
+      /*
+       * Copied into a mutable shape, not cast.
+       *
+       * `context.granted` is deeply readonly — the engine hands out a view of its own state and
+       * means it. A cast would silently give the service a handle on that, and a service that
+       * one day sorted or trimmed it would be editing the caller's live permissions.
+       */
+      Object.fromEntries(
+        Object.entries(context.granted).map(([module, actions]) => [module, [...(actions ?? [])]]),
+      ),
+    );
+  }
+
   /** One person's live roles in this company. */
   @Get('people/:userId/roles')
   @RequirePermission({ module: 'users', action: 'ManageAccess' })
@@ -658,6 +769,7 @@ export class AccessController {
       {
         userId,
         roleKind: body.roleKind,
+        ...(body.customRoleId === undefined ? {} : { customRoleId: body.customRoleId }),
         scopeKind: body.scopeKind,
         ...(body.departmentIds === undefined ? {} : { departmentIds: body.departmentIds }),
         ...(body.selectedResourceIds === undefined

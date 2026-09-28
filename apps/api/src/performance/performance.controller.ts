@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, Put, UnauthorizedException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Put,
+  UnauthorizedException,
+} from '@nestjs/common';
 import {
   IsBoolean,
   IsIn,
@@ -158,10 +167,24 @@ export class PerformanceController {
     return { version: policy.version, supersededVersion: policy.version - 1 };
   }
 
-  /** One person's performance detail. Scoped — see the class note. */
+  /**
+   * One person's performance detail. Scoped — see the class note.
+   *
+   * The id is parsed before the handler runs. Without that, a path segment that is not a UUID
+   * reached Prisma and PostgreSQL refused the cast, which surfaced as a bare **500 Internal
+   * server error** — proven against the running product with `/performance/not-a-uuid`. Nothing
+   * leaked (the driver's message stays in the log, and the injection attempt was refused by the
+   * cast), but a malformed request is the client's mistake and should say 400: a 500 tells an
+   * operator the server is broken, and buries real faults under scanner noise.
+   *
+   * `me` and `policy` are declared above this route, so Nest matches them first and they are
+   * unaffected by the pipe.
+   */
   @Get(':subjectUserId')
   @RequirePermission({ module: 'performance', action: 'View' })
-  async view(@Param('subjectUserId') subjectUserId: string): Promise<unknown> {
+  async view(
+    @Param('subjectUserId', new ParseUUIDPipe()) subjectUserId: string,
+  ): Promise<unknown> {
     return this.performance.viewFor({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),

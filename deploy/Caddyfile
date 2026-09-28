@@ -1,0 +1,19 @@
+{
+	email dev@ubossai.com
+}
+
+www.ubossai.com {
+	redir https://ubossai.com{uri} permanent
+}
+
+ubossai.com {
+	reverse_proxy marketing:3100
+}
+
+app.ubossai.com {
+	reverse_proxy web:3000
+}
+
+api.ubossai.com {
+	reverse_proxy api:4000
+}

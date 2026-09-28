@@ -80,6 +80,31 @@ export class ReportScopeService {
     );
     const narrowest = ReportScopeService.narrowestScope(reaches.map((reach) => reach.kind));
 
+    /*
+     * A report that cannot be narrowed is for a reader entitled to the whole company.
+     *
+     * Three reports carry `scoped: false`: their rows are company-wide facts with no person
+     * attached — a catalogue of Skill versions, a day-by-day cost ledger, a trail of audit
+     * events — so there is no column to filter them by. `ReportsService` therefore ignores the
+     * resolved scope for them entirely, and that is correct: there is nothing to apply.
+     *
+     * Which leaves the question of who may open one. Until now the answer was "anybody holding
+     * the source permission", so a reader scoped to their own work who happened to hold
+     * `agents:View` was shown every Skill version in the company — narrow everywhere else in
+     * the product, and company-wide here. The rule is now the one a reader would assume: if your
+     * scope is anything less than the whole company, a report that cannot honour it is not yours
+     * to open.
+     *
+     * Refused here rather than only hidden from the catalogue, because the catalogue is a list
+     * and this is the route. Hiding it would leave the URL working.
+     */
+    if (!input.report.scoped && narrowest !== 'WholeCompany') {
+      throw new ForbiddenException(
+        `"${input.report.label}" covers the whole company and cannot be narrowed to your scope, ` +
+          'so it is not available to you.',
+      );
+    }
+
     return this.resolve({
       scope: input.scope,
       actorUserId: input.actorUserId,
@@ -88,6 +113,29 @@ export class ReportScopeService {
       // permissions: a report needing two grants reaches only where both reach.
       departmentIds: ReportScopeService.commonDepartments(reaches),
     });
+  }
+
+  /**
+   * Whether this person may open this report at all, for building the catalogue.
+   *
+   * The same two questions `forReport` asks — do you hold every permission it needs, and if it
+   * cannot be narrowed are you entitled to the whole company — asked without throwing, because a
+   * catalogue omits what you cannot read rather than failing to load.
+   *
+   * Deliberately a second call into the same rules rather than a copy of them: if the two ever
+   * disagree, the route refuses and the list is merely wrong, which is the safe direction.
+   */
+  async mayRead(input: {
+    scope: TenantScope;
+    actorUserId: string;
+    report: ReportDefinition;
+  }): Promise<boolean> {
+    try {
+      await this.forReport(input);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**

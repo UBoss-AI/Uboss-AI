@@ -3,6 +3,7 @@ import {
   Get,
   NotFoundException,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
   UnauthorizedException,
@@ -143,7 +144,7 @@ export class SecurityCenterController {
   @Post('sessions/:sessionId/revoke')
   @RequirePermission({ module: 'settings', action: 'Administer' })
   async revokeSession(
-    @Param('sessionId') sessionId: string,
+    @Param('sessionId', new ParseUUIDPipe()) sessionId: string,
     @Query() query: RevokeSessionDto,
   ): Promise<unknown> {
     return this.securityCenter.revokeSession({

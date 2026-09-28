@@ -7,6 +7,7 @@
  */
 
 import type {
+  ReportChart,
   Form2FieldDefinition,
   Form2Objective,
   Form2Section,
@@ -301,6 +302,38 @@ export const authorizationApi = {
         permissions: Record<string, string[]>;
       }[];
     }>(`/tenants/${encodeURIComponent(tenantId)}/authorization/role-catalogue`),
+
+  /**
+   * The roles this company wrote for itself.
+   *
+   * The built-in catalogue above is identical in every deployment and deliberately fixed — it is
+   * the product's own vocabulary. A company that needs a different combination of permissions
+   * makes one of these instead, which is the supported way to change what somebody may read.
+   */
+  customRoles: (tenantId: string) =>
+    call<{
+      roles: {
+        id: string;
+        displayName: string;
+        description: string | null;
+        permissions: Record<string, string[]>;
+        maxScope: string;
+      }[];
+    }>(`/tenants/${encodeURIComponent(tenantId)}/authorization/custom-roles`),
+
+  createCustomRole: (
+    tenantId: string,
+    body: {
+      displayName: string;
+      description?: string;
+      permissions: Record<string, string[]>;
+      maxScope: string;
+    },
+  ) =>
+    call<{ id: string }>(`/tenants/${encodeURIComponent(tenantId)}/authorization/custom-roles`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 
   evaluate: (tenantId: string, body: Record<string, unknown>) =>
     call<PermissionEvaluation>(`/tenants/${encodeURIComponent(tenantId)}/authorization/evaluate`, {
@@ -1860,14 +1893,96 @@ export const accessApi = {
       `/tenants/${encodeURIComponent(tenantId)}/access/people/${encodeURIComponent(userId)}/offboarding-impact`,
     ),
 
+  /**
+   * The role catalogue, for a company administrator.
+   *
+   * `authorizationApi.roleCatalogue` answers the same question for the platform console and is
+   * `@PlatformOnly`, so a company administrator calling it is told they are in the wrong
+   * console. This one carries `youMayGrant` as well, which the other cannot know.
+   */
+  roleCatalogue: (tenantId: string) =>
+    call<{
+      roles: {
+        kind: string;
+        label: string;
+        summary: string;
+        maxScope: string;
+        defaultScope: string;
+        modules: string[];
+        permissions: Record<string, string[]>;
+        youMayGrant: boolean;
+        whyNot: string | null;
+      }[];
+      note: string;
+    }>(`/tenants/${encodeURIComponent(tenantId)}/access/roles`),
+
+  /**
+   * Give somebody a role in this company.
+   *
+   * Bounded by the delegation ceiling: nobody grants a role they do not hold themselves, and
+   * nobody grants themselves anything. The server decides both.
+   */
+  grantRole: (
+    tenantId: string,
+    userId: string,
+    body: {
+      roleKind: string;
+      scopeKind: string;
+      departmentIds?: string[];
+      justification?: string;
+    },
+  ) =>
+    call<unknown>(
+      `/tenants/${encodeURIComponent(tenantId)}/access/people/${encodeURIComponent(userId)}/roles`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+
+  customRoles: (tenantId: string) =>
+    call<{
+      roles: {
+        id: string;
+        displayName: string;
+        description: string | null;
+        permissions: Record<string, string[]>;
+        maxScope: string;
+      }[];
+    }>(`/tenants/${encodeURIComponent(tenantId)}/access/custom-roles`),
+
+  /** A role of the company's own. Bounded by what the creator holds; the server enforces it. */
+  createCustomRole: (
+    tenantId: string,
+    body: {
+      displayName: string;
+      description?: string;
+      permissions: Record<string, string[]>;
+      maxScope: string;
+    },
+  ) =>
+    call<{ id: string }>(`/tenants/${encodeURIComponent(tenantId)}/access/custom-roles`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
   offboard: (
     tenantId: string,
     userId: string,
-    body: { successorUserId?: string; reason: string },
+    body: { successorUserId?: string; reason: string; noticeDays?: number },
   ) =>
     call<OffboardingOutcome>(
       `/tenants/${encodeURIComponent(tenantId)}/access/people/${encodeURIComponent(userId)}/offboard`,
       { method: 'POST', body: JSON.stringify(body) },
+    ),
+
+  /**
+   * Finish every notice period whose last day has passed.
+   *
+   * Not what ends somebody's access — that is the end date written onto their roles when the
+   * notice began. This tidies the rows behind it, and a second call finds nothing.
+   */
+  completeDueOffboardings: (tenantId: string) =>
+    call<{ completed: string[]; note: string }>(
+      `/tenants/${encodeURIComponent(tenantId)}/access/offboardings/complete-due`,
+      { method: 'POST', body: JSON.stringify({}) },
     ),
 
   /** Validate a bulk operation. **Applies nothing.** */
@@ -5118,6 +5233,15 @@ export interface ReportDefinitionView {
   question: string;
   sourcePermission: { module: string; action: string } | null;
   scoped: boolean;
+
+  /**
+   * How this report draws itself, when the catalogue says it draws itself at all.
+   *
+   * The server sends the definition whole, so this arrives without the screen asking for it.
+   * Optional because several reports are lists of events, and a chart over those would be
+   * decoration rather than an answer.
+   */
+  chart?: ReportChart;
 }
 
 export interface ReportCatalogue {

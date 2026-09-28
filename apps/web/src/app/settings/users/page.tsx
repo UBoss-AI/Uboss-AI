@@ -135,6 +135,20 @@ function UsersAccessInner() {
   const [successorId, setSuccessorId] = useState('');
 
   const [bulkOpen, setBulkOpen] = useState(false);
+  /**
+   * What this person will be, asked at the moment they are invited.
+   *
+   * Employee by default, because almost everybody is one and the alternative — an account that
+   * arrives with no role — can sign in and reach nothing, which reads as the product being
+   * broken rather than as a decision somebody forgot to make.
+   *
+   * Two choices, not a capability matrix. The matrix still exists below for the cases that need
+   * it, but "is this person an administrator" is the question an administrator is actually
+   * answering, and making them assemble the answer out of tiers and toggles is how the previous
+   * version of this screen went wrong.
+   */
+  const [inviteAs, setInviteAs] = useState<'Employee' | 'CompanyAdmin'>('Employee');
+
   const [bulkKind, setBulkKind] = useState('ImportEmployees');
   const [bulkContent, setBulkContent] = useState('');
   const [bulkFileName, setBulkFileName] = useState('');
@@ -583,6 +597,26 @@ function UsersAccessInner() {
               disabled={busy || inviteEmail.trim() === ''}
               onClick={() =>
                 void run(async () => {
+                  /*
+                   * The role first, then the invitation.
+                   *
+                   * That order matters: inviting is refused for somebody with no role at all —
+                   * correctly, because activation would produce an account that signs in and
+                   * reaches nothing. Granting first means the choice made here is the thing that
+                   * clears the gate.
+                   *
+                   * A role they already hold is left alone: the server refuses a duplicate, and
+                   * an administrator re-sending an invitation is not asking to change anybody's
+                   * authority.
+                   */
+                  await accessApi
+                    .grantRole(tenantId as string, inviteFor!.userId, {
+                      roleKind: inviteAs,
+                      scopeKind: inviteAs === 'CompanyAdmin' ? 'WholeCompany' : 'OwnWork',
+                      justification: `Chosen when ${inviteFor!.displayName} was invited.`,
+                    })
+                    .catch(() => undefined);
+
                   const result = await accessApi.inviteExisting(tenantId as string, {
                     subjectUserId: inviteFor!.userId,
                     workEmail: inviteEmail.trim(),
@@ -612,6 +646,51 @@ function UsersAccessInner() {
               onChange={(event) => setInviteEmail(event.target.value)}
               placeholder="name@company.com"
             />
+          )}
+        </FormField>
+
+        <FormField
+          label="This person will be"
+          required
+          hint="An employee sees their own work. An administrator sees and configures the company."
+        >
+          {() => (
+            <div className="uboss-invite-as">
+              <label>
+                <input
+                  type="radio"
+                  name="invite-as"
+                  checked={inviteAs === 'Employee'}
+                  onChange={() => setInviteAs('Employee')}
+                />
+                <span>
+                  <b>Employee</b>
+                  <br />
+                  <small className="uboss-muted-3">
+                    Their to-do list, the agents assigned to them, chat and their own
+                    performance.
+                  </small>
+                </span>
+              </label>
+
+              <label>
+                <input
+                  type="radio"
+                  name="invite-as"
+                  checked={inviteAs === 'CompanyAdmin'}
+                  onChange={() => setInviteAs('CompanyAdmin')}
+                  data-testid="invite-as-admin"
+                />
+                <span>
+                  <b>Administrator</b>
+                  <br />
+                  <small className="uboss-muted-3">
+                    Everything an employee sees, plus the hierarchy, objectives, agents, users
+                    and company settings.
+                  </small>
+                </span>
+              </label>
+            </div>
           )}
         </FormField>
 

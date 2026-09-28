@@ -106,9 +106,9 @@ export class ArchiveDepartmentDto {
 }
 
 /**
- * Add Employee — the client's six mandatory fields, then the optional ones.
+ * Add Employee — the client's mandatory fields, then the optional ones.
  *
- * The six are required in the DTO with no default and no fallback, so a payload missing any of
+ * They are required in the DTO with no default and no fallback, so a payload missing any of
  * them is a 400 rather than a partially-created employee. The optional fields are optional in
  * the DTO **and** unmarked in the UI, which is the other half of the client's rule.
  *
@@ -150,17 +150,22 @@ export class AddEmployeeDto {
   })
   aadhaarNumber!: string;
 
-  // ---- Optional. No asterisk in the UI. ----
-
-  @IsOptional()
+  /*
+   * A way to reach the person. Required from CR-04, so they sit with the other mandatory fields
+   * rather than under the optional heading below: the DTO refuses a payload without them, which
+   * is the check a screen cannot skip.
+   */
   @IsString()
+  @MinLength(3)
   @MaxLength(320)
-  workEmail?: string;
+  workEmail!: string;
 
-  @IsOptional()
   @IsString()
+  @MinLength(7)
   @MaxLength(40)
-  workPhone?: string;
+  workPhone!: string;
+
+  // ---- Optional. No asterisk in the UI. ----
 
   @IsOptional()
   @IsISO8601()
@@ -173,6 +178,19 @@ export class AddEmployeeDto {
 }
 
 export class UpdateEmploymentDto {
+  /**
+   * Their name, corrected.
+   *
+   * The one field here that is not employment: a person has one name across every company they
+   * work in, so this corrects it everywhere. A misspelling has to be fixable, and a per-company
+   * name would mean the same human under two spellings with no way to tell which is right.
+   */
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(200)
+  displayName?: string;
+
   @IsOptional()
   @IsString()
   @MinLength(1)
@@ -274,14 +292,14 @@ export class OrganizationController {
     return this.hierarchy.viewFor(this.tenantContext.requireScope(), this.currentUserId());
   }
 
-  /** The six mandatory field keys and labels, served so the form cannot drift from the API. */
+  /** The mandatory field keys and labels, served so the form cannot drift from the API. */
   @Get('employee-fields')
   @RequirePermission({ module: 'hierarchy', action: 'View' })
   mandatoryFields(): unknown {
     return {
       mandatory: MANDATORY_EMPLOYEE_FIELDS,
       note:
-        'Exactly these six fields are mandatory. Every other profile field is optional and must ' +
+        'Exactly these fields are mandatory. Every other profile field is optional and must ' +
         'not be marked with an asterisk. Aadhaar Number is an entered-only matching input: ' +
         'there is no OTP, no verification, and no state in UBoss that can claim it is verified.',
     };
@@ -397,6 +415,7 @@ export class OrganizationController {
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
       subjectUserId: userId,
+      displayName: body.displayName,
       employeeId: body.employeeId,
       designation: body.designation,
       departmentId: body.departmentId,

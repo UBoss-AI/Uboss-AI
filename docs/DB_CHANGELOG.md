@@ -7,7 +7,8 @@ PostgreSQL is the primary system of record. Prisma owns the schema and the migra
 ```bash
 docker compose -f infra/docker-compose.yml up -d   # PostgreSQL 17 on port 5442
 cd apps/api
-cp .env.example .env
+export DATABASE_URL='postgresql://uboss_app:uboss_app_local_dev@localhost:5442/uboss_dev?schema=public'
+export DATABASE_MIGRATION_URL='postgresql://uboss:uboss_local_dev@localhost:5442/uboss_dev?schema=public'
 npm run db:deploy                                  # apply migrations
 npm run db:seed                                    # demo Platform Admin + demo company
 ```
@@ -343,7 +344,8 @@ with MFA would have to re-enrol. Recorded here so it is not discovered during an
 **One new environment variable is mandatory.** `AUTH_ENCRYPTION_KEYS` (`id:base64key`, comma
 separated, first key active) — the process refuses to start without a valid one, because a
 deployment that cannot decrypt a TOTP secret would otherwise appear healthy and fail at someone's
-first sign-in. See `apps/api/.env.example`.
+first sign-in. Set required authentication and encryption variables in the local process
+environment; do not create or commit an environment file.
 
 ### 2026-09-08 — Prompt 7 — `20260908210000_authorization_engine`
 

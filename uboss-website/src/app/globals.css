@@ -1,0 +1,172 @@
+@import 'tailwindcss';
+@import './experience.css';
+@import './design-v2.css';
+
+/**
+ * The site's whole visual system, in one place.
+ *
+ * Dark-first and dark-only: there is no light theme, so nothing here is written twice and no
+ * component has to ask which one it is in. The layers below are the point — a single flat black
+ * reads as a cheap template, and four surfaces one step apart from each other are what make depth
+ * without a single gradient doing the work.
+ */
+
+@theme {
+  /* The four surfaces, deepest first. Everything sits on one of them. */
+  --color-ink-0: #000000;
+  --color-ink-1: #050505;
+  --color-ink-2: #09090b;
+  --color-ink-3: #111113;
+  --color-ink-4: #17171a;
+
+  /* Type, in the three weights of attention a section ever needs. */
+  --color-paper: #f4f4f5;
+  --color-paper-2: #a1a1aa;
+  --color-paper-3: #71717a;
+
+  /* Hairlines. Borders here are structure, not decoration, so they stay under 10% light. */
+  --color-edge: rgba(255, 255, 255, 0.08);
+  --color-edge-2: rgba(255, 255, 255, 0.14);
+
+  /*
+   * One accent, three uses: the violet carries AI, the cyan carries human work, and the two
+   * together are the only place the site is allowed to be colourful. Restraint is the brief —
+   * a page that is violet everywhere says nothing by being violet anywhere.
+   */
+  --color-ai: #8b5cf6;
+  --color-ai-soft: #a78bfa;
+  --color-human: #22d3ee;
+  --color-signal: #34d399;
+  --color-warn: #fbbf24;
+
+  --font-sans:
+    'Manrope Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html {
+  scroll-behavior: smooth;
+  /* The nav is fixed, so an anchor has to stop below it rather than under it. */
+  scroll-padding-top: 88px;
+}
+
+body {
+  background: var(--color-ink-0);
+  color: var(--color-paper);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  /* Nothing on this site scrolls sideways. Diagrams that would are made to stack instead. */
+  overflow-x: hidden;
+}
+
+/*
+  A visible focus ring, on the accent rather than the browser default.
+
+  Keyboard users are the reason, and a dark site is where the default ring is hardest to see.
+*/
+:focus-visible {
+  outline: 2px solid var(--color-ai-soft);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: rgba(139, 92, 246, 0.35);
+  color: #fff;
+}
+
+/*
+  The one piece of ambience the site uses: a soft radial that sits behind a section and lifts it
+  off the black. It is a background, so it never takes a pointer and never carries meaning.
+*/
+.u-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.u-glow::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -40%;
+  width: min(1100px, 130vw);
+  height: min(900px, 110vw);
+  transform: translateX(-50%);
+  background: radial-gradient(
+    closest-side,
+    rgba(139, 92, 246, 0.16),
+    rgba(139, 92, 246, 0.05) 55%,
+    transparent 75%
+  );
+}
+
+/* Film grain, so the large dark blends read as a surface rather than as a flat fill. */
+.u-grain::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
+}
+
+/* A hairline that fades at both ends, used to separate sections without drawing a hard line. */
+.u-rule {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.12), transparent);
+}
+
+/*
+  The dotted field behind the diagrams. Faint enough to read as paper rather than as a grid.
+*/
+.u-dots {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+/*
+  Motion, and the one rule that governs all of it.
+ *
+  Everything that moves on this site is decoration: a reveal, a drift, a pulse on a diagram. None
+  of it carries information, so under `prefers-reduced-motion` it can all simply stop — the page
+  says exactly the same thing standing still.
+*/
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* The travelling light on a diagram's connector. */
+@keyframes u-dash {
+  to {
+    stroke-dashoffset: -32;
+  }
+}
+
+@keyframes u-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}

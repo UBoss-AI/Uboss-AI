@@ -60,13 +60,18 @@ export const COMPANY_NAV: readonly NavGroup[] = [
     group: 'Home',
     items: [
       /*
-       * Operations, above the Dashboard and first in the product.
+       * Operations is deliberately not a screen.
        *
-       * For somebody who does the work rather than defines it, this is the whole application: what
-       * they can start, what they are waiting on, what they finished. It is gated on `todo`
-       * because that is where their work lives — a person with no To-do has no operations.
+       * It was one, and it was a third place showing what two others already show: the human work
+       * waiting on somebody, and the agent work they may run. Those are To-do List and Engine
+       * Agents, and both sit under the Operations *group* below — which is what "the operations
+       * section" always meant. A person doing the work opens the one that matches what they have
+       * been given; an extra landing page in front of the two adds a click and answers nothing.
+       *
+       * The company-wide view of the same question — who is working, on what, and what is stuck —
+       * is the Dashboard's "Where the work is", which is a different question asked by a
+       * different person.
        */
-      { key: 'operations', label: 'Operations', icon: 'ops', href: '/operations', module: 'todo' },
       { key: 'dashboard', label: 'Dashboard', icon: 'grid', href: '/dashboard' },
     ],
   },
@@ -96,9 +101,31 @@ export const COMPANY_NAV: readonly NavGroup[] = [
   {
     group: 'Administration',
     items: [
-      // "Users & Access" and "Roles & Permissions" are deliberately absent — both are Settings
-      // sections, and listing them here too showed an admin the same destination twice. See the
-      // note above COMPANY_NAV.
+      /*
+       * Three screens that used to live inside Settings as signposts.
+       *
+       * Each was a "settings category" whose entire content was a sentence and a button reading
+       * *Open X* — and for two of them that button was the only route to the screen at all. A
+       * category that exists to point somewhere else is not a setting; it is a menu entry in the
+       * wrong menu, and it cost a reader three clicks to reach a screen that should have been
+       * one.
+       *
+       * Roles & Permissions stays in Settings, because it genuinely is one: the catalogue and
+       * the company's own roles are configuration, and they are edited there rather than
+       * anywhere else.
+       */
+      /*
+       * Users & Access, Billing and Audit are Settings sections, not sidebar entries.
+       *
+       * They were sections holding a sentence and an *Open X* button, which is why they briefly
+       * moved here. The client's decision is that they belong in Settings — so they are back
+       * there, and the fix for the original complaint is that selecting one now opens the screen
+       * itself instead of a panel describing it.
+       *
+       * The screens stay full pages rather than being embedded in the Settings dialog. Users &
+       * Access is three tabs of tables and bulk operations; in an eight-hundred-pixel modal it
+       * would be worse than the page, not tidier.
+       */
       {
         key: 'profile-search',
         label: 'UBoss Profile Search',
@@ -136,7 +163,7 @@ export const MASTER_NAV: readonly NavGroup[] = [
   {
     group: 'AI Platform',
     items: [
-      { key: 'providers', label: 'Providers & Models', icon: 'bot', href: '/master/providers' },
+      // providers: Providers and model profiles are a platform decision, not a company setting.
       { key: 'skills', label: 'Skill Catalog', icon: 'file', href: '/master/skills' },
       { key: 'testing', label: 'Testing & Evaluation', icon: 'check', href: '/master/testing' },
       { key: 'release', label: 'Release & Features', icon: 'bolt', href: '/master/release' },
@@ -175,14 +202,26 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   {
     key: 'general',
     label: 'General',
-    personalLabel: 'My Profile',
+    /*
+     * Not "My Profile".
+     *
+     * What somebody without administration rights sees here is the company's working setup —
+     * the timezone every deadline is computed in, the working week, the holidays. Useful, and
+     * theirs to read rather than to change. Calling it their profile promised a page about them
+     * and delivered a page about the company, which is the kind of label somebody stops
+     * trusting the rest of the screen over.
+     */
+    personalLabel: 'How this company works',
     description: 'Company and workspace identity.',
   },
-  {
-    key: 'organization',
-    label: 'Organization',
-    description: 'Vision, mission and hierarchy defaults.',
-  },
+  /*
+   * Organization is not a section, because Hierarchy is already a screen.
+   *
+   * Both went to the same place. Users & Access, Billing and Audit are here because Settings is
+   * their only home; the company chart has its own entry in the sidebar, where somebody
+   * building a hierarchy expects to find it, and a second door into the same room is the
+   * duplication this list was cleared of.
+   */
   { key: 'users', label: 'Users & Access', description: 'Employees, guests and invitations.' },
   {
     key: 'roles',
@@ -209,20 +248,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
    * untouched: published agents pin the Skill versions they were built from, so the catalogue is
    * still what gives those pins a meaning. This removes a door, not a room.
    */
-  { key: 'providers', label: 'AI Providers', description: 'Providers and model profiles.' },
+  // providers: Providers and model profiles are a platform decision, not a company setting.
   { key: 'tokens', label: 'Tokens & Cost', description: 'Budgets and the AI cost lifecycle.' },
-  { key: 'schedules', label: 'Schedules', description: 'Scheduling policy for recurring work.' },
+  // schedules: Scheduling policy is set per objective, where the schedule is.
   {
     key: 'integrations',
     label: 'Integrations & Connections',
     personalLabel: 'My Connections',
     description: 'Connected systems and their health.',
   },
-  {
-    key: 'knowledge',
-    label: 'Knowledge & Data',
-    description: 'Approved sources and data controls.',
-  },
+  // knowledge: Approved sources are managed where the knowledge is, not here.
   {
     key: 'notifications',
     label: 'Notifications & Escalations',
@@ -234,19 +269,24 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     personalLabel: 'Login & Security',
     description: 'Sessions, MFA policy and security events.',
   },
-  { key: 'audit', label: 'Audit & Activity', description: 'Searchable audit trail.' },
+  /*
+   * Audit & Activity is absent, and that is a gap rather than a decision.
+   *
+   * The section promised "a searchable audit trail" and opened `/internal/audit`, a page whose
+   * own first line calls itself "a diagnostic for the Prompt 8 audit and security foundations —
+   * not the Security Center". That is a developer's tool: unlabelled columns, no filters a
+   * company would use, and a heading that tells an administrator they are somewhere they should
+   * not be.
+   *
+   * The trail itself exists and is complete — every action in the product writes to it, and the
+   * Employee panel already reads it per person. What does not exist is a company-facing screen
+   * over it. Offering a door to the diagnostic was worse than offering none, because it looked
+   * like the feature.
+   */
   { key: 'billing', label: 'Billing', description: 'Plan and invoices.' },
   { key: 'appearance', label: 'Appearance', description: 'Branding and accessibility.' },
-  {
-    key: 'uboss',
-    label: 'UBoss Profile Search Policy',
-    description: 'Cross-company lookup policy, by UBoss Unique ID.',
-  },
-  {
-    key: 'performance',
-    label: 'Performance & Reward Policy',
-    description: 'Scoring, badge thresholds and reward eligibility.',
-  },
+  // uboss: Cross-company lookup policy has no company-level switch today.
+  // performance: Scoring and badge thresholds are the product’s, and identical everywhere.
 ] as const;
 
 /**

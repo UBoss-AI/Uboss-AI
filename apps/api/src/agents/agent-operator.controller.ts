@@ -1,4 +1,12 @@
-import { Controller, Delete, Get, Param, Post, UnauthorizedException } from '@nestjs/common';
+import {
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  UnauthorizedException,
+} from '@nestjs/common';
 
 import { OPERATOR_GRANTS_NOTHING, RUN_PRECONDITIONS } from '@uboss/types';
 
@@ -73,7 +81,7 @@ export class AgentOperatorController {
   /** One agent, as an operator sees it — including why they cannot run it, when they cannot. */
   @Get(':engineAgentId/operator-view')
   @RequirePermission({ module: 'agents', action: 'View' })
-  async view(@Param('engineAgentId') engineAgentId: string): Promise<unknown> {
+  async view(@Param('engineAgentId', new ParseUUIDPipe()) engineAgentId: string): Promise<unknown> {
     return this.operators.operatorView({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -90,7 +98,7 @@ export class AgentOperatorController {
    */
   @Get(':engineAgentId/my-runs')
   @RequirePermission({ module: 'agents', action: 'View' })
-  async myRuns(@Param('engineAgentId') engineAgentId: string): Promise<unknown> {
+  async myRuns(@Param('engineAgentId', new ParseUUIDPipe()) engineAgentId: string): Promise<unknown> {
     return {
       runs: await this.operators.myRuns({
         scope: this.tenantContext.requireScope(),
@@ -102,7 +110,7 @@ export class AgentOperatorController {
 
   @Get(':engineAgentId/operators')
   @RequirePermission({ module: 'agents', action: 'View' })
-  async list(@Param('engineAgentId') engineAgentId: string): Promise<unknown> {
+  async list(@Param('engineAgentId', new ParseUUIDPipe()) engineAgentId: string): Promise<unknown> {
     return {
       operatorUserIds: await this.operators.operatorsOf(
         this.tenantContext.requireScope(),
@@ -116,7 +124,7 @@ export class AgentOperatorController {
   // decorator is the coarser of the two, because `agents:Assign` is granted to no role at all.
   @RequirePermission({ module: 'todo', action: 'Assign' })
   async share(
-    @Param('engineAgentId') engineAgentId: string,
+    @Param('engineAgentId', new ParseUUIDPipe()) engineAgentId: string,
     @Param('operatorUserId') operatorUserId: string,
   ): Promise<unknown> {
     return this.operators.share({
@@ -132,7 +140,7 @@ export class AgentOperatorController {
   // decorator is the coarser of the two, because `agents:Assign` is granted to no role at all.
   @RequirePermission({ module: 'todo', action: 'Assign' })
   async revoke(
-    @Param('engineAgentId') engineAgentId: string,
+    @Param('engineAgentId', new ParseUUIDPipe()) engineAgentId: string,
     @Param('operatorUserId') operatorUserId: string,
   ): Promise<unknown> {
     return this.operators.revokeShare({

@@ -17,6 +17,15 @@ export interface DataTableColumn<Row> {
   numeric?: boolean;
   /** Column width, e.g. `'160px'` or `'20%'`. */
   width?: string;
+  /**
+   * This column holds more than one line — a name over a code, a title over a date.
+   *
+   * A row is a fixed height so a list of them scans evenly, and two lines crammed into that
+   * height is what makes a table look squeezed. A stacked column opts out of the fixed height
+   * and takes its own padding instead. The styling already existed and nothing could ask for it,
+   * which is why every two-line cell in the product looked tight.
+   */
+  stacked?: boolean;
 }
 
 export interface DataTableProps<Row> {
@@ -24,8 +33,14 @@ export interface DataTableProps<Row> {
   caption: string;
   columns: DataTableColumn<Row>[];
   rows: Row[];
-  /** Stable row identity — required so React reconciles rows correctly. */
-  rowKey: (row: Row) => string;
+  /**
+   * Stable row identity — required so React reconciles rows correctly.
+   *
+   * The position is offered as well as the row, for the tables whose rows carry no id of their
+   * own. A report of aggregates can return two rows that are identical in every column and still
+   * be two rows; keyed on their values alone, React treats them as one and drops the second.
+   */
+  rowKey: (row: Row, index: number) => string;
   /** Row activation. Makes rows focusable and keyboard-activatable. */
   onRowSelect?: (row: Row) => void;
   /** Loading placeholder. */
@@ -133,7 +148,7 @@ export function DataTable<Row>({
         <tbody>
           {rows.map((row, index) => (
             <tr
-              key={rowKey(row)}
+              key={rowKey(row, index)}
               /*
                * The row's position, published for CSS.
                *
@@ -160,7 +175,17 @@ export function DataTable<Row>({
               }
             >
               {columns.map((column) => (
-                <td key={column.key} className={column.numeric ? 'uboss-table-numeric' : undefined}>
+                <td
+                  key={column.key}
+                  className={
+                    [
+                      column.numeric ? 'uboss-table-numeric' : null,
+                      column.stacked === true ? 'uboss-table-cell--stacked' : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' ') || undefined
+                  }
+                >
                   {column.render(row)}
                 </td>
               ))}

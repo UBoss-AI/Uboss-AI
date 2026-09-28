@@ -1,20 +1,17 @@
 # Deployment architecture and the promotion checklist
 
-Prompt 44. How a commit becomes production, and what has to be true at each step.
+Production deployment for Chief Agent, powered by UBoss AI.
 
 ## The honest frame, first
 
-**Nothing here has deployed anything.** The pipeline, the order of operations, the gates and the
-rollback are real and are in the repository. The _host_ is not chosen, so there is no cluster, no
-registry and no URL — and every step that would run a host command checks for
-`UBOSS_DEPLOY_COMMAND` and **says plainly that it did nothing** when it is absent.
+The production target is the Hostinger VPS reserved for `ubossai.com`; project name `ubossai`.
+The Docker stack and GitHub Actions deploy workflow are prepared. They are **not live until the
+first deploy completes and DNS is pointed to the VPS**. The website is served at `ubossai.com`,
+the product at `app.ubossai.com`, and the API at `api.ubossai.com`.
 
-That guard is deliberate and is the most important line in `.github/actions/promote/action.yml`. A
-pipeline that printed "deployed to production" while running nothing is the single most dangerous
-thing this work could produce, and it is the easiest thing to write by accident.
-
-So: UBoss has a promotion _process_ that is defined and testable. It does not yet have a
-_deployment_. Both halves of that sentence matter.
+The legacy release-promotion workflow below remains a separate, gated process. Automatic pushes to
+`main` use `.github/workflows/deploy-hostinger.yml`; that workflow calls Hostinger's deploy action
+with the `ubossai` Compose project and the secrets listed below.
 
 ---
 
@@ -62,10 +59,9 @@ checklist item below and is only as real as the people following it.
 Separately, only one account currently has access to the repository, so there is no second
 reviewer to name even as policy. Add one before the first production promotion.
 
-**No environment holds a secret or a variable**, and that is correct rather than unfinished.
-There is no host, so `UBOSS_DEPLOY_COMMAND` has no real value; setting a placeholder would make
-the promotion action believe it had something to run. Absent is the state every step is written
-to handle, and the state it reports in the log.
+The legacy `production` environment remains separate from the automatic Hostinger deploy workflow.
+The latter requires the repository Actions secrets and variable listed below. Never place these
+values in source files or workflow text.
 
 ---
 
@@ -162,14 +158,20 @@ not visible to a production job and neither is visible to a pull request from a 
 | `DATABASE_MIGRATION_URL` | secret   | Owner role. Applies migrations.                                                            |
 | `DATABASE_URL`           | secret   | `uboss_app`, `NOBYPASSRLS`. What the application connects as.                              |
 | `AUTH_ENCRYPTION_KEYS`   | secret   | Encrypts stored credentials. **Lose these and a restored database is unreadable** (S-335). |
+| `HOSTINGER_API_KEY` | Actions secret | Deploy permission for the Hostinger account. Use a rotated key; never reuse one pasted in chat. |
+| `UBOSS_POSTGRES_PASSWORD` | Actions secret | PostgreSQL owner password used for migrations. |
+| `UBOSS_APP_DB_PASSWORD` | Actions secret | Separate restricted `uboss_app` database password. |
+| `UBOSS_AUTH_ENCRYPTION_KEYS` | Actions secret | Application encryption keyring; back it up outside GitHub too. |
+| `UBOSS_INITIAL_ADMIN_PASSWORD` | Actions secret | One-time account bootstrap password for `dev@ubossai.com`. |
+| `HOSTINGER_VM_ID` | Actions variable | The intended VPS ID. |
 | `UBOSS_DEPLOY_COMMAND`   | variable | The host's own deploy command. Absent ⇒ nothing is released and the log says so.           |
 | `UBOSS_ROLLBACK_COMMAND` | variable | The host's own rollback. Absent ⇒ manual rollback, loudly.                                 |
 | `UBOSS_HEALTH_URL`       | variable | Checked after release. Absent ⇒ release unverified, and the log says so.                   |
 | `UBOSS_ENVIRONMENT_URL`  | variable | Shown on the GitHub deployment.                                                            |
 
-`.env.example` at each workspace root documents the shape. The real `.env` is git-ignored and holds
-live local credentials — `git check-ignore` confirms it, and the secret scan in CI runs over history
-rather than the working tree, because a secret removed in a later commit was still published.
+Environment files are not tracked. The deploy workflow injects these values into the Hostinger Docker
+project; it does not commit an `.env` file. The secret scan examines Git history as well as current
+files, because a deleted secret remains in old commits.
 
 ---
 
@@ -235,17 +237,18 @@ Run top to bottom. Anything unchecked stops the promotion.
 
 ---
 
-## What is not built
+## Deployment status and remaining checks
 
-- **No container image and no registry.** `image/container scan if applicable` in the prompt is not
-  applicable yet, and a scan step that scanned nothing would be worse than its absence.
-- **No host.** The deploy and rollback commands are per-environment variables precisely so choosing
-  a host later is configuration rather than a rewrite.
+- **The local machine cannot run Docker.** Docker configuration parses, but image builds must be
+  verified by the VPS on first deployment.
+- **First deploy requires GitHub Actions secrets and the Hostinger VM ID variable** from the table.
+- **DNS still needs to be changed** to point the root website and `www` to the VPS after the stack
+  is ready; preserve all Google Workspace and Hostinger mail records.
+- **A working journey has not yet been smoke-tested on the live host.** The health check proves the
+  process answers; it does not prove login and product flows work.
 - **No smoke-test suite against a deployed environment.** The health check proves the process
   answers; it does not prove a journey works. The staging checklist asks for that by hand until
   there is an environment to automate it against.
-- **Nothing has been deployed.** `ci.yml` now runs on GitHub and is green, so the pipeline is no
-  longer theoretical — but `deploy.yml` has never promoted anything anywhere, because there is
-  nothing to promote to. Every promotion step checks `UBOSS_DEPLOY_COMMAND` and says in the log
-  that it did nothing. Read any green tick on that workflow as "the process ran", never as "the
-  software is running somewhere".
+- **Do not treat a successful workflow dispatch as proof the site is healthy.** Check the Hostinger
+  project containers and verify `https://ubossai.com`, `https://app.ubossai.com/login`, and
+  `https://api.ubossai.com/health` after each first deploy.

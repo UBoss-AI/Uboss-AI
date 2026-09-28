@@ -288,7 +288,7 @@
 /*
   The product name, which must fit rather than be cut.
 
-  It used to be "UBOSS AI AMS" and now reads "UBOSS AI Chief Agent" — eight characters longer than
+  The company brand line reads "Chief Agent" — eight characters longer than
   the rail was sized for, so a nowrap line ellipsised it to "UBOSS AI Chief Ag…". A truncated
   product name in the top-left corner is the worst place in the application to run out of room.
 
@@ -713,7 +713,7 @@
   border-bottom-color: rgba(255, 255, 255, 0.08);
 }
 
-/* The locked workspace mark: UBOSS AI AMS | {Active Workspace Name} */
+/* The company workspace mark: Chief Agent | {Active Workspace Name} */
 .uboss-ws-mark {
   display: flex;
   align-items: center;
@@ -1806,7 +1806,7 @@
   font-size: var(--uboss-font-size-xs);
   letter-spacing: var(--uboss-tracking-caps);
   text-transform: uppercase;
-  padding: 0 14px;
+  padding: 0 18px;
   height: 34px;
   background: var(--uboss-bg-2);
   border-bottom: 1px solid var(--uboss-border);
@@ -1818,17 +1818,18 @@
 }
 
 .uboss-table td {
-  padding: 0 14px;
+  padding: 0 18px;
   height: var(--uboss-row-h);
   border-bottom: 1px solid var(--uboss-border-2);
   vertical-align: middle;
 }
 
-/* A cell holding stacked lines (a name over an email) cannot be a fixed height. */
+/* A cell holding stacked lines (a name over a code) cannot be a fixed height. */
 .uboss-table td.uboss-table-cell--stacked {
   height: auto;
-  padding-top: 8px;
-  padding-bottom: 8px;
+  line-height: 1.45;
+  padding-top: 12px;
+  padding-bottom: 12px;
 }
 
 .uboss-table tbody tr:last-child td {
@@ -8786,4 +8787,256 @@ tr[data-drop-target='true'] td {
   color: var(--uboss-text-3);
   padding: 24px 0;
   text-align: center;
+}
+
+/* ============================================================
+   The employee panel — editing and performance, in place
+
+   Both used to be somewhere else: a designation was corrected on a separate page, and a
+   performance record was read on a screen headed by whoever was signed in. Somebody who
+   opened the chart to look at a person should not lose the chart to change one field.
+   ============================================================ */
+.uboss-emp-edit {
+  display: grid;
+  gap: 12px;
+}
+
+.uboss-emp-score {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, 1fr);
+  margin-bottom: 16px;
+}
+
+.uboss-emp-score > div {
+  background: var(--uboss-bg-2);
+  border: 1px solid var(--uboss-border-2);
+  border-radius: var(--uboss-radius-control);
+  padding: 12px;
+}
+
+.uboss-emp-score-value {
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+/* ============================================================
+   Roles & Permissions
+
+   A list somebody opens one row at a time. Every role expanded at once is a wall of
+   twenty-nine modules; collapsed, the question "what does Manager actually allow" is one
+   click and the answer is on screen beside the question.
+   ============================================================ */
+.uboss-role-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0 0 20px;
+  padding: 0;
+}
+
+.uboss-role-head {
+  align-items: center;
+  background: var(--uboss-surface);
+  border: 1px solid var(--uboss-border-2);
+  border-radius: var(--uboss-radius-control);
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 12px 16px;
+  text-align: left;
+  width: 100%;
+}
+
+.uboss-role-head:hover {
+  background: var(--uboss-bg-2);
+}
+
+.uboss-role-head:focus-visible {
+  outline: 2px solid var(--uboss-border-control-hover);
+  outline-offset: 1px;
+}
+
+.uboss-role-meta {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.uboss-role-grants {
+  display: grid;
+  gap: 2px;
+  padding: 10px 16px 14px;
+}
+
+/* The module on the left, what it allows on the right — so a reader scans down one column
+   looking for the module they care about rather than reading every line. */
+.uboss-role-grant {
+  border-bottom: 1px solid var(--uboss-border-2);
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 180px 1fr;
+  padding: 7px 0;
+}
+
+.uboss-role-grant:last-child {
+  border-bottom: 0;
+}
+
+.uboss-role-module {
+  color: var(--uboss-text-2);
+  font-weight: 600;
+}
+
+.uboss-role-actions {
+  color: var(--uboss-text-3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.uboss-role-action {
+  align-items: center;
+  color: var(--uboss-text);
+  display: inline-flex;
+  gap: 6px;
+}
+
+@media (max-width: 760px) {
+  .uboss-role-grant {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
+
+/* ============================================================
+   Inviting somebody: employee or administrator
+
+   Two cards rather than a select, because the difference between them is a sentence and a
+   dropdown has nowhere to put it. The choice is made once and is hard to notice being
+   wrong afterwards, so the consequence belongs on screen while it is being made.
+   ============================================================ */
+.uboss-invite-as {
+  display: grid;
+  gap: 8px;
+}
+
+.uboss-invite-as > label {
+  align-items: start;
+  border: 1px solid var(--uboss-border-2);
+  border-radius: var(--uboss-radius-control);
+  cursor: pointer;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto 1fr;
+  padding: 12px 14px;
+}
+
+.uboss-invite-as > label:hover {
+  background: var(--uboss-bg-2);
+}
+
+.uboss-invite-as > label:has(input:checked) {
+  background: var(--uboss-bg-2);
+  border-color: var(--uboss-border-control);
+}
+
+.uboss-invite-as input {
+  margin-top: 3px;
+}
+
+/* ============================================================
+   The picture a report draws of itself
+
+   A report is opened with a question in mind — where is the work, who is carrying too much,
+   what has been waiting longest — and a hundred-row table answers that only to somebody
+   willing to read all hundred rows. The bars answer it in one look, and they are counted from
+   the very rows underneath, so the two can never disagree.
+
+   Bars rather than a pie or a line: a pie hides the difference between 18% and 22%, and a line
+   through a set of counts would imply a movement over time that the report never measured.
+   ============================================================ */
+.uboss-report-chart {
+  background: var(--uboss-bg);
+  border: 1px solid var(--uboss-border-2);
+  border-radius: var(--uboss-radius-card);
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 16px 18px;
+}
+
+.uboss-bars {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/*
+   Label, bar, number — three columns, so every label ends at the same place and the bars all
+   start from one baseline. Lengths compared from a ragged left edge are not compared at all.
+ */
+.uboss-bars > li {
+  align-items: center;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(80px, 148px) 1fr auto;
+}
+
+.uboss-bar-label {
+  color: var(--uboss-text-2);
+  font-size: var(--uboss-font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uboss-bar-track {
+  background: var(--uboss-bg-2);
+  border-radius: var(--uboss-radius-pill);
+  display: block;
+  height: 14px;
+  overflow: hidden;
+}
+
+.uboss-bar-fill {
+  background: var(--uboss-blue);
+  border-radius: var(--uboss-radius-pill);
+  display: block;
+  height: 100%;
+}
+
+/*
+   The number is always printed, and that is not belt-and-braces.
+
+   A bar is a length, and a length is unreadable to somebody using a screen reader, and
+   ambiguous to everybody else at small values. The figure is the answer; the bar only makes
+   the comparison quick.
+ */
+.uboss-bar-value {
+  color: var(--uboss-text);
+  font-family: var(--uboss-font-mono);
+  font-size: var(--uboss-font-size-sm);
+  font-variant-numeric: tabular-nums;
+  min-width: 40px;
+  text-align: right;
+}
+
+/* On a phone the label goes above its own bar rather than squeezing both into one line. */
+@media (max-width: 640px) {
+  .uboss-bars > li {
+    gap: 4px 10px;
+    grid-template-columns: 1fr auto;
+  }
+
+  .uboss-bar-label {
+    grid-column: 1 / -1;
+  }
 }

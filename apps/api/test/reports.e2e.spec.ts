@@ -969,6 +969,54 @@ describe('reports and the company dashboard (e2e)', () => {
     }
   });
 
+  it('draws every report from a column that report actually returns', async () => {
+    /*
+     * The failure this exists to catch.
+     *
+     * A chart is declared in the catalogue as "count the rows by their `status`", and the rows
+     * are built somewhere else entirely. Name a column the report does not return and nothing
+     * breaks: the screen groups every row under one empty heading and draws a single bar labelled
+     * "Not set", which looks like a finished chart of a company with nothing in it.
+     *
+     * Four of the eleven were wrong exactly that way when the charts were first declared —
+     * `bucket`, `person`, `level` and a `kind` that counted two rows of totals. So the
+     * declaration is checked against the real answer here, where a mismatch is a failure rather
+     * than a plausible-looking picture.
+     */
+    const catalogue = (
+      await asPerson(agent().get(`/tenants/${tenantId}/reports`), adminUboss).expect(200)
+    ).body as { reports: { key: string; label: string; chart?: Record<string, string> }[] };
+
+    let charted = 0;
+    for (const report of catalogue.reports) {
+      const chart = report.chart;
+      assert.ok(chart !== undefined, `${report.label} declares no chart`);
+      charted += 1;
+
+      const run = (
+        await asPerson(
+          agent().get(`/tenants/${tenantId}/reports/${report.key}`),
+          adminUboss,
+        ).expect(200)
+      ).body as { columns: string[] };
+
+      const named =
+        chart['kind'] === 'series'
+          ? [chart['labelColumn'], chart['valueColumn']]
+          : [chart['column']];
+
+      for (const column of named) {
+        assert.ok(
+          column !== undefined && run.columns.includes(column),
+          `${report.label} charts "${String(column)}", which is not one of its columns: ` +
+            run.columns.join(', '),
+        );
+      }
+    }
+
+    assert.equal(charted, 11, 'every report in the catalogue draws');
+  });
+
   it('404s an invented report name', async () => {
     await asPerson(agent().get(`/tenants/${tenantId}/reports/MadeUpReport`), adminUboss).expect(
       404,

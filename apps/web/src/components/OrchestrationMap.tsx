@@ -272,7 +272,7 @@ export function OrchestrationMap({
           <span className="uboss-orch-core-halo" aria-hidden="true" />
           <Icon name="bot" size={24} />
         </span>
-        <span className="uboss-orch-core-name">UBOSS AI Chief Agent</span>
+        <span className="uboss-orch-core-name">Chief Agent</span>
         <span className="uboss-orch-core-scope">{scope}</span>
       </div>
 

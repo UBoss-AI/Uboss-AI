@@ -488,7 +488,15 @@ describe('Company navigation model', () => {
     expect(SETTINGS_SECTIONS.map((section) => section.key)).toContain('roles');
   });
 
-  it('does not repeat Users & Access in the sidebar, because Settings owns it', () => {
+  it('keeps Users & Access in Settings, where a company manages who may enter it', () => {
+    /*
+     * Inviting somebody is a Settings act, the way it is in every product a company already
+     * uses: you open Settings and manage who is in the workspace.
+     *
+     * What was wrong before was not the location. It was that the section held one sentence and
+     * a button reading *Open Users & Access* — three clicks to reach the invite form, two of
+     * them spent reading about where it was. Selecting the section now opens the screen.
+     */
     const keys = COMPANY_NAV.flatMap((group) => group.items.map((item) => item.key));
     expect(keys).not.toContain('users');
     expect(SETTINGS_SECTIONS.map((section) => section.key)).toContain('users');
@@ -521,15 +529,24 @@ describe('Company navigation model', () => {
 });
 
 describe('SettingsShell', () => {
-  it('renders left navigation for all 19 settings sections', () => {
+  it('renders left navigation for every settings section that holds a setting', () => {
     render(
       <SettingsShell sections={SETTINGS_SECTIONS} activeKey="general" onSelect={() => {}}>
         <p>Detail panel</p>
       </SettingsShell>,
     );
 
+    /*
+     * One button per section, whatever the list holds.
+     *
+     * It was nineteen, and nine of those nineteen were either a signpost to a screen somewhere
+     * else or a paragraph with nothing to change. Pinning the number again would only mean the
+     * next person to delete filler has to update a test to be allowed to; what the shell owes
+     * is a button for each section it was given.
+     */
     const nav = screen.getByRole('navigation', { name: 'Settings sections' });
-    expect(nav.querySelectorAll('button')).toHaveLength(19);
+    expect(nav.querySelectorAll('button')).toHaveLength(SETTINGS_SECTIONS.length);
+    expect(SETTINGS_SECTIONS.length).toBeGreaterThan(0);
     expect(screen.getByText('Detail panel')).toBeInTheDocument();
   });
 
@@ -616,7 +633,17 @@ describe('SettingsShell', () => {
       </SettingsShell>,
     );
 
-    expect(screen.getByRole('button', { name: 'My Profile' })).toBeInTheDocument();
+    /*
+     * "How this company works", not "My Profile".
+     *
+     * The category holds the company's timezone, working week and holidays — useful to somebody
+     * who does not administer, because their deadlines are computed in them, and not in any
+     * sense their profile. The label promised a page about them and delivered a page about the
+     * company.
+     */
+    expect(
+      screen.getByRole('button', { name: 'How this company works' }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Login & Security' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'General' })).not.toBeInTheDocument();
   });
@@ -806,14 +833,18 @@ describe('TopBar — the notification bell (Prompt 15)', () => {
 });
 
 describe('TopBar — search', () => {
-  it('renders the search field disabled when no host runs a search', () => {
+  it('offers no search field at all when no host runs a search', () => {
     render(<TopBar variant="company" workspaceName="SPM Medicare" />);
 
-    // It used to accept text and discard it: a prominent box on every screen, on which typing a
-    // name and pressing Enter did nothing at all.
-    const field = screen.getByLabelText(/Search people, objectives, agents/);
-    expect(field).toBeDisabled();
-    expect(field).toHaveAttribute('title', expect.stringContaining('not built yet'));
+    /*
+     * It was disabled, and before that it accepted text and discarded it.
+     *
+     * Disabled was an improvement on lying, and still wrong: nothing in the product supplies a
+     * search, so every screen carried a wide, permanently dead box in the most valuable strip of
+     * the window. A control that never works teaches people to stop reading controls. The prop
+     * remains, and the field returns the day something passes it.
+     */
+    expect(screen.queryByLabelText(/Search people, objectives, agents/)).toBeNull();
   });
 
   it('runs the search on Enter when a host supplies one', () => {
@@ -846,7 +877,7 @@ describe('LoginPresentation — two front doors, one visual system', () => {
     );
 
     expect(container.querySelector('.uboss-mindmap')).not.toBeNull();
-    expect(screen.getByText('UBOSS AI AMS')).toBeInTheDocument();
+    expect(screen.getByText('Chief Agent')).toBeInTheDocument();
     // The six locked sections stay until the client approves a different grouping.
     for (const capability of ['MAP', 'Optimize', 'Build', 'Operate', 'Govern', 'Manage Task']) {
       expect(screen.getByText(capability)).toBeInTheDocument();

@@ -72,7 +72,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     if (!url) {
       throw new Error(
         'DATABASE_URL is not set. Start the local database with ' +
-          '`docker compose -f infra/docker-compose.yml up -d` and copy apps/api/.env.example to .env.',
+          '`docker compose -f infra/docker-compose.yml up -d` and set DATABASE_URL in the private process environment.',
       );
     }
 
@@ -89,6 +89,56 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   async onModuleInit(): Promise<void> {
     await this.root.$connect();
     this.logger.log('Connected to PostgreSQL');
+    await this.assertRoleCannotBypassRowLevelSecurity();
+  }
+
+  /**
+   * Refuse to serve if the connected role can see past Row-Level Security.
+   *
+   * Every tenant-owned table has `FORCE ROW LEVEL SECURITY` and a policy keyed on
+   * `app.current_tenant_id`, and the whole of that is worth nothing against a role with
+   * `SUPERUSER` or `BYPASSRLS`: PostgreSQL skips policies for such a role entirely. The
+   * failure is silent — every query returns more rows than it should and nothing anywhere says
+   * why — so it has to be checked rather than assumed.
+   *
+   * This is not hypothetical. `.env.example` shipped `DATABASE_URL` pointing at `uboss`, the
+   * container's own superuser, while the application was designed for `uboss_app`
+   * (`NOSUPERUSER NOBYPASSRLS`). Connected as the former, a query with no tenant declared
+   * returned 55 memberships across 19 companies; as the latter, the same query returns none.
+   * Anybody deploying from the example file would have had no isolation and no sign of it.
+   *
+   * Throwing stops the process at boot, which is the only safe direction: an API that has lost
+   * tenant isolation must not accept a single request, and a warning in a log nobody reads is
+   * not a control.
+   */
+  private async assertRoleCannotBypassRowLevelSecurity(): Promise<void> {
+    const [role] = await this.root.$queryRawUnsafe<
+      { name: string; superuser: boolean; bypass: boolean }[]
+    >(
+      'SELECT rolname AS name, rolsuper AS superuser, rolbypassrls AS bypass ' +
+        'FROM pg_roles WHERE rolname = current_user',
+    );
+
+    if (role === undefined) {
+      throw new Error(
+        'Could not read the attributes of the connected database role, so it cannot be shown ' +
+          'that Row-Level Security applies to it. Refusing to start.',
+      );
+    }
+
+    if (role.superuser || role.bypass) {
+      throw new Error(
+        `The database role "${role.name}" ` +
+          `${role.superuser ? 'is a SUPERUSER' : 'has BYPASSRLS'}, so PostgreSQL ignores every ` +
+          'Row-Level Security policy for it and one company can read another’s rows. Point ' +
+          'DATABASE_URL at the unprivileged application role (NOSUPERUSER, NOBYPASSRLS, not the ' +
+          'table owner) — "uboss_app" in the shipped migrations. Refusing to start.',
+      );
+    }
+
+    this.logger.log(
+      `Row-Level Security applies: connected as "${role.name}" (no SUPERUSER, no BYPASSRLS).`,
+    );
   }
 
   async onModuleDestroy(): Promise<void> {

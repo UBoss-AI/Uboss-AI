@@ -1071,6 +1071,55 @@ export class ObjectiveService {
         );
       }
 
+      /*
+       * A version with work in it goes live through Approve & Assign, never through here.
+       *
+       * There were two ways to make a version live and only one of them created the work.
+       * `assign` publishes the version *and* writes the human tasks and AI work assignments;
+       * this route only moves the status. So publishing first put the objective live with nothing
+       * for anybody to do, and `assign` then refused — "this version is already live" — which
+       * left no way forward at all short of opening a fresh draft. Proven against the running
+       * product: an objective reached Active with zero `ai_work_assignments` rows and could not
+       * be recovered.
+       *
+       * Refused rather than repaired here, because assembling the work is `AssignmentService`'s
+       * job and a second implementation of it would be the next thing to disagree with the first.
+       * A version with no executable steps — a placeholder, or one whose work was cancelled —
+       * still publishes, so this narrows nothing that was working.
+       */
+      const executable = await this.prisma.client.objectiveWorkflowDraft.findFirst({
+        where: { objectiveVersionId: target.id },
+        select: { graph: true },
+      });
+      if (executable !== null) {
+        const nodes = (executable.graph as { nodes?: { kind?: string }[] } | null)?.nodes ?? [];
+        const hasWork = nodes.some((node) => node.kind === 'Ai' || node.kind === 'Human');
+
+        /*
+         * Sequential, not `Promise.all`.
+         *
+         * This runs inside `runInTenantTransaction`, so both counts share one transaction
+         * client, and a client cannot carry two queries at once — the pair either errors with
+         * "client.query() when the client is already executing a query" or stalls. It stalled:
+         * one Agent Builder test went from under three seconds to a hundred and forty-four
+         * before this was made sequential.
+         */
+        const tasks = await this.prisma.client.humanTask.count({
+          where: { objectiveVersionId: target.id },
+        });
+        const aiWork = await this.prisma.client.aiWorkAssignment.count({
+          where: { objectiveVersionId: target.id },
+        });
+
+        if (hasWork && tasks === 0 && aiWork === 0) {
+          throw new ConflictException(
+            `V${target.versionNumber} has work in it that nobody has been given yet. Use ` +
+              'Approve & Assign, which publishes the version and creates the work in one act. ' +
+              'Publishing on its own would put this objective live with nothing for anyone to do.',
+          );
+        }
+      }
+
       const previous = loaded.versions.find((version) => version.status === 'Active');
 
       // The live pointer is cleared first: it holds a foreign key to the version being archived,

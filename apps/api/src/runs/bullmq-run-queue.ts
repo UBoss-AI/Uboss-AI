@@ -8,6 +8,19 @@ import type { QueueHealth } from './run-queue.js';
 export const RUN_QUEUE_NAME = 'uboss.agent.runs';
 
 /**
+ * BullMQ custom job IDs cannot contain `:`. Encode the UUID before adding the attempt so the
+ * retry remains deterministic without relying on that reserved character or a delimiter that
+ * could also appear in a caller-provided ID.
+ */
+export function retryJobId(runId: string, attempt: number): string {
+  if (runId.length === 0) throw new Error('A retry job requires a run id.');
+  if (!Number.isSafeInteger(attempt) || attempt < 1) {
+    throw new Error('A retry job attempt must be a positive safe integer.');
+  }
+  return `retry-${Buffer.from(runId, 'utf8').toString('base64url')}-${attempt}`;
+}
+
+/**
  * The shipping queue: BullMQ on Redis, as the approved architecture requires.
  *
  * ## What BullMQ is and is not responsible for
@@ -62,22 +75,54 @@ export class BullMqRunQueue extends RunQueue implements OnModuleInit, OnModuleDe
     };
   }
 
+  /**
+   * Register the function that performs a run, whenever that happens.
+   *
+   * ## Why this starts the worker rather than only remembering the handler
+   *
+   * It used to only assign `this.handler`, and `onModuleInit` started a worker if a handler was
+   * already there. That made the behaviour depend on the order Nest runs lifecycle hooks — and
+   * the order is fixed, and it is the wrong way round: `RunQueue` is a *dependency* of
+   * `RunEngineService`, so Nest constructs and initialises the queue first, and the engine
+   * registers its handler afterwards. The check therefore always saw `null`.
+   *
+   * The result was silent and total: with `REDIS_URL` set, every boot logged "this process
+   * produces but does not consume", no `Worker` was ever created, and runs enqueued to Redis
+   * were never performed. Proven against the running product — that line appears at every start
+   * in the development log, and `package.json` defines no separate worker process for anything
+   * else to consume them.
+   *
+   * Registering late is now enough. If the queue is already up, the worker starts here; if it is
+   * not, `onModuleInit` starts it. Either order gives a consuming process.
+   */
   onRun(handler: (job: RunJob) => Promise<void>): void {
     this.handler = handler;
+    if (this.queue !== null && this.worker === null) {
+      this.startWorker(handler);
+    }
   }
 
   onModuleInit(): void {
     this.queue = new Queue<RunJob>(RUN_QUEUE_NAME, { connection: this.connection });
 
     if (this.handler === null) {
-      // Producer-only is legitimate — an API instance that enqueues while separate workers
-      // consume. Logged rather than thrown, because throwing would stop an API that is correctly
-      // configured.
-      this.logger.log('No run handler registered; this process produces but does not consume.');
+      /*
+       * Producer-only, for now.
+       *
+       * Still legitimate — an API instance that enqueues while separate workers consume — and
+       * still logged rather than thrown, because throwing would stop a correctly configured
+       * deployment. But it is no longer final: `onRun` starts the worker if a handler arrives
+       * after this point, which is what happens in a single-process deployment.
+       */
+      this.logger.log('No run handler registered yet; this process produces until one is.');
       return;
     }
 
-    const handler = this.handler;
+    this.startWorker(this.handler);
+  }
+
+  /** Bring up the consuming worker. Called from whichever of the two arrives second. */
+  private startWorker(handler: (job: RunJob) => Promise<void>): void {
     this.worker = new Worker<RunJob>(
       RUN_QUEUE_NAME,
       async (job) => {
@@ -101,6 +146,8 @@ export class BullMqRunQueue extends RunQueue implements OnModuleInit, OnModuleDe
       },
     );
 
+    this.logger.log('Run worker started; this process consumes the run queue.');
+
     this.worker.on('failed', (job, error) => {
       // The engine has already written the failure to the run row. This is operator-facing noise,
       // not the record.
@@ -122,9 +169,8 @@ export class BullMqRunQueue extends RunQueue implements OnModuleInit, OnModuleDe
 
   async enqueueAfter(job: RunJob, delayMs: number): Promise<void> {
     await this.requireQueue().add(RUN_QUEUE_NAME, job, {
-      // A distinct id per attempt: the previous attempt's job may still be remembered, and
-      // reusing the run id would have BullMQ discard the retry as a duplicate.
-      jobId: `${job.runId}:attempt-${job.attempt}`,
+      // A distinct id per attempt. BullMQ rejects custom IDs containing `:`.
+      jobId: retryJobId(job.runId, job.attempt),
       delay: delayMs,
       attempts: 1,
       removeOnComplete: { age: 24 * 60 * 60, count: 1000 },

@@ -9,6 +9,7 @@ import {
   Logger,
   NotFoundException,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Put,
@@ -199,7 +200,7 @@ export class EnterpriseIdentityController {
   @Patch('sso-connections/:connectionId')
   async updateConnection(
     @Param('tenantId') tenantId: string,
-    @Param('connectionId') connectionId: string,
+    @Param('connectionId', new ParseUUIDPipe()) connectionId: string,
     @Body() body: UpdateSsoConnectionDto,
   ) {
     const scope = this.scopeFor(tenantId);
@@ -271,7 +272,7 @@ export class EnterpriseIdentityController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteConnection(
     @Param('tenantId') tenantId: string,
-    @Param('connectionId') connectionId: string,
+    @Param('connectionId', new ParseUUIDPipe()) connectionId: string,
   ) {
     const scope = this.scopeFor(tenantId);
 

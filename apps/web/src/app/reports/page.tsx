@@ -26,6 +26,7 @@ import {
 } from '../../lib/api-client';
 import { useAccountMenu } from '../../lib/use-account-menu';
 import { useSignedInUser } from '../../lib/use-signed-in-user';
+import { ReportChart } from '../../components/ReportChart';
 import { RoutedAppShell } from '../../components/RoutedAppShell';
 import {
   forgetWorkspace,
@@ -248,6 +249,26 @@ export default function ReportsPage(): React.JSX.Element {
                     </dl>
                   ) : null}
 
+                  {/*
+                    The picture, above the rows.
+
+                    A report is opened to answer a question — where is the work, who is
+                    overloaded, what is waiting — and the answer used to be a hundred-row table
+                    read line by line. The chart is counted from those same rows, so it can never
+                    say something the table does not.
+
+                    A report with no chart declares that deliberately, and the reason is written
+                    beside it in the catalogue.
+                  */}
+                  {definition?.chart === undefined ? null : (
+                    <ReportChart
+                      spec={definition.chart}
+                      rows={run.rows as Record<string, string>[]}
+                      summary={run.summary}
+                      truncated={run.truncated}
+                    />
+                  )}
+
                   {run.truncated ? (
                     <Banner tone="warn">
                       This report was cut short at the row limit. Narrow the period to see the rest
@@ -260,9 +281,20 @@ export default function ReportsPage(): React.JSX.Element {
                     caption={definition?.label ?? 'Report'}
                     columns={columns}
                     rows={run.rows}
-                    // A report row is an aggregate with no id of its own, so the key is the
-                    // row's own values. Stable for a given result, which is all React needs.
-                    rowKey={(row) => JSON.stringify(row)}
+                    /*
+                     * Position first, values second.
+                     *
+                     * A report row is an aggregate with no id of its own, so the key used to be
+                     * the row's values — and two genuinely identical rows then collided. The
+                     * approvals report does produce them: two sign-offs with the same title,
+                     * type, status, requester and age are different approvals that happen to read
+                     * alike, and React dropped one of them with a duplicate-key warning.
+                     *
+                     * The index alone would be enough for correctness, since a result is replaced
+                     * wholesale rather than reordered. The values stay on the end so that a key
+                     * still changes when the row does.
+                     */
+                    rowKey={(row, index) => `${index}:${JSON.stringify(row)}`}
                     emptyTitle="Nothing in this period"
                     emptyDescription="Within your scope and the period you chose, there is nothing to show."
                   />

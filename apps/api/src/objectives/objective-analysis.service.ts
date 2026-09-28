@@ -609,6 +609,30 @@ export class ObjectiveAnalysisService {
       if (best) {
         node.skillVersionId = best.skillVersionId;
         node.skillName = best.skillName;
+
+        /*
+         * The Skill is right; the data may not be there yet.
+         *
+         * The router matches a step's inputs to a Skill's declared ones by meaning rather than by
+         * spelling, so a capability is no longer lost to a difference in wording. What it will
+         * not do is pretend an input exists: an input the step cannot supply comes back named,
+         * and it is recorded here as a gap so the administrator reads *which* input is missing
+         * rather than "no Skill matches".
+         */
+        if (best.unmetInputs.length > 0) {
+          state.gaps.push(
+            `Step ${node.fromStepPosition} ("${node.label}") will use "${best.skillName}", which ` +
+              `still needs ${best.unmetInputs.join(', ')}. Name that input in the step's "what is ` +
+              'used" column, or the step cannot run.',
+          );
+          state.risks.push({
+            nodeId: node.id,
+            severity: 'Medium',
+            summary:
+              `"${best.skillName}" is the right capability for this step, but ` +
+              `${best.unmetInputs.join(', ')} is not available to it here.`,
+          });
+        }
       } else {
         state.gaps.push(
           `No approved Skill matches step ${node.fromStepPosition} ("${node.label}"). A Skill ` +

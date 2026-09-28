@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -92,7 +93,7 @@ export class FeedbackController {
 
   @Get('runs/:runId')
   @RequirePermission({ module: 'agents', action: 'View' })
-  async listForRun(@Param('runId') runId: string): Promise<unknown> {
+  async listForRun(@Param('runId', new ParseUUIDPipe()) runId: string): Promise<unknown> {
     return {
       feedback: await this.feedback.listForRun({
         scope: this.tenantContext.requireScope(),
@@ -104,7 +105,7 @@ export class FeedbackController {
 
   @Post('runs/:runId')
   @RequirePermission({ module: 'agents', action: 'Comment' })
-  async submit(@Param('runId') runId: string, @Body() body: SubmitFeedbackDto): Promise<unknown> {
+  async submit(@Param('runId', new ParseUUIDPipe()) runId: string, @Body() body: SubmitFeedbackDto): Promise<unknown> {
     return this.feedback.submit({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),

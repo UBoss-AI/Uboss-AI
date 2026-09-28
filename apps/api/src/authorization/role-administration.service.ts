@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 
 import {
   isScopeKind,
@@ -251,6 +257,22 @@ export class RoleAdministrationService {
         (input.scopeKind === 'Department' || input.scopeKind === 'MultipleDepartments') &&
         (input.departmentIds ?? []).length > 0;
 
+      /*
+       * They already have it.
+       *
+       * `role_assignments_tenant_id_user_id_role_kind_custom_role_id_key` makes a person's hold
+       * on a given role unique, and granting the same one twice reached the administrator as a
+       * bare "Internal server error" — proven by granting the same custom role twice against the
+       * running product. Re-granting is a natural thing to do when you are not sure it took, and
+       * the answer should be that it did.
+       */
+      if (code === 'P2002' || code === '23505') {
+        throw new ConflictException(
+          'This person already holds that role in this company. Revoke the existing assignment ' +
+            'first if you mean to change its scope.',
+        );
+      }
+
       if (looksLikeForeignKey && namesDepartments) {
         const named = [...(input.departmentIds ?? [])].join(', ');
         throw new BadRequestException(
@@ -414,13 +436,32 @@ export class RoleAdministrationService {
       );
     }
 
-    const role = await this.repository.createCustomRole(scope, {
-      displayName: input.displayName.trim(),
-      ...(input.description === undefined ? {} : { description: input.description }),
-      permissions: permissions as Record<string, string[]>,
-      maxScope: input.maxScope,
-      createdByUserId: actorUserId,
-    });
+    /*
+     * A name this company has already used is a mistake, not a server fault.
+     *
+     * `custom_roles_tenant_id_display_name_key` makes the name unique per company, and the
+     * violation reached the administrator as a bare "Internal server error" — proven against the
+     * running product by writing the same role twice. There is nothing wrong with the server in
+     * that moment; somebody typed a name that is taken, and the answer should say so.
+     */
+    const role = await this.repository
+      .createCustomRole(scope, {
+        displayName: input.displayName.trim(),
+        ...(input.description === undefined ? {} : { description: input.description }),
+        permissions: permissions as Record<string, string[]>,
+        maxScope: input.maxScope,
+        createdByUserId: actorUserId,
+      })
+      .catch((cause: unknown) => {
+        const code = (cause as { code?: unknown } | null)?.code;
+        if (code === 'P2002' || code === '23505') {
+          throw new ConflictException(
+            `This company already has a role called "${input.displayName.trim()}". ` +
+              'Pick another name, or edit the one that exists.',
+          );
+        }
+        throw cause;
+      });
 
     await this.securityEvents.recordSuspicious({
       action: SECURITY_ACTIONS.customRoleCreated,

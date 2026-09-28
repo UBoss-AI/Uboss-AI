@@ -35,7 +35,7 @@
  */
 
 import { isRoleKind } from './authorization.js';
-import type { CompanyModuleKey, RoleKind } from './authorization.js';
+import type { Action, CompanyModuleKey, RoleKind } from './authorization.js';
 import type { ApprovalRequestType } from './assignments.js';
 
 // ---------------------------------------------------------------------------
@@ -126,6 +126,88 @@ export const APPROVAL_TYPE_MODULE: Record<ApprovalRequestType, CompanyModuleKey>
 };
 
 /**
+ * The permission that **decides** a request, where it is not simply `Approve` on the module above.
+ *
+ * ## The deadlock this exists to end
+ *
+ * Deciding a request takes two things: being the person or role it was addressed to, and holding
+ * the permission. A Change Request is addressed to `CompanyAdmin` — the authority over company
+ * configuration, which is what these requests ask to change. But a CompanyAdmin deliberately does
+ * **not** hold `approvals:Approve`: the template says "everything except deciding its approval",
+ * and that separation is wanted.
+ *
+ * So the two halves disagreed and no one could decide a Change Request at all. A CompanyAdmin was
+ * refused for the permission; a Head, who holds `approvals:Approve`, was refused because the
+ * request is not addressed to them. Proven against the running product: an employee's request sat
+ * `Pending` with no one in the company able to move it.
+ *
+ * ## Why this, rather than granting Approve
+ *
+ * Giving a CompanyAdmin `approvals:Approve` would let them decide output approvals, high-risk
+ * actions, budget overrides and workflow steps — the whole point of withholding it. This names a
+ * permission they already hold for exactly this subject: `settings:Administer`, which in the
+ * built-in templates **only** the CompanyAdmin has. The authority granted is one approval type
+ * wide and no wider.
+ *
+ * Separation of duties is untouched. No-self-approval and four-eyes are applied where they always
+ * were, by the policies on the request itself, and nothing here can satisfy them.
+ */
+export const APPROVAL_TYPE_DECISION_OVERRIDE: Partial<
+  Record<ApprovalRequestType, { module: CompanyModuleKey; action: Action }>
+> = {
+  ChangeRequest: { module: 'settings', action: 'Administer' },
+};
+
+/** Which permission decides this request. `Approve` on its module unless it says otherwise. */
+export function decisionPermissionFor(type: ApprovalRequestType): {
+  module: CompanyModuleKey;
+  action: Action;
+} {
+  return (
+    APPROVAL_TYPE_DECISION_OVERRIDE[type] ?? { module: APPROVAL_TYPE_MODULE[type], action: 'Approve' }
+  );
+}
+
+/**
+ * The role a request is addressed to, where the product fixes one.
+ *
+ * Kept beside the deciding permission on purpose: the two have to agree, and when they did not,
+ * nothing said so. `everyAddressedRoleCanDecide` is what now says so.
+ */
+export const APPROVAL_TYPE_ADDRESSED_ROLE: Partial<Record<ApprovalRequestType, RoleKind>> = {
+  ChangeRequest: 'CompanyAdmin',
+};
+
+/**
+ * Can the role a request is addressed to actually decide it?
+ *
+ * The existing check asks whether *somebody* can decide each type, and a Change Request passed it
+ * — a Head can hold `approvals:Approve`. It missed the deadlock entirely, because the role the
+ * request is sent to was never compared with the permission deciding it.
+ */
+export function everyAddressedRoleCanDecide(
+  templates: Record<string, { permissions: Record<string, readonly string[] | undefined> }>,
+): { ok: boolean; stuck: { type: string; role: string; needs: string }[] } {
+  const stuck: { type: string; role: string; needs: string }[] = [];
+
+  for (const [type, role] of Object.entries(APPROVAL_TYPE_ADDRESSED_ROLE)) {
+    if (role === undefined) continue;
+    const permission = decisionPermissionFor(type as ApprovalRequestType);
+    const held = templates[role]?.permissions[permission.module] ?? [];
+
+    if (!held.includes(permission.action)) {
+      stuck.push({
+        type,
+        role,
+        needs: `${permission.module}:${permission.action}`,
+      });
+    }
+  }
+
+  return { ok: stuck.length === 0, stuck };
+}
+
+/**
  * Every approval type must be decidable by at least one built-in role.
  *
  * A guard against the failure this mapping had on its first attempt: three types pointed at
@@ -138,12 +220,14 @@ export function everyApprovalTypeIsDecidable(
 ): { ok: boolean; undecidable: { type: string; module: string }[] } {
   const undecidable: { type: string; module: string }[] = [];
 
-  for (const [type, module] of Object.entries(APPROVAL_TYPE_MODULE)) {
-    const someRoleCanApprove = Object.values(templates).some((template) =>
-      (template.permissions[module] ?? []).includes('Approve'),
+  for (const type of Object.keys(APPROVAL_TYPE_MODULE) as ApprovalRequestType[]) {
+    // The permission that really decides it, which is not always `Approve` on its own module.
+    const permission = decisionPermissionFor(type);
+    const someRoleCanDecide = Object.values(templates).some((template) =>
+      (template.permissions[permission.module] ?? []).includes(permission.action),
     );
-    if (!someRoleCanApprove) {
-      undecidable.push({ type, module });
+    if (!someRoleCanDecide) {
+      undecidable.push({ type, module: permission.module });
     }
   }
 

@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, Query, UnauthorizedException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { IsArray, IsIn, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 
 import {
@@ -146,7 +155,7 @@ export class KnowledgeController {
   @Post(':sourceId')
   @RequirePermission({ module: 'settings', action: 'EditDraft' })
   async update(
-    @Param('sourceId') sourceId: string,
+    @Param('sourceId', new ParseUUIDPipe()) sourceId: string,
     @Body() body: UpdateSourceDto,
   ): Promise<unknown> {
     return this.knowledge.update({
@@ -165,7 +174,7 @@ export class KnowledgeController {
   @Post(':sourceId/approve')
   @RequirePermission({ module: 'settings', action: 'Approve' })
   async approve(
-    @Param('sourceId') sourceId: string,
+    @Param('sourceId', new ParseUUIDPipe()) sourceId: string,
     @Body() body: ApproveSourceDto,
   ): Promise<unknown> {
     return this.knowledge.approve({
@@ -179,7 +188,7 @@ export class KnowledgeController {
   @Post(':sourceId/retire')
   @RequirePermission({ module: 'settings', action: 'Administer' })
   async retire(
-    @Param('sourceId') sourceId: string,
+    @Param('sourceId', new ParseUUIDPipe()) sourceId: string,
     @Body() body: RetireSourceDto,
   ): Promise<unknown> {
     return this.knowledge.retire({
@@ -193,7 +202,7 @@ export class KnowledgeController {
   @Post(':sourceId/files')
   @RequirePermission({ module: 'settings', action: 'EditDraft' })
   async addFile(
-    @Param('sourceId') sourceId: string,
+    @Param('sourceId', new ParseUUIDPipe()) sourceId: string,
     @Body() body: SourceFileDto,
   ): Promise<unknown> {
     return this.knowledge.addFile({
@@ -207,7 +216,7 @@ export class KnowledgeController {
   @Post(':sourceId/files/remove')
   @RequirePermission({ module: 'settings', action: 'EditDraft' })
   async removeFile(
-    @Param('sourceId') sourceId: string,
+    @Param('sourceId', new ParseUUIDPipe()) sourceId: string,
     @Body() body: SourceFileDto,
   ): Promise<unknown> {
     return this.knowledge.removeFile({
@@ -228,7 +237,7 @@ export class KnowledgeController {
   @Get(':sourceId/access')
   @RequirePermission({ module: 'settings', action: 'View' })
   async access(
-    @Param('sourceId') sourceId: string,
+    @Param('sourceId', new ParseUUIDPipe()) sourceId: string,
     @Query('engineAgentId') engineAgentId?: string,
     @Query('departmentId') departmentId?: string,
   ): Promise<unknown> {

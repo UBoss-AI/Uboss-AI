@@ -16,7 +16,7 @@ export interface SidebarUser {
 }
 
 export interface SidebarProps {
-  /** Brand line. Company workspaces show "UBOSS AI Chief Agent"; the Master Console shows "UBoss". */
+  /** Brand line. Company workspaces show "Chief Agent"; the Master Console shows "UBoss". */
   brand: string;
   /** Secondary brand line: the workspace name, or "Master Console". */
   brandSub: string;

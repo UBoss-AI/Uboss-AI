@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, Query, UnauthorizedException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  UnauthorizedException,
+} from '@nestjs/common';
 import {
   IsBoolean,
   IsIn,
@@ -192,7 +201,7 @@ export class SupportController {
   /** One ticket and its history — **replies only**, never an operator's internal notes. */
   @Get('tickets/:ticketId')
   @RequirePermission({ module: 'settings', action: 'View' })
-  async detail(@Param('ticketId') ticketId: string): Promise<unknown> {
+  async detail(@Param('ticketId', new ParseUUIDPipe()) ticketId: string): Promise<unknown> {
     return this.tickets.companyDetail({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -202,7 +211,7 @@ export class SupportController {
 
   @Post('tickets/:ticketId/reply')
   @RequirePermission({ module: 'settings', action: 'View' })
-  async reply(@Param('ticketId') ticketId: string, @Body() body: ReplyDto): Promise<unknown> {
+  async reply(@Param('ticketId', new ParseUUIDPipe()) ticketId: string, @Body() body: ReplyDto): Promise<unknown> {
     return this.tickets.replyAsCompany({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -348,13 +357,13 @@ export class PlatformSupportController {
   /** One ticket, with **every** note — this is the operator's view. */
   @Get('tickets/:ticketId')
   @RequirePermission({ module: 'support', action: 'View' })
-  async ticket(@Param('ticketId') ticketId: string): Promise<unknown> {
+  async ticket(@Param('ticketId', new ParseUUIDPipe()) ticketId: string): Promise<unknown> {
     return this.tickets.operatorDetail(ticketId);
   }
 
   @Post('tickets/:ticketId/assign')
   @RequirePermission({ module: 'support', action: 'EditDraft' })
-  async assign(@Param('ticketId') ticketId: string, @Body() body: AssignDto): Promise<unknown> {
+  async assign(@Param('ticketId', new ParseUUIDPipe()) ticketId: string, @Body() body: AssignDto): Promise<unknown> {
     return this.tickets.assign({
       ticketId,
       operatorUserId: body.operatorUserId,
@@ -365,7 +374,7 @@ export class PlatformSupportController {
   @Post('tickets/:ticketId/state')
   @RequirePermission({ module: 'support', action: 'EditDraft' })
   async transition(
-    @Param('ticketId') ticketId: string,
+    @Param('ticketId', new ParseUUIDPipe()) ticketId: string,
     @Body() body: TransitionDto,
   ): Promise<unknown> {
     return this.tickets.transition({
@@ -378,7 +387,7 @@ export class PlatformSupportController {
 
   @Post('tickets/:ticketId/notes')
   @RequirePermission({ module: 'support', action: 'Comment' })
-  async note(@Param('ticketId') ticketId: string, @Body() body: OperatorNoteDto): Promise<unknown> {
+  async note(@Param('ticketId', new ParseUUIDPipe()) ticketId: string, @Body() body: OperatorNoteDto): Promise<unknown> {
     return this.tickets.addOperatorNote({
       ticketId,
       actorUserId: this.currentUserId(),
@@ -389,7 +398,7 @@ export class PlatformSupportController {
 
   @Post('tickets/:ticketId/incident')
   @RequirePermission({ module: 'support', action: 'EditDraft' })
-  async link(@Param('ticketId') ticketId: string, @Body() body: LinkIncidentDto): Promise<unknown> {
+  async link(@Param('ticketId', new ParseUUIDPipe()) ticketId: string, @Body() body: LinkIncidentDto): Promise<unknown> {
     return this.tickets.linkToIncident({
       ticketId,
       serviceAlertId: body.serviceAlertId ?? null,
@@ -402,7 +411,7 @@ export class PlatformSupportController {
   @Post('incidents/:alertId/declare')
   @RequirePermission({ module: 'support', action: 'Administer' })
   async declare(
-    @Param('alertId') alertId: string,
+    @Param('alertId', new ParseUUIDPipe()) alertId: string,
     @Body() body: DeclareIncidentDto,
   ): Promise<unknown> {
     return this.administration.declareIncident({
@@ -415,7 +424,7 @@ export class PlatformSupportController {
 
   @Post('incidents/:alertId/mitigate')
   @RequirePermission({ module: 'support', action: 'Administer' })
-  async mitigate(@Param('alertId') alertId: string, @Body() body: MitigateDto): Promise<unknown> {
+  async mitigate(@Param('alertId', new ParseUUIDPipe()) alertId: string, @Body() body: MitigateDto): Promise<unknown> {
     return this.administration.mitigateIncident({
       actorUserId: this.currentUserId(),
       alertId,
@@ -426,7 +435,7 @@ export class PlatformSupportController {
   /** Publish to customers, or withdraw. `Administer`: it speaks to every company at once. */
   @Post('incidents/:alertId/publish')
   @RequirePermission({ module: 'support', action: 'Administer' })
-  async publish(@Param('alertId') alertId: string, @Body() body: PublishDto): Promise<unknown> {
+  async publish(@Param('alertId', new ParseUUIDPipe()) alertId: string, @Body() body: PublishDto): Promise<unknown> {
     return this.administration.publishIncident({
       actorUserId: this.currentUserId(),
       alertId,
@@ -437,7 +446,7 @@ export class PlatformSupportController {
 
   @Get('incidents/:alertId/tickets')
   @RequirePermission({ module: 'support', action: 'View' })
-  async incidentTickets(@Param('alertId') alertId: string): Promise<unknown> {
+  async incidentTickets(@Param('alertId', new ParseUUIDPipe()) alertId: string): Promise<unknown> {
     return this.tickets.ticketsForIncident(alertId);
   }
 

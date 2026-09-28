@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
   Res,
@@ -83,7 +84,7 @@ export class EmployeePhotoController {
    * face and must not sit in a shared proxy.
    */
   @Get(':userId/content')
-  async content(@Param('userId') userId: string, @Res() response: Response): Promise<void> {
+  async content(@Param('userId', new ParseUUIDPipe()) userId: string, @Res() response: Response): Promise<void> {
     const found = await this.photos.content({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -130,7 +131,7 @@ export class EmployeePhotoController {
   }
 
   @Get(':userId')
-  async view(@Param('userId') userId: string): Promise<unknown> {
+  async view(@Param('userId', new ParseUUIDPipe()) userId: string): Promise<unknown> {
     return this.photos.view({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -155,7 +156,7 @@ export class EmployeePhotoController {
   }
 
   @Post(':userId')
-  async upload(@Param('userId') userId: string, @Body() body: UploadPhotoDto): Promise<unknown> {
+  async upload(@Param('userId', new ParseUUIDPipe()) userId: string, @Body() body: UploadPhotoDto): Promise<unknown> {
     return this.photos.upload({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -167,7 +168,7 @@ export class EmployeePhotoController {
   }
 
   @Delete(':userId')
-  async remove(@Param('userId') userId: string): Promise<unknown> {
+  async remove(@Param('userId', new ParseUUIDPipe()) userId: string): Promise<unknown> {
     return this.photos.remove({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),

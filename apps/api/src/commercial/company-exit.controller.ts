@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Post, UnauthorizedException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  UnauthorizedException,
+} from '@nestjs/common';
 import {
   IsBoolean,
   IsIn,
@@ -135,7 +143,7 @@ export class CompanyExitController {
 
   @Get(':exitId')
   @RequirePermission({ module: 'companies', action: 'View' })
-  async byId(@Param('exitId') exitId: string): Promise<unknown> {
+  async byId(@Param('exitId', new ParseUUIDPipe()) exitId: string): Promise<unknown> {
     return this.exits.byId(exitId);
   }
 
@@ -162,7 +170,7 @@ export class CompanyExitController {
   /** Approve. Refused if you raised it — a second person, always. */
   @Post(':exitId/approve')
   @RequirePermission({ module: 'companies', action: 'Administer' })
-  async approve(@Param('exitId') exitId: string, @Body() body: ApproveExitDto): Promise<unknown> {
+  async approve(@Param('exitId', new ParseUUIDPipe()) exitId: string, @Body() body: ApproveExitDto): Promise<unknown> {
     return this.exits.approve({
       exitId,
       approvedByUserId: this.currentUserId(),
@@ -180,7 +188,7 @@ export class CompanyExitController {
    */
   @Get(':exitId/export')
   @RequirePermission({ module: 'companies', action: 'Export' })
-  async exportPackage(@Param('exitId') exitId: string): Promise<unknown> {
+  async exportPackage(@Param('exitId', new ParseUUIDPipe()) exitId: string): Promise<unknown> {
     return this.exits.exportPackage({ exitId, actorUserId: this.currentUserId() });
   }
 
@@ -188,7 +196,7 @@ export class CompanyExitController {
 
   @Post(':exitId/read-only')
   @RequirePermission({ module: 'companies', action: 'Administer' })
-  async beginReadOnly(@Param('exitId') exitId: string): Promise<unknown> {
+  async beginReadOnly(@Param('exitId', new ParseUUIDPipe()) exitId: string): Promise<unknown> {
     return this.exits.beginReadOnly({ exitId, actorUserId: this.currentUserId() });
   }
 
@@ -196,7 +204,7 @@ export class CompanyExitController {
 
   @Post(':exitId/retention-hold')
   @RequirePermission({ module: 'companies', action: 'Administer' })
-  async beginRetentionHold(@Param('exitId') exitId: string): Promise<unknown> {
+  async beginRetentionHold(@Param('exitId', new ParseUUIDPipe()) exitId: string): Promise<unknown> {
     return this.exits.beginRetentionHold({ exitId, actorUserId: this.currentUserId() });
   }
 
@@ -211,7 +219,7 @@ export class CompanyExitController {
   @Post(':exitId/delete-content')
   @RequirePermission({ module: 'companies', action: 'Administer' })
   async deleteContent(
-    @Param('exitId') exitId: string,
+    @Param('exitId', new ParseUUIDPipe()) exitId: string,
     @Body() body: DeleteContentDto,
   ): Promise<unknown> {
     return this.exits.deleteContent({
@@ -225,7 +233,7 @@ export class CompanyExitController {
 
   @Post(':exitId/cancel')
   @RequirePermission({ module: 'companies', action: 'Administer' })
-  async cancel(@Param('exitId') exitId: string, @Body() body: CancelExitDto): Promise<unknown> {
+  async cancel(@Param('exitId', new ParseUUIDPipe()) exitId: string, @Body() body: CancelExitDto): Promise<unknown> {
     return this.exits.cancel({
       exitId,
       actorUserId: this.currentUserId(),

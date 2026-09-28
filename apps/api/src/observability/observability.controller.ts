@@ -4,6 +4,7 @@ import {
   Get,
   Header,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
   UnauthorizedException,
@@ -237,7 +238,7 @@ export class ObservabilityController {
 
   @Get('incidents/:alertId/timeline')
   @RequirePermission({ module: 'system-health', action: 'View' })
-  async timeline(@Param('alertId') alertId: string): Promise<unknown> {
+  async timeline(@Param('alertId', new ParseUUIDPipe()) alertId: string): Promise<unknown> {
     return {
       timeline: await this.incidents.timelineFor(alertId),
       actions: await this.incidents.actionsFor(alertId),
@@ -248,7 +249,7 @@ export class ObservabilityController {
   @Post('incidents/:alertId/timeline')
   @RequirePermission({ module: 'support', action: 'Comment' })
   async addTimelineEntry(
-    @Param('alertId') alertId: string,
+    @Param('alertId', new ParseUUIDPipe()) alertId: string,
     @Body() body: TimelineEntryDto,
   ): Promise<unknown> {
     return this.incidents.addTimelineEntry({
@@ -263,7 +264,7 @@ export class ObservabilityController {
   @Post('incidents/:alertId/postmortem')
   @RequirePermission({ module: 'support', action: 'Administer' })
   async writePostmortem(
-    @Param('alertId') alertId: string,
+    @Param('alertId', new ParseUUIDPipe()) alertId: string,
     @Body() body: PostmortemDto,
   ): Promise<unknown> {
     return this.incidents.writePostmortem({
@@ -280,7 +281,7 @@ export class ObservabilityController {
    */
   @Post('incidents/:alertId/resolve')
   @RequirePermission({ module: 'support', action: 'Administer' })
-  async resolve(@Param('alertId') alertId: string, @Body() body: ResolveDto): Promise<unknown> {
+  async resolve(@Param('alertId', new ParseUUIDPipe()) alertId: string, @Body() body: ResolveDto): Promise<unknown> {
     return this.incidents.resolve({
       alertId,
       actorUserId: this.currentUserId(),
@@ -291,7 +292,7 @@ export class ObservabilityController {
   @Post('incidents/:alertId/actions')
   @RequirePermission({ module: 'support', action: 'Administer' })
   async addAction(
-    @Param('alertId') alertId: string,
+    @Param('alertId', new ParseUUIDPipe()) alertId: string,
     @Body() body: CorrectiveActionDto,
   ): Promise<unknown> {
     return this.incidents.addCorrectiveAction({

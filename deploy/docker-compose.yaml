@@ -1,0 +1,153 @@
+name: ubossai
+
+x-source: &source
+  context: https://github.com/UBoss-AI/Uboss-AI.git#main
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: uboss
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a strong hex password}
+      POSTGRES_DB: uboss_prod
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U uboss -d uboss_prod"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks: [private]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks: [private]
+
+  db-setup:
+    image: postgres:17-alpine
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set a strong hex password}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Set a separate strong hex password}
+    entrypoint: ["sh", "-ec"]
+    command:
+      - |
+        psql -h postgres -U uboss -d uboss_prod -v app_password="$${APP_DB_PASSWORD}" <<'SQL'
+        SELECT format('CREATE ROLE uboss_app LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD %L', :'app_password')
+        WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'uboss_app')
+        \gexec
+        SELECT format('ALTER ROLE uboss_app WITH LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD %L', :'app_password')
+        \gexec
+        SQL
+    networks: [private]
+
+  api:
+    build:
+      <<: *source
+      dockerfile: deploy/Dockerfile.api
+    restart: unless-stopped
+    depends_on:
+      db-setup:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      API_HOST: 0.0.0.0
+      API_PORT: 4000
+      API_DOCS_ENABLED: "false"
+      DATABASE_MIGRATION_URL: postgresql://uboss:${POSTGRES_PASSWORD:?Set a strong hex password}@postgres:5432/uboss_prod?schema=public
+      DATABASE_URL: postgresql://uboss_app:${APP_DB_PASSWORD:?Set a separate strong hex password}@postgres:5432/uboss_prod?schema=public
+      REDIS_URL: redis://redis:6379
+      AUTH_ENCRYPTION_KEYS: ${AUTH_ENCRYPTION_KEYS:?Set an encryption key}
+      AUTH_PUBLIC_API_BASE_URL: https://api.ubossai.com
+      AUTH_WEB_BASE_URL: https://app.ubossai.com
+      API_CORS_ORIGINS: https://app.ubossai.com
+      UBOSS_INITIAL_ADMIN_EMAIL: ${UBOSS_INITIAL_ADMIN_EMAIL:-}
+      UBOSS_INITIAL_ADMIN_NAME: ${UBOSS_INITIAL_ADMIN_NAME:-}
+      UBOSS_INITIAL_ADMIN_PASSWORD: ${UBOSS_INITIAL_ADMIN_PASSWORD:-}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    networks: [private]
+
+  web:
+    build:
+      <<: *source
+      dockerfile: deploy/Dockerfile.web
+      args:
+        NEXT_PUBLIC_API_BASE_URL: /api
+        API_PROXY_TARGET: http://api:4000
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      NEXT_PUBLIC_API_BASE_URL: /api
+    networks: [private]
+
+  marketing:
+    build:
+      <<: *source
+      dockerfile: deploy/Dockerfile.marketing
+      args:
+        NEXT_PUBLIC_PRODUCT_LOGIN_URL: https://app.ubossai.com/login
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3100
+      HOSTNAME: 0.0.0.0
+      NEXT_PUBLIC_PRODUCT_LOGIN_URL: https://app.ubossai.com/login
+    networks: [private]
+
+  gateway:
+    build:
+      <<: *source
+      dockerfile: deploy/Dockerfile.caddy
+    restart: unless-stopped
+    depends_on:
+      marketing:
+        condition: service_started
+      web:
+        condition: service_started
+      api:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [private, public]
+
+volumes:
+  postgres-data:
+  redis-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  private:
+    internal: true
+  public: {}

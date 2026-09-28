@@ -14,10 +14,10 @@ import type { TenantScope } from '../persistence/tenant-context.js';
 import { PersonRegistryService } from './person-registry.service.js';
 
 /**
- * The six mandatory Add Employee fields, in the client's order.
+ * The mandatory Add Employee fields, in the client's order.
  *
  * Held as data so the API and the UI cannot disagree about which fields carry an asterisk. The
- * client is explicit in both directions: these six are required, and **every other profile field
+ * client is explicit in both directions: these are required, and **every other profile field
  * is optional and must not show `*`**.
  */
 export const MANDATORY_EMPLOYEE_FIELDS = [
@@ -26,6 +26,16 @@ export const MANDATORY_EMPLOYEE_FIELDS = [
   { key: 'designation', label: 'Designation' },
   { key: 'departmentId', label: 'Department' },
   { key: 'reportingManagerUserId', label: 'Reporting Manager' },
+  /*
+   * A way to reach the person, required from CR-04.
+   *
+   * They were optional, and the consequence was a hierarchy full of people nobody could contact:
+   * work is handed over by email and chased by phone, and a record that names neither describes
+   * an employee the company cannot actually reach. Required here rather than marked required on
+   * the form, because a rule a screen enforces is a rule the API does not have.
+   */
+  { key: 'workEmail', label: 'Work Email' },
+  { key: 'workPhone', label: 'Work Phone' },
   { key: 'aadhaarNumber', label: 'Aadhaar Number' },
 ] as const;
 
@@ -62,7 +72,7 @@ export interface AddEmployeeResult {
  *
  * ## The reporting manager is mandatory, with exactly one exception
  *
- * The client lists Reporting Manager among the six required fields. The exception is structural
+ * The client lists Reporting Manager among the required fields. The exception is structural
  * rather than a relaxation: the **first** person in a company has nobody to report to, so the
  * top of the tree is allowed to have none. The API says which case it is rather than accepting a
  * blank silently, and a second root requires it to be explicit.
@@ -120,6 +130,29 @@ export class EmploymentService {
       throw new BadRequestException(
         'Employee Name, Employee ID and Designation are required and cannot be blank.',
       );
+    }
+
+    /*
+     * A work email and a work phone, both required.
+     *
+     * Checked for shape rather than validated hard: an address is proven by sending to it and a
+     * number by calling it, and neither happens here. What this refuses is the blank and the
+     * obviously-not-one, which is the difference between a record somebody can act on and a
+     * record that merely has the field filled.
+     */
+    const workEmail = (input.workEmail ?? '').trim();
+    const workPhone = (input.workPhone ?? '').trim();
+    if (!workEmail || !workPhone) {
+      throw new BadRequestException(
+        'Work Email and Work Phone are required. Work is handed over by email and chased by ' +
+          'phone, and an employee the company cannot reach is not a record worth keeping.',
+      );
+    }
+    if (!workEmail.includes('@') || workEmail.startsWith('@') || workEmail.endsWith('@')) {
+      throw new BadRequestException('That does not look like an email address.');
+    }
+    if (workPhone.replace(/[^0-9]/g, '').length < 7) {
+      throw new BadRequestException('That does not look like a phone number.');
     }
 
     const department = await this.organization.findDepartment(input.scope, input.departmentId);
@@ -278,6 +311,20 @@ export class EmploymentService {
     scope: TenantScope;
     actorUserId: string;
     subjectUserId: string;
+    /**
+     * Their name, corrected.
+     *
+     * This is the one field here that is **not** employment. A person has one name across every
+     * company they work in — `User.displayName` is global, like their UBoss ID — so correcting
+     * a misspelling here corrects it everywhere, and there is no other honest way to do it: a
+     * per-company name would mean the same human appearing under two spellings and no way to
+     * tell which is right.
+     *
+     * It is still an administrator's act in this company, gated on the same `hierarchy:Administer`
+     * as the rest, and it is audited. What it is not is a way to rename somebody into somebody
+     * else: the UBoss ID, the employment history and the audit trail all stay attached.
+     */
+    displayName?: string | undefined;
     employeeId?: string | undefined;
     designation?: string | undefined;
     departmentId?: string | undefined;
@@ -313,6 +360,24 @@ export class EmploymentService {
           `Employee ID "${input.employeeId.trim()}" is already used in this company.`,
         );
       }
+    }
+
+    /*
+     * The name is written to the person, not to the employment.
+     *
+     * Separately from the employment update below and before it, so a failure to write the name
+     * does not leave a half-applied correction — and because they are genuinely two records: one
+     * describes a human, the other describes a job.
+     */
+    if (input.displayName !== undefined) {
+      const name = input.displayName.trim();
+      if (name.length < 2) {
+        throw new BadRequestException('A name needs at least two characters.');
+      }
+      await this.prisma.client.user.update({
+        where: { id: input.subjectUserId },
+        data: { displayName: name, version: { increment: 1 } },
+      });
     }
 
     const data: Record<string, unknown> = {};

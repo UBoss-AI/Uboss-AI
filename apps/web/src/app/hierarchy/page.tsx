@@ -162,6 +162,14 @@ export default function HierarchyPage() {
    * a page.
    */
   const [inspecting, setInspecting] = useState<string | null>(null);
+  /**
+   * True when the panel should open straight into the edit form.
+   *
+   * The pencil on a person's card used to open their full profile — a page, showing everything,
+   * read-only. Somebody pressing a pencil is telling you they want to change something, and
+   * making them read a profile first and find the edit afterwards is two steps for one intent.
+   */
+  const [editingPerson, setEditingPerson] = useState(false);
 
   /*
    * The Vision & Mission editor.
@@ -587,7 +595,10 @@ export default function HierarchyPage() {
                             setForm({ ...EMPTY_FORM, reportingManagerUserId: userId });
                             setEmployeeOpen(true);
                           },
-                          onEditPerson: (userId: string) => router.push(`/hierarchy/${userId}`),
+                          onEditPerson: (userId: string) => {
+                            setEditingPerson(true);
+                            setInspecting(userId);
+                          },
                           /*
                             The same Add Employee form the toolbar opens, with the department
                             already chosen. Nothing new is invented here: it is one field of the
@@ -1186,6 +1197,7 @@ export default function HierarchyPage() {
         <EmployeeDrawer
           tenantId={tenantId}
           userId={inspecting}
+          openEditing={editingPerson}
           me={me?.user.userId ?? null}
           mayAdminister={mayAdminister}
           /*

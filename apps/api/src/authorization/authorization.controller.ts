@@ -9,6 +9,7 @@ import {
   Logger,
   NotFoundException,
   Param,
+  ParseUUIDPipe,
   Post,
   Put,
 } from '@nestjs/common';
@@ -229,7 +230,7 @@ export class AuthorizationController {
    * need a specific row and a matrix that implied otherwise would be misleading.
    */
   @Get('matrix/:userId')
-  async matrix(@Param('tenantId') tenantId: string, @Param('userId') userId: string) {
+  async matrix(@Param('tenantId') tenantId: string, @Param('userId', new ParseUUIDPipe()) userId: string) {
     const scope = this.authorization.platformScopeFor(tenantId);
     const context = await this.authorization.contextFor(scope, userId);
 
@@ -297,7 +298,7 @@ export class AuthorizationController {
 
   @Delete('assignments/:assignmentId')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async revoke(@Param('tenantId') tenantId: string, @Param('assignmentId') assignmentId: string) {
+  async revoke(@Param('tenantId') tenantId: string, @Param('assignmentId', new ParseUUIDPipe()) assignmentId: string) {
     const scope = this.authorization.platformScopeFor(tenantId);
     const actor = actorUserId(getActor());
     if (!actor) {
@@ -495,7 +496,7 @@ export class AuthorizationController {
 
   @Delete('separation-of-duties/:policyId')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteSod(@Param('tenantId') tenantId: string, @Param('policyId') policyId: string) {
+  async deleteSod(@Param('tenantId') tenantId: string, @Param('policyId', new ParseUUIDPipe()) policyId: string) {
     const scope = this.authorization.platformScopeFor(tenantId);
     if ((await this.repository.deleteSodPolicy(scope, policyId)) === 0) {
       throw new NotFoundException('No such separation-of-duties policy.');
@@ -509,7 +510,7 @@ export class AuthorizationController {
   @Put('members/:userId/user-type')
   async setUserType(
     @Param('tenantId') tenantId: string,
-    @Param('userId') userId: string,
+    @Param('userId', new ParseUUIDPipe()) userId: string,
     @Body() body: SetUserTypeDto,
   ) {
     const scope = this.authorization.platformScopeFor(tenantId);
