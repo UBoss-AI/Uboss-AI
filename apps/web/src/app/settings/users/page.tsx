@@ -326,7 +326,7 @@ function UsersAccessInner() {
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                 />
-{/*
+                {/*
                   Both write to company-wide access, so both are for somebody who holds
                   `users:ManageAccess`. They used to render for anybody who could open this screen,
                   which is anybody with `users:View` — a Manager could press Invite guest and get a
@@ -667,8 +667,7 @@ function UsersAccessInner() {
                   <b>Employee</b>
                   <br />
                   <small className="uboss-muted-3">
-                    Their to-do list, the agents assigned to them, chat and their own
-                    performance.
+                    Their to-do list, the agents assigned to them, chat and their own performance.
                   </small>
                 </span>
               </label>
@@ -685,8 +684,8 @@ function UsersAccessInner() {
                   <b>Administrator</b>
                   <br />
                   <small className="uboss-muted-3">
-                    Everything an employee sees, plus the hierarchy, objectives, agents, users
-                    and company settings.
+                    Everything an employee sees, plus the hierarchy, objectives, agents, users and
+                    company settings.
                   </small>
                 </span>
               </label>

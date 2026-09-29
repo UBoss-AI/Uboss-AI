@@ -405,7 +405,10 @@ export function filterNavigation(
     // by running the route's own check, so there is nothing generous about showing it — unlike a
     // missing module list, which only means the answer has not arrived.
     return groups
-      .map((group) => ({ group: group.group, items: group.items.filter((item) => !unavailable.has(item.key)) }))
+      .map((group) => ({
+        group: group.group,
+        items: group.items.filter((item) => !unavailable.has(item.key)),
+      }))
       .filter((group) => group.items.length > 0);
   }
 

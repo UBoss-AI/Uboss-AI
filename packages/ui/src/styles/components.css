@@ -2950,7 +2950,12 @@ textarea.uboss-input,
  * path so the decision is in one place and can be changed in one place.
  */
 .uboss-login-left {
-  background: linear-gradient(165deg, var(--uboss-navy-900), var(--uboss-navy) 60%, var(--uboss-navy-2));
+  background: linear-gradient(
+    165deg,
+    var(--uboss-navy-900),
+    var(--uboss-navy) 60%,
+    var(--uboss-navy-2)
+  );
   color: #fff;
   padding: 46px 52px;
   display: flex;
@@ -3283,8 +3288,8 @@ textarea.uboss-input,
    ============================================================ */
 @media (max-width: 1080px) {
   .uboss-shell,
-.uboss-shell--collapsed,
-:root[data-uboss-sidebar='collapsed'] .uboss-shell {
+  .uboss-shell--collapsed,
+  :root[data-uboss-sidebar='collapsed'] .uboss-shell {
     grid-template-columns: 1fr;
   }
 
@@ -3940,8 +3945,7 @@ textarea.uboss-input,
   shape that has no stroke — a hover state that silently did nothing.
 */
 .uboss-org-node {
-  transition:
-    transform var(--uboss-motion-small) var(--uboss-ease-standard);
+  transition: transform var(--uboss-motion-small) var(--uboss-ease-standard);
 }
 
 .uboss-org-node .uboss-org-edge {
@@ -6066,8 +6070,7 @@ table.uboss-wfg {
 
 .uboss-seg button {
   position: relative;
-  transition:
-    color var(--uboss-motion-micro) var(--uboss-ease-standard);
+  transition: color var(--uboss-motion-micro) var(--uboss-ease-standard);
 }
 
 .uboss-seg-indicator {
@@ -6688,7 +6691,12 @@ table.uboss-wfg {
   The panel is deeper than the customer one in both themes: this is the back of house.
 */
 .uboss-login--platform .uboss-login-left {
-  background: linear-gradient(165deg, var(--uboss-navy-900) 0%, #1b1235 55%, var(--uboss-navy) 100%);
+  background: linear-gradient(
+    165deg,
+    var(--uboss-navy-900) 0%,
+    #1b1235 55%,
+    var(--uboss-navy) 100%
+  );
   justify-content: flex-start;
   gap: 0;
 }

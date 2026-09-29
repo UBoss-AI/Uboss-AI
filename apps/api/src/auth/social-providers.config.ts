@@ -50,7 +50,15 @@ export interface SocialProviderConfig {
  * Microsoft's issuer carries a tenant segment. `common` accepts both work and personal accounts;
  * a deployment that wants to restrict it sets MICROSOFT_TENANT_ID to its own directory id.
  */
-const WELL_KNOWN: Record<SocialProviderKind, { displayName: string; issuer: (tenant: string) => string; discovery: (tenant: string) => string; scopes: string[] }> = {
+const WELL_KNOWN: Record<
+  SocialProviderKind,
+  {
+    displayName: string;
+    issuer: (tenant: string) => string;
+    discovery: (tenant: string) => string;
+    scopes: string[];
+  }
+> = {
   google: {
     displayName: 'Continue with Google',
     issuer: () => 'https://accounts.google.com',
@@ -60,7 +68,8 @@ const WELL_KNOWN: Record<SocialProviderKind, { displayName: string; issuer: (ten
   microsoft: {
     displayName: 'Continue with Microsoft',
     issuer: (tenant) => `https://login.microsoftonline.com/${tenant}/v2.0`,
-    discovery: (tenant) => `https://login.microsoftonline.com/${tenant}/v2.0/.well-known/openid-configuration`,
+    discovery: (tenant) =>
+      `https://login.microsoftonline.com/${tenant}/v2.0/.well-known/openid-configuration`,
     scopes: ['openid', 'email', 'profile'],
   },
   apple: {

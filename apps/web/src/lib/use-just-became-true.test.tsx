@@ -20,7 +20,8 @@ function Probe({ value }: { value: boolean }) {
   );
 }
 
-const firedOn = (container: HTMLElement) => container.querySelector('button')?.getAttribute('data-fired');
+const firedOn = (container: HTMLElement) =>
+  container.querySelector('button')?.getAttribute('data-fired');
 
 describe('useJustBecameTrue', () => {
   it('says nothing when it starts out false', () => {

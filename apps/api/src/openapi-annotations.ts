@@ -71,14 +71,11 @@ export function annotateGuards(app: INestApplication, document: OpenAPIObject): 
       const lines: string[] = [];
 
       const required = Reflect.getMetadata(REQUIRE_PERMISSION_KEY, handler) as
-        | readonly { module: string; action: string }[]
-        | undefined;
+        readonly { module: string; action: string }[] | undefined;
       const anyOf = Reflect.getMetadata(ALLOW_ANY_PERMISSION_KEY, handler) as
-        | readonly { module: string; action: string }[]
-        | undefined;
+        readonly { module: string; action: string }[] | undefined;
       const userTypes = Reflect.getMetadata(REQUIRE_USER_TYPE_KEY, handler) as
-        | readonly string[]
-        | undefined;
+        readonly string[] | undefined;
       const anonymous =
         Reflect.getMetadata(ALLOW_ANONYMOUS_KEY, handler) === true ||
         Reflect.getMetadata(ALLOW_ANONYMOUS_KEY, controllerClass) === true;
@@ -89,7 +86,9 @@ export function annotateGuards(app: INestApplication, document: OpenAPIObject): 
         );
       }
       if (anyOf !== undefined && anyOf.length > 0) {
-        lines.push(`**Requires any of** \`${anyOf.map((p) => `${p.module}:${p.action}`).join('`, `')}\``);
+        lines.push(
+          `**Requires any of** \`${anyOf.map((p) => `${p.module}:${p.action}`).join('`, `')}\``,
+        );
       }
       if (userTypes !== undefined && userTypes.length > 0) {
         lines.push(`**User type** must be ${userTypes.map((t) => `\`${t}\``).join(' or ')}`);

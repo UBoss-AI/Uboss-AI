@@ -170,7 +170,10 @@ export class CompanyExitController {
   /** Approve. Refused if you raised it — a second person, always. */
   @Post(':exitId/approve')
   @RequirePermission({ module: 'companies', action: 'Administer' })
-  async approve(@Param('exitId', new ParseUUIDPipe()) exitId: string, @Body() body: ApproveExitDto): Promise<unknown> {
+  async approve(
+    @Param('exitId', new ParseUUIDPipe()) exitId: string,
+    @Body() body: ApproveExitDto,
+  ): Promise<unknown> {
     return this.exits.approve({
       exitId,
       approvedByUserId: this.currentUserId(),
@@ -233,7 +236,10 @@ export class CompanyExitController {
 
   @Post(':exitId/cancel')
   @RequirePermission({ module: 'companies', action: 'Administer' })
-  async cancel(@Param('exitId', new ParseUUIDPipe()) exitId: string, @Body() body: CancelExitDto): Promise<unknown> {
+  async cancel(
+    @Param('exitId', new ParseUUIDPipe()) exitId: string,
+    @Body() body: CancelExitDto,
+  ): Promise<unknown> {
     return this.exits.cancel({
       exitId,
       actorUserId: this.currentUserId(),

@@ -36,10 +36,22 @@ export function RolesPanel({
   mayAdminister: boolean;
 }): React.JSX.Element {
   const [builtIn, setBuiltIn] = useState<
-    { kind: string; label: string; summary: string; maxScope: string; permissions: Record<string, string[]> }[]
+    {
+      kind: string;
+      label: string;
+      summary: string;
+      maxScope: string;
+      permissions: Record<string, string[]>;
+    }[]
   >([]);
   const [own, setOwn] = useState<
-    { id: string; displayName: string; description: string | null; permissions: Record<string, string[]>; maxScope: string }[]
+    {
+      id: string;
+      displayName: string;
+      description: string | null;
+      permissions: Record<string, string[]>;
+      maxScope: string;
+    }[]
   >([]);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -74,8 +86,8 @@ export function RolesPanel({
         The roles UBoss provides
       </div>
       <p className="uboss-muted-3">
-        Built in and the same in every company, so support and documentation describe the same
-        thing everywhere. Open one to see exactly what it allows.
+        Built in and the same in every company, so support and documentation describe the same thing
+        everywhere. Open one to see exactly what it allows.
       </p>
 
       <ul className="uboss-role-list">
@@ -93,7 +105,10 @@ export function RolesPanel({
                 <small className="uboss-muted-3">{role.summary}</small>
               </span>
               <span className="uboss-role-meta">
-                <StatusBadge status={`${Object.keys(role.permissions).length} modules`} tone="grey" />
+                <StatusBadge
+                  status={`${Object.keys(role.permissions).length} modules`}
+                  tone="grey"
+                />
                 <StatusBadge status={role.maxScope} tone="blue" />
                 <Icon name={open === role.kind ? 'arrow-up' : 'arrow-down'} size={16} />
               </span>
@@ -198,7 +213,12 @@ function NewRole({
   onError,
 }: {
   tenantId: string;
-  builtIn: { kind: string; label: string; maxScope: string; permissions: Record<string, string[]> }[];
+  builtIn: {
+    kind: string;
+    label: string;
+    maxScope: string;
+    permissions: Record<string, string[]>;
+  }[];
   busy: boolean;
   setBusy: (value: boolean) => void;
   onCreated: (displayName: string) => void;

@@ -3654,28 +3654,28 @@ demanded a record that could only exist after the step it blocked. All five are 
 the refusal text that found each one. Two presentation defects were fixed at their source rather
 than on the screen: the objectives list and the approvals queue both printed truncated UUIDs where
 names belong (**ADR-291**, and `namesFor` in `approval.service.ts`). The Settings navigation gained
-the search the brief asked for, filtering on label *and* description, with a test proving it cannot
+the search the brief asked for, filtering on label _and_ description, with a test proving it cannot
 surface a category the server withheld.
 
 ### Genuine limitations carried forward
 
-* **An approval addressed to `Manager` cannot be decided by anyone** — the role holds no
+- **An approval addressed to `Manager` cannot be decided by anyone** — the role holds no
   `approvals:Approve`. Four of Aarohan's five pending approvals are stuck on it. Reported for a
   governance decision rather than patched: **ADR-293**.
-* **The workflow editor still has no owner control.** The API accepts `ownerUserId` on a node; the
+- **The workflow editor still has no owner control.** The API accepts `ownerUserId` on a node; the
   screen offers no way to set it, so every human step had to be given its owner through the API.
-* **An existing user cannot be placed in the hierarchy.** `addEmployee` always creates a new person
+- **An existing user cannot be placed in the hierarchy.** `addEmployee` always creates a new person
   (it matches on Aadhaar, and `users.email` is unique); `updateEmployment` refuses without an
   existing record. So Aarohan's provisioned administrator is not in the reporting chart, and the
   chart is rooted at the Head of Operations instead.
-* **Role assignment has no company-side route** — `POST /tenants/:id/authorization/assignments` is
+- **Role assignment has no company-side route** — `POST /tenants/:id/authorization/assignments` is
   `@PlatformOnly()`, which that controller already records as an acknowledged follow-up. A Company
   Admin cannot grant a role in-product.
-* **No AI provider is configured**, so the analysis runs against the mock model and says so on
+- **No AI provider is configured**, so the analysis runs against the mock model and says so on
   screen. No Engine Agent was activated and no run was executed: Test Agent and Activate Agent are
   correctly disabled while prerequisites are unmet, and nothing was faked to fill them.
-* **Executor** reports zero exceptions, which is accurate — nothing is overdue or failed yet.
-* Verification was Chromium-only.
+- **Executor** reports zero exceptions, which is accurate — nothing is overdue or failed yet.
+- Verification was Chromium-only.
 
 ## Premium UI and motion
 
@@ -3688,15 +3688,15 @@ no stylesheet declares. `vendor-prefix.test.ts` refuses both spellings of one pr
 
 Signature moments, each verified by sampling computed style frame by frame in a real browser:
 
-| Where | What moves | Verified |
-| --- | --- | --- |
-| Sign-in | brand, claim, diagram, assurances 60ms apart; six connectors draw together via `pathLength="1"` | caught part-way; settles with no transform held |
-| Sidebar | selection glides between items (shared layout); rail glides 248px ↔ 74px | 14 indicator positions; mid-flight 121.83px |
-| Page | content eases in on navigation; chrome deliberately still | 12 distinct opacities |
-| Dashboard donut | arcs draw, hover lifts one and dims the other, one highlight pass | truthful on the first frame (**ADR-298**) |
-| Tabs / segmented / settings | one indicator travels instead of the fill jumping | 10 / 14 / 10 positions, one element each |
-| Workflow grid | steps arrive a beat apart, capped at twelve rows | 0, 40, 80, 120, 160ms |
-| Dialogs | scrim blurs the page behind by 3px | read from the applied rules, not the source |
+| Where                       | What moves                                                                                      | Verified                                        |
+| --------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Sign-in                     | brand, claim, diagram, assurances 60ms apart; six connectors draw together via `pathLength="1"` | caught part-way; settles with no transform held |
+| Sidebar                     | selection glides between items (shared layout); rail glides 248px ↔ 74px                        | 14 indicator positions; mid-flight 121.83px     |
+| Page                        | content eases in on navigation; chrome deliberately still                                       | 12 distinct opacities                           |
+| Dashboard donut             | arcs draw, hover lifts one and dims the other, one highlight pass                               | truthful on the first frame (**ADR-298**)       |
+| Tabs / segmented / settings | one indicator travels instead of the fill jumping                                               | 10 / 14 / 10 positions, one element each        |
+| Workflow grid               | steps arrive a beat apart, capped at twelve rows                                                | 0, 40, 80, 120, 160ms                           |
+| Dialogs                     | scrim blurs the page behind by 3px                                                              | read from the applied rules, not the source     |
 
 Buttons answer a press at 98% — under a pixel on a 36px control, enough to confirm the press
 landed on this control and not the one beside it. Nothing moves on hover: a toolbar whose buttons
@@ -3722,34 +3722,34 @@ difference in one block was confirmed to fail it.
 
 What the audit caught and what was fixed:
 
-* every dashboard, for every role, logged `<circle> attribute r: Expected length, "undefined"`.
+- every dashboard, for every role, logged `<circle> attribute r: Expected length, "undefined"`.
   Motion had no starting value for an SVG presentation attribute and wrote `undefined` on the
   first frame; the browser reports it and carries on, so it never showed on screen.
-* the dialog blur had never shipped — a hand-written `-webkit-` prefix made the build drop both
+- the dialog blur had never shipped — a hand-written `-webkit-` prefix made the build drop both
   declarations (**ADR-300**).
-* the Master Console plane was still entirely blue-and-teal (**ADR-301**).
-* the org chart's add-person glyph and its own mark were still `#2563EB` inside a disc that had
+- the Master Console plane was still entirely blue-and-teal (**ADR-301**).
+- the org chart's add-person glyph and its own mark were still `#2563EB` inside a disc that had
   already become violet. The department palette is deliberately left alone: those are categorical
   data colours whose job is to be told apart from each other, which one hue cannot do.
-* the current step of the Create Company wizard pulsed for ever, because the wizard marks its
+- the current step of the Create Company wizard pulsed for ever, because the wizard marks its
   current step `running` and that is the only state the stepper has for "you are here". It plays
   once now.
-* Head/Approver was offered Performance, which the engine refuses (**ADR-302**).
+- Head/Approver was offered Performance, which the engine refuses (**ADR-302**).
 
 ### Genuine limitations carried forward, from this pass
 
-* **A department-scoped role cannot read its own performance** — **ADR-303**, left open by
+- **A department-scoped role cannot read its own performance** — **ADR-303**, left open by
   decision. The resource handed to the scope layer omits the subject's department, so the wider
   role sees less of itself than the narrower one. Four tests pin the current behaviour at every
   scope kind so that changing it is a visible decision.
-* **The sidebar gradient departs from the supplied design.** White on `#A78BFA` measures 2.72:1
+- **The sidebar gradient departs from the supplied design.** White on `#A78BFA` measures 2.72:1
   and `#EDE9FE` on it 2.29:1, both below 4.5:1, so the rail ships as
   `#5B21B6 → #6D28D9 → #7C3AED` (5.70:1 at its lightest point). Reported, not hidden.
-* **Route transitions are CSS, not the View Transitions API.** Every screen renders its own shell,
+- **Route transitions are CSS, not the View Transitions API.** Every screen renders its own shell,
   so navigating remounts the content and a plain CSS animation lands on the right beat with no
   route listener and no JavaScript. Enabling Next's experimental view-transition flag was not done
   unilaterally.
-* Phases 17, 18, 20 to 29 and 31 to 32 of the premium pass inherit the global system — page
+- Phases 17, 18, 20 to 29 and 31 to 32 of the premium pass inherit the global system — page
   arrival, buttons, cards, tables, tabs, dialogs, states — but were not given screen-specific
   signature motion of their own.
-* Verification was Chromium-only.
+- Verification was Chromium-only.

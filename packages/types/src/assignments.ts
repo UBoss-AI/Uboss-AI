@@ -360,10 +360,7 @@ export const MAX_CHANGE_REQUEST_REASON = 4_000;
  * request is an `ApprovalRequest` like every other, and it changes nothing until somebody who
  * holds the authority decides it.
  */
-export function changeRequestProblems(input: {
-  kind: string;
-  reason: string;
-}): string[] {
+export function changeRequestProblems(input: { kind: string; reason: string }): string[] {
   const problems: string[] = [];
 
   if (!(CHANGE_REQUEST_KINDS as readonly string[]).includes(input.kind)) {

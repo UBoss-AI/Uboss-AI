@@ -15,7 +15,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U uboss -d uboss_prod"]
+      test: ['CMD-SHELL', 'pg_isready -U uboss -d uboss_prod']
       interval: 5s
       timeout: 5s
       retries: 30
@@ -24,11 +24,11 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ['redis-server', '--appendonly', 'yes']
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
       timeout: 5s
       retries: 30
@@ -36,14 +36,14 @@ services:
 
   db-setup:
     image: postgres:17-alpine
-    restart: "no"
+    restart: 'no'
     depends_on:
       postgres:
         condition: service_healthy
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD:?Set a strong hex password}
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Set a separate strong hex password}
-    entrypoint: ["sh", "-ec"]
+    entrypoint: ['sh', '-ec']
     command:
       - |
         psql -h postgres -U uboss -d uboss_prod -v app_password="$${APP_DB_PASSWORD}" <<'SQL'
@@ -69,7 +69,7 @@ services:
       NODE_ENV: production
       API_HOST: 0.0.0.0
       API_PORT: 4000
-      API_DOCS_ENABLED: "false"
+      API_DOCS_ENABLED: 'false'
       DATABASE_MIGRATION_URL: postgresql://uboss:${POSTGRES_PASSWORD:?Set a strong hex password}@postgres:5432/uboss_prod?schema=public
       DATABASE_URL: postgresql://uboss_app:${APP_DB_PASSWORD:?Set a separate strong hex password}@postgres:5432/uboss_prod?schema=public
       REDIS_URL: redis://redis:6379
@@ -81,7 +81,13 @@ services:
       UBOSS_INITIAL_ADMIN_NAME: ${UBOSS_INITIAL_ADMIN_NAME:-}
       UBOSS_INITIAL_ADMIN_PASSWORD: ${UBOSS_INITIAL_ADMIN_PASSWORD:-}
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -133,9 +139,9 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
     volumes:
       - caddy-data:/data
       - caddy-config:/config

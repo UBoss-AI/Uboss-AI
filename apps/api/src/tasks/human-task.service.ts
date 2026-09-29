@@ -956,7 +956,9 @@ export class HumanTaskService {
     }
 
     const titles = (nodeIds: string[], from: Map<string, string>): string[] =>
-      nodeIds.map((nodeId) => from.get(nodeId)).filter((title): title is string => title !== undefined);
+      nodeIds
+        .map((nodeId) => from.get(nodeId))
+        .filter((title): title is string => title !== undefined);
 
     for (const view of dependent) {
       view.dependsOnLabels = titles(view.dependsOnNodeIds, named);

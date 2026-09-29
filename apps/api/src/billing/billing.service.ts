@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type Stripe from 'stripe';
 
 import { AUTH_CONFIG, type AuthConfig } from '../auth/auth.config.js';
@@ -416,7 +410,10 @@ export class BillingService {
   async platformOverview(): Promise<unknown> {
     return this.prisma.runAsPlatformOperation(async () => {
       const subscriptions = await this.prisma.client.tenantSubscription.findMany({
-        include: { tenant: { select: { name: true } }, plan: { select: { name: true, code: true } } },
+        include: {
+          tenant: { select: { name: true } },
+          plan: { select: { name: true, code: true } },
+        },
         orderBy: { updatedAt: 'desc' },
       });
 

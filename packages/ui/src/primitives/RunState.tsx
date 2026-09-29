@@ -103,7 +103,11 @@ export function RunState({ state, label, className }: RunStateProps) {
          * sound identical otherwise — and the difference is whether anyone needs to do something.
          */
         <span className="uboss-sr-only">
-          {kind === 'working' ? ' — in progress' : kind === 'waiting' ? ' — waiting, no machine work in progress' : ' — not running'}
+          {kind === 'working'
+            ? ' — in progress'
+            : kind === 'waiting'
+              ? ' — waiting, no machine work in progress'
+              : ' — not running'}
         </span>
       )}
     </span>

@@ -101,8 +101,8 @@ export function Footer() {
             © {new Date().getFullYear()} Chief Agent. Powered by UBoss AI.
           </p>
           <p className="text-[12.5px] text-[#8b8b93]">
-            Product illustrations on this site depict Chief Agent screens and workflows. They are not
-            customer data.
+            Product illustrations on this site depict Chief Agent screens and workflows. They are
+            not customer data.
           </p>
         </div>
       </div>

@@ -448,8 +448,7 @@ export default function ApprovalsPage() {
         {selected !== null && (
           <CardBody>
             <p className="uboss-muted">
-              Requested by{' '}
-              <span>{personName(selected.requestedByUserId)}</span>
+              Requested by <span>{personName(selected.requestedByUserId)}</span>
               {' · '}
               {selected.typeLabel}
               {' · '}
@@ -459,8 +458,8 @@ export default function ApprovalsPage() {
             {selected.actingUnderDelegationFrom !== null && (
               <Banner tone="info">
                 You are deciding this as a delegate for{' '}
-                <span>{personName(selected.actingUnderDelegationFrom)}</span>
-                . The record will say so.
+                <span>{personName(selected.actingUnderDelegationFrom)}</span>. The record will say
+                so.
               </Banner>
             )}
 
@@ -500,9 +499,7 @@ export default function ApprovalsPage() {
                 <span className="uboss-kv-key">Escalated</span>
                 <span className="uboss-kv-value">
                   {selected.escalatedAt} to{' '}
-                  <span className="uboss-mono">
-                    {personName(selected.escalatedToUserId)}
-                  </span>
+                  <span className="uboss-mono">{personName(selected.escalatedToUserId)}</span>
                   {' — attention only; nothing was decided.'}
                 </span>
               </div>
@@ -557,8 +554,7 @@ export default function ApprovalsPage() {
               <ul>
                 {selected.history.map((entry) => (
                   <li key={entry.id}>
-                    <b>{entry.decisionLabel}</b> by{' '}
-                    <span>{personName(entry.actorUserId)}</span>
+                    <b>{entry.decisionLabel}</b> by <span>{personName(entry.actorUserId)}</span>
                     {entry.onBehalfOfUserId !== null && (
                       <>
                         {' for '}

@@ -625,12 +625,14 @@ describe('provider profiles and the model gateway (e2e)', () => {
       assert.equal(slot.length, 1, 'a company slot holds one model too');
       assert.equal(slot[0]?.providerModelId, second.id, 'and the second grant displaced the first');
 
-      const events = await ctx.prisma.runInTenantTransaction(tenantScopeForPlatformOperation(tenantId), () =>
-        ctx.prisma.client.auditEvent.findMany({
-          where: { tenantId, action: 'providers.route_set' },
-          orderBy: { occurredAt: 'desc' },
-          take: 5,
-        }),
+      const events = await ctx.prisma.runInTenantTransaction(
+        tenantScopeForPlatformOperation(tenantId),
+        () =>
+          ctx.prisma.client.auditEvent.findMany({
+            where: { tenantId, action: 'providers.route_set' },
+            orderBy: { occurredAt: 'desc' },
+            take: 5,
+          }),
       );
       assert.ok(events.length > 0, 'a company routing change must be audited');
       const named = events.some((event) => {

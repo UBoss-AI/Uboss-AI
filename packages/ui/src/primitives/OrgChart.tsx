@@ -734,45 +734,39 @@ export function OrgChart({
       aria-label={`${root.name} organization chart`}
       fontFamily="Inter, system-ui, sans-serif"
     >
-        <defs>
-          <linearGradient id="uboss-org-logo" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="var(--uboss-ai-bright)" />
-            <stop offset="1" stopColor="var(--uboss-blue)" />
-          </linearGradient>
+      <defs>
+        <linearGradient id="uboss-org-logo" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="var(--uboss-ai-bright)" />
+          <stop offset="1" stopColor="var(--uboss-blue)" />
+        </linearGradient>
 
-          {/*
+        {/*
             One shadow, shared by every card. It is what stops the cards reading as rectangles on
             the same plane as the connectors, which is the flatness the client called basic.
             Defined once rather than per node: fifteen identical filter regions would be fifteen
             offscreen buffers for one effect.
           */}
-          <filter id="uboss-org-shadow" x="-12%" y="-25%" width="124%" height="170%">
-            <feDropShadow
-              dx="0"
-              dy="2"
-              stdDeviation="3.5"
-              floodColor="#0b1220"
-              floodOpacity="0.20"
-            />
-          </filter>
-        </defs>
+        <filter id="uboss-org-shadow" x="-12%" y="-25%" width="124%" height="170%">
+          <feDropShadow dx="0" dy="2" stdDeviation="3.5" floodColor="#0b1220" floodOpacity="0.20" />
+        </filter>
+      </defs>
 
-        {paths.map((path) => (
-          <path key={path} d={path} fill="none" stroke="var(--uboss-border)" strokeWidth={1.6} />
-        ))}
+      {paths.map((path) => (
+        <path key={path} d={path} fill="none" stroke="var(--uboss-border)" strokeWidth={1.6} />
+      ))}
 
-        {nodes.map((node) => (
-          <OrgNode
-            key={`${node.kind}-${node.id}`}
-            node={node}
-            idPrefix={idPrefix}
-            {...(onSelectPerson === undefined ? {} : { onSelectPerson })}
-            {...(onAddReport === undefined ? {} : { onAddReport })}
-            {...(onEditPerson === undefined ? {} : { onEditPerson })}
-            {...(onAddToDepartment === undefined ? {} : { onAddToDepartment })}
-            {...(onEditDepartment === undefined ? {} : { onEditDepartment })}
-            {...(onArchiveDepartment === undefined ? {} : { onArchiveDepartment })}
-          />
+      {nodes.map((node) => (
+        <OrgNode
+          key={`${node.kind}-${node.id}`}
+          node={node}
+          idPrefix={idPrefix}
+          {...(onSelectPerson === undefined ? {} : { onSelectPerson })}
+          {...(onAddReport === undefined ? {} : { onAddReport })}
+          {...(onEditPerson === undefined ? {} : { onEditPerson })}
+          {...(onAddToDepartment === undefined ? {} : { onAddToDepartment })}
+          {...(onEditDepartment === undefined ? {} : { onEditDepartment })}
+          {...(onArchiveDepartment === undefined ? {} : { onArchiveDepartment })}
+        />
       ))}
     </svg>
   );
@@ -963,10 +957,7 @@ export function OrgChart({
           </p>
         )}
 
-        <div
-          className="uboss-org-stage"
-          style={{ transform: `translate(${pan.x}px, ${pan.y}px)` }}
-        >
+        <div className="uboss-org-stage" style={{ transform: `translate(${pan.x}px, ${pan.y}px)` }}>
           {/*
             The box is told the size the drawing ends up, because a transform does not tell it.
 
@@ -1050,7 +1041,10 @@ function Card({
           fillOpacity={bandOpacity}
         />
       ) : null}
-      <path d={panelPath(x + bandWidth, y, BOX_WIDTH - bandWidth, BOX_HEIGHT, 0, 16)} fill={panel} />
+      <path
+        d={panelPath(x + bandWidth, y, BOX_WIDTH - bandWidth, BOX_HEIGHT, 0, 16)}
+        fill={panel}
+      />
       <rect
         className="uboss-org-edge"
         x={x + 0.5}
@@ -1138,11 +1132,7 @@ const ACTION_CY = 26;
  */
 function actionCx(x: number, slot: number, detached = false): number {
   return (
-    x +
-    BOX_WIDTH -
-    ACTION_RIGHT_INSET -
-    slot * ACTION_GAP -
-    (detached ? ACTION_SEPARATION : 0)
+    x + BOX_WIDTH - ACTION_RIGHT_INSET - slot * ACTION_GAP - (detached ? ACTION_SEPARATION : 0)
   );
 }
 
@@ -1363,7 +1353,11 @@ function OrgNode({
 
   if (node.kind === 'company') {
     return (
-      <g className="uboss-org-node uboss-org-node--company" role="treeitem" aria-label={`${node.name}. ${node.subtitle}`}>
+      <g
+        className="uboss-org-node uboss-org-node--company"
+        role="treeitem"
+        aria-label={`${node.name}. ${node.subtitle}`}
+      >
         <Card
           x={x}
           y={y}
@@ -1499,7 +1493,11 @@ function OrgNode({
         },
     onEditPerson === undefined
       ? null
-      : { kind: 'edit' as const, label: `Edit ${node.name}`, onActivate: () => onEditPerson(node.id) },
+      : {
+          kind: 'edit' as const,
+          label: `Edit ${node.name}`,
+          onActivate: () => onEditPerson(node.id),
+        },
   ].filter((entry) => entry !== null);
 
   return (
@@ -1537,7 +1535,13 @@ function OrgNode({
         photoUrl={node.photoUrl}
         name={node.name}
       />
-      <text x={x + PERSON_TEXT_X} y={y + 37} fill="var(--uboss-text)" fontSize={13.5} fontWeight={700}>
+      <text
+        x={x + PERSON_TEXT_X}
+        y={y + 37}
+        fill="var(--uboss-text)"
+        fontSize={13.5}
+        fontWeight={700}
+      >
         {truncate(node.name, nameLimit(actions.length, PERSON_TEXT_X))}
       </text>
       <text x={x + PERSON_TEXT_X} y={y + 57} fill="var(--uboss-text-2)" fontSize={11}>

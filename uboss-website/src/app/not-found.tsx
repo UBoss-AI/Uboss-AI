@@ -12,7 +12,8 @@ export default function NotFound() {
           That page does not exist.
         </Heading>
         <Lede className="mx-auto mt-6 text-center">
-          The link may be out of date. Explore the platform or see how UBOSS would support your work.
+          The link may be out of date. Explore the platform or see how UBOSS would support your
+          work.
         </Lede>
         <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Button href="/">Back to Chief Agent</Button>

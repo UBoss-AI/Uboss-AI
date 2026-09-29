@@ -105,7 +105,10 @@ export class FeedbackController {
 
   @Post('runs/:runId')
   @RequirePermission({ module: 'agents', action: 'Comment' })
-  async submit(@Param('runId', new ParseUUIDPipe()) runId: string, @Body() body: SubmitFeedbackDto): Promise<unknown> {
+  async submit(
+    @Param('runId', new ParseUUIDPipe()) runId: string,
+    @Body() body: SubmitFeedbackDto,
+  ): Promise<unknown> {
     return this.feedback.submit({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),

@@ -146,7 +146,8 @@ describe('an offered item is an item that opens', () => {
    * carrying no department. The server now reports those keys, having run the route's own
    * authorize call, and they are filtered here.
    */
-  const keysOf = (groups: readonly NavGroup[]) => groups.flatMap((group) => group.items.map((item) => item.key));
+  const keysOf = (groups: readonly NavGroup[]) =>
+    groups.flatMap((group) => group.items.map((item) => item.key));
 
   it('offers Performance when nothing is known to refuse it', () => {
     const offered = keysOf(filterNavigation(COMPANY_NAV, ['dashboard', 'performance'], []));
@@ -154,7 +155,9 @@ describe('an offered item is an item that opens', () => {
   });
 
   it('withholds an entry the engine has already refused', () => {
-    const offered = keysOf(filterNavigation(COMPANY_NAV, ['dashboard', 'performance'], ['performance']));
+    const offered = keysOf(
+      filterNavigation(COMPANY_NAV, ['dashboard', 'performance'], ['performance']),
+    );
 
     expect(offered).not.toContain('performance');
     // And only that entry: a refusal is about one screen, not about the group it sits in.
@@ -182,7 +185,12 @@ describe('an offered item is an item that opens', () => {
   });
 
   it('drops a group that a refusal empties', () => {
-    const oneItemGroup: NavGroup[] = [{ group: 'SOLO', items: [{ key: 'performance', label: 'Performance', icon: 'medal', href: '/performance' }] }];
+    const oneItemGroup: NavGroup[] = [
+      {
+        group: 'SOLO',
+        items: [{ key: 'performance', label: 'Performance', icon: 'medal', href: '/performance' }],
+      },
+    ];
 
     // A heading with nothing under it reads as a loading failure, which is why the group goes too.
     expect(filterNavigation(oneItemGroup, ['performance'], ['performance'])).toEqual([]);

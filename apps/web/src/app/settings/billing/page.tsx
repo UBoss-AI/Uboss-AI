@@ -175,9 +175,7 @@ export default function CompanyBillingSettingsPage() {
         .checkout(tenantId, cycle)
         .then(({ url }) => window.location.assign(url))
         .catch((caught: unknown) => {
-          setError(
-            caught instanceof ApiError ? caught.message : 'Could not start the payment.',
-          );
+          setError(caught instanceof ApiError ? caught.message : 'Could not start the payment.');
           setPaying(false);
         });
     },
@@ -703,9 +701,7 @@ export default function CompanyBillingSettingsPage() {
               {invoices === null ? (
                 <SkeletonText lines={3} />
               ) : invoices.length === 0 ? (
-                <p className="uboss-muted-3">
-                  No invoice has been issued to this company yet.
-                </p>
+                <p className="uboss-muted-3">No invoice has been issued to this company yet.</p>
               ) : (
                 <DataTable
                   caption="Invoices issued by the payment provider"

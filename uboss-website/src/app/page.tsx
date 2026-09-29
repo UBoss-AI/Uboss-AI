@@ -1,5 +1,11 @@
 import { ProductStoryHero } from '@/components/ProductStoryHero';
-import { ProductTour, SkillsLibrary, DepartmentSolutions, GovernanceSummary, ClosingCTA } from '@/sections/WorkforceSections';
+import {
+  ProductTour,
+  SkillsLibrary,
+  DepartmentSolutions,
+  GovernanceSummary,
+  ClosingCTA,
+} from '@/sections/WorkforceSections';
 import { Pricing } from '@/sections/Pricing';
 import { FAQ } from '@/sections/FAQ';
 

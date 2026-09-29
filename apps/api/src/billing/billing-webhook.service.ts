@@ -56,7 +56,10 @@ export class BillingWebhookService {
    * the same bytes — key order and number formatting both differ — so the signature would never
    * match and every real delivery would be rejected as a forgery.
    */
-  async handle(payload: Buffer, signature: string | undefined): Promise<{ received: true; outcome: string }> {
+  async handle(
+    payload: Buffer,
+    signature: string | undefined,
+  ): Promise<{ received: true; outcome: string }> {
     const secret = this.stripe.webhookSecret;
     if (secret === null) {
       /*
@@ -336,7 +339,8 @@ export class BillingWebhookService {
   private async onInvoice(
     invoice: Stripe.Invoice,
   ): Promise<{ outcome: string; detail: string | null; tenantId: string | null }> {
-    const customerId = typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
+    const customerId =
+      typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
     if (customerId === undefined) {
       return { outcome: 'ignored', detail: 'The invoice had no customer.', tenantId: null };
     }
@@ -458,7 +462,9 @@ function subscriptionPeriodEnd(subscription: Stripe.Subscription): Date | null {
 function lastPaymentError(invoice: Stripe.Invoice): string | null {
   const payments = (
     invoice as unknown as {
-      payments?: { data?: { payment?: { payment_intent?: { last_payment_error?: { message?: string } } } }[] };
+      payments?: {
+        data?: { payment?: { payment_intent?: { last_payment_error?: { message?: string } } } }[];
+      };
     }
   ).payments;
   const message = payments?.data?.[0]?.payment?.payment_intent?.last_payment_error?.message;

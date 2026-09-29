@@ -116,7 +116,12 @@ export class AuthController {
    */
   @Get('captcha')
   @AllowAnonymous()
-  captchaChallenge(): { enabled: boolean; token?: string; question?: string; expiresInSeconds?: number } {
+  captchaChallenge(): {
+    enabled: boolean;
+    token?: string;
+    question?: string;
+    expiresInSeconds?: number;
+  } {
     const challenge = this.captcha.issue();
     if (challenge === null) return { enabled: false };
     return {

@@ -107,9 +107,7 @@ export class StripeClient {
     const client = this.optional();
     const reason = stripeUnavailableReason(this.configuration);
     if (client === null || reason !== null) {
-      throw new ServiceUnavailableException(
-        reason ?? 'No payment provider is connected.',
-      );
+      throw new ServiceUnavailableException(reason ?? 'No payment provider is connected.');
     }
     return client;
   }

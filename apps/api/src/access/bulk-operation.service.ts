@@ -469,8 +469,7 @@ export class BulkOperationService {
       if (managerName === '') {
         const roster = await this.access.roster(scope);
         const roots = roster.filter(
-          (person) =>
-            person.employmentState === 'Active' && person.reportingManagerUserId === null,
+          (person) => person.employmentState === 'Active' && person.reportingManagerUserId === null,
         );
         if (roots.length > 0) {
           errors.push(
@@ -733,10 +732,7 @@ export class BulkOperationService {
    * at download time rather than cached: a department added five minutes ago has to be in the file
    * somebody downloads now.
    */
-  async hierarchyReference(
-    scope: TenantScope,
-    actorUserId: string,
-  ): Promise<HierarchyReference> {
+  async hierarchyReference(scope: TenantScope, actorUserId: string): Promise<HierarchyReference> {
     await this.assertMayRun(scope, actorUserId, 'ImportEmployees');
 
     const [departments, roster] = await Promise.all([

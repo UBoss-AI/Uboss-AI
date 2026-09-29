@@ -462,7 +462,6 @@ test('a Candidate has no path to published, and both endings are final', () => {
   assert.equal(mayTransitionCandidate('Rejected', 'UnderReview'), false);
 });
 
-
 /*
  * ---------------------------------------------------------------------------
  * Matching a step's inputs to a Skill's declared inputs
@@ -497,7 +496,8 @@ const RECONCILE: RoutableSkillVersion = {
 };
 
 const RECONCILE_CONTEXT: SkillRouterContext = {
-  aiTask: 'Reconcile the consolidated submission list against the general ledger and mark every mismatch',
+  aiTask:
+    'Reconcile the consolidated submission list against the general ledger and mark every mismatch',
   availableInputs: ['The consolidated submission list', 'The general ledger extract for the day'],
   allowedToolCategories: ['Read', 'Write'],
   requiresApproval: true,
@@ -568,7 +568,10 @@ test('a step whose inputs are all missing is still refused outright', () => {
     RECONCILE,
   );
 
-  assert.ok('disqualifier' in outcome, 'nothing it needs can be supplied, so it must not be offered');
+  assert.ok(
+    'disqualifier' in outcome,
+    'nothing it needs can be supplied, so it must not be offered',
+  );
   assert.match((outcome as { disqualifier: string }).disqualifier, /can be supplied here/i);
 });
 

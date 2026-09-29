@@ -173,11 +173,11 @@ export class OrchestrationService {
       let waitingOnDependency = 0;
       let overdue = 0;
 
-      const byDepartment = new Map<string, { waiting: number; overdue: number; completed: number }>();
-      const bump = (
-        departmentId: string,
-        field: 'waiting' | 'overdue' | 'completed',
-      ): void => {
+      const byDepartment = new Map<
+        string,
+        { waiting: number; overdue: number; completed: number }
+      >();
+      const bump = (departmentId: string, field: 'waiting' | 'overdue' | 'completed'): void => {
         const entry = byDepartment.get(departmentId) ?? { waiting: 0, overdue: 0, completed: 0 };
         entry[field] += 1;
         byDepartment.set(departmentId, entry);
@@ -272,9 +272,9 @@ export class OrchestrationService {
 
     const byVersion = new Map<string, Map<string, OrchestrationStage>>();
     for (const draft of drafts) {
-      const graph = draft.graph as
-        | { nodes?: { id: string; kind: string; dod?: { dependencies?: string[] } }[] }
-        | null;
+      const graph = draft.graph as {
+        nodes?: { id: string; kind: string; dod?: { dependencies?: string[] } }[];
+      } | null;
       const nodes = (graph?.nodes ?? []).map((node) => ({
         id: node.id,
         kind: node.kind,
@@ -323,23 +323,24 @@ export class OrchestrationService {
       objectives.map((row) => [row.departmentId, row._count._all]),
     );
 
-    return departments
-      .map((department) => {
-        const entry = counts.get(department.id) ?? { waiting: 0, overdue: 0, completed: 0 };
-        return {
-          departmentId: department.id,
-          name: department.name,
-          activeObjectives: activeByDepartment.get(department.id) ?? 0,
-          waiting: entry.waiting,
-          overdue: entry.overdue,
-          completed: entry.completed,
-        };
-      })
-      // Whatever needs attention first: overdue, then queued, then the rest by name.
-      .sort(
-        (a, b) =>
-          b.overdue - a.overdue || b.waiting - a.waiting || a.name.localeCompare(b.name),
-      );
+    return (
+      departments
+        .map((department) => {
+          const entry = counts.get(department.id) ?? { waiting: 0, overdue: 0, completed: 0 };
+          return {
+            departmentId: department.id,
+            name: department.name,
+            activeObjectives: activeByDepartment.get(department.id) ?? 0,
+            waiting: entry.waiting,
+            overdue: entry.overdue,
+            completed: entry.completed,
+          };
+        })
+        // Whatever needs attention first: overdue, then queued, then the rest by name.
+        .sort(
+          (a, b) => b.overdue - a.overdue || b.waiting - a.waiting || a.name.localeCompare(b.name),
+        )
+    );
   }
 }
 
@@ -385,10 +386,7 @@ function humanState(status: string): keyof OrchestrationCounts | null {
  * finishes building the agent. Calling it "ready" would put it in the column an admin reads as
  * "somebody could start this now", and nobody could.
  */
-function agentState(
-  status: string,
-  latestRun: string | null,
-): keyof OrchestrationCounts | null {
+function agentState(status: string, latestRun: string | null): keyof OrchestrationCounts | null {
   // Cancelled work is neither outstanding nor achieved. Counting it as completed would let
   // somebody clear a backlog by cancelling it.
   if (status === 'Cancelled') return null;

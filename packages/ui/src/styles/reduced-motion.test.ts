@@ -60,7 +60,11 @@ const collect = (css: string) => {
       continue;
     }
 
-    if (reducedFrom === null && text.includes('@media') && text.includes('prefers-reduced-motion')) {
+    if (
+      reducedFrom === null &&
+      text.includes('@media') &&
+      text.includes('prefers-reduced-motion')
+    ) {
       reducedFrom = depth;
     }
 
@@ -74,7 +78,10 @@ const collect = (css: string) => {
     }
 
     if (/^animation:/.test(text)) {
-      for (const one of selector.split(',').map((s) => s.trim().replace(/ +/g, ' ')).filter(Boolean)) {
+      for (const one of selector
+        .split(',')
+        .map((s) => s.trim().replace(/ +/g, ' '))
+        .filter(Boolean)) {
         if (text.includes('backwards')) backwards.add(one);
         if (reducedFrom !== null && /animation: *none/.test(text)) silenced.add(one);
       }

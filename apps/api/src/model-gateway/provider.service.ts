@@ -580,9 +580,7 @@ export class ProviderService {
         actorUserId: input.actorUserId,
         summary:
           `${input.profile} is now answered at preference ${input.preference}` +
-          (replaced.length === 0
-            ? '.'
-            : `, replacing ${replaced.length} route(s) that held it.`),
+          (replaced.length === 0 ? '.' : `, replacing ${replaced.length} route(s) that held it.`),
         metadata: {
           profile: input.profile,
           preference: input.preference,

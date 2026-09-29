@@ -346,8 +346,7 @@ function TaskDetailInner() {
 
               {task.waitingOn.length === 0 ? null : (
                 <Banner tone="info">
-                  This cannot be started yet. It is waiting on{' '}
-                  <b>{task.waitingOn.join(', ')}</b>.
+                  This cannot be started yet. It is waiting on <b>{task.waitingOn.join(', ')}</b>.
                 </Banner>
               )}
               <div className="uboss-kv">

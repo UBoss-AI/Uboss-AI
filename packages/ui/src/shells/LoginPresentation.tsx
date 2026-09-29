@@ -58,10 +58,31 @@ export function LoginPresentation({ children, variant = 'customer' }: LoginPrese
           are atmosphere. The viewBox is stretched to the panel deliberately: the curves are
           composed for the shape they end up in, not for a square.
         */}
-        <svg className="uboss-lg-sig" viewBox="0 0 600 900" preserveAspectRatio="none" aria-hidden="true" focusable="false">
-          <path d="M-20,260 C140,180 220,420 380,330 C520,250 560,430 640,380" stroke="#C084FC" strokeWidth={1.6} opacity={0.9} />
-          <path d="M-20,470 C120,400 240,640 400,540 C540,450 580,600 640,560" stroke="#A78BFA" strokeWidth={1.8} opacity={0.75} />
-          <path d="M-20,700 C160,630 250,830 420,740 C540,680 580,790 640,760" stroke="#7C3AED" strokeWidth={1.2} opacity={0.6} />
+        <svg
+          className="uboss-lg-sig"
+          viewBox="0 0 600 900"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path
+            d="M-20,260 C140,180 220,420 380,330 C520,250 560,430 640,380"
+            stroke="#C084FC"
+            strokeWidth={1.6}
+            opacity={0.9}
+          />
+          <path
+            d="M-20,470 C120,400 240,640 400,540 C540,450 580,600 640,560"
+            stroke="#A78BFA"
+            strokeWidth={1.8}
+            opacity={0.75}
+          />
+          <path
+            d="M-20,700 C160,630 250,830 420,740 C540,680 580,790 640,760"
+            stroke="#7C3AED"
+            strokeWidth={1.2}
+            opacity={0.6}
+          />
         </svg>
 
         <div className="uboss-login-brand">
@@ -263,10 +284,26 @@ function PlatformLoginPresentation({ children }: { children?: ReactNode }) {
               </linearGradient>
             </defs>
             {[40, 90, 140, 190, 240].map((y) => (
-              <line key={`h${y}`} x1="0" y1={y} x2="400" y2={y} stroke="url(#uboss-plat-line)" strokeWidth="1" />
+              <line
+                key={`h${y}`}
+                x1="0"
+                y1={y}
+                x2="400"
+                y2={y}
+                stroke="url(#uboss-plat-line)"
+                strokeWidth="1"
+              />
             ))}
             {[60, 140, 220, 300, 360].map((x) => (
-              <line key={`v${x}`} x1={x} y1="0" x2={x} y2="260" stroke="url(#uboss-plat-line)" strokeWidth="1" />
+              <line
+                key={`v${x}`}
+                x1={x}
+                y1="0"
+                x2={x}
+                y2="260"
+                stroke="url(#uboss-plat-line)"
+                strokeWidth="1"
+              />
             ))}
             {[
               [60, 90],

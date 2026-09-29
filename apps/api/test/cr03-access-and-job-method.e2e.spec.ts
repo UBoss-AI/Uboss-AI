@@ -654,10 +654,7 @@ describe('CR-03 access, Job Method and photo (e2e)', () => {
 
       for (const subjectUserId of [managerId, employeeId, otherEmployeeId]) {
         const held = await capabilities().capabilitiesOf(scope(), subjectUserId);
-        assert.ok(
-          held.includes('SeeTeamReports'),
-          `${subjectUserId} should hold the capability`,
-        );
+        assert.ok(held.includes('SeeTeamReports'), `${subjectUserId} should hold the capability`);
       }
     });
 

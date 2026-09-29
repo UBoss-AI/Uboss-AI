@@ -42,10 +42,18 @@ export function Nav() {
   useEffect(() => {
     if (!open) return;
     const close = () => setOpen(false);
-    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') { setOpen(false); document.getElementById('mobile-menu-button')?.focus(); } };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+        document.getElementById('mobile-menu-button')?.focus();
+      }
+    };
     window.addEventListener('resize', close);
     document.addEventListener('keydown', escape);
-    return () => { window.removeEventListener('resize', close); document.removeEventListener('keydown', escape); };
+    return () => {
+      window.removeEventListener('resize', close);
+      document.removeEventListener('keydown', escape);
+    };
   }, [open]);
 
   return (
@@ -61,13 +69,19 @@ export function Nav() {
         aria-label="Main"
         className="mx-auto flex h-[68px] w-full max-w-[1200px] items-center justify-between px-6 sm:px-8 lg:px-10"
       >
-        <Link href="/" className="flex items-center gap-2.5" aria-label="Chief Agent — Powered by UBoss AI — home">
+        <Link
+          href="/"
+          className="flex items-center gap-2.5"
+          aria-label="Chief Agent — Powered by UBoss AI — home"
+        >
           <span className="grid h-7 w-7 place-items-center rounded-[9px] bg-gradient-to-br from-[#a78bfa] to-[#7c3aed] text-[13px] font-bold text-white">
             U
           </span>
           <span className="text-[15px] font-semibold leading-tight tracking-[-0.01em]">
             Chief Agent
-            <small className="block pt-0.5 text-[9px] font-medium tracking-normal text-[#a1a1aa]">Powered by UBoss AI</small>
+            <small className="block pt-0.5 text-[9px] font-medium tracking-normal text-[#a1a1aa]">
+              Powered by UBoss AI
+            </small>
           </span>
         </Link>
 

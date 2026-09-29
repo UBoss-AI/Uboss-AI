@@ -4,7 +4,10 @@ import { after, before, beforeEach, describe, it } from 'node:test';
 import Stripe from 'stripe';
 
 import { BillingWebhookService } from '../src/billing/billing-webhook.service.js';
-import { MAPPED_STRIPE_STATUSES, mapStripeSubscriptionStatus } from '../src/billing/billing-mapping.js';
+import {
+  MAPPED_STRIPE_STATUSES,
+  mapStripeSubscriptionStatus,
+} from '../src/billing/billing-mapping.js';
 import { StripeClient } from '../src/billing/stripe.client.js';
 import { readStripeConfiguration } from '../src/billing/stripe.config.js';
 import { AuditEventService } from '../src/audit/audit-event.service.js';
@@ -203,7 +206,7 @@ describe('Stripe billing (e2e)', () => {
   describe('a delivery nobody can prove came from the provider', () => {
     it('is refused when it carries no signature at all', async () => {
       const event = subscriptionEvent({
-        id: eid("evt_unsigned"),
+        id: eid('evt_unsigned'),
         type: 'customer.subscription.updated',
         createdSeconds: Math.floor(Date.now() / 1000),
         customerId,
@@ -228,7 +231,7 @@ describe('Stripe billing (e2e)', () => {
 
     it('is refused when the signature was made with a different secret', async () => {
       const event = subscriptionEvent({
-        id: eid("evt_wrong_secret"),
+        id: eid('evt_wrong_secret'),
         type: 'customer.subscription.updated',
         createdSeconds: Math.floor(Date.now() / 1000),
         customerId,
@@ -253,7 +256,7 @@ describe('Stripe billing (e2e)', () => {
     it('is refused when the body was changed after it was signed', async () => {
       const created = Math.floor(Date.now() / 1000);
       const honest = subscriptionEvent({
-        id: eid("evt_tampered"),
+        id: eid('evt_tampered'),
         type: 'customer.subscription.updated',
         createdSeconds: created,
         customerId,
@@ -266,7 +269,7 @@ describe('Stripe billing (e2e)', () => {
       // The same event, but claiming the subscription is active — the change somebody forging one
       // would actually want to make.
       const tampered = subscriptionEvent({
-        id: eid("evt_tampered"),
+        id: eid('evt_tampered'),
         type: 'customer.subscription.updated',
         createdSeconds: created,
         customerId,
@@ -296,7 +299,7 @@ describe('Stripe billing (e2e)', () => {
       const created = Math.floor(Date.now() / 1000);
       const { payload, signature } = signedDelivery(
         subscriptionEvent({
-          id: eid("evt_active"),
+          id: eid('evt_active'),
           type: 'customer.subscription.updated',
           createdSeconds: created,
           customerId,
@@ -319,7 +322,7 @@ describe('Stripe billing (e2e)', () => {
       assert.equal(subscription?.stripeSubscriptionId, subscriptionId);
 
       const delivery = await context.admin.client.stripeWebhookEvent.findUnique({
-        where: { id: eid("evt_active") },
+        where: { id: eid('evt_active') },
       });
       assert.equal(delivery?.outcome, 'applied');
       assert.equal(delivery?.tenantId, tenantId);
@@ -330,7 +333,7 @@ describe('Stripe billing (e2e)', () => {
       const created = Math.floor(Date.now() / 1000);
       const { payload, signature } = signedDelivery(
         invoiceEvent({
-          id: eid("evt_invoice_paid"),
+          id: eid('evt_invoice_paid'),
           type: 'invoice.paid',
           createdSeconds: created,
           customerId,
@@ -363,7 +366,7 @@ describe('Stripe billing (e2e)', () => {
       const created = Math.floor(Date.now() / 1000);
       const { payload, signature } = signedDelivery(
         invoiceEvent({
-          id: eid("evt_invoice_partial"),
+          id: eid('evt_invoice_partial'),
           type: 'invoice.payment_failed',
           createdSeconds: created,
           customerId,
@@ -400,7 +403,7 @@ describe('Stripe billing (e2e)', () => {
       // The newer truth arrives first: this company stopped paying.
       const newer = signedDelivery(
         subscriptionEvent({
-          id: eid("evt_newer_unpaid"),
+          id: eid('evt_newer_unpaid'),
           type: 'customer.subscription.updated',
           createdSeconds: now,
           customerId,
@@ -414,7 +417,7 @@ describe('Stripe billing (e2e)', () => {
       // Then a delayed older one, saying everything is fine.
       const older = signedDelivery(
         subscriptionEvent({
-          id: eid("evt_older_active"),
+          id: eid('evt_older_active'),
           type: 'customer.subscription.updated',
           createdSeconds: now - 600,
           customerId,
@@ -443,7 +446,7 @@ describe('Stripe billing (e2e)', () => {
   describe('what this product does not understand', () => {
     it('records an unknown event type without acting on it', async () => {
       const { payload, signature } = signedDelivery({
-        id: eid("evt_unknown_type"),
+        id: eid('evt_unknown_type'),
         object: 'event',
         type: 'radar.early_fraud_warning.created',
         created: Math.floor(Date.now() / 1000),
@@ -455,7 +458,7 @@ describe('Stripe billing (e2e)', () => {
       assert.equal(result.outcome, 'ignored');
 
       const delivery = await context.admin.client.stripeWebhookEvent.findUnique({
-        where: { id: eid("evt_unknown_type") },
+        where: { id: eid('evt_unknown_type') },
       });
       assert.equal(delivery?.outcome, 'ignored');
       assert.match(delivery?.detail ?? '', /No handler/);
@@ -464,7 +467,7 @@ describe('Stripe billing (e2e)', () => {
     it('changes nothing on a subscription status it has no translation for', async () => {
       const { payload, signature } = signedDelivery(
         subscriptionEvent({
-          id: eid("evt_unknown_status"),
+          id: eid('evt_unknown_status'),
           type: 'customer.subscription.updated',
           createdSeconds: Math.floor(Date.now() / 1000),
           customerId,
@@ -557,7 +560,10 @@ describe('Stripe billing (e2e)', () => {
       });
       const serialised = JSON.stringify(configuration);
       assert.ok(!serialised.includes(SECRET_KEY), 'the secret key must never be serialisable');
-      assert.ok(!serialised.includes(WEBHOOK_SECRET), 'the signing secret must never be serialisable');
+      assert.ok(
+        !serialised.includes(WEBHOOK_SECRET),
+        'the signing secret must never be serialisable',
+      );
       // The publishable key is public by design and is the one thing that may come back.
       assert.equal(configuration.publishableKey, 'pk_test_public');
     });

@@ -4,10 +4,7 @@ import type { MouseEvent, ReactNode } from 'react';
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 
 import { cn } from '../lib/class-names';
-import {
-  rememberSidebarCollapsed,
-  sidebarCollapsedFromDocument,
-} from './sidebar-preference';
+import { rememberSidebarCollapsed, sidebarCollapsedFromDocument } from './sidebar-preference';
 import { PageNameShownAboveContext } from '../lib/page-name-context';
 import type { NavGroup } from '../navigation/navigation-model';
 import type { AccountMenuItem } from './AccountMenu';

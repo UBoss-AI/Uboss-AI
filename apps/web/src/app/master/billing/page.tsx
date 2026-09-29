@@ -178,11 +178,7 @@ export default function MasterBillingPage() {
                     : 'Not connected'
                 }
                 tone={
-                  !connection.connected
-                    ? 'danger'
-                    : connection.mode === 'live'
-                      ? 'warn'
-                      : 'success'
+                  !connection.connected ? 'danger' : connection.mode === 'live' ? 'warn' : 'success'
                 }
               />
             )
@@ -242,9 +238,7 @@ export default function MasterBillingPage() {
                   // Null is a negotiated price, not free — and such a plan cannot be published,
                   // because there is no figure to charge.
                   render: (row) =>
-                    row.priceMinor === null
-                      ? 'Custom'
-                      : formatMinor(row.priceMinor, row.currency),
+                    row.priceMinor === null ? 'Custom' : formatMinor(row.priceMinor, row.currency),
                 },
                 {
                   key: 'published',
@@ -325,10 +319,7 @@ export default function MasterBillingPage() {
           {companies === null ? (
             <SkeletonText lines={4} />
           ) : companies.length === 0 ? (
-            <EmptyState
-              title="No companies"
-              description="No company has a subscription yet."
-            />
+            <EmptyState title="No companies" description="No company has a subscription yet." />
           ) : (
             <DataTable
               caption="Each company's plan and payment position"

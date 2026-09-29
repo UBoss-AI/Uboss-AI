@@ -72,9 +72,7 @@ export function stripeModeOf(key: string | null): StripeMode | null {
   return null;
 }
 
-export function readStripeConfiguration(
-  env: NodeJS.ProcessEnv = process.env,
-): StripeConfiguration {
+export function readStripeConfiguration(env: NodeJS.ProcessEnv = process.env): StripeConfiguration {
   const secret = stripeSecretKey(env);
   const webhook = stripeWebhookSecret(env);
   const publishable = env[STRIPE_PUBLISHABLE_KEY_VAR]?.trim() ?? '';

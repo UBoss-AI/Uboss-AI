@@ -1122,7 +1122,12 @@ describe('users & access (e2e)', () => {
        * person keeps their access. On their last day: the access ends and the employment closes.
        */
       const leaver = await addHierarchyPerson('Leaver', 'E-901', '40218837551', adminId);
-      const report = await addHierarchyPerson('Their Report', 'E-902', '29876543210', leaver.userId);
+      const report = await addHierarchyPerson(
+        'Their Report',
+        'E-902',
+        '29876543210',
+        leaver.userId,
+      );
 
       const outcome = await offboardings().offboard({
         scope: scope(),
@@ -1182,10 +1187,7 @@ describe('users & access (e2e)', () => {
       assert.ok(after.roles.length > 0, 'the fixture lost its premise');
       for (const role of after.roles) {
         assert.ok(role.expiresAt !== null, 'a role outlived the notice period');
-        assert.ok(
-          role.expiresAt.getTime() > Date.now(),
-          'the notice ended before it began',
-        );
+        assert.ok(role.expiresAt.getTime() > Date.now(), 'the notice ended before it began');
         assert.ok(
           role.expiresAt.getTime() < Date.now() + 31 * 24 * 60 * 60 * 1000,
           'the end date is further away than the notice given',
@@ -1857,7 +1859,12 @@ describe('users & access (e2e)', () => {
     });
 
     it('refuses a grant to a suspended account, and to an offboarded one', async () => {
-      const subject = await addHierarchyPerson('Suspended Subject', 'E-901', '29876543210', adminId);
+      const subject = await addHierarchyPerson(
+        'Suspended Subject',
+        'E-901',
+        '29876543210',
+        adminId,
+      );
       for (const state of ['Suspended', 'Offboarded'] as const) {
         await ctx.prisma.runAsPlatformOperation(() =>
           ctx.prisma.client.tenantMembership.updateMany({
@@ -1883,7 +1890,10 @@ describe('users & access (e2e)', () => {
         scopeKind: 'WholeCompany',
       }).expect(400);
 
-      assert.match((response.body as { message: string }).message, /cannot assign a role to yourself/i);
+      assert.match(
+        (response.body as { message: string }).message,
+        /cannot assign a role to yourself/i,
+      );
     });
 
     it('revokes a role, and refuses an assignment id from another company', async () => {

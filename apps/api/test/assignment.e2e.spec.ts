@@ -1516,9 +1516,7 @@ describe('approve & assign and the human to-do list (e2e)', () => {
         }),
       );
 
-      const forThisPlan = told.filter((row) =>
-        chained.some((task) => task.id === row.resourceId),
-      );
+      const forThisPlan = told.filter((row) => chained.some((task) => task.id === row.resourceId));
 
       assert.equal(forThisPlan.length, 1, 'exactly one person was told');
       assert.equal(forThisPlan[0]?.resourceId, first.id);
@@ -1548,7 +1546,12 @@ describe('approve & assign and the human to-do list (e2e)', () => {
        * the plan's order.
        */
       await assert.rejects(
-        () => tasks().start({ scope: scope(), actorUserId: second.assignedToUserId, taskId: second.id }),
+        () =>
+          tasks().start({
+            scope: scope(),
+            actorUserId: second.assignedToUserId,
+            taskId: second.id,
+          }),
         (error: Error) => {
           assert.match(error.message, /Waiting|cannot/i);
           return true;

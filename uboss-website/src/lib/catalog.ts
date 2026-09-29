@@ -83,7 +83,11 @@ export const SAMPLE_SKILLS: readonly {
   department: string;
   category: string;
 }[] = [
-  { name: 'Access Review', department: 'IT, Cybersecurity & Service Management', category: 'Review' },
+  {
+    name: 'Access Review',
+    department: 'IT, Cybersecurity & Service Management',
+    category: 'Review',
+  },
   { name: 'Accounts Payable Control', department: 'Finance & Accounting', category: 'Operations' },
   {
     name: 'Accounts Receivable Collections',

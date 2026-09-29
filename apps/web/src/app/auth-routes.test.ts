@@ -76,9 +76,12 @@ describe('auth routes — a person is never stranded', () => {
    * Both doors, not just the customer one. A member of UBoss staff who cannot get in needs the
    * same way forward as a customer, and the shared flow is what guarantees they get it.
    */
-  it.each(['login/page.tsx', 'internal/login/page.tsx'])('%s renders the shared sign-in flow', (file) => {
-    expect(read(file)).toContain('SignInFlow');
-  });
+  it.each(['login/page.tsx', 'internal/login/page.tsx'])(
+    '%s renders the shared sign-in flow',
+    (file) => {
+      expect(read(file)).toContain('SignInFlow');
+    },
+  );
 });
 
 describe('auth routes — no public company signup', () => {

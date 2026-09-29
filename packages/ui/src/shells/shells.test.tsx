@@ -251,9 +251,7 @@ describe('AppShell — the section names itself once', () => {
     expect(headings).toHaveLength(1);
     expect(headings[0]).toHaveTextContent('Hierarchy');
     expect(screen.queryByText('Organization Hierarchy')).not.toBeInTheDocument();
-    expect(
-      screen.queryByText('Reporting structure and company identity.'),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Reporting structure and company identity.')).not.toBeInTheDocument();
   });
 
   it('lets a screen that is not a navigation entry name itself', () => {
@@ -641,9 +639,7 @@ describe('SettingsShell', () => {
      * sense their profile. The label promised a page about them and delivered a page about the
      * company.
      */
-    expect(
-      screen.getByRole('button', { name: 'How this company works' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'How this company works' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Login & Security' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'General' })).not.toBeInTheDocument();
   });
@@ -893,7 +889,13 @@ describe('LoginPresentation — two front doors, one visual system', () => {
     const said = container.textContent ?? '';
 
     // A customer should not have to learn that UBoss has a platform plane in order to sign in.
-    for (const word of ['Master Console', 'Platform & Development', 'Internal', 'DevOps', 'Environment']) {
+    for (const word of [
+      'Master Console',
+      'Platform & Development',
+      'Internal',
+      'DevOps',
+      'Environment',
+    ]) {
       expect(said).not.toContain(word);
     }
   });

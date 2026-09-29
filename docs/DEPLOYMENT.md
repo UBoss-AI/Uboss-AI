@@ -153,21 +153,21 @@ release cannot go out without one.
 **Never in the repository.** Injected per environment by GitHub Environments, so a staging secret is
 not visible to a production job and neither is visible to a pull request from a fork.
 
-| Variable                 | Kind     | Purpose                                                                                    |
-| ------------------------ | -------- | ------------------------------------------------------------------------------------------ |
-| `DATABASE_MIGRATION_URL` | secret   | Owner role. Applies migrations.                                                            |
-| `DATABASE_URL`           | secret   | `uboss_app`, `NOBYPASSRLS`. What the application connects as.                              |
-| `AUTH_ENCRYPTION_KEYS`   | secret   | Encrypts stored credentials. **Lose these and a restored database is unreadable** (S-335). |
-| `HOSTINGER_API_KEY` | Actions secret | Deploy permission for the Hostinger account. Use a rotated key; never reuse one pasted in chat. |
-| `UBOSS_POSTGRES_PASSWORD` | Actions secret | PostgreSQL owner password used for migrations. |
-| `UBOSS_APP_DB_PASSWORD` | Actions secret | Separate restricted `uboss_app` database password. |
-| `UBOSS_AUTH_ENCRYPTION_KEYS` | Actions secret | Application encryption keyring; back it up outside GitHub too. |
-| `UBOSS_INITIAL_ADMIN_PASSWORD` | Actions secret | One-time account bootstrap password for `dev@ubossai.com`. |
-| `HOSTINGER_VM_ID` | Actions variable | The intended VPS ID. |
-| `UBOSS_DEPLOY_COMMAND`   | variable | The host's own deploy command. Absent ⇒ nothing is released and the log says so.           |
-| `UBOSS_ROLLBACK_COMMAND` | variable | The host's own rollback. Absent ⇒ manual rollback, loudly.                                 |
-| `UBOSS_HEALTH_URL`       | variable | Checked after release. Absent ⇒ release unverified, and the log says so.                   |
-| `UBOSS_ENVIRONMENT_URL`  | variable | Shown on the GitHub deployment.                                                            |
+| Variable                       | Kind             | Purpose                                                                                         |
+| ------------------------------ | ---------------- | ----------------------------------------------------------------------------------------------- |
+| `DATABASE_MIGRATION_URL`       | secret           | Owner role. Applies migrations.                                                                 |
+| `DATABASE_URL`                 | secret           | `uboss_app`, `NOBYPASSRLS`. What the application connects as.                                   |
+| `AUTH_ENCRYPTION_KEYS`         | secret           | Encrypts stored credentials. **Lose these and a restored database is unreadable** (S-335).      |
+| `HOSTINGER_API_KEY`            | Actions secret   | Deploy permission for the Hostinger account. Use a rotated key; never reuse one pasted in chat. |
+| `UBOSS_POSTGRES_PASSWORD`      | Actions secret   | PostgreSQL owner password used for migrations.                                                  |
+| `UBOSS_APP_DB_PASSWORD`        | Actions secret   | Separate restricted `uboss_app` database password.                                              |
+| `UBOSS_AUTH_ENCRYPTION_KEYS`   | Actions secret   | Application encryption keyring; back it up outside GitHub too.                                  |
+| `UBOSS_INITIAL_ADMIN_PASSWORD` | Actions secret   | One-time account bootstrap password for `dev@ubossai.com`.                                      |
+| `HOSTINGER_VM_ID`              | Actions variable | The intended VPS ID.                                                                            |
+| `UBOSS_DEPLOY_COMMAND`         | variable         | The host's own deploy command. Absent ⇒ nothing is released and the log says so.                |
+| `UBOSS_ROLLBACK_COMMAND`       | variable         | The host's own rollback. Absent ⇒ manual rollback, loudly.                                      |
+| `UBOSS_HEALTH_URL`             | variable         | Checked after release. Absent ⇒ release unverified, and the log says so.                        |
+| `UBOSS_ENVIRONMENT_URL`        | variable         | Shown on the GitHub deployment.                                                                 |
 
 Environment files are not tracked. The deploy workflow injects these values into the Hostinger Docker
 project; it does not commit an `.env` file. The secret scan examines Git history as well as current

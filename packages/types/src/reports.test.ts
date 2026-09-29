@@ -59,10 +59,7 @@ describe('the Company Workspace Dashboard', () => {
 
   it('sends every tile somewhere, and labels every one', () => {
     for (const tile of DASHBOARD_TILES) {
-      assert.ok(
-        DASHBOARD_TILE_DESTINATIONS[tile].startsWith('/'),
-        `${tile} has no destination`,
-      );
+      assert.ok(DASHBOARD_TILE_DESTINATIONS[tile].startsWith('/'), `${tile} has no destination`);
       assert.ok(DASHBOARD_TILE_LABELS[tile].length > 0, `${tile} has no label`);
     }
   });

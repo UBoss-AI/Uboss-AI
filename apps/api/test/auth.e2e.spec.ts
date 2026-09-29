@@ -1157,7 +1157,11 @@ describe('authentication (e2e)', () => {
        * the controller's own wiring is covered by the off-by-default test above.
        */
       const enabled = () =>
-        new CaptchaService({ ...loadAuthConfig(), captchaEnabled: true, captchaExpirySeconds: 300 });
+        new CaptchaService({
+          ...loadAuthConfig(),
+          captchaEnabled: true,
+          captchaExpirySeconds: 300,
+        });
 
       it('issues a question a person can answer, and accepts the answer', () => {
         const service = enabled();
@@ -1181,10 +1185,7 @@ describe('authentication (e2e)', () => {
         const challenge = service.issue();
         assert.ok(challenge);
 
-        assert.throws(
-          () => service.verify({ token: challenge.token, answer: '-1' }),
-          /not right/i,
-        );
+        assert.throws(() => service.verify({ token: challenge.token, answer: '-1' }), /not right/i);
       });
 
       it('refuses a missing answer', () => {
@@ -1252,7 +1253,11 @@ describe('authentication (e2e)', () => {
          * one of those is a fixed string that can be compared exactly. No randomness, no rate.
          */
         const answerSegment = challenge.token.split('.')[0] ?? '';
-        assert.equal(answerSegment.length, 43, 'the answer segment is a full SHA-256, not a number');
+        assert.equal(
+          answerSegment.length,
+          43,
+          'the answer segment is a full SHA-256, not a number',
+        );
 
         for (const plain of [
           answer,

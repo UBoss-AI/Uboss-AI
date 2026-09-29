@@ -235,7 +235,10 @@ export class FileController {
 
   @Post(':fileId/classification')
   @RequirePermission({ module: 'settings', action: 'Administer' })
-  async classify(@Param('fileId', new ParseUUIDPipe()) fileId: string, @Body() body: ClassifyDto): Promise<unknown> {
+  async classify(
+    @Param('fileId', new ParseUUIDPipe()) fileId: string,
+    @Body() body: ClassifyDto,
+  ): Promise<unknown> {
     return this.files.classify({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -247,7 +250,10 @@ export class FileController {
 
   @Post(':fileId/legal-hold')
   @RequirePermission({ module: 'settings', action: 'Administer' })
-  async legalHold(@Param('fileId', new ParseUUIDPipe()) fileId: string, @Body() body: LegalHoldDto): Promise<unknown> {
+  async legalHold(
+    @Param('fileId', new ParseUUIDPipe()) fileId: string,
+    @Body() body: LegalHoldDto,
+  ): Promise<unknown> {
     return this.files.setLegalHold({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -265,7 +271,10 @@ export class FileController {
    */
   @Post(':fileId/delete')
   @RequirePermission({ module: 'settings', action: 'Administer' })
-  async deleteFile(@Param('fileId', new ParseUUIDPipe()) fileId: string, @Body() body: DeleteFileDto): Promise<unknown> {
+  async deleteFile(
+    @Param('fileId', new ParseUUIDPipe()) fileId: string,
+    @Body() body: DeleteFileDto,
+  ): Promise<unknown> {
     return this.files.delete({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),

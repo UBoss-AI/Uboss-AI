@@ -174,7 +174,9 @@ export function HierarchyImport({
                   : undefined
               }
             >
-              {busy ? 'Applying…' : `Add ${preview.validRows} employee${preview.validRows === 1 ? '' : 's'}`}
+              {busy
+                ? 'Applying…'
+                : `Add ${preview.validRows} employee${preview.validRows === 1 ? '' : 's'}`}
             </Button>
           </>
         )
@@ -186,8 +188,8 @@ export function HierarchyImport({
       {preview === null ? (
         <>
           <p className="uboss-muted">
-            Download the template, fill it in, and upload it. Nothing is created until you have
-            seen exactly what would be.
+            Download the template, fill it in, and upload it. Nothing is created until you have seen
+            exactly what would be.
           </p>
 
           <div className="uboss-row-actions">
@@ -222,9 +224,8 @@ export function HierarchyImport({
           {columns === null ? null : columns.length === 0 ? null : (
             <>
               <p className="uboss-muted-3">
-                The template carries these columns, plus two reference sheets listing this
-                company’s departments and people — copy the values from those rather than typing
-                them.
+                The template carries these columns, plus two reference sheets listing this company’s
+                departments and people — copy the values from those rather than typing them.
               </p>
               <ul className="uboss-muted-3">
                 {columns.map((column) => (

@@ -41,7 +41,9 @@ describe('parseValidationProblems', () => {
   });
 
   it('numbers a step the way the grid numbers it', () => {
-    const problems = parseValidationProblems('steps.0.whatExactWork must be longer than or equal to 1 characters');
+    const problems = parseValidationProblems(
+      'steps.0.whatExactWork must be longer than or equal to 1 characters',
+    );
 
     // The DTO counts from zero; the grid shows Step 1. Reporting "steps.0" would send somebody
     // looking for a row that is not labelled.
@@ -54,7 +56,8 @@ describe('parseValidationProblems', () => {
    * pattern that rewrote it would replace the rule with this screen's guess at the rule.
    */
   it('passes a written refusal through untouched', () => {
-    const written = 'You cannot approve something you created. UBoss requires a different person to approve it.';
+    const written =
+      'You cannot approve something you created. UBoss requires a different person to approve it.';
     const problems = parseValidationProblems(written);
 
     expect(problems).toEqual([{ field: null, text: written, raw: written }]);

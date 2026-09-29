@@ -203,7 +203,9 @@ export class EnterpriseIdentityRepository {
    *
    * Anything unrecognised is `generic`. A provider this does not know is not one to guess at.
    */
-  private static providerKindOf(issuer: string | null): 'google' | 'microsoft' | 'apple' | 'generic' {
+  private static providerKindOf(
+    issuer: string | null,
+  ): 'google' | 'microsoft' | 'apple' | 'generic' {
     const value = (issuer ?? '').toLowerCase();
     if (value.includes('accounts.google.com')) return 'google';
     if (value.includes('login.microsoftonline.com') || value.includes('sts.windows.net')) {
@@ -224,9 +226,7 @@ export class EnterpriseIdentityRepository {
    * four words rather than a URL that carries the company's own directory identifiers inside it.
    * The issuer is read here and does not leave this method.
    */
-  async listEnabledConnectionsForPlatform(
-    tenantId: string,
-  ): Promise<
+  async listEnabledConnectionsForPlatform(tenantId: string): Promise<
     {
       id: string;
       displayName: string;

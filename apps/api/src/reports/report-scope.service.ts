@@ -218,7 +218,9 @@ export class ReportScopeService {
    * reach this only when the permission is granted by no role at all, which their own guards
    * normally refuse first.
    */
-  private static heldScope(context: { roleSummary: readonly { scopeKind: ScopeKind }[] }): ScopeKind {
+  private static heldScope(context: {
+    roleSummary: readonly { scopeKind: ScopeKind }[];
+  }): ScopeKind {
     return ReportScopeService.widestScope(context.roleSummary.map((role) => role.scopeKind));
   }
 

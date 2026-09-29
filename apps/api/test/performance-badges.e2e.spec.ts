@@ -1292,7 +1292,7 @@ describe('performance score and badges (e2e)', () => {
       assert.equal(event?.actorUserId, adminId);
     });
   });
-/*
+  /*
    * ---------------------------------------------------------------------------
    * A malformed id is the caller's mistake, and must say so
    * ---------------------------------------------------------------------------
@@ -1319,7 +1319,9 @@ describe('performance score and badges (e2e)', () => {
 
         assert.equal(response.status, 400, `"${bad}" answered ${response.status}`);
         assert.ok(
-          !/prisma|postgres|invalid input syntax|driverAdapter/i.test(JSON.stringify(response.body)),
+          !/prisma|postgres|invalid input syntax|driverAdapter/i.test(
+            JSON.stringify(response.body),
+          ),
           `the answer names the database: ${JSON.stringify(response.body)}`,
         );
       }

@@ -35,7 +35,11 @@ import { SECURITY_ACTIONS, SecurityEventPublisher } from '../auth/security-event
  * `NotInvited` is included because that is when a role is *supposed* to be granted — see the note
  * inside `assign` on the loop that closed on itself.
  */
-export const ASSIGNABLE_ACCOUNT_STATES: readonly string[] = ['Active', 'InvitePending', 'NotInvited'];
+export const ASSIGNABLE_ACCOUNT_STATES: readonly string[] = [
+  'Active',
+  'InvitePending',
+  'NotInvited',
+];
 
 /**
  * Granting and revoking authority.
@@ -252,7 +256,9 @@ export class RoleAdministrationService {
       // the reason is taken from what this call was asking for.
       const looksLikeForeignKey =
         code === 'P2003' ||
-        /foreign\s*key/i.test(`${error instanceof Error ? error.message : ''}${JSON.stringify((error as { meta?: unknown }).meta ?? '')}`);
+        /foreign\s*key/i.test(
+          `${error instanceof Error ? error.message : ''}${JSON.stringify((error as { meta?: unknown }).meta ?? '')}`,
+        );
       const namesDepartments =
         (input.scopeKind === 'Department' || input.scopeKind === 'MultipleDepartments') &&
         (input.departmentIds ?? []).length > 0;

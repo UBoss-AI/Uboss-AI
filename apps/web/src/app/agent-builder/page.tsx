@@ -129,7 +129,9 @@ function AgentBuilderInner() {
    * report the moment it happens so the control can say so, and they are false on mount: a cue on
    * arrival would announce something that did not just occur.
    */
-  const [testJustOpened, clearTestCue] = useJustBecameTrue(selected?.readiness.readyToTest ?? false);
+  const [testJustOpened, clearTestCue] = useJustBecameTrue(
+    selected?.readiness.readyToTest ?? false,
+  );
 
   /*
    * What the test runs against.
@@ -280,7 +282,6 @@ function AgentBuilderInner() {
         </span>
       </label>
       <input id={id} value={value} readOnly />
-
     </div>
   );
 
@@ -619,7 +620,6 @@ function AgentBuilderInner() {
         />
       ) : null}
 
-
       {/*
         Full width, one column, in the Objective form's own rhythm.
 
@@ -728,9 +728,7 @@ function AgentBuilderInner() {
                 <>
                   {askingNothing ? null : (
                     <>
-                      <div className="uboss-section-label">
-                        What the objective did not answer
-                      </div>
+                      <div className="uboss-section-label">What the objective did not answer</div>
                       {selected.missing.map((entry) =>
                         controlFor(entry.field, entry.label, entry.why),
                       )}
@@ -747,322 +745,312 @@ function AgentBuilderInner() {
             </CardBody>
           </Card>
 
-
-        {selected === null || tenantId === null ? null : (
-          <>
-            {/*
+          {selected === null || tenantId === null ? null : (
+            <>
+              {/*
               The Objective form's own grid header, for the same reason it has one there.
 
               A toolbar outside the card rather than a heading inside it: the grid is the widest
               thing on the page and its controls belong beside its title, not indented within a
               card that then has to be as wide as the grid anyway.
             */}
-            <div className="uboss-wfg-toolbar">
-              <div className="uboss-section-label" style={{ margin: 0, border: 0 }}>
-                Job method (source grid — {JOB_METHOD_COLUMNS.length} columns)
-              </div>
-              <div className="uboss-wfg-toolbar-actions">
-                {/*
+              <div className="uboss-wfg-toolbar">
+                <div className="uboss-section-label" style={{ margin: 0, border: 0 }}>
+                  Job method (source grid — {JOB_METHOD_COLUMNS.length} columns)
+                </div>
+                <div className="uboss-wfg-toolbar-actions">
+                  {/*
                   A toggle, and it says which way it is about to go. It stays enabled for a reader:
                   reading a long cell is the one thing somebody without edit rights most needs.
                 */}
-                <Button
-                  size="sm"
-                  aria-pressed={methodExpanded}
-                  onClick={() => setMethodExpanded((current) => !current)}
-                >
-                  {methodExpanded ? 'Collapse long text' : 'Expand long text'}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="primary"
-                  disabled={busy || !methodDirty}
-                  title={methodDirty ? undefined : 'Nothing has changed'}
-                  onClick={saveMethod}
-                >
-                  Save steps
-                </Button>
+                  <Button
+                    size="sm"
+                    aria-pressed={methodExpanded}
+                    onClick={() => setMethodExpanded((current) => !current)}
+                  >
+                    {methodExpanded ? 'Collapse long text' : 'Expand long text'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    disabled={busy || !methodDirty}
+                    title={methodDirty ? undefined : 'Nothing has changed'}
+                    onClick={saveMethod}
+                  >
+                    Save steps
+                  </Button>
+                </div>
               </div>
-            </div>
 
-            <Card>
-              <CardBody>
-                <JobMethodGrid
-                  rows={methodRows}
-                  onChange={(rows) => {
-                    setMethodRows(rows);
-                    setMethodDirty(true);
-                  }}
-                  readOnly={!can(myAccess, 'agent-builder', 'EditDraft')}
-                  expanded={methodExpanded}
-                />
-              </CardBody>
-            </Card>
-          </>
-        )}
+              <Card>
+                <CardBody>
+                  <JobMethodGrid
+                    rows={methodRows}
+                    onChange={(rows) => {
+                      setMethodRows(rows);
+                      setMethodDirty(true);
+                    }}
+                    readOnly={!can(myAccess, 'agent-builder', 'EditDraft')}
+                    expanded={methodExpanded}
+                  />
+                </CardBody>
+              </Card>
+            </>
+          )}
 
-
-      {/*
+          {/*
         The test, between the form and the readiness checklist.
 
         Directly under what it tests and directly above the reasons it might refuse to run, which
         is the order somebody moves through: configure, try, find out why not.
       */}
-      <Card>
-        <CardBody>
-          <div className="uboss-section-label" style={{ marginTop: 0 }}>
-            Test
-          </div>
+          <Card>
+            <CardBody>
+              <div className="uboss-section-label" style={{ marginTop: 0 }}>
+                Test
+              </div>
 
-          <label className="uboss-field">
-            <span className="uboss-field-label">Test input *</span>
-            <textarea
-              className="uboss-input"
-              rows={4}
-              value={sampleInput}
-              placeholder="Paste a real example of what this agent will receive."
-              onChange={(event) => setSampleInput(event.target.value)}
-            />
-          </label>
+              <label className="uboss-field">
+                <span className="uboss-field-label">Test input *</span>
+                <textarea
+                  className="uboss-input"
+                  rows={4}
+                  value={sampleInput}
+                  placeholder="Paste a real example of what this agent will receive."
+                  onChange={(event) => setSampleInput(event.target.value)}
+                />
+              </label>
 
-          <label className="uboss-field">
-            <span className="uboss-field-label">What you expect</span>
-            <textarea
-              className="uboss-input"
-              rows={3}
-              value={expectedOutcome}
-              placeholder="Optional. Describe the answer you are hoping for."
-              onChange={(event) => setExpectedOutcome(event.target.value)}
-            />
-            <span className="uboss-field-note">{AGENT_TEST_EXPECTATION_NOTE}</span>
-          </label>
+              <label className="uboss-field">
+                <span className="uboss-field-label">What you expect</span>
+                <textarea
+                  className="uboss-input"
+                  rows={3}
+                  value={expectedOutcome}
+                  placeholder="Optional. Describe the answer you are hoping for."
+                  onChange={(event) => setExpectedOutcome(event.target.value)}
+                />
+                <span className="uboss-field-note">{AGENT_TEST_EXPECTATION_NOTE}</span>
+              </label>
 
-          {testProblems.length > 0 && sampleInput.trim() !== '' ? (
-            <Banner tone="warn">{testProblems.join(' ')}</Banner>
-          ) : null}
+              {testProblems.length > 0 && sampleInput.trim() !== '' ? (
+                <Banner tone="warn">{testProblems.join(' ')}</Banner>
+              ) : null}
 
-          {/*
+              {/*
             The result, below the form.
 
             The newest run in full — what went in, what came back, and what it cost in time — so
             the comparison the admin is actually making does not need two screens.
           */}
-          {latestTest === null ? (
-            <p className="uboss-muted-3" style={{ marginTop: 12 }}>
-              Not tested yet. Give it something to work on and press Test agent.
-            </p>
-          ) : (
-            <div className="uboss-test-result">
-              <div className="uboss-kv">
-                <span className="uboss-kv-key">Result</span>
-                <span className="uboss-kv-value">
-                  <StatusBadge
-                    tone={
-                      AGENT_TEST_STATUS_TONES[latestTest.status] === 'ok'
-                        ? 'success'
-                        : AGENT_TEST_STATUS_TONES[latestTest.status] === 'warn'
-                          ? 'warn'
-                          : 'danger'
-                    }
-                    status={AGENT_TEST_STATUS_LABELS[latestTest.status]}
-                  />{' '}
-                  <span className="uboss-muted-3">
-                    {latestTest.durationMs} ms
-                    {latestTest.capability === null ? '' : ` · ${latestTest.capability}`}
-                    {latestTest.wasReal ? '' : ' · mock gateway'}
-                  </span>
-                </span>
-              </div>
+              {latestTest === null ? (
+                <p className="uboss-muted-3" style={{ marginTop: 12 }}>
+                  Not tested yet. Give it something to work on and press Test agent.
+                </p>
+              ) : (
+                <div className="uboss-test-result">
+                  <div className="uboss-kv">
+                    <span className="uboss-kv-key">Result</span>
+                    <span className="uboss-kv-value">
+                      <StatusBadge
+                        tone={
+                          AGENT_TEST_STATUS_TONES[latestTest.status] === 'ok'
+                            ? 'success'
+                            : AGENT_TEST_STATUS_TONES[latestTest.status] === 'warn'
+                              ? 'warn'
+                              : 'danger'
+                        }
+                        status={AGENT_TEST_STATUS_LABELS[latestTest.status]}
+                      />{' '}
+                      <span className="uboss-muted-3">
+                        {latestTest.durationMs} ms
+                        {latestTest.capability === null ? '' : ` · ${latestTest.capability}`}
+                        {latestTest.wasReal ? '' : ' · mock gateway'}
+                      </span>
+                    </span>
+                  </div>
 
-              <div className="uboss-test-pane">
-                <span className="uboss-test-pane-label">Input</span>
-                <pre className="uboss-pre">{latestTest.sampleInput}</pre>
-              </div>
+                  <div className="uboss-test-pane">
+                    <span className="uboss-test-pane-label">Input</span>
+                    <pre className="uboss-pre">{latestTest.sampleInput}</pre>
+                  </div>
 
-              {latestTest.expectedOutcome === null ? null : (
-                <div className="uboss-test-pane">
-                  <span className="uboss-test-pane-label">Expected</span>
-                  <pre className="uboss-pre">{latestTest.expectedOutcome}</pre>
+                  {latestTest.expectedOutcome === null ? null : (
+                    <div className="uboss-test-pane">
+                      <span className="uboss-test-pane-label">Expected</span>
+                      <pre className="uboss-pre">{latestTest.expectedOutcome}</pre>
+                    </div>
+                  )}
+
+                  <div className="uboss-test-pane">
+                    <span className="uboss-test-pane-label">Output</span>
+                    {latestTest.output === null ? (
+                      <p className="uboss-muted-3">Nothing came back.</p>
+                    ) : (
+                      <pre className="uboss-pre">{latestTest.output}</pre>
+                    )}
+                  </div>
+
+                  {latestTest.warnings.map((warning) => (
+                    <Banner key={warning} tone="warn">
+                      {warning}
+                    </Banner>
+                  ))}
+                  {latestTest.errors.map((problem) => (
+                    <Banner key={problem} tone="danger">
+                      {problem}
+                    </Banner>
+                  ))}
                 </div>
               )}
 
-              <div className="uboss-test-pane">
-                <span className="uboss-test-pane-label">Output</span>
-                {latestTest.output === null ? (
-                  <p className="uboss-muted-3">Nothing came back.</p>
-                ) : (
-                  <pre className="uboss-pre">{latestTest.output}</pre>
-                )}
-              </div>
-
-              {latestTest.warnings.map((warning) => (
-                <Banner key={warning} tone="warn">
-                  {warning}
-                </Banner>
-              ))}
-              {latestTest.errors.map((problem) => (
-                <Banner key={problem} tone="danger">
-                  {problem}
-                </Banner>
-              ))}
-            </div>
-          )}
-
-          {/*
+              {/*
             Everything before it.
 
             Publishing is a decision made by comparing attempts — "the last one dropped the tax
             line, this one keeps it" — and that comparison is impossible if each test erases the
             one before, which is what this screen used to do.
           */}
-          {earlierTests.length === 0 ? null : (
-            <>
-              <div className="uboss-section-label">Earlier tests</div>
-              <ul className="uboss-test-history">
-                {earlierTests.map((entry) => (
-                  <li key={entry.id}>
-                    <StatusBadge
-                      tone={
-                        AGENT_TEST_STATUS_TONES[entry.status] === 'ok'
-                          ? 'success'
-                          : AGENT_TEST_STATUS_TONES[entry.status] === 'warn'
-                            ? 'warn'
-                            : 'danger'
-                      }
-                      status={AGENT_TEST_STATUS_LABELS[entry.status]}
-                    />
-                    <span className="uboss-muted-3">
-                      {new Date(entry.at).toLocaleString()}
-                      {entry.ranByName === null ? '' : ` · ${entry.ranByName}`}
-                      {` · ${entry.durationMs} ms`}
-                      {entry.wasReal ? '' : ' · mock'}
-                    </span>
-                    <span className="uboss-test-history-line">
-                      {entry.output ?? entry.errors[0] ?? 'Nothing came back.'}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-        </CardBody>
-      </Card>
+              {earlierTests.length === 0 ? null : (
+                <>
+                  <div className="uboss-section-label">Earlier tests</div>
+                  <ul className="uboss-test-history">
+                    {earlierTests.map((entry) => (
+                      <li key={entry.id}>
+                        <StatusBadge
+                          tone={
+                            AGENT_TEST_STATUS_TONES[entry.status] === 'ok'
+                              ? 'success'
+                              : AGENT_TEST_STATUS_TONES[entry.status] === 'warn'
+                                ? 'warn'
+                                : 'danger'
+                          }
+                          status={AGENT_TEST_STATUS_LABELS[entry.status]}
+                        />
+                        <span className="uboss-muted-3">
+                          {new Date(entry.at).toLocaleString()}
+                          {entry.ranByName === null ? '' : ` · ${entry.ranByName}`}
+                          {` · ${entry.durationMs} ms`}
+                          {entry.wasReal ? '' : ' · mock'}
+                        </span>
+                        <span className="uboss-test-history-line">
+                          {entry.output ?? entry.errors[0] ?? 'Nothing came back.'}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </CardBody>
+          </Card>
 
-      {/*
+          {/*
         Readiness, under the form rather than beside it.
 
         It is a checklist of reasons, read once when something is disabled and ignored the rest of
         the time — which is exactly the thing that should not take a third of the width away from
         the grid somebody is working in.
       */}
-      <Card>
-        <CardBody>
-          <div className="uboss-section-label" style={{ marginTop: 0 }}>
-            Readiness
-          </div>
+          <Card>
+            <CardBody>
+              <div className="uboss-section-label" style={{ marginTop: 0 }}>
+                Readiness
+              </div>
 
-          <div className="uboss-kv">
-            <span className="uboss-kv-key">Connection</span>
-            <span className="uboss-kv-value">
-              {selected.readiness.connection === null ? (
-                <span className="uboss-muted-3">
-                  {selected.needsConnection ? 'Not chosen' : 'Not needed'}
-                </span>
-              ) : (
-                <StatusBadge
-                  tone={
-                    selected.readiness.connection.state === 'Connected' ? 'success' : 'warn'
-                  }
-                  status={selected.readiness.connection.state}
-                />
-              )}
-            </span>
-          </div>
-          <div className="uboss-kv">
-            <span className="uboss-kv-key">Schedule</span>
-            <span className="uboss-kv-value">
-              {selected.setup.triggerOrFrequency ??
-                (selected.setup.runType === null ? '—' : 'Not required')}
-            </span>
-          </div>
-
-          {selected.lastTest.at === null ? (
-            <p className="uboss-notice-min">
-              <Icon name="alert" size={14} />
-              Not tested yet.
-            </p>
-          ) : (
-            <>
               <div className="uboss-kv">
-                <span className="uboss-kv-key">Last test</span>
+                <span className="uboss-kv-key">Connection</span>
                 <span className="uboss-kv-value">
-                  <StatusBadge
-                    tone={selected.lastTest.passed ? 'success' : 'danger'}
-                    status={selected.lastTest.passed ? 'Passed' : 'Failed'}
-                  />
+                  {selected.readiness.connection === null ? (
+                    <span className="uboss-muted-3">
+                      {selected.needsConnection ? 'Not chosen' : 'Not needed'}
+                    </span>
+                  ) : (
+                    <StatusBadge
+                      tone={
+                        selected.readiness.connection.state === 'Connected' ? 'success' : 'warn'
+                      }
+                      status={selected.readiness.connection.state}
+                    />
+                  )}
                 </span>
               </div>
-              {/* Never presented as a real provider result when it was not one. */}
+              <div className="uboss-kv">
+                <span className="uboss-kv-key">Schedule</span>
+                <span className="uboss-kv-value">
+                  {selected.setup.triggerOrFrequency ??
+                    (selected.setup.runType === null ? '—' : 'Not required')}
+                </span>
+              </div>
+
+              {selected.lastTest.at === null ? (
+                <p className="uboss-notice-min">
+                  <Icon name="alert" size={14} />
+                  Not tested yet.
+                </p>
+              ) : (
+                <>
+                  <div className="uboss-kv">
+                    <span className="uboss-kv-key">Last test</span>
+                    <span className="uboss-kv-value">
+                      <StatusBadge
+                        tone={selected.lastTest.passed ? 'success' : 'danger'}
+                        status={selected.lastTest.passed ? 'Passed' : 'Failed'}
+                      />
+                    </span>
+                  </div>
+                  {/* Never presented as a real provider result when it was not one. */}
+                  <p className="uboss-notice-min">
+                    <Icon name="shield" size={14} />
+                    {selected.lastTest.wasReal
+                      ? 'Ran against a live model provider.'
+                      : 'Ran against the built-in mock model, not a live provider.'}{' '}
+                    {selected.lastTest.summary}
+                  </p>
+                </>
+              )}
+
+              {selected.readiness.findings.length > 0 ? (
+                <>
+                  <div className="uboss-section-label">What is standing in the way</div>
+                  {selected.readiness.findings.map((finding) => (
+                    /*
+                     * Keyed by what it says, not by its index, so resolving the first blocker does
+                     * not rewrite the text of the second. `layout` closes the gap the resolved one
+                     * left, which is what makes progress visible.
+                     *
+                     * The item itself is not animated out. It would stay in the accessibility tree
+                     * while it left, reading out a blocker that no longer applies — the same
+                     * reason a deleted workflow row goes immediately.
+                     */
+                    <motion.p
+                      className="uboss-notice-min uboss-readiness-finding"
+                      key={finding.summary}
+                      layout
+                      transition={transition('panel', 'standard')}
+                    >
+                      <Icon name={finding.severity === 'Blocker' ? 'shield' : 'alert'} size={14} />
+                      {finding.summary}
+                    </motion.p>
+                  ))}
+                </>
+              ) : null}
+
+              {selected.engineAgent === null ? null : ( // which is the reason a button is or is not enabled. // The buttons for these are in the header. What stays here is the checklist above,
+                <p className="uboss-notice-min">
+                  <Icon name="bot" size={14} />
+                  This work runs on a reusable Engine Agent. Changing how it runs is a new version
+                  of that agent, not an edit here.
+                </p>
+              )}
+
               <p className="uboss-notice-min">
-                <Icon name="shield" size={14} />
-                {selected.lastTest.wasReal
-                  ? 'Ran against a live model provider.'
-                  : 'Ran against the built-in mock model, not a live provider.'}{' '}
-                {selected.lastTest.summary}
+                <Icon name="key" size={14} />A connection is chosen by identity. No credential is
+                ever shown on this screen.
               </p>
-            </>
-          )}
-
-          {selected.readiness.findings.length > 0 ? (
-            <>
-              <div className="uboss-section-label">What is standing in the way</div>
-              {selected.readiness.findings.map((finding) => (
-                /*
-                 * Keyed by what it says, not by its index, so resolving the first blocker does
-                 * not rewrite the text of the second. `layout` closes the gap the resolved one
-                 * left, which is what makes progress visible.
-                 *
-                 * The item itself is not animated out. It would stay in the accessibility tree
-                 * while it left, reading out a blocker that no longer applies — the same
-                 * reason a deleted workflow row goes immediately.
-                 */
-                <motion.p
-                  className="uboss-notice-min uboss-readiness-finding"
-                  key={finding.summary}
-                  layout
-                  transition={transition('panel', 'standard')}
-                >
-                  <Icon name={finding.severity === 'Blocker' ? 'shield' : 'alert'} size={14} />
-                  {finding.summary}
-                </motion.p>
-              ))}
-            </>
-          ) : null}
-
-          {selected.engineAgent === null ? (
-            // The buttons for these are in the header. What stays here is the checklist above,
-            // which is the reason a button is or is not enabled.
-            null
-          ) : (
-            <p className="uboss-notice-min">
-              <Icon name="bot" size={14} />
-              This work runs on a reusable Engine Agent. Changing how it runs is a new version
-              of that agent, not an edit here.
-            </p>
-          )}
-
-          <p className="uboss-notice-min">
-            <Icon name="key" size={14} />A connection is chosen by identity. No credential is
-            ever shown on this screen.
-          </p>
-        </CardBody>
-      </Card>
-
+            </CardBody>
+          </Card>
         </>
       )}
-
-
-
     </RoutedAppShell>
   );
 }

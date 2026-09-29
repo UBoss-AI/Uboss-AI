@@ -316,9 +316,7 @@ function WorkspaceChatInner() {
     try {
       const sent = await chatApi.send(tenantId, openId, {
         body: draft,
-        ...(attached.length === 0
-          ? {}
-          : { attachmentIds: attached.map((file) => file.id) }),
+        ...(attached.length === 0 ? {} : { attachmentIds: attached.map((file) => file.id) }),
       });
       setDraft('');
       setAttached([]);

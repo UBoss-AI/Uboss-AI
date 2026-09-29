@@ -109,7 +109,15 @@ export interface FederatedIdentity {
  * discovery document Google itself served, may have its token endpoint on the one other origin
  * Google documents." Everything else still fails closed.
  */
-const TRUSTED_CROSS_ORIGIN_ENDPOINTS: Record<string, Partial<Record<'authorization_endpoint' | 'token_endpoint' | 'jwks_uri' | 'end_session_endpoint', readonly string[]>>> = {
+const TRUSTED_CROSS_ORIGIN_ENDPOINTS: Record<
+  string,
+  Partial<
+    Record<
+      'authorization_endpoint' | 'token_endpoint' | 'jwks_uri' | 'end_session_endpoint',
+      readonly string[]
+    >
+  >
+> = {
   'https://accounts.google.com': {
     token_endpoint: ['https://oauth2.googleapis.com'],
     jwks_uri: ['https://www.googleapis.com'],
@@ -125,7 +133,12 @@ const TRUSTED_CROSS_ORIGIN_ENDPOINTS: Record<string, Partial<Record<'authorizati
  * exercised outside production.
  */
 function isLoopback(hostname: string): boolean {
-  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]';
+  return (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '::1' ||
+    hostname === '[::1]'
+  );
 }
 
 export class OidcError extends Error {}
@@ -184,7 +197,11 @@ export class OidcProvider {
      * secret, but an authorization endpoint on somebody else's origin is a phishing page wearing
      * the provider's flow, and there is no reason to allow one.
      */
-    this.assertEndpointAllowed(config.issuer, document.authorization_endpoint, 'authorization_endpoint');
+    this.assertEndpointAllowed(
+      config.issuer,
+      document.authorization_endpoint,
+      'authorization_endpoint',
+    );
     this.assertEndpointAllowed(config.issuer, document.token_endpoint, 'token_endpoint');
     this.assertEndpointAllowed(config.issuer, document.jwks_uri, 'jwks_uri');
 

@@ -472,84 +472,83 @@ export default function EmployeeProfilePage() {
                 open a person at all; the Performance tab below is the detail behind them.
               */}
               {tab !== 'employment' ? null : (
-              <>
-              <div className="uboss-row-2">
-                <Card>
-                  <CardBody>
-                    <div className="uboss-muted-3" style={{ fontSize: 12 }}>
-                      Current performance
-                    </div>
-                    {performance === null ? (
-                      <p className="uboss-muted-3">{performanceNote ?? 'Loading…'}</p>
-                    ) : (
-                      <>
-                        <div style={{ fontSize: 30, fontWeight: 800 }}>{performance.score}</div>
-                        <MedalBadge tier={performance.level} />
-                      </>
-                    )}
-                  </CardBody>
-                </Card>
-                <Card>
-                  <CardBody>
-                    <div className="uboss-muted-3" style={{ fontSize: 12 }}>
-                      On-time delivery
-                    </div>
-                    {performance === null ? (
-                      <p className="uboss-muted-3">{performanceNote ?? 'Loading…'}</p>
-                    ) : performance.onTimePercent === null ? (
-                      <p className="uboss-muted-3">Nothing completed yet</p>
-                    ) : (
-                      <>
-                        <div style={{ fontSize: 30, fontWeight: 800 }}>
-                          {performance.onTimePercent}%
+                <>
+                  <div className="uboss-row-2">
+                    <Card>
+                      <CardBody>
+                        <div className="uboss-muted-3" style={{ fontSize: 12 }}>
+                          Current performance
                         </div>
-                        {/*
+                        {performance === null ? (
+                          <p className="uboss-muted-3">{performanceNote ?? 'Loading…'}</p>
+                        ) : (
+                          <>
+                            <div style={{ fontSize: 30, fontWeight: 800 }}>{performance.score}</div>
+                            <MedalBadge tier={performance.level} />
+                          </>
+                        )}
+                      </CardBody>
+                    </Card>
+                    <Card>
+                      <CardBody>
+                        <div className="uboss-muted-3" style={{ fontSize: 12 }}>
+                          On-time delivery
+                        </div>
+                        {performance === null ? (
+                          <p className="uboss-muted-3">{performanceNote ?? 'Loading…'}</p>
+                        ) : performance.onTimePercent === null ? (
+                          <p className="uboss-muted-3">Nothing completed yet</p>
+                        ) : (
+                          <>
+                            <div style={{ fontSize: 30, fontWeight: 800 }}>
+                              {performance.onTimePercent}%
+                            </div>
+                            {/*
                           The reference says "last 90 days". The engine scores the whole
                           employment, and labelling an all-time figure as ninety days would be a
                           false claim about what the number covers.
                         */}
-                        <div className="uboss-muted" style={{ fontSize: 12 }}>
-                          across all recorded work
-                        </div>
-                      </>
-                    )}
-                  </CardBody>
-                </Card>
-              </div>
+                            <div className="uboss-muted" style={{ fontSize: 12 }}>
+                              across all recorded work
+                            </div>
+                          </>
+                        )}
+                      </CardBody>
+                    </Card>
+                  </div>
 
-              <div className="uboss-section-label">
-                Employment record — {activeWorkspace?.tenantName ?? 'this company'}
-              </div>
-              <div className="uboss-kv">
-                <span className="uboss-kv-key">Email</span>
-                <span className="uboss-kv-value">{profile.workEmail ?? '—'}</span>
-              </div>
-              <div className="uboss-kv">
-                <span className="uboss-kv-key">Phone</span>
-                <span className="uboss-kv-value">{profile.workPhone ?? '—'}</span>
-              </div>
-              <div className="uboss-kv">
-                <span className="uboss-kv-key">Joined</span>
-                <span className="uboss-kv-value">
-                  {profile.joinedOn ? new Date(profile.joinedOn).toLocaleDateString() : '—'}
-                </span>
-              </div>
-              <div className="uboss-kv">
-                <span className="uboss-kv-key">Employment type</span>
-                <span className="uboss-kv-value">{profile.employmentType ?? '—'}</span>
-              </div>
-              <div className="uboss-kv">
-                <span className="uboss-kv-key">Employment state</span>
-                <span className="uboss-kv-value">{profile.employmentState}</span>
-              </div>
+                  <div className="uboss-section-label">
+                    Employment record — {activeWorkspace?.tenantName ?? 'this company'}
+                  </div>
+                  <div className="uboss-kv">
+                    <span className="uboss-kv-key">Email</span>
+                    <span className="uboss-kv-value">{profile.workEmail ?? '—'}</span>
+                  </div>
+                  <div className="uboss-kv">
+                    <span className="uboss-kv-key">Phone</span>
+                    <span className="uboss-kv-value">{profile.workPhone ?? '—'}</span>
+                  </div>
+                  <div className="uboss-kv">
+                    <span className="uboss-kv-key">Joined</span>
+                    <span className="uboss-kv-value">
+                      {profile.joinedOn ? new Date(profile.joinedOn).toLocaleDateString() : '—'}
+                    </span>
+                  </div>
+                  <div className="uboss-kv">
+                    <span className="uboss-kv-key">Employment type</span>
+                    <span className="uboss-kv-value">{profile.employmentType ?? '—'}</span>
+                  </div>
+                  <div className="uboss-kv">
+                    <span className="uboss-kv-key">Employment state</span>
+                    <span className="uboss-kv-value">{profile.employmentState}</span>
+                  </div>
 
-              <Banner tone="info">
-                This UBoss ID is portable across companies. A previous employer&apos;s confidential
-                work is never exposed to another, and the entered identifier is never the lookup key
-                — authorized cross-company search uses the UBoss Unique ID.
-              </Banner>
-
-              </>
+                  <Banner tone="info">
+                    This UBoss ID is portable across companies. A previous employer&apos;s
+                    confidential work is never exposed to another, and the entered identifier is
+                    never the lookup key — authorized cross-company search uses the UBoss Unique ID.
+                  </Banner>
+                </>
               )}
 
               {/* ---- Performance, in place ---- */}
@@ -579,9 +578,7 @@ export default function EmployeeProfilePage() {
                         },
                       ]}
                       rows={performance.recentEvents}
-                      rowKey={(row) =>
-                        `${row.sourceKind}:${row.sourceId}:${row.occurredAt}`
-                      }
+                      rowKey={(row) => `${row.sourceKind}:${row.sourceId}:${row.occurredAt}`}
                     />
                   )}
                   <p className="uboss-muted-3">{performance.note}</p>
@@ -593,9 +590,8 @@ export default function EmployeeProfilePage() {
                 <p className="uboss-muted-3">{performanceNote ?? 'Loading…'}</p>
               ) : performance.badgeHistory.length === 0 ? (
                 <p className="uboss-muted-3">
-                  No badge period has closed for them yet. A badge is awarded for a period that
-                  has finished, so a new joiner having none is the ordinary case rather than a
-                  gap.
+                  No badge period has closed for them yet. A badge is awarded for a period that has
+                  finished, so a new joiner having none is the ordinary case rather than a gap.
                 </p>
               ) : (
                 <DataTable
@@ -606,9 +602,7 @@ export default function EmployeeProfilePage() {
                       header: 'Held',
                       render: (row) =>
                         `${new Date(row.startedAt).toLocaleDateString()} — ${
-                          row.endedAt === null
-                            ? 'now'
-                            : new Date(row.endedAt).toLocaleDateString()
+                          row.endedAt === null ? 'now' : new Date(row.endedAt).toLocaleDateString()
                         }`,
                     },
                     {

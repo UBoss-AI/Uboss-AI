@@ -416,7 +416,9 @@ export class AuthorizationService {
     const departmentIds = [
       ...new Set(
         reaching
-          .filter((unit) => unit.scope.kind === 'Department' || unit.scope.kind === 'MultipleDepartments')
+          .filter(
+            (unit) => unit.scope.kind === 'Department' || unit.scope.kind === 'MultipleDepartments',
+          )
           .flatMap((unit) => [...(unit.scope.departmentIds ?? [])]),
       ),
     ];

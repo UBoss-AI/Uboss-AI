@@ -55,7 +55,13 @@ export interface ToastProps {
 
 const ICONS = { ok: 'check', info: 'bell', error: 'alert', working: 'clock' } as const;
 
-export function Toast({ message, tone = 'info', durationMs = 5000, onDismiss, className }: ToastProps) {
+export function Toast({
+  message,
+  tone = 'info',
+  durationMs = 5000,
+  onDismiss,
+  className,
+}: ToastProps) {
   const [leaving, setLeaving] = useState(false);
   const dismiss = useRef(onDismiss);
   dismiss.current = onDismiss;
@@ -110,7 +116,13 @@ export function Toast({ message, tone = 'info', durationMs = 5000, onDismiss, cl
  * A region rather than a bare stack, so assistive technology can find it, and labelled, so the
  * label is not the first toast's text.
  */
-export function ToastRegion({ children, className }: { children?: React.ReactNode; className?: string }) {
+export function ToastRegion({
+  children,
+  className,
+}: {
+  children?: React.ReactNode;
+  className?: string;
+}) {
   return (
     <div className={cn('uboss-toast-region', className)} aria-label="Notifications" role="region">
       {children}

@@ -3,14 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 
-import {
-  Banner,
-  Card,
-  CardBody,
-  DashboardAmbience,
-  PageHeader,
-  SkeletonText,
-} from '@uboss/ui';
+import { Banner, Card, CardBody, DashboardAmbience, PageHeader, SkeletonText } from '@uboss/ui';
 
 import {
   ApiError,

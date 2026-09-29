@@ -386,8 +386,8 @@ export class PerformanceService {
     const isSelf = input.subjectUserId === input.actorUserId;
     const subjectDepartmentId = isSelf
       ? null
-      : ((await this.organization.findEmployment(input.scope, input.subjectUserId))
-          ?.departmentId ?? null);
+      : ((await this.organization.findEmployment(input.scope, input.subjectUserId))?.departmentId ??
+        null);
 
     await this.authorization.assertCan(context, {
       module: 'performance',

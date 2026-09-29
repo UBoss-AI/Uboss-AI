@@ -88,7 +88,9 @@ export function Executor() {
                   <div className="mt-3 text-[26px] font-semibold leading-none tracking-[-0.03em] text-white">
                     {lane.count}
                   </div>
-                  <div className="mt-1.5 text-[11px] leading-tight text-[#7f7f89]">{lane.label}</div>
+                  <div className="mt-1.5 text-[11px] leading-tight text-[#7f7f89]">
+                    {lane.label}
+                  </div>
                 </motion.div>
               ))}
             </div>

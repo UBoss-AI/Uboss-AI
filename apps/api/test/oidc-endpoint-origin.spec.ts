@@ -243,7 +243,8 @@ describe('a discovery document may not put endpoints wherever it likes', () => {
 
     await assert.rejects(
       () => fresh().discover(config(idp.origin)),
-      (error: unknown) => error instanceof OidcError && /no usable token_endpoint/.test(error.message),
+      (error: unknown) =>
+        error instanceof OidcError && /no usable token_endpoint/.test(error.message),
     );
   });
 });

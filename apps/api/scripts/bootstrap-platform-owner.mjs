@@ -76,7 +76,11 @@ try {
     return 'created';
   });
 
-  console.log(outcome === 'created' ? 'Initial platform owner created.' : 'Initial platform owner already exists.');
+  console.log(
+    outcome === 'created'
+      ? 'Initial platform owner created.'
+      : 'Initial platform owner already exists.',
+  );
 } finally {
   await prisma.onModuleDestroy();
 }

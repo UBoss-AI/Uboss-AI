@@ -701,7 +701,11 @@ export class ApprovalService {
     type?: ApprovalRequestType | undefined;
     /** Only the ones this actor is the named approver for, or a delegate of. */
     mineOnly?: boolean | undefined;
-  }): Promise<{ requests: ApprovalSummary[]; counts: Record<string, number>; people: Record<string, string> }> {
+  }): Promise<{
+    requests: ApprovalSummary[];
+    counts: Record<string, number>;
+    people: Record<string, string>;
+  }> {
     const context = await this.authorization.contextFor(input.scope, input.actorUserId);
     await this.authorization.assertCan(context, { module: 'approvals', action: 'View' });
 
@@ -1588,7 +1592,8 @@ export class ApprovalService {
       ...this.toSummary(
         row,
         now,
-        history.filter((entry) => entry.decision === 'Approve')
+        history
+          .filter((entry) => entry.decision === 'Approve')
           .map((entry) => entry.actorUserId)
           .filter((id, index, all) => all.indexOf(id) === index).length,
       ),

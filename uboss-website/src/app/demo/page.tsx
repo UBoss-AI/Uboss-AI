@@ -19,10 +19,18 @@ export const metadata: Metadata = {
  * pretending to capture a lead is the kind of fake control the brief rules out. When a CRM is
  * connected this page is where the form goes.
  */
-export default async function DemoPage({ searchParams }: { searchParams: Promise<{ plan?: string | string[] }> }) {
+export default async function DemoPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ plan?: string | string[] }>;
+}) {
   const { plan } = await searchParams;
-  const selectedPlan = typeof plan === 'string' && ['pilot', 'business', 'enterprise'].includes(plan) ? plan : 'exploring';
-  const planLabel = selectedPlan === 'exploring' ? null : selectedPlan[0]!.toUpperCase() + selectedPlan.slice(1);
+  const selectedPlan =
+    typeof plan === 'string' && ['pilot', 'business', 'enterprise'].includes(plan)
+      ? plan
+      : 'exploring';
+  const planLabel =
+    selectedPlan === 'exploring' ? null : selectedPlan[0]!.toUpperCase() + selectedPlan.slice(1);
   return (
     <Section tone="ink-0" glow className="min-h-[calc(100vh-68px)]">
       <div className="pt-12">

@@ -272,7 +272,9 @@ export class ObjectiveService {
         // above: gather the ids, resolve them in one query each, join in memory. The list needs
         // names to be readable, and doing it per row would be a query per objective.
         const departments = await this.prisma.client.department.findMany({
-          where: { id: { in: [...new Set(objectives.map((objective) => objective.departmentId))] } },
+          where: {
+            id: { in: [...new Set(objectives.map((objective) => objective.departmentId))] },
+          },
           select: { id: true, name: true },
         });
 
@@ -349,7 +351,7 @@ export class ObjectiveService {
         responsibleOwnerName:
           shown.responsibleOwnerUserId === null
             ? null
-            : ownerNames.get(shown.responsibleOwnerUserId) ?? null,
+            : (ownerNames.get(shown.responsibleOwnerUserId) ?? null),
         targetCompletionTime: shown.targetCompletionTime,
         timeUnit: shown.timeUnit as TimeUnit | null,
         updatedAt: objective.updatedAt.toISOString(),

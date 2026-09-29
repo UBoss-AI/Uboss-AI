@@ -212,7 +212,11 @@ export function WorkflowGrid({
      */
     const dismiss = (event: Event) => {
       const target = event.target;
-      if (target instanceof Node && target instanceof Element && target.closest('.uboss-wfg-menu') !== null) {
+      if (
+        target instanceof Node &&
+        target instanceof Element &&
+        target.closest('.uboss-wfg-menu') !== null
+      ) {
         return;
       }
       setMenu(null);
@@ -429,7 +433,10 @@ export function WorkflowGrid({
             <motion.tr
               key={rowIds[index] ?? `fallback-${step.position}`}
               layout
-              transition={{ ...transition('panel', 'standard'), delay: stagger(index, steps.length) }}
+              transition={{
+                ...transition('panel', 'standard'),
+                delay: stagger(index, steps.length),
+              }}
               className={touched === rowIds[index] ? 'uboss-wfg-row--touched' : undefined}
               onAnimationComplete={() => {
                 // Cleared by the animation, not a timer, so the mark cannot outlive what it marks.
@@ -587,7 +594,11 @@ export function WorkflowGrid({
               key={item.op}
               type="button"
               role="menuitem"
-              className={item.op === 'delete' ? 'uboss-wfg-menu-item uboss-wfg-menu-item--danger' : 'uboss-wfg-menu-item'}
+              className={
+                item.op === 'delete'
+                  ? 'uboss-wfg-menu-item uboss-wfg-menu-item--danger'
+                  : 'uboss-wfg-menu-item'
+              }
               // Delete keeps the same floor the row button has: never the last row.
               disabled={item.op === 'delete' && steps.length <= 1}
               onClick={() => {

@@ -20,7 +20,15 @@ import {
   EmptyState,
 } from '@uboss/ui';
 
-import { ApiError, authApi, engineAgentsApi, type EngineAgentView, type MeResponse, agentRunsApi, type AgentRunSummaryView } from '../../lib/api-client';
+import {
+  ApiError,
+  authApi,
+  engineAgentsApi,
+  type EngineAgentView,
+  type MeResponse,
+  agentRunsApi,
+  type AgentRunSummaryView,
+} from '../../lib/api-client';
 import { useAccountMenu } from '../../lib/use-account-menu';
 import { useSignedInUser } from '../../lib/use-signed-in-user';
 import { RoutedAppShell } from '../../components/RoutedAppShell';
@@ -156,7 +164,10 @@ export default function EngineAgentsPage() {
       })
       .catch((caught: unknown) => {
         // Said plainly rather than shown as "no runs": not knowing is different from none.
-        if (live) setRunsError(caught instanceof Error ? caught.message : 'Could not read this agent\u2019s runs.');
+        if (live)
+          setRunsError(
+            caught instanceof Error ? caught.message : 'Could not read this agent\u2019s runs.',
+          );
       });
     return () => {
       live = false;
@@ -430,16 +441,14 @@ export default function EngineAgentsPage() {
                * fact the operator needs rather than an absence to be styled over. The agent's own
                * readiness note says which applies, so it is shown rather than guessed at here.
                */
-              <EmptyState
-                icon="bolt"
-                title="No runs yet"
-                description={selected.health.note}
-              />
+              <EmptyState icon="bolt" title="No runs yet" description={selected.health.note} />
             ) : (
               runs.map((run) => (
                 <div className="uboss-kv" key={run.id}>
                   <span className="uboss-kv-key">
-                    {run.startedAt === null ? 'Not started' : new Date(run.startedAt).toLocaleString()}
+                    {run.startedAt === null
+                      ? 'Not started'
+                      : new Date(run.startedAt).toLocaleString()}
                   </span>
                   <span className="uboss-kv-value">
                     {/* The state exactly as the engine reported it. Only Running and Retrying

@@ -75,7 +75,10 @@ function Transformation() {
                 ['Current workload', '18 repair jobs'],
                 ['Target completion', '5 working days'],
               ].map(([label, value]) => (
-                <div key={label} className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-4">
+                <div
+                  key={label}
+                  className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-4"
+                >
                   <span className="w-[150px] shrink-0 text-[11px] uppercase tracking-[0.12em] text-[#8b8b93]">
                     {label}
                   </span>
@@ -109,7 +112,10 @@ function Transformation() {
           ) : (
             <div className="space-y-2.5">
               {[
-                { label: 'Log the instrument and photograph its condition', kind: 'human' as const },
+                {
+                  label: 'Log the instrument and photograph its condition',
+                  kind: 'human' as const,
+                },
                 { label: 'Carry out the repair and record the parts used', kind: 'human' as const },
                 { label: 'Draft the signed service record', kind: 'ai' as const },
                 { label: 'Head review and sign-off', kind: 'gate' as const },

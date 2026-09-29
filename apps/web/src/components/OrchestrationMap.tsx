@@ -155,8 +155,7 @@ export function OrchestrationMap({
   const describe = (key: string) => meta.tiles.find((entry) => entry.key === key);
 
   /** The tiles the server permitted, in the order the contract lists them, per side. */
-  const laneTiles = (lane: string) =>
-    tiles.filter((tile) => describe(tile.tile)?.lane === lane);
+  const laneTiles = (lane: string) => tiles.filter((tile) => describe(tile.tile)?.lane === lane);
 
   const renderLane = (lane: { key: string; label: string; measures: string }) => {
     const inLane = laneTiles(lane.key);
@@ -232,10 +231,7 @@ export function OrchestrationMap({
   const drawn = (meta.lanes ?? []).filter((lane) => laneTiles(lane.key).length > 0);
 
   return (
-    <div
-      className={`uboss-orch-map${drawn.length < 2 ? ' uboss-orch-map--solo' : ''}`}
-      ref={frame}
-    >
+    <div className={`uboss-orch-map${drawn.length < 2 ? ' uboss-orch-map--solo' : ''}`} ref={frame}>
       {/*
         The wires. Decoration in the strict sense — everything they express is already in the
         headings and the nodes, so they are hidden from assistive technology entirely.

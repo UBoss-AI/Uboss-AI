@@ -102,7 +102,8 @@ export default function Page() {
         if (live) setFacets(result);
       })
       .catch((cause: unknown) => {
-        if (live) setError(cause instanceof ApiError ? cause.message : 'Could not read the filters.');
+        if (live)
+          setError(cause instanceof ApiError ? cause.message : 'Could not read the filters.');
       });
     return () => {
       live = false;
@@ -153,13 +154,16 @@ export default function Page() {
     [rows, autonomy, status],
   );
 
-  const resetPaging = <T,>(set: (value: T) => void) => (value: T) => {
-    setSkip(0);
-    set(value);
-  };
+  const resetPaging =
+    <T,>(set: (value: T) => void) =>
+    (value: T) => {
+      setSkip(0);
+      set(value);
+    };
 
   const autonomyValues = useMemo(
-    () => [...new Set(rows.map((row) => row.autonomy).filter((v): v is string => v !== null))].sort(),
+    () =>
+      [...new Set(rows.map((row) => row.autonomy).filter((v): v is string => v !== null))].sort(),
     [rows],
   );
   const statusValues = useMemo(
@@ -380,7 +384,10 @@ export default function Page() {
 
           {total > PAGE_SIZE ? (
             <div className="uboss-actions" style={{ marginTop: 12 }}>
-              <Button disabled={skip === 0 || loading} onClick={() => setSkip(Math.max(0, skip - PAGE_SIZE))}>
+              <Button
+                disabled={skip === 0 || loading}
+                onClick={() => setSkip(Math.max(0, skip - PAGE_SIZE))}
+              >
                 Previous
               </Button>
               <span className="uboss-muted">
@@ -456,8 +463,8 @@ export default function Page() {
             </p>
 
             <Banner tone="info">
-              A published version is immutable. Changing this Skill creates a new draft that must
-              be approved before any work references it, and agents stay on the version they were
+              A published version is immutable. Changing this Skill creates a new draft that must be
+              approved before any work references it, and agents stay on the version they were
               pinned to until somebody upgrades them.
             </Banner>
           </>

@@ -41,8 +41,12 @@ describe('ProviderButton', () => {
   });
 
   it('hides the mark from assistive technology', () => {
-    const { container } = render(<ProviderButton kind="microsoft" label="Continue with Microsoft" />);
-    expect(container.querySelector('.uboss-provider-mark')?.getAttribute('aria-hidden')).toBe('true');
+    const { container } = render(
+      <ProviderButton kind="microsoft" label="Continue with Microsoft" />,
+    );
+    expect(container.querySelector('.uboss-provider-mark')?.getAttribute('aria-hidden')).toBe(
+      'true',
+    );
   });
 
   it('starts the flow when pressed', () => {

@@ -194,7 +194,7 @@ export class CompanySettingsService {
          * If this caller could read something here but it was all administration they cannot
          * change, that is not a permission boundary and must not be reported as one.
          */
-let readableHere = false;
+        let readableHere = false;
         /*
          * One at a time, and it matters.
          *
@@ -237,11 +237,7 @@ let readableHere = false;
    *
    * Nothing in the product asked for that. Every screen reads the list.
    */
-  async readableValue(
-    scope: TenantScope,
-    userId: string,
-    key: string,
-  ): Promise<SettingValue> {
+  async readableValue(scope: TenantScope, userId: string, key: string): Promise<SettingValue> {
     const definition = settingDefinition(key);
     if (!definition) {
       throw new BadRequestException(`"${key}" is not a setting.`);

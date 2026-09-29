@@ -300,9 +300,7 @@ export default function HierarchyPage() {
       const photo = photos[userId];
       if (photo === undefined || photo === null) return undefined;
       if (!photo.viewable || photo.storedFileId === null) return undefined;
-      return tenantId === null
-        ? undefined
-        : photoContentUrl(tenantId, userId, photo.storedFileId);
+      return tenantId === null ? undefined : photoContentUrl(tenantId, userId, photo.storedFileId);
     };
 
     const toChart = (node: HierarchyView['tree']): OrgChartNode => ({
@@ -773,11 +771,7 @@ export default function HierarchyPage() {
           pointing at a department that still exists. It can hold nobody and no sub-department when
           it is archived.
         </Banner>
-        <FormField
-          label="Reason"
-          required
-          hint="Kept with the record. At least five characters."
-        >
+        <FormField label="Reason" required hint="Kept with the record. At least five characters.">
           {(wiring) => (
             <input
               {...wiring}
@@ -1176,8 +1170,8 @@ export default function HierarchyPage() {
         </FormField>
 
         <p className="uboss-muted-3">
-          Both are visible to everybody in this company. Leaving one empty removes it from the
-          strip rather than showing a blank panel.
+          Both are visible to everybody in this company. Leaving one empty removes it from the strip
+          rather than showing a blank panel.
         </p>
       </Modal>
 

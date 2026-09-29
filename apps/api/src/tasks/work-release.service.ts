@@ -142,7 +142,9 @@ export class WorkReleaseService {
             distinct: ['aiWorkAssignmentId'],
           });
     const completedAssignmentIds = new Set(
-      ranAssignmentIds.map((row) => row.aiWorkAssignmentId).filter((id): id is string => id !== null),
+      ranAssignmentIds
+        .map((row) => row.aiWorkAssignmentId)
+        .filter((id): id is string => id !== null),
     );
 
     const planned = new Set<string>();
@@ -182,8 +184,7 @@ export class WorkReleaseService {
         resourceId: task.id,
         ...(input.actorUserId === undefined ? {} : { actorUserId: input.actorUserId }),
         resourceRef: task.title,
-        summary:
-          `"${task.title}" is no longer waiting: every step it depends on has finished.`,
+        summary: `"${task.title}" is no longer waiting: every step it depends on has finished.`,
         metadata: {
           taskId: task.id,
           nodeId: task.nodeId,

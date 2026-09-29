@@ -804,8 +804,7 @@ describe('reports and the company dashboard (e2e)', () => {
       });
 
     const read = async (uboss: string) =>
-      ((await asPerson(agent().get(orchestration()), uboss).expect(200))
-        .body as OrchestrationView);
+      (await asPerson(agent().get(orchestration()), uboss).expect(200)).body as OrchestrationView;
 
     it('puts work at the stage the dependency graph says, not at one somebody typed', async () => {
       await seedPlan({ code: 'ORCH-1', ownerUserId: adminId, assigneeUserId: adminId });

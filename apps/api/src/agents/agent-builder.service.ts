@@ -9,7 +9,6 @@ import {
 import {
   executionStages,
   type AgentObjectiveContext,
-
   agentTestProblems,
   ALLOWED_ENGINE_AGENT_TRANSITIONS,
   emptyAgentExecutionSetup,
@@ -278,9 +277,7 @@ export class AgentBuilderService {
         if (missing.length > 0) {
           // Not found and not-ours are the same answer on purpose: saying "that belongs to
           // another company" would confirm it exists.
-          throw new NotFoundException(
-            `No Skill version you can use: ${missing.join(', ')}.`,
-          );
+          throw new NotFoundException(`No Skill version you can use: ${missing.join(', ')}.`);
         }
 
         const packs = await this.prisma.client.tenantSkillPack.findMany({
@@ -326,8 +323,7 @@ export class AgentBuilderService {
         resourceType: 'objective-assignment',
         resourceId: assignment.id,
         actorUserId: input.actorUserId,
-        summary:
-          `Attached Skills changed by hand: ${before.length} → ${input.skillVersionIds.length}.`,
+        summary: `Attached Skills changed by hand: ${before.length} → ${input.skillVersionIds.length}.`,
         metadata: {
           assignmentId: assignment.id,
           from: before.join(','),
@@ -954,7 +950,12 @@ export class AgentBuilderService {
    */
   private async objectiveContextOf(
     scope: TenantScope,
-    assignment: { objectiveId: string; objectiveVersionId: string; nodeId: string; updatedAt: Date },
+    assignment: {
+      objectiveId: string;
+      objectiveVersionId: string;
+      nodeId: string;
+      updatedAt: Date;
+    },
   ): Promise<AgentObjectiveContext | null> {
     const version = await this.prisma.client.objectiveVersion.findFirst({
       where: { tenantId: scope.tenantId, id: assignment.objectiveVersionId },
@@ -989,9 +990,9 @@ export class AgentBuilderService {
       }),
     ];
 
-    const graph = draft?.graph as
-      | { nodes?: { id: string; kind: string; label: string; dod?: { dependencies?: string[] } }[] }
-      | null;
+    const graph = draft?.graph as {
+      nodes?: { id: string; kind: string; label: string; dod?: { dependencies?: string[] } }[];
+    } | null;
     const nodes = (graph?.nodes ?? []).map((node) => ({
       id: node.id,
       kind: node.kind,

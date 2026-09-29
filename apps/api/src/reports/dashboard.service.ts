@@ -84,7 +84,10 @@ export class DashboardService {
       const tiles: DashboardTileCount[] = [];
 
       for (const tile of permitted) {
-        tiles.push({ tile, count: noOne ? zeroFor(tile) : await this.countFor(tile, input, userFilter) });
+        tiles.push({
+          tile,
+          count: noOne ? zeroFor(tile) : await this.countFor(tile, input, userFilter),
+        });
       }
 
       return { tiles };

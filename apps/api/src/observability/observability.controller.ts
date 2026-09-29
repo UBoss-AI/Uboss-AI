@@ -281,7 +281,10 @@ export class ObservabilityController {
    */
   @Post('incidents/:alertId/resolve')
   @RequirePermission({ module: 'support', action: 'Administer' })
-  async resolve(@Param('alertId', new ParseUUIDPipe()) alertId: string, @Body() body: ResolveDto): Promise<unknown> {
+  async resolve(
+    @Param('alertId', new ParseUUIDPipe()) alertId: string,
+    @Body() body: ResolveDto,
+  ): Promise<unknown> {
     return this.incidents.resolve({
       alertId,
       actorUserId: this.currentUserId(),

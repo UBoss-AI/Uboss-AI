@@ -49,10 +49,7 @@ import { AuthorizationService } from '../authorization/authorization.service.js'
 import { CreateCustomRoleDto } from '../authorization/authorization.dto.js';
 import { RoleAdministrationService } from '../authorization/role-administration.service.js';
 import { CapabilityService } from './capability.service.js';
-import {
-  HIERARCHY_COLUMNS,
-  HierarchyWorkbook,
-} from '../organization/hierarchy-workbook.js';
+import { HIERARCHY_COLUMNS, HierarchyWorkbook } from '../organization/hierarchy-workbook.js';
 import { BulkOperationService, MAX_BULK_ROWS } from './bulk-operation.service.js';
 import { InvitationAccessService } from './invitation-access.service.js';
 import { OffboardingService } from './offboarding.service.js';

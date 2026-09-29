@@ -408,7 +408,11 @@ describe('workflow graph editor and pre-publish readiness (e2e)', () => {
       outputWhatIsProduced: 'Draft checklist',
     }),
     step({ position: 3, whoPersonName: 'Pranav Kulkarni', whatExactWork: 'Check the draft' }),
-    step({ position: 4, whoPersonName: 'Pranav Kulkarni', whatExactWork: 'File the signed record' }),
+    step({
+      position: 4,
+      whoPersonName: 'Pranav Kulkarni',
+      whatExactWork: 'File the signed record',
+    }),
   ];
 
   /** A published Skill, so the machine step has something approved behind it. */

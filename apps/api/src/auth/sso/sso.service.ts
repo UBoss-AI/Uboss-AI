@@ -203,7 +203,10 @@ export class SsoService {
         summary: 'An enterprise SSO callback received a request that is not an enterprise request.',
         metadata: { reason: 'flow_kind_mismatch', flowKind: authRequest.flowKind },
       });
-      return { outcome: 'failed', reason: 'That sign-in could not be completed. Please start again.' };
+      return {
+        outcome: 'failed',
+        reason: 'That sign-in could not be completed. Please start again.',
+      };
     }
 
     const connection = await this.prisma.runAsPlatformOperation(() =>

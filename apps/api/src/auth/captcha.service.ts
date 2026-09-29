@@ -140,11 +140,15 @@ export class CaptchaService {
    * one is reversible by trying all of them.
    */
   private hashAnswer(answer: string): string {
-    return createHmac('sha256', this.key()).update(`captcha-answer:${answer}`, 'utf8').digest('base64url');
+    return createHmac('sha256', this.key())
+      .update(`captcha-answer:${answer}`, 'utf8')
+      .digest('base64url');
   }
 
   private hmac(payload: string): string {
-    return createHmac('sha256', this.key()).update(`captcha-token:${payload}`, 'utf8').digest('base64url');
+    return createHmac('sha256', this.key())
+      .update(`captcha-token:${payload}`, 'utf8')
+      .digest('base64url');
   }
 
   /**

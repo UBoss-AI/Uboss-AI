@@ -1465,9 +1465,9 @@ export const authApi = {
    * Answers with the provider authorization URL. The server refuses a provider it holds no
    * credentials for rather than building a URL that cannot complete.
    */
-  startSocial: (kind: "google" | "microsoft" | "apple") =>
-    call<{ authorizationUrl: string }>("/auth/sso/social/start", {
-      method: "POST",
+  startSocial: (kind: 'google' | 'microsoft' | 'apple') =>
+    call<{ authorizationUrl: string }>('/auth/sso/social/start', {
+      method: 'POST',
       body: JSON.stringify({ kind }),
     }),
 
@@ -2043,14 +2043,11 @@ export const accessApi = {
     ),
 
   /** Validate a filled-in hierarchy workbook. **Applies nothing.** */
-  validateHierarchyWorkbook: (
-    tenantId: string,
-    body: { file: string; sourceFileName?: string },
-  ) =>
-    call<BulkPreview>(
-      `/tenants/${encodeURIComponent(tenantId)}/access/bulk/hierarchy/validate`,
-      { method: 'POST', body: JSON.stringify(body) },
-    ),
+  validateHierarchyWorkbook: (tenantId: string, body: { file: string; sourceFileName?: string }) =>
+    call<BulkPreview>(`/tenants/${encodeURIComponent(tenantId)}/access/bulk/hierarchy/validate`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 
   bulkOperations: (tenantId: string) =>
     call<{ operations: Record<string, unknown>[] }>(
@@ -3229,7 +3226,12 @@ export const objectiveReviewApi = {
    * Confirm who is going to do the work. A precondition of `completeReview`, which refuses with
    * "Confirm the execution team before sending this for approval" until it has been done.
    */
-  confirmTeam: (tenantId: string, objectiveId: string, executionTeam?: string, versionId?: string) =>
+  confirmTeam: (
+    tenantId: string,
+    objectiveId: string,
+    executionTeam?: string,
+    versionId?: string,
+  ) =>
     call<ObjectiveView>(
       `/tenants/${encodeURIComponent(tenantId)}/objectives/${encodeURIComponent(
         objectiveId,
@@ -3638,12 +3640,7 @@ export const agentBuilderApi = {
       { method: 'PUT', body: JSON.stringify({ patch }) },
     ),
 
-  test: (
-    tenantId: string,
-    assignmentId: string,
-    sampleInput: string,
-    expectedOutcome?: string,
-  ) =>
+  test: (tenantId: string, assignmentId: string, sampleInput: string, expectedOutcome?: string) =>
     call<AgentBuilderView>(
       `/tenants/${encodeURIComponent(tenantId)}/agent-builder/${encodeURIComponent(
         assignmentId,
@@ -5278,9 +5275,7 @@ export const dashboardApi = {
    * correctly, not something going wrong.
    */
   orchestration: (tenantId: string) =>
-    call<OrchestrationView>(
-      `/tenants/${encodeURIComponent(tenantId)}/dashboard/orchestration`,
-    ),
+    call<OrchestrationView>(`/tenants/${encodeURIComponent(tenantId)}/dashboard/orchestration`),
 };
 
 export const reportsApi = {

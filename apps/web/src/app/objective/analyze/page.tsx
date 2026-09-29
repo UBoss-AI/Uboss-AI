@@ -524,7 +524,9 @@ function ObjectiveAnalyzeInner() {
                           // Drives the reveal beat. The plan is already computed and persisted —
                           // this is the order it is read in, not a loading state, and every node
                           // is on screen in the same order if the animation never runs.
-                          style={{ textAlign: 'center', '--uboss-row': index } as React.CSSProperties}
+                          style={
+                            { textAlign: 'center', '--uboss-row': index } as React.CSSProperties
+                          }
                         >
                           {index === 0 ? null : <div className="uboss-wf-connector" />}
                           <WorkflowNode

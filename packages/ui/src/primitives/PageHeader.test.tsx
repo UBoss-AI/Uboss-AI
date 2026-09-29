@@ -36,7 +36,9 @@ describe('PageHeader — outside a shell, nothing changed', () => {
   });
 
   it('keeps its actions beside the heading', () => {
-    render(<PageHeader title="Notifications" actions={<button type="button">Mark all read</button>} />);
+    render(
+      <PageHeader title="Notifications" actions={<button type="button">Mark all read</button>} />,
+    );
 
     expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Mark all read' })).toBeInTheDocument();
@@ -54,9 +56,7 @@ describe('PageHeader — inside a shell, the text is not repeated', () => {
     );
 
     expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument();
-    expect(
-      screen.queryByText('Reporting structure and company identity.'),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Reporting structure and company identity.')).not.toBeInTheDocument();
     expect(screen.queryByText('Hierarchy')).not.toBeInTheDocument();
     expect(screen.queryByText('Organization Hierarchy')).not.toBeInTheDocument();
   });

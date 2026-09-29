@@ -491,48 +491,48 @@ export function SignInFlow({ plane }: SignInFlowProps) {
                 expecting access, ask your administrator to activate your account.
               </Banner>
             ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {workspaces.map((workspace) => (
-              <Button
-                key={workspace.tenantId}
-                variant="primary"
-                block
-                onClick={() => {
-                  // Until this was wired, signing in led nowhere: the button had no handler and
-                  // the only way into the product was to type a URL. Recording the choice here is
-                  // what makes every later screen agree on which company it is showing.
-                  rememberWorkspace(workspace.tenantId);
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {workspaces.map((workspace) => (
+                  <Button
+                    key={workspace.tenantId}
+                    variant="primary"
+                    block
+                    onClick={() => {
+                      // Until this was wired, signing in led nowhere: the button had no handler and
+                      // the only way into the product was to type a URL. Recording the choice here is
+                      // what makes every later screen agree on which company it is showing.
+                      rememberWorkspace(workspace.tenantId);
 
-                  /*
-                   * Where somebody lands depends on what they are here to do.
-                   *
-                   * A person who defines work — hierarchy, objectives, agents — lands on the
-                   * orchestration Dashboard. A person who only performs work lands on Operations,
-                   * which for them is the whole application; sending them to a Dashboard of
-                   * counts for modules they cannot open is a screen that answers nothing.
-                   *
-                   * The decision is made from the server's own answer about this person, not from
-                   * a role name. A failure to get that answer lands them on the Dashboard, which
-                   * every company role can open.
-                   */
-                  void myAccessApi
-                    .mine(workspace.tenantId)
-                    .then((access) => {
-                      const builds = ['hierarchy', 'objective', 'agent-builder'].some((module) =>
-                        access.visibleModules.includes(module),
-                      );
-                      // Their To-do, which is where a person who does the work actually starts.
-                      // It used to be an Operations landing page in front of it, and that page
-                      // showed the same list one click later.
-                      router.push(builds ? '/dashboard' : '/todo');
-                    })
-                    .catch(() => router.push('/dashboard'));
-                }}
-              >
-                {workspace.tenantName}
-              </Button>
-            ))}
-          </div>
+                      /*
+                       * Where somebody lands depends on what they are here to do.
+                       *
+                       * A person who defines work — hierarchy, objectives, agents — lands on the
+                       * orchestration Dashboard. A person who only performs work lands on Operations,
+                       * which for them is the whole application; sending them to a Dashboard of
+                       * counts for modules they cannot open is a screen that answers nothing.
+                       *
+                       * The decision is made from the server's own answer about this person, not from
+                       * a role name. A failure to get that answer lands them on the Dashboard, which
+                       * every company role can open.
+                       */
+                      void myAccessApi
+                        .mine(workspace.tenantId)
+                        .then((access) => {
+                          const builds = ['hierarchy', 'objective', 'agent-builder'].some(
+                            (module) => access.visibleModules.includes(module),
+                          );
+                          // Their To-do, which is where a person who does the work actually starts.
+                          // It used to be an Operations landing page in front of it, and that page
+                          // showed the same list one click later.
+                          router.push(builds ? '/dashboard' : '/todo');
+                        })
+                        .catch(() => router.push('/dashboard'));
+                    }}
+                  >
+                    {workspace.tenantName}
+                  </Button>
+                ))}
+              </div>
             )}
           </>
         ) : null}
@@ -869,11 +869,7 @@ export function SignInFlow({ plane }: SignInFlowProps) {
             />
             <span>
               I agree to the{' '}
-              <button
-                type="button"
-                className="uboss-link"
-                onClick={() => setShowTerms(true)}
-              >
+              <button type="button" className="uboss-link" onClick={() => setShowTerms(true)}>
                 Terms &amp; Conditions
               </button>{' '}
               and the acceptable-use policy.
@@ -931,7 +927,9 @@ export function SignInFlow({ plane }: SignInFlowProps) {
                   label={configured?.displayName ?? label}
                   disabled={busy || configured === undefined}
                   {...(configured === undefined
-                    ? { title: `${label.replace('Continue with ', '')} sign-in is not set up for this deployment yet.` }
+                    ? {
+                        title: `${label.replace('Continue with ', '')} sign-in is not set up for this deployment yet.`,
+                      }
                     : {})}
                   {...(configured === undefined ? {} : { onClick: () => void startSocial(kind) })}
                 />
@@ -992,21 +990,17 @@ export function SignInFlow({ plane }: SignInFlowProps) {
         and a place to put it. Inventing clauses would be worse than leaving the placeholder
         visible, because an invented clause reads as though somebody approved it.
       */}
-      <Modal
-        open={showTerms}
-        onClose={() => setShowTerms(false)}
-        title="Terms &amp; Conditions"
-      >
+      <Modal open={showTerms} onClose={() => setShowTerms(false)} title="Terms &amp; Conditions">
         <p>
           UBoss is an enterprise workforce and operations platform licensed to your company. By
           signing in you acknowledge that you are using it on your company's behalf and under its
           policies.
         </p>
         <p>
-          <b>Acceptable use.</b> Your account is yours alone. Do not share your password, and do
-          not attempt to reach data, objectives, agents or people outside the access your role
-          grants you. Every action you take is recorded against your name in an audit trail your
-          company can read.
+          <b>Acceptable use.</b> Your account is yours alone. Do not share your password, and do not
+          attempt to reach data, objectives, agents or people outside the access your role grants
+          you. Every action you take is recorded against your name in an audit trail your company
+          can read.
         </p>
         <p>
           <b>AI-assisted work.</b> UBoss drafts, analyses and proposes. A draft is not a decision:
@@ -1015,8 +1009,8 @@ export function SignInFlow({ plane }: SignInFlowProps) {
         </p>
         <p>
           <b>Your company's terms govern.</b> This acknowledgement does not replace the agreement
-          between your company and UBoss, or your own employment terms. Where they differ, they
-          take precedence over this summary.
+          between your company and UBoss, or your own employment terms. Where they differ, they take
+          precedence over this summary.
         </p>
         <Banner tone="info">
           Your company administrator can tell you which policies apply to your account.

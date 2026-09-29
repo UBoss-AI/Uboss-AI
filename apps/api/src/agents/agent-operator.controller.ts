@@ -98,7 +98,9 @@ export class AgentOperatorController {
    */
   @Get(':engineAgentId/my-runs')
   @RequirePermission({ module: 'agents', action: 'View' })
-  async myRuns(@Param('engineAgentId', new ParseUUIDPipe()) engineAgentId: string): Promise<unknown> {
+  async myRuns(
+    @Param('engineAgentId', new ParseUUIDPipe()) engineAgentId: string,
+  ): Promise<unknown> {
     return {
       runs: await this.operators.myRuns({
         scope: this.tenantContext.requireScope(),

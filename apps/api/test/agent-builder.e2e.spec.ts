@@ -1398,7 +1398,11 @@ describe('agent builder and engine agent activation (e2e)', () => {
 
     it('replaces the matched Skill with one the builder chose, and pins that version', async () => {
       const { assignmentId } = await assignedAiWork();
-      const before = await builder().view({ scope: scope(), actorUserId: workerUserId, assignmentId });
+      const before = await builder().view({
+        scope: scope(),
+        actorUserId: workerUserId,
+        assignmentId,
+      });
       const matched = before.prefill.skillVersionIds;
 
       const { versionId } = await secondSkill();
@@ -1410,8 +1414,16 @@ describe('agent builder and engine agent activation (e2e)', () => {
         skillVersionIds: [versionId],
       });
 
-      assert.deepEqual(after.prefill.skillVersionIds, [versionId], 'the chosen version is what is attached');
-      assert.notDeepEqual(after.prefill.skillVersionIds, matched, 'and it replaced what was matched');
+      assert.deepEqual(
+        after.prefill.skillVersionIds,
+        [versionId],
+        'the chosen version is what is attached',
+      );
+      assert.notDeepEqual(
+        after.prefill.skillVersionIds,
+        matched,
+        'and it replaced what was matched',
+      );
 
       // A version id, not a Skill id: that is what pinning means.
       const pinned = await ctx.prisma.runInTenantTransaction(scope(), () =>
@@ -1426,7 +1438,11 @@ describe('agent builder and engine agent activation (e2e)', () => {
 
     it('adds a Skill alongside the matched one rather than only replacing', async () => {
       const { assignmentId } = await assignedAiWork();
-      const before = await builder().view({ scope: scope(), actorUserId: workerUserId, assignmentId });
+      const before = await builder().view({
+        scope: scope(),
+        actorUserId: workerUserId,
+        assignmentId,
+      });
       const { versionId } = await secondSkill();
 
       const after = await builder().setSkills({
@@ -1632,17 +1648,29 @@ describe('agent builder and engine agent activation (e2e)', () => {
         actorUserId: managerUserId,
         objectiveId,
       });
-      await objectives().submitForReview({ scope: scope(), actorUserId: managerUserId, objectiveId });
+      await objectives().submitForReview({
+        scope: scope(),
+        actorUserId: managerUserId,
+        objectiveId,
+      });
       await objectives().confirmExecutionTeam({
         scope: scope(),
         actorUserId: managerUserId,
         objectiveId,
       });
 
-      const run = await analysis().start({ scope: scope(), actorUserId: managerUserId, objectiveId });
+      const run = await analysis().start({
+        scope: scope(),
+        actorUserId: managerUserId,
+        objectiveId,
+      });
       assert.equal(run.status, 'Completed', run.failureReason ?? 'no failure reason recorded');
 
-      let draft = await workflow().open({ scope: scope(), actorUserId: managerUserId, objectiveId });
+      let draft = await workflow().open({
+        scope: scope(),
+        actorUserId: managerUserId,
+        objectiveId,
+      });
       for (const node of draft.graph.nodes) {
         draft = await workflow().editNode({
           scope: scope(),
@@ -1662,7 +1690,11 @@ describe('agent builder and engine agent activation (e2e)', () => {
         });
       }
 
-      await objectives().completeReview({ scope: scope(), actorUserId: managerUserId, objectiveId });
+      await objectives().completeReview({
+        scope: scope(),
+        actorUserId: managerUserId,
+        objectiveId,
+      });
       await objectives().approve({ scope: scope(), actorUserId: objectiveApproverId, objectiveId });
       return assignment().approveAndAssign({
         scope: scope(),
@@ -1715,16 +1747,28 @@ describe('agent builder and engine agent activation (e2e)', () => {
         actorUserId: managerUserId,
         objectiveId,
       });
-      await objectives().submitForReview({ scope: scope(), actorUserId: managerUserId, objectiveId });
+      await objectives().submitForReview({
+        scope: scope(),
+        actorUserId: managerUserId,
+        objectiveId,
+      });
       await objectives().confirmExecutionTeam({
         scope: scope(),
         actorUserId: managerUserId,
         objectiveId,
       });
-      const run = await analysis().start({ scope: scope(), actorUserId: managerUserId, objectiveId });
+      const run = await analysis().start({
+        scope: scope(),
+        actorUserId: managerUserId,
+        objectiveId,
+      });
       assert.equal(run.status, 'Completed');
 
-      let draft = await workflow().open({ scope: scope(), actorUserId: managerUserId, objectiveId });
+      let draft = await workflow().open({
+        scope: scope(),
+        actorUserId: managerUserId,
+        objectiveId,
+      });
       for (const node of draft.graph.nodes) {
         draft = await workflow().editNode({
           scope: scope(),
@@ -1745,7 +1789,11 @@ describe('agent builder and engine agent activation (e2e)', () => {
         });
       }
 
-      await objectives().completeReview({ scope: scope(), actorUserId: managerUserId, objectiveId });
+      await objectives().completeReview({
+        scope: scope(),
+        actorUserId: managerUserId,
+        objectiveId,
+      });
       await objectives().approve({ scope: scope(), actorUserId: objectiveApproverId, objectiveId });
       const again = await assignment().approveAndAssign({
         scope: scope(),

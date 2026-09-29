@@ -164,7 +164,10 @@ export function decisionPermissionFor(type: ApprovalRequestType): {
   action: Action;
 } {
   return (
-    APPROVAL_TYPE_DECISION_OVERRIDE[type] ?? { module: APPROVAL_TYPE_MODULE[type], action: 'Approve' }
+    APPROVAL_TYPE_DECISION_OVERRIDE[type] ?? {
+      module: APPROVAL_TYPE_MODULE[type],
+      action: 'Approve',
+    }
   );
 }
 
