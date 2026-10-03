@@ -66,6 +66,8 @@ jobs:
             UBOSS_SMTP_PASSWORD=${{ secrets.UBOSS_SMTP_PASSWORD }}
             UBOSS_SMTP_FROM_EMAIL=${{ secrets.UBOSS_SMTP_USERNAME }}
             UBOSS_SMTP_FROM_NAME=UBoss AI
+            # Pilot mail only: keep old local fixture addresses and other tenants out of the live outbox.
+            UBOSS_SMTP_ALLOWED_RECIPIENT_DOMAINS=ubossai.com,spmmedicare.com
             ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
             STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}
             STRIPE_PUBLISHABLE_KEY=${{ secrets.STRIPE_PUBLISHABLE_KEY }}
