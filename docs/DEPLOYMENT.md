@@ -271,15 +271,15 @@ Run top to bottom. Anything unchecked stops the promotion.
 - **The local machine cannot run Docker.** Docker configuration parses, but image builds must be
   verified by the VPS on first deployment.
 - **First deploy requires GitHub Actions secrets and the Hostinger VM ID variable** from the table.
-- **DNS still needs to be changed** to point the root website and `www` to the VPS after the stack
-  is ready; preserve all Google Workspace and Hostinger mail records.
+- **DNS still needs to be changed** for `chiefagent`, `app`, and `api` to point to the VPS after
+  the stack is ready; preserve the root website, `www`, and all mail records.
 - **A working journey has not yet been smoke-tested on the live host.** The health check proves the
   process answers; it does not prove login and product flows work.
 - **No smoke-test suite against a deployed environment.** The health check proves the process
   answers; it does not prove a journey works. The staging checklist asks for that by hand until
   there is an environment to automate it against.
 - **Do not treat a successful workflow dispatch as proof the site is healthy.** Check the Hostinger
-  project containers and verify `https://ubossai.com`, `https://app.ubossai.com/login`, and
+  project containers and verify `https://chiefagent.ubossai.com`, `https://app.ubossai.com/login`, and
   `https://api.ubossai.com/health` after each first deploy.
 
 ---
