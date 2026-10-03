@@ -190,6 +190,8 @@ services:
   # Nothing was taking a backup. The scripts existed in `infra/backup/` and the production stack
   # ran none of them, so the honest description of this deployment was "no backups at all".
   #
+  # Wait for the API to finish migrations and bootstrap before the first dump. PostgreSQL being
+  # healthy only means it accepts connections; an empty pre-migration dump is not a backup.
   # It dumps as the owner role, never as `uboss_app`: that role is NOBYPASSRLS, so a dump taken as
   # the application would silently omit every tenant row and restore to an empty database while
   # exiting zero. `pg-backup.sh` refuses it outright, and this passes the migration URL for that
@@ -200,7 +202,7 @@ services:
       dockerfile: deploy/Dockerfile.backup
     restart: unless-stopped
     depends_on:
-      postgres:
+      api:
         condition: service_healthy
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD:?Set a strong password}
