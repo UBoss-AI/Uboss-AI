@@ -41,9 +41,15 @@ describe('WorkflowGrid', () => {
     expect(wrap()?.classList.contains('uboss-wfgrid-wrap--tall')).toBe(false);
   });
 
-  it('renders every source column header, in the source order', () => {
+  it('renders every source column header except the approval gate', () => {
     // The locked rule made testable: the header row is derived from the shared array, so a
     // dropped column fails here rather than shipping.
+    //
+    // Approval is the one deliberate exception. The company this is built for has an
+    // administrator who defines the work and an employee who does it, and no third role to stop
+    // the work for — so a gate set here would wait for somebody who does not exist. The column
+    // stays in the shared array because objectives published before this still carry values in
+    // it, and their history has to keep reading correctly.
     render(<Harness />);
 
     const headers = screen
@@ -51,6 +57,10 @@ describe('WorkflowGrid', () => {
       .map((cell) => cell.textContent?.trim() ?? '');
 
     for (const column of FORM2_WORKFLOW_COLUMNS) {
+      if (column.key === 'approval') {
+        expect(headers).not.toContain(column.label);
+        continue;
+      }
       expect(headers).toContain(column.label);
     }
   });
@@ -92,13 +102,18 @@ describe('WorkflowGrid', () => {
     expect(options).toEqual(['Human', 'Engine', 'Sub-Engine', 'Executor']);
   });
 
-  it('offers the four approval kinds', () => {
+  it('offers no approval gate at all', () => {
+    /*
+     * This asserted the four kinds a step could be gated on. There is no gate now, and the
+     * absence is the point: a "Manager sign-off" between two steps parks the work until somebody
+     * holding that role decides, and this product has only administrators and employees. A gate
+     * would be work waiting for nobody.
+     *
+     * A new step therefore carries `NotRequired`, and nothing on screen can change it.
+     */
     render(<Harness initial={[blankWorkflowStep(1)]} />);
-    const select = screen.getByLabelText('Step 1 Approval');
-    const options = within(select as HTMLElement)
-      .getAllByRole('option')
-      .map((option) => option.textContent);
-    expect(options).toEqual(['Not required', 'Manager', 'Head', 'Four-eyes']);
+    expect(screen.queryByLabelText('Step 1 Approval')).toBeNull();
+    expect(blankWorkflowStep(1).approval).toBe('NotRequired');
   });
 
   it('inserts a row below and renumbers', () => {

@@ -30,6 +30,8 @@ export { PageHeader } from './primitives/PageHeader';
 export type { PageHeaderProps } from './primitives/PageHeader';
 
 export { MetricCard } from './primitives/MetricCard';
+export { RowMenu } from './primitives/RowMenu';
+export type { RowMenuItem, RowMenuProps } from './primitives/RowMenu';
 export type { MetricCardProps, MetricTrend } from './primitives/MetricCard';
 
 export {

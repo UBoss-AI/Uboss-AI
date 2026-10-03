@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 
@@ -14,8 +15,30 @@ import type {
   PerformancePolicy,
 } from '../generated/prisma/client.js';
 import { OrganizationRepository } from '../persistence/organization.repository.js';
+import { NotificationService } from '../notifications/notification.service.js';
 import { PrismaService } from '../persistence/prisma.service.js';
 import type { TenantScope } from '../persistence/tenant-context.js';
+
+/**
+ * What a person is actually called when they reach a rung.
+ *
+ * The levels are **stored** as `Bronze` … `Diamond` and **shown** as `Starter` … `Legend` — the
+ * client asked for the second vocabulary, and renaming the stored values would rewrite every badge
+ * already earned and every audit row naming one. `packages/ui` carries the same map for the
+ * screens; this one exists because anything the product *says* to a person has to match what they
+ * read on their own performance page.
+ *
+ * Duplicated rather than shared because the API cannot import from the UI package. A test holds
+ * the two in step — a badge email saying "Bronze" beside a screen saying "Starter" is the same
+ * person being told two different things about themselves.
+ */
+export const BADGE_LEVEL_LABELS: Record<BadgeLevel, string> = {
+  Bronze: 'Starter',
+  Silver: 'Skilled',
+  Gold: 'Pro',
+  Platinum: 'Elite',
+  Diamond: 'Legend',
+};
 
 /** The ladder, lowest first — the same order as the UI's `BADGE_LADDER`. */
 export const BADGE_LADDER: readonly BadgeLevel[] = [
@@ -67,6 +90,8 @@ export interface PerformanceView {
     points: number;
     sourceKind: string;
     sourceId: string;
+    /** The work this point came from, named. Null when the record no longer exists. */
+    sourceTitle: string | null;
     reason: string | null;
     occurredAt: string;
     neutralised: boolean;
@@ -111,11 +136,21 @@ export interface PerformanceView {
  */
 @Injectable()
 export class PerformanceService {
+  private readonly logger = new Logger(PerformanceService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly organization: OrganizationRepository,
     private readonly authorization: AuthorizationService,
     private readonly auditEvents: AuditEventService,
+    /*
+     * So a person is told their badge moved.
+     *
+     * `NotificationsModule` is global, like this one, so nothing has to import anything: the two
+     * would otherwise import each other, since a notification's own module has no reason to know
+     * how a score is calculated.
+     */
+    private readonly notifications: NotificationService,
   ) {}
 
   /** The active policy, creating the baseline if a company somehow has none. */
@@ -230,6 +265,41 @@ export class PerformanceService {
       });
 
       return created;
+    });
+  }
+
+  /**
+   * Has this outcome already been scored?
+   *
+   * The same key `recordEvent` deduplicates on, asked as a question. It exists because one caller
+   * needs to know *before* deciding what to record rather than after: a task already charged as
+   * `Missed` must not also be charged as `LateCompletion` when somebody finally finishes it, and
+   * `recordEvent` would happily write the second one — the kinds differ, so it is not a duplicate
+   * by its own rule.
+   *
+   * Assumes the caller's transaction, like everything else here.
+   */
+  async hasEvent(
+    scope: TenantScope,
+    key: {
+      subjectUserId: string;
+      kind: PerformanceEventKind;
+      sourceKind: string;
+      sourceId: string;
+    },
+  ): Promise<boolean> {
+    return this.prisma.runInTenantTransaction(scope, async () => {
+      const found = await this.prisma.client.performanceEvent.findFirst({
+        where: {
+          tenantId: scope.tenantId,
+          subjectUserId: key.subjectUserId,
+          kind: key.kind,
+          sourceKind: key.sourceKind.trim(),
+          sourceId: key.sourceId.trim(),
+        },
+        select: { id: true },
+      });
+      return found !== null;
     });
   }
 
@@ -436,6 +506,38 @@ export class PerformanceService {
         take: 50,
       });
 
+      /*
+       * What each point was for, by the name of the work.
+       *
+       * This timeline printed `human_task/0199f3c2-4a8e-7...` beside every line — a table name and
+       * an identifier — on the one screen an employee opens to find out why their score is what it
+       * is. "You lost three points" is a hard thing to be told; being told it about a row id is
+       * worse, because there is nothing to check and nothing to disagree with.
+       *
+       * Only tasks are looked up: they are what almost every event points at, and an event whose
+       * source has since been deleted keeps its line rather than losing it — the score still
+       * counts, so the history must still show it. Those fall back to nothing, and the screen
+       * prints the outcome alone.
+       */
+      const taskIds = [
+        ...new Set(
+          events
+            .filter((event) => event.sourceKind === 'human_task')
+            .map((event) => event.sourceId),
+        ),
+      ];
+      const taskTitles =
+        taskIds.length === 0
+          ? new Map<string, string>()
+          : new Map(
+              (
+                await this.prisma.client.humanTask.findMany({
+                  where: { tenantId: input.scope.tenantId, id: { in: taskIds } },
+                  select: { id: true, title: true },
+                })
+              ).map((task) => [task.id, task.title]),
+            );
+
       return {
         subjectUserId: input.subjectUserId,
         score,
@@ -457,6 +559,8 @@ export class PerformanceService {
           points: event.points,
           sourceKind: event.sourceKind,
           sourceId: event.sourceId,
+          /** The work this point came from, named. Null when it no longer exists. */
+          sourceTitle: taskTitles.get(event.sourceId) ?? null,
           reason: event.reason,
           occurredAt: event.occurredAt.toISOString(),
           neutralised: neutralised.has(event.id),
@@ -652,6 +756,101 @@ export class PerformanceService {
       summary: `Badge ${current?.level ?? 'none'} → ${level} at ${score} points.`,
       metadata: { subjectUserId, from: current?.level ?? null, to: level, score },
     });
+
+    /*
+     * Announce a move, never an arrival at the bottom rung.
+     *
+     * Seen on the running product: an employee with **−15 points** — two missed deadlines — was
+     * told *"You reached Starter. Your performance score is −15 points, which earns the Starter
+     * badge."* Nothing was earned. The lowest rung is where everybody starts, and its threshold is
+     * zero, so the first event of any kind lands somebody on it and fires this.
+     *
+     * Congratulating a person for missing deadlines is worse than saying nothing, and it teaches
+     * them to ignore the next one. So the entry rung is recorded and not announced when it is the
+     * first badge they have ever had; moving *down* to it later is a real change and is told.
+     */
+    const isFirstBadge = current === null;
+    const isEntryRung = level === BADGE_LADDER[0];
+    if (!(isFirstBadge && isEntryRung)) {
+      await this.announceBadgeChange(
+        scope,
+        subjectUserId,
+        current?.level ?? null,
+        level,
+        score,
+        at,
+      );
+    }
+  }
+
+  /**
+   * Tell the person their badge moved.
+   *
+   * Until this, crossing a threshold changed a row and wrote an audit event, and the person whose
+   * badge it was found out by opening the screen. A ladder nobody is told they have climbed is a
+   * report, not a reward.
+   *
+   * ## Both directions
+   *
+   * Going down is announced too. A score that can fall silently is one somebody discovers in a
+   * review, and the events that lower it — a missed deadline, a rejected submission — are exactly
+   * the ones a person needs to know about while there is still time to answer them. The severity
+   * differs, not the fact of telling them.
+   *
+   * ## A failure here never fails the scoring
+   *
+   * The badge change is committed with the event that caused it. If the notification cannot be
+   * raised, the badge is still correct and the audit trail still records the change, so this
+   * reports the problem rather than rolling back somebody's score over an undelivered message.
+   */
+  private async announceBadgeChange(
+    scope: TenantScope,
+    subjectUserId: string,
+    from: BadgeLevel | null,
+    to: BadgeLevel,
+    score: number,
+    at: Date,
+  ): Promise<void> {
+    const rose = from === null || BADGE_LADDER.indexOf(to) > BADGE_LADDER.indexOf(from);
+
+    /*
+     * The name the person sees on their own screen, not the one the database stores.
+     *
+     * Their performance page says "Starter"; this used to say "You reached Bronze". Same person,
+     * same rung, two vocabularies — and the one they were told in an email was the one they could
+     * not find anywhere in the product.
+     */
+    const reached = BADGE_LEVEL_LABELS[to];
+    const previous = from === null ? null : BADGE_LEVEL_LABELS[from];
+
+    try {
+      await this.notifications.raise({
+        tenantId: scope.tenantId,
+        recipientUserId: subjectUserId,
+        kind: 'Badge',
+        severity: rose ? 'Info' : 'Warning',
+        title: rose ? `You reached ${reached}` : `Your badge moved to ${reached}`,
+        body: rose
+          ? `Your performance score is ${score} points, which earns the ${reached} badge.` +
+            (previous === null ? '' : ` You were at ${previous}.`)
+          : `Your performance score is now ${score} points, which puts you at ${reached} rather ` +
+            `than ${String(previous)}. Your performance screen shows which outcomes moved it.`,
+        deepLink: '/performance',
+        resourceType: 'badge_history',
+        resourceId: subjectUserId,
+        isAssignedToRecipient: true,
+        // One announcement per level a person reaches. Crossing back and forth over a threshold
+        // announces each crossing, which is the truth; reaching the same level twice in one
+        // period does not announce twice.
+        dedupeKey: `badge:${subjectUserId}:${to}:${at.toISOString().slice(0, 10)}`,
+        occurredAt: at,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Badge for ${subjectUserId} changed to ${to} but the person could not be told: ` +
+          `${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   /**

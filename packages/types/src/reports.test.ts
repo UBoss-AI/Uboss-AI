@@ -40,10 +40,37 @@ import {
  * money never appears here.
  */
 describe('the Company Workspace Dashboard', () => {
-  it('offers the seven work areas, and no eighth', () => {
+  /*
+   * It was seven, and the client asked for all of them: the dashboard is the shortcut to
+   * everywhere, so Hierarchy, Agent Builder, Workspace Chat and Settings belong on it too.
+   *
+   * Eleven of the twelve are sidebar destinations. `stage` — "Where the work is" — is the
+   * exception and is deliberate: the client asked for the orchestration overview to stop being a
+   * block below the tiles and become one of them, opening in place rather than navigating. Its
+   * `href` is `/dashboard` for exactly that reason, which is why this is not simply "every tile
+   * is a sidebar entry" — a rule that reads tidier and would be false.
+   *
+   * The list stays pinned. What this test protects is not the number — it is that the set is a
+   * decision somebody made rather than something a screen grew: adding a tile has to be done
+   * here, on purpose, next to the module it is gated on and the destination it points at.
+   */
+  it('offers every work area the sidebar reaches, plus the overview that opens in place', () => {
     assert.deepEqual(
       [...DASHBOARD_TILES],
-      ['objectives', 'tasks', 'agents', 'approvals', 'exceptions', 'performance', 'reports'],
+      [
+        'objectives',
+        'tasks',
+        'agents',
+        'hierarchy',
+        'agent-builder',
+        'chat',
+        'approvals',
+        'exceptions',
+        'performance',
+        'reports',
+        'settings',
+        'stage',
+      ],
     );
   });
 
@@ -137,16 +164,22 @@ describe('the Company Workspace Dashboard', () => {
 });
 
 describe('the report catalogue', () => {
-  it('is the prompt’s ten plus the one the sequence made possible', () => {
+  it('is the prompt’s ten plus the two the sequence made possible', () => {
     /*
      * Ten came from the prompt. `DependencyWaiting` is the eleventh and was added when a step
      * whose predecessors are unfinished became a real state: from outside, an objective with four
      * waiting steps looks exactly like one nobody has got round to, and that difference is worth a
      * report. The count stays pinned so a twelfth is a decision somebody wrote down here.
+     *
+     * Here it is. `AgentRunsPerDay` is the twelfth, asked for directly: a Company Admin wanted to
+     * see how much AI work the company actually did each day, which no other report answers —
+     * Engine Agent Health reports how well agents ran, and the cost report what that came to, and
+     * neither says whether the product is being used more this month than last.
      */
-    assert.equal(REPORT_KEYS.length, 11);
-    assert.equal(REPORTS.length, 11);
+    assert.equal(REPORT_KEYS.length, 12);
+    assert.equal(REPORTS.length, 12);
     assert.ok((REPORT_KEYS as readonly string[]).includes('DependencyWaiting'));
+    assert.ok((REPORT_KEYS as readonly string[]).includes('AgentRunsPerDay'));
   });
 
   it('gives every report a question rather than only a title', () => {

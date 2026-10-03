@@ -524,6 +524,9 @@ export class AgentBuilderService {
         ].join('\n'),
         maxTokens: 400,
         tenantId: input.scope.tenantId,
+        // Charged to whoever pressed Test. Testing an agent repeatedly while tuning it is real
+        // spend, and it belongs to the person doing the tuning rather than to the company at large.
+        actorUserId: input.actorUserId,
       });
       wasReal = response.producedByRealModel;
       capability = response.capability;

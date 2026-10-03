@@ -124,6 +124,16 @@ describe('motion tokens resolve', () => {
     // A department's two inks: computed from its own colour, which no stylesheet can know.
     '--uboss-org-ink-l',
     '--uboss-org-ink-d',
+    /*
+     * The two self-hosted faces. `next/font` generates the family name at build time — it is a
+     * hashed, per-build identifier — and puts the variable on <html>, so no stylesheet can declare
+     * it and none should try.
+     *
+     * Both are referenced with a fallback inside the `var()`, which is what keeps these tokens
+     * usable when the design system is loaded without Next.
+     */
+    '--uboss-font-inter',
+    '--uboss-font-jetbrains',
   ]);
 
   const referenced = sheets.flatMap(({ name, css }) =>

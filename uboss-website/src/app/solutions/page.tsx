@@ -18,6 +18,12 @@ export default function SolutionsPage() {
         accent="Connected end to end."
         description="Explore how specialist agents and people can share accountable workflows across departments and industry contexts."
         primary="Map a workflow with us"
+        secondary={{ label: 'The skills behind them', href: '/skills' }}
+        facts={[
+          { value: '24', label: 'Industries the catalogue already covers' },
+          { value: '192', label: 'Skills that belong to one industry way of working' },
+          { value: '208', label: 'Skills that apply whatever a company makes' },
+        ]}
       />
       <DepartmentSolutions />
       <Solutions id="industry-packs" />

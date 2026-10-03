@@ -20,6 +20,7 @@ import {
   Sparkles,
   Workflow,
 } from 'lucide-react';
+import { ApprovalGate } from '@/components/site/ApprovalGate';
 import { CATEGORIES, SAMPLE_SKILLS } from '@/lib/catalog';
 
 function Tabs({
@@ -420,17 +421,11 @@ export function GovernanceSummary() {
     <section id="security" className="landing-section governance-summary">
       <div className="section-shell">
         <div className="governance-layout">
-          <div className="governance-visual" aria-hidden="true">
-            <div className="shield-orbit" />
-            <div className="shield-orbit second" />
-            <div className="shield-center">
-              <ShieldCheck size={68} strokeWidth={1} />
-            </div>
-            <span className="shield-tag">
-              <span /> HUMAN AUTHORITY
-            </span>
-            <span className="shield-caption">AUTONOMY, WITH BOUNDARIES.</span>
-          </div>
+          {/*
+            The still shield became the thing it was describing — see `ApprovalGate`. The words
+            beside it say work stops for a person; the picture now shows that happening.
+          */}
+          <ApprovalGate />
           <div className="section-heading">
             <span className="section-kicker">AUTHORITY STAYS WITH YOUR PEOPLE</span>
             <h2>

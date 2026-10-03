@@ -181,11 +181,54 @@ function ObjectiveClosureInner() {
         });
     };
 
+  /*
+   * Reached with no objective named, and still a screen rather than a dead end.
+   *
+   * This used to return the banner on its own. A banner on its own has no application shell: no
+   * sidebar, no top bar, no heading — a near-blank page with nothing to press, reached by anybody
+   * following a stale link or an old bookmark. Every other screen in this product keeps its shell
+   * when it has nothing to show, and the only honest difference here is that there is a way out.
+   */
   if (objectiveId === null) {
     return (
-      <Banner tone="info">
-        Open a closure from an objective. This screen needs to know which one.
-      </Banner>
+      <RoutedAppShell
+        variant="company"
+        workspaceName={activeWorkspace?.tenantName ?? '—'}
+        groups={navGroups}
+        activeKey="objective"
+        user={signedInUser}
+        accountMenu={accountMenu}
+        {...bell.shellProps}
+        onSignOut={() => {
+          forgetWorkspace();
+          void authApi.logout().finally(() => window.location.assign('/login'));
+        }}
+      >
+        <PageHeader
+          title="Outcome review & closure"
+          description="How the work turned out, compared with what was planned. A closure is signed, not assumed."
+          breadcrumbs={[
+            { label: 'Objective Optimization', href: '/objective' },
+            { label: 'Outcome review' },
+          ]}
+        />
+        <Banner tone="info">
+          Open a closure from an objective. This screen needs to know which one.
+        </Banner>
+        <Card>
+          <CardBody>
+            <p className="uboss-muted-3">
+              Objectives that have run their course are listed under Objective Optimization. Open
+              one and its outcome review opens with it.
+            </p>
+            <Link href="/objective">
+              <Button variant="primary" size="sm">
+                Go to Objective Optimization
+              </Button>
+            </Link>
+          </CardBody>
+        </Card>
+      </RoutedAppShell>
     );
   }
 

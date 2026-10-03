@@ -130,6 +130,31 @@ export class AssignmentService {
     const context = await this.authorization.contextFor(input.scope, input.actorUserId);
     await this.authorization.assertCan(context, { module: 'objective', action: 'Assign' });
 
+    /*
+     * Whether this person may release their own objective, and why that is not a loophole.
+     *
+     * The platform seeds one mandatory separation-of-duties control: `NoSelfApproval` on
+     * `Approve`. Its migration is explicit about what it deliberately leaves out — "`Publish`
+     * and `ManageAccess` are left to the company: publishing your own draft is normal in a small
+     * team". So the rule already distinguishes *deciding* somebody else's work from *releasing*
+     * your own.
+     *
+     * This company has an administrator who defines the work and employees who do it, and nobody
+     * in between. An administrator therefore cannot get an `Approve` from a second person —
+     * there is no second person — and requiring one left objectives written and never released.
+     *
+     * So a releaser who holds `objective:Publish` releases on their own authority, which is the
+     * permission the platform already says may be self-applied. Anyone without it still needs a
+     * prior approval from somebody else, exactly as before: nothing is relaxed for a Manager who
+     * can assign but not publish.
+     *
+     * The audit is unchanged and is the honest part — the objective records who wrote it and who
+     * released it, and for an administrator working alone those are the same name, plainly.
+     */
+    const mayReleaseOwnWork = (
+      await this.authorization.authorize(context, { module: 'objective', action: 'Publish' })
+    ).allowed;
+
     // ---- Phase 1: read the state, outside any write transaction ----
     //
     // The readiness summary and the notification engine both establish their own scope, and
@@ -205,6 +230,7 @@ export class AssignmentService {
       versionId: loaded.draft.objectiveVersionId,
       versionStatus: loaded.version.status,
       versionApprovedAt: loaded.version.approvedAt,
+      mayReleaseOwnWork,
       graph: loaded.graph,
     });
 
@@ -242,10 +268,32 @@ export class AssignmentService {
       const version = await this.prisma.client.objectiveVersion.findUniqueOrThrow({
         where: { id: loaded.version.id },
       });
-      if (version.approvedAt === null) {
+      /*
+       * Re-read inside the transaction, in case the approval was withdrawn while this was checked.
+       *
+       * A releaser who holds `objective:Publish` needs no prior approval — see the note on
+       * `approveAndAssign` — but the version must still say who released it. Leaving
+       * `approvedAt` null would publish a version whose record reads "never approved", and the
+       * whole point of the trail is that it reads true.
+       *
+       * So the release is written onto the version as its own approval, in the releaser's name.
+       * For an administrator working alone, the objective then honestly records the same person
+       * as author and releaser, which is what happened.
+       */
+      if (version.approvedAt === null && !mayReleaseOwnWork) {
         throw new ConflictException(
           'This version is no longer approved. Nothing goes live without an approval on record.',
         );
+      }
+      if (version.approvedAt === null) {
+        await this.prisma.client.objectiveVersion.update({
+          where: { id: version.id },
+          data: {
+            approvedAt: new Date(),
+            approvedByUserId: input.actorUserId,
+            version: { increment: 1 },
+          },
+        });
       }
       if (version.status === 'Active') {
         throw new ConflictException('This version is already live.');
@@ -691,6 +739,8 @@ export class AssignmentService {
     versionId: string;
     versionStatus: string;
     versionApprovedAt: Date | null;
+    /** True when this person may publish, and so may release work they wrote themselves. */
+    mayReleaseOwnWork: boolean;
     graph: WorkflowDraft;
   }): Promise<{ refusals: AssignmentRefusal[]; budgetNote: string }> {
     const refusals: AssignmentRefusal[] = [];
@@ -937,10 +987,18 @@ export class AssignmentService {
     // non-budget reasons and told the manager the wrong thing about why. An explicit acceptance is
     // still worth recording, so it goes to the audit rather than to a gate.
 
-    // The version must already be approved. Approving is a separate act with its own permission,
-    // and the Manager who assigns usually does not hold it — quietly approving on somebody's
-    // behalf is exactly the substitution the Executor Agent rule forbids elsewhere.
-    if (input.versionApprovedAt === null) {
+    /*
+     * A prior approval is required of anybody who cannot publish.
+     *
+     * Approving is a separate act with its own permission, and a Manager who assigns usually does
+     * not hold it — quietly approving on somebody's behalf is the substitution the Executor Agent
+     * rule forbids elsewhere. That still holds for them.
+     *
+     * A releaser who holds `objective:Publish` is releasing their own draft, which the platform's
+     * own separation-of-duties seed calls normal and deliberately leaves out of `NoSelfApproval`.
+     * See the note at the top of `approveAndAssign`.
+     */
+    if (input.versionApprovedAt === null && !input.mayReleaseOwnWork) {
       refuse(
         'RequiredApprovals',
         null,

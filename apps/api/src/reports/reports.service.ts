@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import {
   isHumanTaskFinished,
   isRunFinished,
+  OBJECTIVE_STATUS_LABELS,
   REPORT_ROW_LIMIT,
   type HumanTaskStatus,
   type ReportScope,
@@ -12,6 +13,7 @@ import {
 
 import { PrismaService } from '../persistence/prisma.service.js';
 import type { TenantScope } from '../persistence/tenant-context.js';
+import { BADGE_LEVEL_LABELS } from '../performance/performance.service.js';
 import { ReportScopeService } from './report-scope.service.js';
 
 /** The one currency a set of ledger entries is in, or nothing at all. See its use below. */
@@ -122,7 +124,18 @@ export class ReportsService {
         const review = byVersion.get(version.id);
         return {
           objective: version.objectiveName,
-          status: version.status,
+          /*
+           * The name the rest of the product uses for this status.
+           *
+           * The stored value is `AiAnalysis`, `WorkflowDraft`, `ReadyForApproval` — identifiers,
+           * and they were going straight onto the chart legend and into the exported CSV. A
+           * manager reading their own report saw "AiAnalysis", which is not a word, while the
+           * Objectives screen beside it called the same state "AI Analysis".
+           *
+           * Mapped here rather than on the screen so the export says it too: a spreadsheet handed
+           * to somebody outside the product has no label map to consult.
+           */
+          status: OBJECTIVE_STATUS_LABELS[version.status] ?? version.status,
           // An em dash for somebody who has left, rather than an id nobody can look up.
           owner:
             version.objectiveOwnerUserId === null
@@ -642,11 +655,27 @@ export class ReportsService {
         },
       });
 
+      /*
+       * The owner, by name — and "unassigned" when there is nobody.
+       *
+       * The two are different answers and both matter: an exception nobody owns is the one that
+       * sits open, and an exception owned by `0199f3c2-…` is one nobody can chase. The identifier
+       * was what this column printed.
+       */
+      const owners = await this.names(
+        exceptions
+          .map((exception) => exception.ownerUserId)
+          .filter((id): id is string => id !== null),
+      );
+
       const rows = exceptions.slice(0, REPORT_ROW_LIMIT).map((exception) => ({
         kind: exception.kind,
         severity: exception.severity,
         state: exception.state,
-        owner: exception.ownerUserId ?? 'unassigned',
+        owner:
+          exception.ownerUserId === null
+            ? 'unassigned'
+            : (owners.get(exception.ownerUserId) ?? '—'),
         openedAt: exception.openedAt.toISOString(),
         closedAt: exception.closedAt?.toISOString() ?? '—',
       }));
@@ -696,6 +725,16 @@ export class ReportsService {
         },
       });
 
+      /*
+       * Who asked, by name.
+       *
+       * This column printed a raw identifier — `0199f3c2-4a8e-7...` — in the "Requested by" column
+       * of a report an approver reads to decide whose sign-off to chase. Two other reports already
+       * resolved their people and this one was missed, so the same helper does it here: one query
+       * for the whole page, inside the transaction the report already opened.
+       */
+      const askedBy = await this.names(requests.map((requestRow) => requestRow.requestedByUserId));
+
       const rows = requests.slice(0, REPORT_ROW_LIMIT).map((requestRow) => {
         // Aging stops at the decision. A decided request that keeps ageing would make the oldest
         // rows the ones somebody already dealt with.
@@ -704,7 +743,7 @@ export class ReportsService {
           title: requestRow.title,
           type: requestRow.type,
           status: requestRow.status,
-          requestedBy: requestRow.requestedByUserId,
+          requestedBy: askedBy.get(requestRow.requestedByUserId) ?? '—',
           waitingDays: Math.floor((until.getTime() - requestRow.createdAt.getTime()) / 86_400_000),
           dueAt: requestRow.dueAt?.toISOString() ?? '—',
         };
@@ -864,6 +903,127 @@ export class ReportsService {
   // 10. Performance / Badge History
   // -------------------------------------------------------------------------
 
+  /**
+   * How many agent runs happened each day.
+   *
+   * ## The question this answers
+   *
+   * Not *what is running now* — the dashboard answers that — and not *how has this one agent
+   * done*, which Engine Agent Health answers. This is the shape of the company's AI work over
+   * time: is the product doing more for us this month than last. It is the first figure asked for
+   * after a demo and the last one looked at before a renewal.
+   *
+   * ## Why the total is every run, whatever it ended as
+   *
+   * A day with forty runs of which ten failed is a busy day with a problem, not a quiet day. The
+   * line is the volume; the columns beside it carry the split, so the number is never a total
+   * with nothing behind it. Splitting the line itself would answer the health question badly when
+   * another report answers it properly.
+   *
+   * ## Why days with nothing are not filled in
+   *
+   * Because a zero this report invented is indistinguishable from a zero it measured, and a line
+   * that drops to the axis on a day the company was closed reads as a collapse. Days with no runs
+   * are absent, and the chart joins the days that exist — which is the honest picture of a period
+   * with weekends in it.
+   */
+  async agentRunsPerDay(input: {
+    scope: TenantScope;
+    reportScope: ReportScope;
+    window: ReportWindow;
+  }): Promise<ReportResult> {
+    const columns = ['day', 'runs', 'succeeded', 'failed', 'scheduled', 'agents'];
+    if (ReportsService.empty(input.reportScope)) return ReportsService.none(columns);
+
+    return this.prisma.runInTenantTransaction(input.scope, async () => {
+      const runs = await this.prisma.client.agentRun.findMany({
+        where: {
+          tenantId: input.scope.tenantId,
+          createdAt: { gte: input.window.from, lte: input.window.to },
+          /*
+           * Narrowed by the agent's owner, which is how every other agent report scopes.
+           *
+           * A run row names who *started* it, and scoping by that would hide a manager's own
+           * agents the moment somebody else ran one — the opposite of what their scope means.
+           */
+          ...(ReportScopeService.userFilter(input.reportScope, 'ownerUserId').ownerUserId ===
+          undefined
+            ? {}
+            : {
+                agent: ReportScopeService.userFilter(input.reportScope, 'ownerUserId') as {
+                  ownerUserId: { in: string[] };
+                },
+              }),
+        },
+        select: { createdAt: true, state: true, trigger: true, engineAgentId: true },
+        take: 50_000,
+      });
+
+      const byDay = new Map<
+        string,
+        { runs: number; succeeded: number; failed: number; scheduled: number; agents: Set<string> }
+      >();
+
+      for (const run of runs) {
+        const day = run.createdAt.toISOString().slice(0, 10);
+        const bucket = byDay.get(day) ?? {
+          runs: 0,
+          succeeded: 0,
+          failed: 0,
+          scheduled: 0,
+          agents: new Set<string>(),
+        };
+        bucket.runs += 1;
+        if (run.state === 'Completed') bucket.succeeded += 1;
+        if (run.state === 'Failed' || run.state === 'Cancelled') bucket.failed += 1;
+        if (run.trigger === 'Scheduled') bucket.scheduled += 1;
+        bucket.agents.add(run.engineAgentId);
+        byDay.set(day, bucket);
+      }
+
+      const rows = [...byDay.entries()]
+        .map(([day, bucket]) => ({
+          day,
+          runs: bucket.runs,
+          succeeded: bucket.succeeded,
+          failed: bucket.failed,
+          scheduled: bucket.scheduled,
+          // How many different agents were involved that day, which is what says whether the
+          // volume is one agent working hard or the company's AI work spreading out.
+          agents: bucket.agents.size,
+        }))
+        .sort((left, right) => left.day.localeCompare(right.day));
+
+      const total = rows.reduce((sum, row) => sum + row.runs, 0);
+
+      return {
+        columns,
+        rows,
+        summary: {
+          days: rows.length,
+          totalRuns: total,
+          // Over days that had runs, not over the calendar: an average that divided by a period
+          // including weekends would understate a weekday operation by two sevenths.
+          averagePerActiveDay: rows.length === 0 ? 0 : Math.round((total / rows.length) * 10) / 10,
+          scheduledRuns: rows.reduce((sum, row) => sum + row.scheduled, 0),
+          /*
+           * Left out entirely when there were no runs, rather than reported as an empty string.
+           *
+           * A summary key whose value is "" renders as a labelled blank on the screen, which
+           * reads as a figure that failed to load. An absent key renders as nothing at all, which
+           * is what "no runs in this period" should look like.
+           */
+          ...(rows.length === 0
+            ? {}
+            : {
+                busiestDay: rows.reduce((best, row) => (row.runs > best.runs ? row : best)).day,
+              }),
+        },
+        truncated: runs.length >= 50_000,
+      };
+    });
+  }
+
   async performanceAndBadges(input: {
     scope: TenantScope;
     reportScope: ReportScope;
@@ -917,7 +1077,16 @@ export class ReportsService {
             person: names.get(userId) ?? '—',
             points: bucket.points,
             events: bucket.events,
-            currentBadge: current?.level ?? '—',
+            /*
+             * The name the person sees on their own page, not the rung it is stored as.
+             *
+             * The ladder is stored `Bronze` … `Diamond` and shown `Starter` … `Legend` — the
+             * client's vocabulary — and this report printed the stored value. So a manager read
+             * "Bronze" in a report about somebody whose own screen, and whose badge email, both
+             * say "Starter": the same person described two ways by one product. The stored value
+             * is untouched, here as everywhere; only what is printed changes.
+             */
+            currentBadge: current === undefined ? '—' : BADGE_LEVEL_LABELS[current.level],
             badgeChanges: mine.length,
           };
         })

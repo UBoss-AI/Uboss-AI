@@ -26,6 +26,27 @@
  * than unconfigured.
  */
 
+/**
+ * Whether a person can actually complete a sign-in with Google, Microsoft or Apple.
+ *
+ * **True now.** It was false for the few hours between discovering that the flow did not exist
+ * and building it: the configuration reader, the database columns and the three buttons were all
+ * here, and the middle was missing — no route behind the button, and `complete` refusing a social
+ * request outright. The screen advertised a provider the moment credentials appeared in the
+ * environment, so setting `GOOGLE_CLIENT_ID` would have switched on a button that 404ed.
+ *
+ * The constant stays rather than being deleted, because the condition it expresses is real and
+ * the next person needs it: a provider is offered when this deployment has credentials **and**
+ * the product can finish the job. Holding one without the other is how a dead button gets shipped
+ * looking alive.
+ *
+ * What was built: `beginSocial`, a callback that routes on `flowKind`, and `completeSocial`,
+ * which matches a **verified** address to an **existing active** membership in whichever company
+ * has **verified that domain** — never creating anything, because anybody can obtain a Google
+ * account and that must not be a way into somebody's company.
+ */
+export const SOCIAL_SIGN_IN_IS_IMPLEMENTED = true;
+
 export type SocialProviderKind = 'google' | 'microsoft' | 'apple';
 
 export interface SocialProviderConfig {

@@ -10,6 +10,7 @@ import request from 'supertest';
 import {
   SETTING_DEFINITIONS,
   SETTINGS_CATEGORIES,
+  CATEGORY_VISIBILITY,
   settingDefinition,
   validateSetting,
   validateSettingCombination,
@@ -217,12 +218,20 @@ describe('company settings (e2e)', () => {
 
   // =========================================================================
   describe('the catalogue', () => {
-    it('declares all nineteen categories', () => {
+    it('declares all twenty categories', () => {
       // Seventeen in the original Prompt 14 list, plus UBoss Profile Search Policy and
-      // Performance & Reward Policy from the client's later amendments — which take precedence.
-      assert.equal(SETTINGS_CATEGORIES.length, 19);
+      // Performance & Reward Policy from the client's later amendments — which take precedence —
+      // and Help & Support, which holds no settings and exists so the Settings screen can offer a
+      // section for it. Asking UBoss for help was previously reachable only through a panel inside
+      // Security, which is the last word somebody with a problem thinks to press.
+      assert.equal(SETTINGS_CATEGORIES.length, 20);
       assert.ok(SETTINGS_CATEGORIES.includes('uboss'));
       assert.ok(SETTINGS_CATEGORIES.includes('performance'));
+      assert.ok(SETTINGS_CATEGORIES.includes('help'));
+
+      // And it is open to everybody: a person who cannot raise a ticket has no way to report
+      // that they cannot raise a ticket.
+      assert.equal(CATEGORY_VISIBILITY['help'], undefined);
     });
 
     it('gives every setting a category, a default and both permissions', () => {
@@ -613,7 +622,7 @@ describe('company settings (e2e)', () => {
         employeeUboss,
       ).expect(200);
 
-      assert.equal((response.body as { categories: string[] }).categories.length, 19);
+      assert.equal((response.body as { categories: string[] }).categories.length, 20);
 
       // And a write is still refused.
       await as(agent().put(`/tenants/${tenantId}/settings`), employeeUboss)
@@ -857,7 +866,7 @@ describe('company settings (e2e)', () => {
         categories: { key: string; settings: unknown[] }[];
         withheldCategories: number;
       };
-      assert.equal(body.categories.length, 19);
+      assert.equal(body.categories.length, 20);
       assert.equal(body.withheldCategories, 0);
     });
 

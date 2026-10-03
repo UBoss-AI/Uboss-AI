@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 
+import { BudgetResetRunner } from './budget-reset.runner.js';
 import { CostController } from './cost.controller.js';
 import { CostEngineService } from './cost-engine.service.js';
 import { CreditController } from './credit.controller.js';
@@ -22,7 +23,8 @@ import { CreditService } from './credit.service.js';
   // decides. A company approving its own credit request would be setting its own commercial
   // terms, which is what the review exists to prevent.
   controllers: [CostController, CreditController, CreditPlatformController],
-  providers: [CostEngineService, CreditService],
-  exports: [CostEngineService, CreditService],
+  // A recurring allowance that never comes back is a person who stops working on day two.
+  providers: [CostEngineService, CreditService, BudgetResetRunner],
+  exports: [CostEngineService, CreditService, BudgetResetRunner],
 })
 export class CostModule {}

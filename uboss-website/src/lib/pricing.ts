@@ -12,7 +12,7 @@ export const PLANS = [
       'Guided workflow demonstration',
       'An agreed path to evaluate the outcome',
     ],
-    cta: 'Discuss a Pilot',
+    cta: 'Start a Pilot',
     featured: false,
   },
   {
@@ -27,7 +27,7 @@ export const PLANS = [
       'Human approvals and execution visibility',
       'Usage and onboarding scoped to your needs',
     ],
-    cta: 'Discuss Your Rollout',
+    cta: 'Start your rollout',
     featured: true,
   },
   {
@@ -42,7 +42,7 @@ export const PLANS = [
       'Agreed usage and support arrangements',
       'A tailored implementation conversation',
     ],
-    cta: 'Talk to Sales',
+    cta: 'Start with Enterprise',
     featured: false,
   },
 ] as const;

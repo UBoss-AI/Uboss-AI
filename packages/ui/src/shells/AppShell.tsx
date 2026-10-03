@@ -1,7 +1,7 @@
 'use client';
 
 import type { MouseEvent, ReactNode } from 'react';
-import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useState } from 'react';
 
 import { cn } from '../lib/class-names';
 import { rememberSidebarCollapsed, sidebarCollapsedFromDocument } from './sidebar-preference';
@@ -63,9 +63,10 @@ interface AppShellCommonProps {
  * The two UBoss application shells.
  *
  * `company` renders the Company Workspace shell and requires the active workspace name, because
- * every authenticated company screen must display the workspace it belongs to. The sidebar's
- * brand line reads `Chief Agent` above that name — the coordinating layer the product
- * is named for, rather than the internal product code it used to show.
+ * every authenticated company screen must display the workspace it belongs to. That display is
+ * the **top bar**, which names the section, the workspace and the person's scope together. The
+ * sidebar's brand line reads `Chief Agent` over `powered by UBoss AI` — the product naming itself,
+ * which is what a brand block is for, and the same line the marketing site opens with.
  * `master` renders the UBoss Master Console shell, a separate platform control plane with its
  * own dark treatment and no tenant workspace name.
  */
@@ -94,6 +95,15 @@ export function AppShell(props: AppShellProps) {
 
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  /*
+   * The id of the page heading in the bar above, so `<main>` can be named by it.
+   *
+   * The heading moved into the top bar deliberately — one name per screen, not two. What that
+   * left behind was a `<main>` with no accessible name at all: somebody using the skip link, or
+   * jumping by landmark, arrived in a region announced as just "main". Pointing at the heading
+   * that already exists names the region without putting a second copy of the words on screen.
+   */
+  const pageNameId = useId();
 
   /*
    * Taken from the document rather than from storage.
@@ -152,9 +162,34 @@ export function AppShell(props: AppShellProps) {
         className,
       )}
     >
+      {/*
+        Skip to the content — and it has to be the FIRST thing in the DOM, not merely present.
+
+        Tab from the address bar and the first dozen stops were the sidebar, on every screen, with
+        no way past: somebody using a keyboard walked the whole menu to reach the page they had
+        already opened.
+
+        Placed after the sidebar it was useless, and that is not a subtle failure — it simply
+        became the thirteenth stop, which is the problem it exists to solve. A skip link is defined
+        by its position in the tab order.
+
+        Invisible until focused, which is why a mouse never sees it.
+      */}
+      <a className="uboss-skip-link" href="#uboss-main">
+        Skip to content
+      </a>
+
       <Sidebar
         brand={isMaster ? 'UBoss' : 'Chief Agent'}
-        brandSub={isMaster ? 'Master Console' : props.workspaceName}
+        /*
+         * The product's own line under its name, not the company's.
+         *
+         * This read the workspace name, which put *Aarohan Healthcare* under *Chief Agent* and
+         * made the brand block look like it belonged to the customer. The top bar already names
+         * the workspace, beside the section and the scope chip, so nothing is lost by saying here
+         * what this product is instead — and it matches how the marketing site introduces it.
+         */
+        brandSub={isMaster ? 'Master Console' : 'powered by UBoss AI'}
         groups={groups}
         activeKey={activeKey}
         onNavigate={(key, href, event) => {
@@ -174,6 +209,7 @@ export function AppShell(props: AppShellProps) {
           <TopBar
             variant="master"
             sectionName={sectionName}
+            pageNameId={pageNameId}
             scopeLabel={pill}
             user={user}
             onSignOut={onSignOut}
@@ -189,6 +225,7 @@ export function AppShell(props: AppShellProps) {
         ) : (
           <TopBar
             variant="company"
+            pageNameId={pageNameId}
             workspaceName={props.workspaceName}
             sectionName={sectionName}
             scopeLabel={pill}
@@ -213,7 +250,14 @@ export function AppShell(props: AppShellProps) {
           what keeps an unplaceable route from rendering with no name anywhere.
         */}
         <PageNameShownAboveContext.Provider value={sectionName !== undefined}>
-          <main className="uboss-content">{children}</main>
+          <main
+            className="uboss-content"
+            id="uboss-main"
+            tabIndex={-1}
+            {...(sectionName === undefined ? {} : { 'aria-labelledby': pageNameId })}
+          >
+            {children}
+          </main>
         </PageNameShownAboveContext.Provider>
       </div>
     </div>

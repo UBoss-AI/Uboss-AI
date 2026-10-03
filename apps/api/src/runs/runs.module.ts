@@ -3,6 +3,7 @@ import { Global, Module } from '@nestjs/common';
 import { BullMqRunQueue } from './bullmq-run-queue.js';
 import { RunEngineService } from './run-engine.service.js';
 import { RunProgressGateway } from './run-progress.gateway.js';
+import { RunStreamController } from './run-stream.controller.js';
 import { RunQueue, InlineRunQueue } from './run-queue.js';
 import { RunSchedulerService } from './run-scheduler.service.js';
 import { RunController } from './run.controller.js';
@@ -27,7 +28,7 @@ import { RunController } from './run.controller.js';
  */
 @Global()
 @Module({
-  controllers: [RunController],
+  controllers: [RunController, RunStreamController],
   providers: [
     RunProgressGateway,
     {

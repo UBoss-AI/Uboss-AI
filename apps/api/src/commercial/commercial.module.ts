@@ -9,6 +9,7 @@ import { CommercialService } from './commercial.service.js';
 import { CompanyExitController } from './company-exit.controller.js';
 import { CompanyExitService } from './company-exit.service.js';
 import { CompanyLifecycleService } from './company-lifecycle.service.js';
+import { ModuleEntitlementService } from './module-entitlement.service.js';
 import { SeatService } from './seat.service.js';
 
 /**
@@ -36,6 +37,7 @@ import { SeatService } from './seat.service.js';
     CompanyLifecycleService,
     CompanyExitService,
     BudgetAlertService,
+    ModuleEntitlementService,
   ],
   exports: [
     SeatService,
@@ -43,6 +45,7 @@ import { SeatService } from './seat.service.js';
     CompanyLifecycleService,
     CompanyExitService,
     BudgetAlertService,
+    ModuleEntitlementService,
   ],
 })
 export class CommercialModule {}

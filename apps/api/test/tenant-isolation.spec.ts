@@ -167,6 +167,102 @@ describe('tenant isolation (integration)', () => {
     });
   });
 
+  describe('rls coverage', () => {
+    /*
+     * Every tenant-owned table is protected, and the exceptions are named here.
+     *
+     * The tests below prove that RLS works on the tables they mention. None of them proves that
+     * RLS is *present* on the table a migration added last week — and that is the failure mode
+     * that matters, because it is silent: a new table with `tenant_id` and no policy reads
+     * across companies, every existing test still passes, and nothing anywhere says why.
+     *
+     * So this asserts the set rather than a sample. Adding a tenant-owned table without
+     * `ENABLE`/`FORCE ROW LEVEL SECURITY` fails here, and adding it to the exclusion list is a
+     * decision somebody has to write down next to a reason.
+     *
+     * `FORCE` as well as `ENABLE`, because `ENABLE` alone does not apply to the table's owner,
+     * and the owner is who the migrations run as.
+     */
+    const TENANT_LESS_BY_DESIGN: Record<string, string> = {
+      /*
+       * A signup exists before the company does. `tenant_id` is nullable and stays null until
+       * the domain is proved and the tenant is created, so a policy keyed on
+       * `app.current_tenant_id` would hide every in-progress registration from the flow that has
+       * to read it — there is no tenant to declare yet. It is protected instead by the id and
+       * the mailed token, which the service requires together and compares in constant time.
+       */
+      pending_registrations: 'exists before its tenant does; nullable tenant_id',
+      /*
+       * Stripe posts an event to a public endpoint with no session and no tenant. The handler
+       * verifies the signature and then works out which company the event belongs to, so the row
+       * is written before the tenant is known and is read back by the reconciler, not by a
+       * company. Its protection is the webhook signature and the idempotency key.
+       */
+      stripe_webhook_events: 'arrives from Stripe with no tenant context; nullable tenant_id',
+    };
+
+    it('protects every table that carries a tenant_id', async () => {
+      const rows = await ctx.prisma.client.$queryRawUnsafe<
+        { table_name: string; enabled: boolean; forced: boolean }[]
+      >(
+        `SELECT c.relname AS table_name,
+                c.relrowsecurity AS enabled,
+                c.relforcerowsecurity AS forced
+           FROM pg_class c
+           JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = 'public'
+            AND c.relkind = 'r'
+            AND EXISTS (
+                  SELECT 1 FROM information_schema.columns col
+                   WHERE col.table_schema = 'public'
+                     AND col.table_name = c.relname
+                     AND col.column_name = 'tenant_id')`,
+      );
+
+      assert.ok(rows.length > 100, `only ${rows.length} tenant-owned tables found — query wrong?`);
+
+      const unprotected = rows
+        .filter((row) => !(row.enabled && row.forced))
+        .map((row) => row.table_name)
+        .filter((name) => !(name in TENANT_LESS_BY_DESIGN))
+        .sort();
+
+      assert.deepEqual(
+        unprotected,
+        [],
+        'these tables carry tenant_id with no FORCE ROW LEVEL SECURITY, so one company can ' +
+          `read another's rows in them: ${unprotected.join(', ')}`,
+      );
+    });
+
+    it('keeps the exclusion list honest', async () => {
+      /*
+       * The other direction. An exclusion that stops being true — somebody adds the policy, or
+       * drops the table — should not sit in the list unnoticed, because a stale exemption is
+       * read as "this was considered" when it was not.
+       */
+      for (const [table, reason] of Object.entries(TENANT_LESS_BY_DESIGN)) {
+        const [row] = await ctx.prisma.client.$queryRawUnsafe<
+          { forced: boolean; nullable: string }[]
+        >(
+          `SELECT c.relforcerowsecurity AS forced, col.is_nullable AS nullable
+             FROM pg_class c
+             JOIN pg_namespace n ON n.oid = c.relnamespace
+             JOIN information_schema.columns col
+               ON col.table_schema = 'public'
+              AND col.table_name = c.relname
+              AND col.column_name = 'tenant_id'
+            WHERE n.nspname = 'public' AND c.relname = '${table}'`,
+        );
+
+        assert.ok(row !== undefined, `${table} is on the exclusion list and does not exist`);
+        assert.equal(row.forced, false, `${table} now forces RLS — remove it from the list`);
+        // The reason each is excluded *is* that it has no tenant when it is written.
+        assert.equal(row.nullable, 'YES', `${table} has a non-null tenant_id: ${reason}`);
+      }
+    });
+  });
+
   describe('rls defence-in-depth (application scoping removed on purpose)', () => {
     it('returns zero rows when no scope is declared — RLS fails closed', async () => {
       // No runInTenantTransaction, no runAsPlatformOperation. A code path that forgets to

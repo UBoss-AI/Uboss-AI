@@ -48,6 +48,12 @@ import { CorrelationIdMiddleware } from '../src/request-context/correlation-id.m
 import { SkillRouterService } from '../src/skills/skill-router.service.js';
 import { SkillService } from '../src/skills/skill.service.js';
 import { HumanTaskController } from '../src/tasks/human-task.controller.js';
+import { OverdueTaskSweeper } from '../src/performance/overdue-task.sweeper.js';
+import {
+  BADGE_LADDER,
+  BADGE_LEVEL_LABELS,
+  PerformanceService,
+} from '../src/performance/performance.service.js';
 import { HumanTaskService } from '../src/tasks/human-task.service.js';
 import { WorkReleaseService } from '../src/tasks/work-release.service.js';
 import { RequestActorInterceptor } from '../src/tenancy/request-actor.interceptor.js';
@@ -113,6 +119,7 @@ describe('approve & assign and the human to-do list (e2e)', () => {
   const workflow = () => app.get(WorkflowEditorService);
   const assignment = () => app.get(AssignmentService);
   const tasks = () => app.get(HumanTaskService);
+  const sweeper = () => app.get(OverdueTaskSweeper);
   const skills = () => app.get(SkillService);
 
   before(async () => {
@@ -153,6 +160,12 @@ describe('approve & assign and the human to-do list (e2e)', () => {
         ObjectiveAnalysisService,
         WorkflowEditorService,
         AssignmentService,
+        // `HumanTaskService` scores a completion, so the module it is built in needs the
+        // service that records it. In the running product `PerformanceModule` is global;
+        // a test module assembles only what it names.
+        PerformanceService,
+        // The deadline sweep, so a missed deadline can be scored in this module's own tests.
+        OverdueTaskSweeper,
         HumanTaskService,
         WorkReleaseService,
         TenantContextService,
@@ -1483,6 +1496,268 @@ describe('approve & assign and the human to-do list (e2e)', () => {
       });
       return tasks().submit({ scope: scope(), actorUserId, taskId });
     };
+
+    it('pays the person who finished the work', async () => {
+      /*
+       * The gap this closes.
+       *
+       * The performance policy, its points and the badge ladder were all built, the screens read
+       * them, and nothing ever wrote one. `recordEvent` was called from exactly two places — an
+       * administrator typing a manual adjustment, and the rewards module — so finishing a task on
+       * time changed nobody's score. Measured before this: **zero** performance events across
+       * every company in the development database, after weeks of use.
+       *
+       * Completing work is what the score is *for*, so completion now writes it. A task with no
+       * due date counts as on time: the company chose not to put a clock on it, and inventing a
+       * deadline to penalise somebody against would be worse than not scoring at all.
+       */
+      const { tasks: chained } = await chain();
+      const first = chained[0];
+      assert.ok(first !== undefined);
+
+      const before = await ctx.prisma.runInTenantTransaction(scope(), () =>
+        ctx.prisma.client.performanceEvent.count({ where: { tenantId } }),
+      );
+
+      await finish(first.id, first.assignedToUserId);
+
+      const events = await ctx.prisma.runInTenantTransaction(scope(), () =>
+        ctx.prisma.client.performanceEvent.findMany({
+          where: { tenantId, sourceKind: 'human_task', sourceId: first.id },
+        }),
+      );
+
+      assert.equal(events.length, 1, 'finishing a task should record exactly one outcome');
+      const event = events[0];
+      assert.equal(event?.kind, 'OnTimeAccepted');
+      assert.equal(event?.subjectUserId, first.assignedToUserId, 'scored to whoever did it');
+      assert.ok((event?.points ?? 0) > 0, 'an on-time completion is worth something');
+
+      // Traceable, which is the whole reason `sourceKind`/`sourceId` are required.
+      assert.equal(event?.sourceKind, 'human_task');
+      assert.equal(event?.sourceId, first.id);
+
+      const after = await ctx.prisma.runInTenantTransaction(scope(), () =>
+        ctx.prisma.client.performanceEvent.count({ where: { tenantId } }),
+      );
+      assert.equal(after, before + 1, 'exactly one event, not one per write in the path');
+    });
+
+    it('does not congratulate somebody for arriving at the bottom rung', async () => {
+      /*
+       * Seen on the running product, and the reason this test exists in this shape.
+       *
+       * An employee on **−15 points** — two missed deadlines — was sent *"You reached Starter.
+       * Your performance score is −15 points, which earns the Starter badge."* Nothing was
+       * earned. The lowest rung's threshold is zero, so the first event of any kind lands
+       * somebody on it and fired the announcement.
+       *
+       * Congratulating a person for missing deadlines is worse than saying nothing: it is the
+       * product telling them the outcome was fine. The badge is still recorded — the screen shows
+       * it — and moving *down* to that rung later is a real change and is announced.
+       */
+      const { tasks: chained } = await chain();
+      const first = chained[0];
+      assert.ok(first !== undefined);
+
+      await finish(first.id, first.assignedToUserId);
+
+      const sent = await ctx.prisma.runInTenantTransaction(scope(), () =>
+        ctx.prisma.client.notification.findMany({
+          where: { tenantId, recipientUserId: first.assignedToUserId, kind: 'Badge' },
+        }),
+      );
+      assert.equal(sent.length, 0, 'a first badge at the entry rung was announced as an arrival');
+
+      // It is still recorded, so the person's own screen is right.
+      const held = await ctx.prisma.runInTenantTransaction(scope(), () =>
+        ctx.prisma.client.badgeHistory.findFirst({
+          where: { tenantId, subjectUserId: first.assignedToUserId, endedAt: null },
+        }),
+      );
+      assert.ok(held, 'the badge was not recorded either');
+    });
+
+    it('names the rung the way the person sees it, when it does announce one', async () => {
+      /*
+       * Levels are **stored** `Bronze` … `Diamond` and **shown** `Starter` … `Legend` — the
+       * client asked for the second vocabulary, and renaming the stored values would rewrite every
+       * badge already earned. The announcement said `Bronze`, which is a rung the person cannot
+       * find anywhere in the product.
+       *
+       * Asserted on the label map rather than by driving somebody up the ladder, which would take
+       * a hundred completed tasks.
+       */
+      assert.equal(BADGE_LEVEL_LABELS.Bronze, 'Starter');
+      assert.equal(BADGE_LEVEL_LABELS.Diamond, 'Legend');
+      for (const level of BADGE_LADDER) {
+        assert.ok(
+          (BADGE_LEVEL_LABELS[level] ?? '').length > 0,
+          `${level} has no name a person would recognise`,
+        );
+      }
+    });
+
+    it('charges a deadline that came and went with nobody doing the work', async () => {
+      /*
+       * `Missed` has been a scored outcome since the engine was written — the kind existed, the
+       * policy carried −15 for it, and the badge ladder counted it. Nothing ever wrote one.
+       *
+       * So the only outcome the product could produce was a good one. A task finished late cost
+       * something; a task never touched at all cost nothing, which made ignoring work the safest
+       * thing an employee could do with it.
+       */
+      const { tasks: chained } = await chain();
+      const first = chained[0];
+      assert.ok(first !== undefined);
+
+      // Two days past due, against a default window of one.
+      const dueAt = new Date(Date.now() - 48 * 3_600_000);
+      await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.humanTask.update({ where: { id: first.id }, data: { dueAt } }),
+      );
+
+      const swept = await sweeper().sweep();
+      assert.ok(swept.recorded >= 1, 'the sweep scored nothing');
+
+      const events = await ctx.prisma.runInTenantTransaction(scope(), () =>
+        ctx.prisma.client.performanceEvent.findMany({
+          where: { tenantId, sourceKind: 'human_task', sourceId: first.id },
+        }),
+      );
+      assert.equal(events.length, 1);
+      const event = events[0];
+      assert.equal(event?.kind, 'Missed');
+      assert.equal(event?.subjectUserId, first.assignedToUserId, 'charged to whoever owed it');
+      assert.ok((event?.points ?? 0) < 0, 'a missed deadline should cost something');
+
+      /*
+       * Dated when the window closed, not when the sweep noticed.
+       *
+       * A sweep runs on an interval and can be down for a day. Neither should move when somebody
+       * missed their deadline, or an outage rewrites a performance record.
+       */
+      assert.equal(
+        event?.occurredAt.getTime(),
+        dueAt.getTime() + 24 * 3_600_000,
+        'the event should be dated at the end of the grace window',
+      );
+    });
+
+    it('sweeps twice and charges once', async () => {
+      const { tasks: chained } = await chain();
+      const first = chained[0];
+      assert.ok(first !== undefined);
+
+      await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.humanTask.update({
+          where: { id: first.id },
+          data: { dueAt: new Date(Date.now() - 48 * 3_600_000) },
+        }),
+      );
+
+      await sweeper().sweep();
+      const second = await sweeper().sweep();
+
+      const charged = await ctx.prisma.runInTenantTransaction(scope(), () =>
+        ctx.prisma.client.performanceEvent.count({
+          where: { tenantId, sourceKind: 'human_task', sourceId: first.id, kind: 'Missed' },
+        }),
+      );
+      assert.equal(charged, 1, 'a second sweep charged the same deadline again');
+      assert.equal(second.recorded, 0, 'the second sweep claimed to have recorded something');
+    });
+
+    it('leaves a deadline alone until the window has closed', async () => {
+      /*
+       * A deadline passing is not yet a missed deadline. Somebody an hour late has been *late*,
+       * which the completion path already scores. Where the line sits is the company's judgement
+       * — a support rota and a quarterly filing do not mean the same thing by "overdue" — so this
+       * asserts the policy is read rather than a constant applied.
+       */
+      const { tasks: chained } = await chain();
+      const first = chained[0];
+      assert.ok(first !== undefined);
+
+      await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.humanTask.update({
+          where: { id: first.id },
+          data: { dueAt: new Date(Date.now() - 3_600_000) },
+        }),
+      );
+
+      await sweeper().sweep();
+
+      const charged = await ctx.prisma.runInTenantTransaction(scope(), () =>
+        ctx.prisma.client.performanceEvent.count({
+          where: { tenantId, sourceKind: 'human_task', sourceId: first.id },
+        }),
+      );
+      assert.equal(charged, 0, 'an hour past due was charged as missed');
+    });
+
+    it('does not charge a missed deadline and a late one for the same slip', async () => {
+      /*
+       * Both statements would be true — they missed it, and they delivered late — but the company
+       * set one penalty for one deadline. Charging both would quietly turn a stated −5 for
+       * lateness into −20, which is a policy change nobody made. `BlockerNeutralised` is the
+       * declared way to forgive the charge that was made.
+       */
+      const { tasks: chained } = await chain();
+      const first = chained[0];
+      assert.ok(first !== undefined);
+
+      await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.humanTask.update({
+          where: { id: first.id },
+          data: { dueAt: new Date(Date.now() - 48 * 3_600_000) },
+        }),
+      );
+      await sweeper().sweep();
+
+      await finish(first.id, first.assignedToUserId);
+
+      const events = await ctx.prisma.runInTenantTransaction(scope(), () =>
+        ctx.prisma.client.performanceEvent.findMany({
+          where: { tenantId, sourceKind: 'human_task', sourceId: first.id },
+        }),
+      );
+      assert.equal(events.length, 1, 'the same deadline was charged twice');
+      assert.equal(events[0]?.kind, 'Missed');
+
+      // And the work did finish — it is complete, it simply costs nothing further.
+      const row = await ctx.prisma.runInTenantTransaction(scope(), () =>
+        ctx.prisma.client.humanTask.findFirst({ where: { id: first.id } }),
+      );
+      assert.equal(row?.status, 'Completed');
+    });
+
+    it('does not charge work that has not been handed out yet', async () => {
+      /*
+       * A `Waiting` step is waiting on something upstream. Nobody can miss a deadline for work
+       * they have not been given, and charging it would score an employee for the plan's shape.
+       */
+      const { tasks: chained } = await chain();
+      const waiting = chained[1];
+      assert.ok(waiting !== undefined);
+      assert.equal(waiting.status, 'Waiting');
+
+      await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.humanTask.update({
+          where: { id: waiting.id },
+          data: { dueAt: new Date(Date.now() - 96 * 3_600_000) },
+        }),
+      );
+
+      await sweeper().sweep();
+
+      const charged = await ctx.prisma.runInTenantTransaction(scope(), () =>
+        ctx.prisma.client.performanceEvent.count({
+          where: { tenantId, sourceKind: 'human_task', sourceId: waiting.id },
+        }),
+      );
+      assert.equal(charged, 0, 'a step that had not started yet was charged as missed');
+    });
 
     it('starts only the first step, and leaves the rest waiting', async () => {
       const { tasks: chained } = await chain();

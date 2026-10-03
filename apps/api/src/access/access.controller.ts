@@ -33,7 +33,8 @@ import {
 
 import {
   CAPABILITY_KEYS,
-  ROLE_KINDS,
+  COMPANY_ASSIGNABLE_ROLE_KINDS,
+  COMPANY_GRANTABLE_ROLES,
   SCOPE_KINDS,
   type CapabilityKey,
   type RoleKind,
@@ -96,10 +97,22 @@ export class InviteGuestDto {
   @Max(MAX_GUEST_DAYS)
   accessDays!: number;
 
+  /**
+   * Optional, and it used to be the fifth required field on this form.
+   *
+   * Inviting somebody is not a request anybody is approving — an administrator has decided, and
+   * the form's own answer to "why" is already in the three fields above it: who, which resources,
+   * for how long. A free-text box demanding five characters before the invitation may be sent is
+   * a box that gets filled with "guest", and a compliance record made of the word "guest" is
+   * worse than no free text at all, because it looks like a reason.
+   *
+   * The audit row does not lose anything: where this is left out, the justification is written
+   * from what the invitation actually grants, which is a statement that stays true.
+   */
+  @IsOptional()
   @IsString()
-  @MinLength(5, { message: 'reason must say why this guest needs access.' })
   @MaxLength(1000)
-  reason!: string;
+  reason?: string;
 }
 
 export class AccessReasonDto {
@@ -216,7 +229,23 @@ class GrantCapabilitiesDto {
  * the built-in catalogue; authoring a custom role is a separate act on its own route).
  */
 class GrantRoleDto {
-  @IsIn(ROLE_KINDS, { message: `roleKind must be one of: ${ROLE_KINDS.join(', ')}.` })
+  /*
+   * Only what a company hands out — not the whole `ROLE_KINDS` catalogue.
+   *
+   * `roleCatalogue()` already filters what the screen offers, but a list is not a control: with
+   * `ROLE_KINDS` here, `roleKind: "Manager"` posted straight at this route still succeeded, and
+   * an administrator could end up with roles their own screen had stopped showing. The retired
+   * roles are all narrower than `CompanyAdmin`, so nothing escalated — what was wrong is that
+   * the decision lived in the presentation and nowhere else.
+   *
+   * The platform console administers companies provisioned before this and keeps the full
+   * catalogue; it does not come through here.
+   */
+  @IsIn(COMPANY_ASSIGNABLE_ROLE_KINDS, {
+    message:
+      `roleKind must be one of: ${COMPANY_ASSIGNABLE_ROLE_KINDS.join(', ')}. ` +
+      'A company grants an administrator, an employee, or a role it wrote for itself.',
+  })
   roleKind!: RoleKind;
 
   @IsIn(SCOPE_KINDS, { message: `scopeKind must be one of: ${SCOPE_KINDS.join(', ')}.` })
@@ -647,15 +676,28 @@ export class AccessController {
       scopeKind: assignment.scopeKind as ScopeKind,
     }));
 
+    /*
+     * Only the roles this company hands out.
+     *
+     * `roleCatalogue()` is shared with the platform console, which still administers companies
+     * holding `Manager`, `Head` and `Approver` assignments and must keep seeing them. A company
+     * administrator no longer grants those: they carried approvals between an administrator and
+     * an employee, and there is nothing between those two any more.
+     *
+     * Filtered here rather than in the service, so the platform plane is untouched.
+     */
     return {
-      roles: this.roles.roleCatalogue().map((role) => {
-        const problem = this.roles.delegationCeilingProblem({
-          granterRoles,
-          roleKind: role.kind,
-          scopeKind: role.defaultScope,
-        });
-        return { ...role, youMayGrant: problem === null, whyNot: problem };
-      }),
+      roles: this.roles
+        .roleCatalogue()
+        .filter((role) => (COMPANY_GRANTABLE_ROLES as readonly string[]).includes(role.kind))
+        .map((role) => {
+          const problem = this.roles.delegationCeilingProblem({
+            granterRoles,
+            roleKind: role.kind,
+            scopeKind: role.defaultScope,
+          });
+          return { ...role, youMayGrant: problem === null, whyNot: problem };
+        }),
       note:
         'What you may grant is bounded by what you hold. A company administrator may grant any ' +
         'role in their own company and nothing outside it; nobody grants themselves anything.',

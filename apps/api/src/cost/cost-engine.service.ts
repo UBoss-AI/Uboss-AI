@@ -17,6 +17,7 @@ import {
   LEDGER_EFFECT,
   projectedExhaustion,
   reconcileBalance,
+  nextReset,
   remainingMinor,
   RESERVATION_EXPIRY_MINUTES,
   reservationHasExpired,
@@ -35,6 +36,7 @@ import { NotificationService } from '../notifications/notification.service.js';
 import { PrismaService } from '../persistence/prisma.service.js';
 import { getCorrelationId } from '../request-context/request-context.js';
 import { type TenantScope } from '../persistence/tenant-context.js';
+import { tokensFrom, ubossTokenMinorUnits } from './uboss-token.js';
 
 /** What a caller wants to spend on. */
 export interface SpendContext {
@@ -43,6 +45,19 @@ export interface SpendContext {
   objectiveId?: string | null | undefined;
   engineAgentId?: string | null | undefined;
   agentRunId?: string | null | undefined;
+  /**
+   * Whose request this is, so their own allowance is one of the limits it must satisfy.
+   *
+   * Without it, a company's budget was the only thing standing between one employee and the
+   * whole month's AI: every other scope describes *work* — a department, an objective, an agent —
+   * and none of them is keyed to a person. One employee running an agent in a loop could exhaust
+   * the company in an afternoon, and everybody else would then be refused for something they did
+   * not do.
+   *
+   * Null for work the engine does on its own behalf. A person who has no allowance set is
+   * unconstrained by this level, exactly as before.
+   */
+  actorUserId?: string | null | undefined;
   logicalProfile: LogicalModelProfile;
   purpose: string;
 }
@@ -220,9 +235,26 @@ export class CostEngineService {
     subjectId: string | null;
     allowanceMinor: number;
     reason: string;
+    /**
+     * How often this allowance comes back. `None` — the default — is a one-off.
+     *
+     * "Give this person ₹500 a day" is one sentence and should be one call, so the amount being
+     * set is also the amount each period grants. The alternative was an administrator setting an
+     * allowance and then separately telling it to recur, which is two ways to say one thing and
+     * one of them always gets forgotten.
+     */
+    resetCadence?: 'None' | 'Daily' | 'Weekly' | 'Monthly' | undefined;
   }): Promise<WalletView> {
     if (input.allowanceMinor < 0) {
       throw new BadRequestException('An allowance cannot be negative.');
+    }
+
+    const cadence = input.resetCadence ?? 'None';
+    if (cadence !== 'None' && input.allowanceMinor === 0) {
+      throw new BadRequestException(
+        'A recurring allowance of nothing would refuse every call and come back tomorrow to ' +
+          'refuse them again. Set an amount, or remove the allowance instead.',
+      );
     }
     if (input.budgetScope !== 'Company' && input.subjectId === null) {
       throw new BadRequestException(
@@ -244,19 +276,37 @@ export class CostEngineService {
               company.currency,
             );
 
+      const now = new Date();
+      /*
+       * The cadence travels with the amount.
+       *
+       * Written on every call, including the one where the amount did not change — an
+       * administrator switching a standing allowance to "every day" has changed something, even
+       * though the number is the same, and treating that as a no-op would silently discard it.
+       */
+      const recurrence =
+        cadence === 'None'
+          ? { resetCadence: 'None', recurringGrantMinor: null, resetsAt: null }
+          : {
+              resetCadence: cadence,
+              recurringGrantMinor: input.allowanceMinor,
+              resetsAt: nextReset(now, cadence),
+            };
+
       const delta = input.allowanceMinor - wallet.allowanceMinor;
       if (delta === 0) {
         // Re-read for the full row: the lock helper returns only the columns the decision needs,
         // deliberately, so the view is built from a normal read rather than by widening it.
-        const unchanged = await this.prisma.client.budgetWallet.findUniqueOrThrow({
+        const unchanged = await this.prisma.client.budgetWallet.update({
           where: { id: wallet.id },
+          data: { ...recurrence, version: { increment: 1 } },
         });
-        return this.toWalletView(unchanged, percents, new Date());
+        return this.toWalletView(unchanged, percents, now);
       }
 
       const updated = await this.prisma.client.budgetWallet.update({
         where: { id: wallet.id },
-        data: { allowanceMinor: input.allowanceMinor, version: { increment: 1 } },
+        data: { allowanceMinor: input.allowanceMinor, ...recurrence, version: { increment: 1 } },
       });
 
       await this.appendEntry(input.scope.tenantId, {
@@ -448,6 +498,7 @@ export class CostEngineService {
         departmentId: context.departmentId ?? null,
         objectiveId: context.objectiveId ?? null,
         engineAgentId: context.engineAgentId ?? null,
+        actorUserId: context.actorUserId ?? null,
       })) {
         const wallet = await this.prisma.client.budgetWallet.findFirst({
           where: {
@@ -502,12 +553,22 @@ export class CostEngineService {
         return { estimateMinor: 0, currency: 'INR', pricingVersionId: null };
       }
 
+      /*
+       * Estimated at what the company will be **charged**, not at what the call will cost UBoss.
+       *
+       * The estimate is what the reservation holds and what the budget is checked against, so
+       * estimating at cost would let a company through a limit it cannot actually afford: the
+       * reservation would pass at a fifth of the real charge and the settle would take the rest
+       * out of a balance that had already been declared sufficient.
+       */
+      const atCost = estimateMinor({
+        maxTokens: input.maxTokens,
+        inputPerMillionMinorUnits: pricing.inputPerMillionMinorUnits,
+        outputPerMillionMinorUnits: pricing.outputPerMillionMinorUnits,
+      });
+
       return {
-        estimateMinor: estimateMinor({
-          maxTokens: input.maxTokens,
-          inputPerMillionMinorUnits: pricing.inputPerMillionMinorUnits,
-          outputPerMillionMinorUnits: pricing.outputPerMillionMinorUnits,
-        }),
+        estimateMinor: await this.sellPriceFor(atCost),
         currency: pricing.currency,
         pricingVersionId: pricing.id,
       };
@@ -546,6 +607,7 @@ export class CostEngineService {
         departmentId: context.departmentId ?? null,
         objectiveId: context.objectiveId ?? null,
         engineAgentId: context.engineAgentId ?? null,
+        actorUserId: context.actorUserId ?? null,
       });
 
       // ---- 1. Lock, outermost first ----
@@ -993,10 +1055,195 @@ export class CostEngineService {
           ...(input.walletId === undefined ? {} : { walletId: input.walletId }),
           ...(input.agentRunId === undefined ? {} : { agentRunId: input.agentRunId }),
         },
+        /*
+         * Spelled out rather than returning the row.
+         *
+         * The row carries `inputTokens`, `outputTokens`, `cachedInputTokens` and
+         * `pricingVersionId`, and this is the company's own credit history. Token counts are a
+         * provider's unit of account: a customer who has them can divide the charge by the
+         * tokens, read off a per-million rate and match it against a public price list — which
+         * names the provider as surely as printing its name would, and shows the margin besides.
+         *
+         * The columns stay and the platform plane reads them. What a company is shown is money,
+         * what moved it and when.
+         */
+        select: {
+          id: true,
+          kind: true,
+          amountMinor: true,
+          currency: true,
+          reason: true,
+          reference: true,
+          actorUserId: true,
+          balanceAfterAllowanceMinor: true,
+          balanceAfterUsedMinor: true,
+          balanceAfterReservedMinor: true,
+          agentRunId: true,
+          objectiveId: true,
+          departmentId: true,
+          engineAgentId: true,
+          // The capability class, never a provider or model name — the same rule the gateway keeps.
+          logicalProfile: true,
+          correlationId: true,
+          occurredAt: true,
+        },
         orderBy: { occurredAt: 'desc' },
         take: Math.min(input.limit ?? 200, 500),
       }),
     );
+  }
+
+  /**
+   * Who spent it — by department, objective, agent or person.
+   *
+   * ## The gap this closes
+   *
+   * Every charge already carried `department_id`, `objective_id`, `engine_agent_id` and
+   * `actor_user_id`; §20 required them and they were written faithfully from the start. Nothing
+   * ever grouped by one. An administrator could see a single company total and a list of
+   * individual entries, and could not answer "which department is spending this" without reading
+   * the ledger by hand — which is the first question anybody asks about an AI bill.
+   *
+   * ## Charges, not movements
+   *
+   * Only `Settle` and `Refund`. A `Reserve` is money set aside for a call that has not happened,
+   * and `ReleaseReserve` gives it back; counting either would report spend that never occurred.
+   * A refund is signed against the charge it reverses, so summing the two gives what was actually
+   * kept.
+   *
+   * ## Uncosted calls are counted, not hidden
+   *
+   * A charge whose model had no published price settles at zero with `pricingVersionId` null. The
+   * tokens are real and the money is not, so `uncostedCalls` is reported beside the spend rather
+   * than being averaged into it. A department reading "₹0 across 1,412 calls" is being told
+   * something true and actionable; the same row without that count is just wrong.
+   */
+  async usageBreakdown(input: {
+    scope: TenantScope;
+    by: 'department' | 'objective' | 'agent' | 'user';
+    from?: Date | undefined;
+    to?: Date | undefined;
+  }): Promise<{
+    by: string;
+    currency: string | null;
+    rows: {
+      key: string | null;
+      spentMinor: number;
+      tokens: number;
+      calls: number;
+      uncostedCalls: number;
+    }[];
+    totals: {
+      spentMinor: number;
+      tokens: number;
+      calls: number;
+      uncostedCalls: number;
+    };
+  }> {
+    const column = {
+      department: 'departmentId',
+      objective: 'objectiveId',
+      agent: 'engineAgentId',
+      user: 'actorUserId',
+    }[input.by] as 'departmentId' | 'objectiveId' | 'engineAgentId' | 'actorUserId';
+
+    return this.prisma.runInTenantTransaction(input.scope, async () => {
+      const entries = await this.prisma.client.costLedgerEntry.findMany({
+        where: {
+          tenantId: input.scope.tenantId,
+          kind: { in: ['Settle', 'Refund'] },
+          ...(input.from === undefined && input.to === undefined
+            ? {}
+            : {
+                occurredAt: {
+                  ...(input.from === undefined ? {} : { gte: input.from }),
+                  ...(input.to === undefined ? {} : { lte: input.to }),
+                },
+              }),
+        },
+        /*
+         * Both units are summed here; **which of them a company is shown is decided above this
+         * layer**, by the controller, and the rule is that it never sees both.
+         *
+         * A company is quoted a plan price in money and everything it consumes is counted in
+         * tokens — the owner's arrangement, and the same one the reader already knows from every
+         * other AI product. The shape to refuse is money *and* tokens side by side: divide one by
+         * the other and a customer has a per-million rate to match against a public price list,
+         * which names the provider as surely as printing its name would and exposes the margin
+         * besides.
+         *
+         * So the engine counts both, because the platform plane needs the money and the company
+         * plane needs the tokens, and one query serving two readers is better than two queries
+         * that can disagree about the same ledger.
+         */
+        select: {
+          amountMinor: true,
+          currency: true,
+          inputTokens: true,
+          outputTokens: true,
+          pricingVersionId: true,
+          departmentId: true,
+          objectiveId: true,
+          engineAgentId: true,
+          actorUserId: true,
+        },
+      });
+
+      const grouped = new Map<
+        string | null,
+        {
+          key: string | null;
+          spentMinor: number;
+          tokens: number;
+          calls: number;
+          uncostedCalls: number;
+        }
+      >();
+
+      let currency: string | null = null;
+
+      for (const entry of entries) {
+        currency ??= entry.currency;
+        const key = entry[column];
+        const row = grouped.get(key) ?? {
+          key,
+          spentMinor: 0,
+          tokens: 0,
+          calls: 0,
+          uncostedCalls: 0,
+        };
+
+        row.spentMinor += entry.amountMinor;
+        row.tokens += (entry.inputTokens ?? 0) + (entry.outputTokens ?? 0);
+        row.calls += 1;
+        if (entry.pricingVersionId === null) row.uncostedCalls += 1;
+
+        grouped.set(key, row);
+      }
+
+      /*
+       * Ordered by tokens, not by money.
+       *
+       * A company reads this list to find out which department or agent is consuming the most,
+       * and it is shown tokens — a list sorted by a column the reader cannot see appears to be in
+       * no order at all. An unpriced model settles at nothing and would sink to the bottom of a
+       * money sort while having consumed plenty, which is the same bug the uncosted-calls warning
+       * exists to cover.
+       */
+      const rows = [...grouped.values()].sort((a, b) => b.tokens - a.tokens);
+
+      return {
+        by: input.by,
+        currency,
+        rows,
+        totals: {
+          spentMinor: rows.reduce((sum, row) => sum + row.spentMinor, 0),
+          tokens: rows.reduce((sum, row) => sum + row.tokens, 0),
+          calls: rows.reduce((sum, row) => sum + row.calls, 0),
+          uncostedCalls: rows.reduce((sum, row) => sum + row.uncostedCalls, 0),
+        },
+      };
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -1014,6 +1261,79 @@ export class CostEngineService {
    * percentages of the allowance so the whole engine works in one unit. An absolute hard stop
    * below the allowance is a real configuration and converting it keeps that meaning.
    */
+  /**
+   * What a company pays for AI, as a multiple of what the call costs UBoss.
+   *
+   * ## Two prices, and why there have to be two
+   *
+   * `pricing_versions` is the **buy** price: what the provider charges, published by platform
+   * staff, never shown to a company. Until this existed it was also the sell price — a company's
+   * wallet was debited the exact provider cost — so every call was sold at cost and the product
+   * earned nothing on AI. That is not a pricing policy, it is the absence of one.
+   *
+   * ## Why a multiplier rather than a second price list
+   *
+   * A per-model sell price would be a second table to keep in step with the first, and the first
+   * moves whenever a provider changes a rate or the rupee does. One multiplier over the real cost
+   * tracks both automatically: the margin is a percentage, which is what a margin is.
+   *
+   * ## A missing or unusable setting sells at cost, and says so
+   *
+   * Not at some assumed markup. Charging a company more than a call cost because a setting could
+   * not be read would be inventing a price, and the honest failure is the one that earns nothing
+   * rather than the one that overcharges. It is logged, because a platform running at zero margin
+   * is something somebody needs to know.
+   */
+  private async sellMultiplier(): Promise<number> {
+    try {
+      const row = await this.prisma.runAsPlatformOperation(() =>
+        this.prisma.client.platformSetting.findUnique({
+          where: { key: 'commercial.ai_sell_multiplier' },
+          select: { value: true },
+        }),
+      );
+
+      const value = Number(row?.value);
+      if (!Number.isFinite(value) || value < 1) {
+        this.logger.warn(
+          'commercial.ai_sell_multiplier is missing or below 1, so AI is being sold at cost. ' +
+            'Set it in the Master Console.',
+        );
+        return 1;
+      }
+      return value;
+    } catch (error) {
+      this.logger.warn(
+        `Could not read the AI sell multiplier, so AI is being sold at cost: ` +
+          `${error instanceof Error ? error.message : String(error)}`,
+      );
+      return 1;
+    }
+  }
+
+  /**
+   * What UBoss charges for a call that cost it `costMinor`.
+   *
+   * Rounded **up**, so a call that costs something is never sold for nothing. Integer arithmetic
+   * throughout: money in this product is minor units and never a float.
+   */
+  async sellPriceFor(costMinor: number): Promise<number> {
+    if (costMinor <= 0) return costMinor;
+    return Math.ceil(costMinor * (await this.sellMultiplier()));
+  }
+
+  /**
+   * An amount of sell value, as the number of UBoss Tokens a company sees.
+   *
+   * The unit, the rate and why a company counts tokens rather than rupees are all in
+   * `uboss-token.ts`, which the commercial plane reads from as well. One definition, because a
+   * second one that drifted would restate every company's allowance without changing a number
+   * anybody could see.
+   */
+  async tokensFor(minorUnits: number): Promise<number> {
+    return tokensFrom(minorUnits, await ubossTokenMinorUnits(this.prisma, this.logger));
+  }
+
   private async thresholds(scope: TenantScope): Promise<ThresholdPercents> {
     const policy = await this.prisma.runInTenantTransaction(scope, () =>
       this.prisma.client.tenantAiBudgetPolicy.findUnique({
@@ -1178,6 +1498,63 @@ export class CostEngineService {
   }
 
   /** Append one immutable ledger entry. The only way a balance ever moves. */
+  /**
+   * Move an allowance at a period boundary, and record why.
+   *
+   * Used by `BudgetResetRunner` and by nothing else. It exists here rather than in the runner
+   * because the allowance column and the ledger entry must move in one transaction — a grant that
+   * committed without its entry would make `reconcile` report drift for ever, and an entry
+   * without its grant would report an allowance the wallet does not have.
+   *
+   * **No actor.** A period turning over is not something a person did, and naming one would put a
+   * name on a decision nobody made.
+   *
+   * `Expiry` takes allowance away and `Adjustment` adds it, which is the same pairing the monthly
+   * company reset already uses. `usedMinor` is untouched: it is derived from this ledger, and the
+   * reasoning for never resetting it is in `CreditService`.
+   */
+  async recordPeriodMovement(
+    scope: TenantScope,
+    input: {
+      walletId: string;
+      kind: 'Expiry' | 'Adjustment';
+      amountMinor: number;
+      reason: string;
+      occurredAt: Date;
+    },
+  ): Promise<void> {
+    if (input.amountMinor <= 0) return;
+
+    await this.prisma.runInTenantTransaction(scope, async () => {
+      const wallet = await this.prisma.client.budgetWallet.findUniqueOrThrow({
+        where: { id: input.walletId },
+      });
+
+      const allowanceMinor =
+        input.kind === 'Expiry'
+          ? Math.max(0, wallet.allowanceMinor - input.amountMinor)
+          : wallet.allowanceMinor + input.amountMinor;
+
+      const updated = await this.prisma.client.budgetWallet.update({
+        where: { id: wallet.id },
+        data: { allowanceMinor, version: { increment: 1 } },
+      });
+
+      await this.appendEntry(scope.tenantId, {
+        walletId: wallet.id,
+        kind: input.kind,
+        amountMinor: input.amountMinor,
+        currency: wallet.currency,
+        reason: input.reason,
+        balanceAfter: {
+          allowanceMinor: updated.allowanceMinor,
+          usedMinor: updated.usedMinor,
+          reservedMinor: updated.reservedMinor,
+        },
+      });
+    });
+  }
+
   private async appendEntry(
     tenantId: string,
     input: {

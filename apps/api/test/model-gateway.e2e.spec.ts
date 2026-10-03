@@ -432,6 +432,40 @@ describe('provider profiles and the model gateway (e2e)', () => {
       }
     });
 
+    it('says on the routing screen whether the model that answers has a price', async () => {
+      /*
+       * The single most expensive silence in the product.
+       *
+       * A registered model with no pricing version estimates at zero, reserves nothing and
+       * settles with `cost_minor_units` null. So the calls happen, the tokens are spent, the
+       * allowance never depletes and the budget hard-stop never fires — and every screen looks
+       * healthy. Measured in the development database before this: 159 real model calls, 72,614
+       * tokens, not one costed row, and nothing anywhere said why.
+       *
+       * Nothing invents a price to cover it: a guessed rate would be a fabricated invoice. What
+       * changes is that the screen deciding which model answers also says whether anything it
+       * costs will ever be charged.
+       */
+      const routing = await asPlatform(agent().get('/platform/providers/routing')).expect(200);
+
+      for (const view of routing.body) {
+        for (const route of view.routes) {
+          assert.equal(
+            typeof route.hasPublishedPrice,
+            'boolean',
+            `${view.profile} does not say whether ${route.providerModelId} is priced`,
+          );
+        }
+
+        const answering = view.routes.find((route: { wouldAnswer: boolean }) => route.wouldAnswer);
+        assert.equal(
+          view.answeringModelIsUnpriced,
+          answering === undefined ? null : !answering.hasPublishedPrice,
+          `${view.profile} disagrees with its own answering route about pricing`,
+        );
+      }
+    });
+
     it('sends AGENT_FAST to the fast model and the planner to the reasoning one', async () => {
       await callGateway('AGENT_FAST');
       await callGateway('OBJECTIVE_PLANNER');

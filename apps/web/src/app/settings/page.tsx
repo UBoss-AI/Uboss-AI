@@ -64,6 +64,24 @@ function sourceLabel(source: string): string {
 }
 
 /**
+ * What a setting normally is, in words a person would use.
+ *
+ * `String(value)` is what this used to be, and it put `true`, `false`, `null` and the empty string
+ * in front of customers. The first two are a programmer's words for on and off; the last two are
+ * not words at all, and one of them produced the sentence "Default is" followed by nothing.
+ *
+ * Returns null where there is nothing worth saying, so the caller leaves the line out rather than
+ * printing half of it.
+ */
+function describeDefault(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'boolean') return value ? 'on' : 'off';
+  const text = String(value).trim();
+  if (text === '') return null;
+  return text;
+}
+
+/**
  * Company Settings — the full information architecture, with left navigation and a right panel.
  *
  * ## Matched to the reference
@@ -281,6 +299,7 @@ export default function CompanySettingsPage() {
       const SCREENS: Record<string, string> = {
         users: '/settings/users',
         billing: '/settings/billing',
+        uboss: '/profile-search',
       };
       const screen = SCREENS[key];
       if (screen !== undefined) {
@@ -513,14 +532,21 @@ export default function CompanySettingsPage() {
 
                   {category === null ? (
                     <SkeletonText lines={3} />
-                  ) : active ===
-                    'roles' ? null : category // here" banner would print the paragraph it replaced, underneath it. // The panel above is this category's content. The generic "nothing configured
-                    .settings.length === 0 ? (
+                  ) : /*
+                       Sections whose content is a panel, not a list of switches.
+
+                       Each of these renders its own screen above, and the generic "nothing is
+                       configured here" banner used to print underneath it — telling somebody
+                       reading their support tickets that the category was empty and its controls
+                       would "arrive with the prompt that owns them", which is a sentence from the
+                       build plan showing through to a customer.
+                     */
+                  active === 'roles' || active === 'help' ? null : category.settings.length ===
+                    0 ? (
                     <Banner tone="info">
                       {category.note ??
-                        'Nothing is configured in this category yet. It appears here because the ' +
-                          'full settings structure is fixed; its controls arrive with the prompt ' +
-                          'that owns them.'}
+                        'There is nothing to set here. This section is configured elsewhere in ' +
+                          'the product, or by UBoss on your behalf.'}
                     </Banner>
                   ) : (
                     <>
@@ -528,13 +554,33 @@ export default function CompanySettingsPage() {
                         <div key={setting.key} style={{ marginBottom: 18 }}>
                           {control(setting)}
                           <div className="uboss-actions" style={{ marginTop: 6 }}>
-                            <StatusBadge
-                              status={sourceLabel(setting.source)}
-                              tone={sourceTone(setting.source)}
-                            />
+                            {/*
+                              A badge only where it says something.
+
+                              Every setting has a default, so a "Default" chip on the ones nobody
+                              has touched was a label on the ordinary case — repeated down every
+                              category, drawing the eye to the settings that need no attention and
+                              away from the ones somebody had actually changed. Those still carry
+                              their badge, and now it is the only one on the screen.
+                            */}
+                            {setting.source === 'default' ? null : (
+                              <StatusBadge
+                                status={sourceLabel(setting.source)}
+                                tone={sourceTone(setting.source)}
+                              />
+                            )}
                             {setting.material ? (
                               <>
-                                <StatusBadge status="Governance" tone="purple" />
+                                {/*
+                                  "Governance" said nothing to the person reading it.
+
+                                  It marks a setting whose changes are kept — `material: true` —
+                                  and the word for that is not a branch of political science. An
+                                  administrator seeing a purple chip reading "Governance" beside a
+                                  timezone field has no way to know whether it is a warning, a
+                                  category or a permission they lack.
+                                */}
+                                <StatusBadge status="Changes are recorded" tone="purple" />
                                 <Button
                                   variant="ghost"
                                   onClick={() => {
@@ -557,12 +603,30 @@ export default function CompanySettingsPage() {
                                 </Button>
                               </>
                             ) : null}
-                            {setting.source !== 'default' &&
-                            String(setting.value) !== String(setting.defaultValue) ? (
-                              <span className="uboss-muted-3" style={{ fontSize: 12 }}>
-                                Default is {String(setting.defaultValue)}
-                              </span>
-                            ) : null}
+                            {/*
+                              "Default is " — and then nothing.
+
+                              `String(defaultValue)` printed `true`, `false`, `null`, `undefined`
+                              and the empty string straight onto the screen. A boolean setting read
+                              "Default is false", which is a programmer's word for "off"; a setting
+                              whose default is blank read "Default is" and simply stopped, mid
+                              sentence, on a customer's screen.
+
+                              `describeDefault` returns nothing at all where there is nothing to
+                              say, so the line is absent rather than truncated.
+                            */}
+                            {(() => {
+                              const said =
+                                setting.source === 'default' ||
+                                String(setting.value) === String(setting.defaultValue)
+                                  ? null
+                                  : describeDefault(setting.defaultValue);
+                              return said === null ? null : (
+                                <span className="uboss-muted-3" style={{ fontSize: 12 }}>
+                                  {`Normally ${said}`}
+                                </span>
+                              );
+                            })()}
                           </div>
                         </div>
                       ))}
@@ -722,6 +786,18 @@ export default function CompanySettingsPage() {
                       </Button>
                     </div>
                   ) : null}
+                  {/*
+                    Help & Support, a section of its own at last.
+
+                    It lived inside Security, on the reasoning that letting UBoss into your
+                    workspace is a security decision — which is true of one panel on it and of
+                    nothing else. Everything a person actually opens it for is support: raising a
+                    ticket, reading the answer, seeing whether UBoss itself is up. Somebody with a
+                    problem does not think "this is a security question", so they never found it,
+                    and the one screen that answers "who do I ask" was behind the word they had
+                    least reason to press.
+                  */}
+                  {active === 'help' ? <SupportPanel tenantId={tenantId} /> : null}
                   {active === 'security' ? (
                     <>
                       {/* The company's posture. "Login & Security" below it is the *person's* own
@@ -729,10 +805,6 @@ export default function CompanySettingsPage() {
                         question from the company's security history and stays a separate
                         screen. */}
                       <SecurityCenterPanel tenantId={tenantId} />
-                      {/* Prompt 36. On the Security screen rather than a category of its own: a
-                        company authorizing UBoss to enter their workspace is a security decision,
-                        and the approved sidebar has no Support category. */}
-                      <SupportPanel tenantId={tenantId} />
                       <div className="uboss-actions">
                         <Button variant="navy" onClick={() => router.push('/sessions')}>
                           Open my own Login &amp; Security

@@ -26,6 +26,7 @@ import { RunSchedulerService, parseBusinessCron } from '../src/runs/run-schedule
 import { RunController } from '../src/runs/run.controller.js';
 import { CompanySettingsService } from '../src/settings/company-settings.service.js';
 import { ApprovalService } from '../src/approvals/approval.service.js';
+import { PerformanceService } from '../src/performance/performance.service.js';
 import { HumanTaskService } from '../src/tasks/human-task.service.js';
 import { WorkReleaseService } from '../src/tasks/work-release.service.js';
 import { AuditEventService } from '../src/audit/audit-event.service.js';
@@ -198,6 +199,10 @@ describe('run engine, queue and scheduler (e2e)', () => {
         AgentOperatorService,
         EngineAgentService,
         ApprovalService,
+        // `HumanTaskService` scores a completion, so the module it is built in needs the
+        // service that records it. In the running product `PerformanceModule` is global;
+        // a test module assembles only what it names.
+        PerformanceService,
         HumanTaskService,
         WorkReleaseService,
         { provide: RunQueue, useClass: InlineRunQueue },
@@ -840,6 +845,73 @@ describe('run engine, queue and scheduler (e2e)', () => {
         .get(`/tenants/${tenantId}/agents/${agentId}/runs/inputs`)
         .set(WORKSPACE_HEADER, tenantId)
         .expect(401);
+    });
+
+    it('sends the work to the model, not the run identifiers', async () => {
+      /*
+       * The most expensive bug this verification found.
+       *
+       * The engine sent `Run <id>, attempt 1, correlation <id>` and nothing else — so the answers
+       * the person typed, the agent's published configuration and the objective it serves never
+       * reached the model. Proven against the running product with a real Claude call, whose
+       * reply was: *"I don't have enough information to complete this request. I received only
+       * identifiers… there's no actual task description, instructions, input data, or context."*
+       *
+       * And the run recorded `Completed` with `producedByRealModel: true`. That is the shape that
+       * makes it dangerous: the loop looked like it worked, the money was spent, and the answer
+       * was an apology — and an employee reading their operations screen would see a finished
+       * run.
+       *
+       * Asserted on what the gateway is *handed*, because that is the seam where the failure was.
+       */
+      const { agentId } = await liveAgent();
+      const seen: { instruction: string; context: string }[] = [];
+
+      const gateway = app.get(ModelGateway) as MockModelGateway;
+      const original = gateway.complete.bind(gateway);
+      (gateway as { complete: unknown }).complete = async (request: {
+        instruction: string;
+        context: string;
+      }) => {
+        seen.push({ instruction: request.instruction, context: request.context });
+        return original(request as never);
+      };
+
+      try {
+        const started = await as(
+          agent()
+            .post(`/tenants/${tenantId}/agents/${agentId}/runs`)
+            .send({
+              runtimeInputs: {
+                subject: 'The March distributor reconciliation',
+                note: 'Skip the two branches that closed.',
+              },
+            }),
+          workerUboss,
+        ).expect(201);
+
+        // The inline queue performs the run inside the POST, so by here it has already happened.
+        assert.ok(started.body.run?.id, 'no run was created');
+
+        assert.equal(seen.length, 1, 'the model was not called exactly once');
+        const context = seen[0]?.context ?? '';
+
+        // What the person actually said, which is the whole point of asking them.
+        assert.match(context, /The March distributor reconciliation/);
+        assert.match(context, /Skip the two branches that closed/);
+
+        // And it is labelled as the thing being worked on rather than folded in among settings.
+        assert.match(context, /What this run was asked to work on/i);
+
+        // A correlation id is for tracing and is no longer the entire brief.
+        assert.doesNotMatch(
+          context,
+          /^Run [0-9a-f-]+, attempt \d+, correlation/,
+          'the model is still being sent only identifiers',
+        );
+      } finally {
+        (gateway as { complete: unknown }).complete = original;
+      }
     });
   });
 

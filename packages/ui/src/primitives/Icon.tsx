@@ -30,7 +30,26 @@ const ICON_PATHS = {
   pause: 'M8 5v14M16 5v14',
   medal: 'M9 14l-2 7 5-3 5 3-2-7',
   panel: 'M9 4v16',
-  gear: 'M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1',
+  /*
+   * A cogged ring, not a sunburst.
+   *
+   * This was eight free-floating spokes around a circle, which at sidebar size reads as a sun or
+   * an asterisk — the one icon in the navigation that did not say what it was. The teeth now join
+   * the ring, so it reads as a cog at 18px.
+   */
+  /*
+   * A cog with six square teeth on a ring, drawn the way every settings icon is drawn.
+   *
+   * Two attempts preceded this one. The first was eight free-floating spokes around a circle,
+   * which reads as a sun. The second traced the cog as one continuous outline of twenty-odd short
+   * segments, and at 18px those segments round into a blob — a flower, not a gear.
+   *
+   * This is six separate teeth: short, straight, radial strokes with the round line cap the rest
+   * of the set uses, spaced at sixty degrees around the ring that `ICON_SHAPES` draws. Straight
+   * strokes stay straight at any size, which is the whole problem with tracing an outline at
+   * sidebar scale.
+   */
+  gear: 'M12 2v3M12 19v3M4.2 6.5l2.6 1.5M17.2 16l2.6 1.5M4.2 17.5l2.6-1.5M17.2 8l2.6-1.5',
   users: 'M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 5.5a3 3 0 010 6M18 20c0-2.2-.8-3.9-2-5',
   bot: 'M12 8V4M8 13h.01M16 13h.01M9 3h6',
   ops: 'M12 2v4M12 18v4M2 12h4M18 12h4',
@@ -61,6 +80,16 @@ const ICON_PATHS = {
   expand: 'M4 9V4h5M20 15v5h-5M15 4h5v5M9 20H4v-5',
   collapse: 'M9 4v5H4M15 20v-5h5M20 9h-5V4M4 15h5v5',
   frame: 'M8 10h8v4H8z',
+  /*
+   * A spanner, for building an agent rather than operating one.
+   *
+   * Agent Builder and Engine Agents both used `bot`, so two sidebar entries three rows apart were
+   * drawn identically and the only thing telling them apart was the word. They are different acts
+   * — deciding what an agent is, and running one that exists — and the sidebar should say so
+   * before the label is read.
+   */
+  wrench:
+    'M15.5 3.5a5 5 0 00-6.1 6.9L3.8 16a1.8 1.8 0 002.5 2.5l5.6-5.6a5 5 0 006.9-6.1l-3 3-2.8-2.8z',
 } as const;
 
 /** Extra shapes that cannot be expressed as a single path. */
@@ -73,7 +102,13 @@ const ICON_SHAPES: Partial<Record<IconName, ReactNode>> = {
   key: <circle cx="7" cy="15" r="4" />,
   medal: <circle cx="12" cy="9" r="6" />,
   panel: <rect x="3" y="4" width="18" height="16" rx="2" />,
-  gear: <circle cx="12" cy="12" r="3.2" />,
+  /* The ring the teeth sit on, and the hole in the middle — a cog is two circles, not one. */
+  gear: (
+    <>
+      <circle cx="12" cy="12" r="6.2" />
+      <circle cx="12" cy="12" r="2.4" />
+    </>
+  ),
   users: <circle cx="9" cy="8" r="3.2" />,
   bot: <rect x="4" y="8" width="16" height="11" rx="2" />,
   ops: <circle cx="12" cy="12" r="3" />,

@@ -17,7 +17,13 @@ import {
   StatusBadge,
 } from '@uboss/ui';
 
-import { ApiError, formatMinor, platformApi, type CompanyDetail } from '../../../../lib/api-client';
+import {
+  ApiError,
+  formatMinor,
+  platformApi,
+  type CompanyDetail,
+  type PlatformEconomics,
+} from '../../../../lib/api-client';
 import { useMasterConsole } from '../../layout';
 import { billingTone, flagTone, severityTone } from '../../dashboard/page';
 
@@ -50,9 +56,12 @@ export default function MasterCompanyDetailPage() {
   const { can } = useMasterConsole();
 
   const [detail, setDetail] = useState<CompanyDetail | null>(null);
+  const [economics, setEconomics] = useState<PlatformEconomics | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const tenantId = params.tenantId;
+  const mine = economics?.companies.find((row) => row.tenantId === tenantId) ?? null;
+  const economicsCurrency = economics?.currency ?? 'INR';
 
   const load = useCallback(() => {
     platformApi
@@ -64,6 +73,20 @@ export default function MasterCompanyDetailPage() {
   }, [tenantId]);
 
   useEffect(load, [load]);
+
+  /*
+   * The commercial position, fetched separately.
+   *
+   * It is guarded by `billing:View` while the rest of this screen is not, so somebody who may
+   * administer a company but not read its margin gets the screen rather than an error. A failure
+   * here leaves the panel out entirely, which is the honest rendering of "you cannot see this".
+   */
+  useEffect(() => {
+    platformApi
+      .economics()
+      .then(setEconomics)
+      .catch(() => setEconomics(null));
+  }, []);
 
   if (error) {
     return (
@@ -133,6 +156,63 @@ export default function MasterCompanyDetailPage() {
           delta={`${company.attentionReasons.length} signal(s)`}
         />
       </div>
+
+      {/*
+        What this one company is worth.
+
+        The detail screen could say what they were allowed to spend and never what UBoss made on
+        them. Charged and cost come from different tables: the ledger holds the sell price, and
+        `model_gateway_calls` holds the buy price. `providerCostMinor` is platform-plane and never
+        reaches a company workspace.
+      */}
+      {mine === null ? null : (
+        <Card>
+          <CardHeader
+            title="What this company is worth"
+            aside={
+              mine.costIsComplete ? null : (
+                <span className="uboss-muted-3">
+                  {mine.uncostedCalls.toLocaleString()} calls unpriced — the cost is understated
+                </span>
+              )
+            }
+          />
+          <CardBody>
+            <div
+              className="uboss-grid"
+              style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))' }}
+            >
+              <MetricCard
+                label="AI charged"
+                value={formatMinor(mine.aiChargedMinor, economicsCurrency)}
+                delta={`${mine.calls.toLocaleString()} call(s)`}
+              />
+              <MetricCard
+                label="Paid to the provider"
+                value={formatMinor(mine.providerCostMinor, economicsCurrency)}
+                delta="never shown to this company"
+              />
+              <MetricCard
+                label="AI margin"
+                value={formatMinor(mine.aiMarginMinor, economicsCurrency)}
+                delta={
+                  mine.aiChargedMinor === 0
+                    ? 'nothing charged yet'
+                    : `${Math.round((mine.aiMarginMinor / mine.aiChargedMinor) * 100)}% of what was charged`
+                }
+              />
+              <MetricCard
+                label="Subscription paid"
+                // Null, not zero — nobody paying is not the same as breaking even.
+                value={
+                  mine.paidMinor === 0 ? 'Not yet' : formatMinor(mine.paidMinor, economicsCurrency)
+                }
+                delta={`of ${formatMinor(mine.invoicedMinor, economicsCurrency)} invoiced`}
+              />
+            </div>
+          </CardBody>
+        </Card>
+      )}
 
       {company.attentionReasons.length > 0 ? (
         <Card>

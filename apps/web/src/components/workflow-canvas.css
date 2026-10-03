@@ -1,0 +1,251 @@
+/*
+ * The workflow canvas.
+ *
+ * The same visual language as the marketing site's hero — a colour per node kind, light streaming
+ * along the connectors, the gate as the one green thing — so somebody who saw the website
+ * recognises their own workspace. The difference is that here every movement is caused by a real
+ * event rather than by a loop.
+ *
+ * Nothing in this file animates unless a node carries a state class that says it is working. A
+ * still canvas is a picture of nothing happening, which is the honest thing for it to be.
+ */
+
+.wfc {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.wfc__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* Room for the longest plan without squeezing the short one. */
+  min-width: 520px;
+}
+
+/* ---------- whether the stream is connected ---------- */
+
+/*
+ * Said rather than hidden.
+ *
+ * A canvas that has lost its stream looks exactly like one where nothing is happening, and the
+ * difference matters to somebody watching a run they just started.
+ */
+.wfc__live {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--uboss-text-3);
+}
+
+.wfc__live--on::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 999px;
+  background: var(--uboss-success);
+}
+
+/* ---------- the connectors ---------- */
+
+.wfc__edge {
+  fill: none;
+  stroke: var(--uboss-border-control);
+  stroke-width: 1.25;
+}
+
+/* "At the same time" — dashed, because the eye should not read it as one thing after another. */
+.wfc__edge--parallel {
+  stroke-dasharray: 5 4;
+}
+
+.wfc__edge--condition {
+  stroke: var(--uboss-text-3);
+}
+
+/*
+ * A failure returns to a step that already ran. Amber and dashed: it is the exception rather than
+ * the route, and drawing it like the others would make every plan look like it loops by design.
+ */
+.wfc__edge--failure {
+  stroke: var(--uboss-warn, #d97706);
+  stroke-dasharray: 3 6;
+}
+
+.wfc__arrowhead {
+  fill: var(--uboss-border-control);
+}
+
+.wfc__edge-label {
+  font-size: 10.5px;
+  fill: var(--uboss-text-3);
+}
+
+/* ---------- the light, only while work is actually moving ---------- */
+
+/*
+ * `offset-path` rather than animated coordinates.
+ *
+ * The connectors are curves, and a point moved along a curve by keyframed x/y either follows a
+ * polygon or needs a keyframe every few pixels. `offset-path` takes the same path the line is
+ * drawn from, so the light travels exactly where the line goes and the two cannot drift apart.
+ *
+ * These elements are only rendered while the step above is working, so there is no case where
+ * this animates over a plan that is standing still.
+ */
+.wfc__spark {
+  fill: var(--uboss-blue, #2563eb);
+  animation: wfc-run 1.8s linear infinite;
+  offset-rotate: 0deg;
+}
+
+@keyframes wfc-run {
+  0% {
+    offset-distance: 0%;
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    offset-distance: 100%;
+    opacity: 0;
+  }
+}
+
+/* ---------- the nodes ---------- */
+
+.wfc__box {
+  fill: var(--uboss-surface);
+  stroke: var(--uboss-border);
+  stroke-width: 1.25;
+}
+
+.wfc__kind {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  fill: var(--uboss-text-3);
+}
+
+.wfc__label {
+  font-size: 13px;
+  font-weight: 600;
+  fill: var(--uboss-text);
+}
+
+.wfc__who {
+  font-size: 11px;
+  fill: var(--uboss-text-3);
+}
+
+/*
+ * A colour per kind, and the same ones the rest of the product already uses: cyan is a person's
+ * work, violet is an agent's, green is the gate. The hue carries meaning, so a reader can tell
+ * who owns a step without reading its label.
+ */
+.wfc__node--human .wfc__kind {
+  fill: var(--uboss-blue, #2563eb);
+}
+
+.wfc__node--ai .wfc__kind {
+  fill: #7c3aed;
+}
+
+.wfc__node--approval .wfc__kind {
+  fill: #047857;
+}
+
+.wfc__node--approval .wfc__box {
+  stroke: #10b981;
+}
+
+.wfc__node--goal .wfc__box {
+  fill: var(--uboss-surface-raised);
+  stroke: var(--uboss-border-control);
+}
+
+/* ---------- what each state looks like ---------- */
+
+.wfc__node--working .wfc__box {
+  stroke: var(--uboss-blue, #2563eb);
+  stroke-width: 2;
+}
+
+.wfc__node--working .wfc__who {
+  fill: var(--uboss-text-2);
+}
+
+/*
+ * The pulse on whatever is working.
+ *
+ * Bound to the state class, so it exists only while the product says that step is working. It is
+ * the one indeterminate signal on the canvas and it is deliberately quiet — a loud one would be
+ * read as a problem.
+ */
+.wfc__pulse {
+  fill: none;
+  stroke: var(--uboss-blue, #2563eb);
+  stroke-width: 2;
+  opacity: 0;
+  animation: wfc-pulse 2s ease-in-out infinite;
+}
+
+@keyframes wfc-pulse {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Waiting is not working. Nothing moves, and the border says somebody is expected to act. */
+.wfc__node--waiting .wfc__box {
+  stroke: #10b981;
+  stroke-dasharray: 5 4;
+}
+
+.wfc__node--done .wfc__box {
+  stroke: var(--uboss-success, #16a34a);
+}
+
+.wfc__node--done .wfc__who {
+  fill: var(--uboss-success, #16a34a);
+}
+
+.wfc__node--failed .wfc__box {
+  stroke: var(--uboss-danger, #dc2626);
+  stroke-width: 2;
+}
+
+.wfc__node--failed .wfc__who {
+  fill: var(--uboss-danger, #dc2626);
+}
+
+/*
+ * At rest, resolved.
+ *
+ * Somebody who has asked for less motion is not asking to be told less: the states still read
+ * through colour and the dashed borders, and only the movement stops.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .wfc__spark,
+  .wfc__pulse {
+    animation: none;
+  }
+
+  .wfc__spark {
+    opacity: 1;
+  }
+
+  .wfc__pulse {
+    opacity: 0.3;
+  }
+}

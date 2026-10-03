@@ -2869,13 +2869,42 @@ textarea.uboss-input,
   align-items: start;
 }
 
+/*
+   The settings list stays put while the panel beside it scrolls.
+
+   It had its own scrollbar but no position, so scrolling the page carried the whole column up and
+   off the top — and the panels here are long. Somebody reading the bottom of Notifications had to
+   scroll all the way back up to reach any other section, on a screen whose entire shape is "pick
+   one of these, read that".
+
+   `sticky` rather than `fixed`: it stays inside its grid column and needs no width of its own, so
+   the two-column layout is unchanged and nothing has to be kept in step with it.
+
+   The height is the viewport minus the header it sits under, so the list is as long as the screen
+   allows rather than an arbitrary 640px, and its own scrollbar takes over only when the sections
+   genuinely do not fit.
+ */
 .uboss-settings-nav {
+  align-self: start;
   background: var(--uboss-surface);
   border: 1px solid var(--uboss-border);
   border-radius: var(--uboss-radius-card);
-  padding: 8px;
-  max-height: 640px;
+  max-height: calc(100vh - 120px);
   overflow: auto;
+  padding: 8px;
+  position: sticky;
+  top: 16px;
+}
+
+/*
+   On a phone the two columns stack, and a sticky list would sit on top of the panel it opened.
+   There it scrolls away with the page, which is what a stacked layout wants.
+ */
+@media (max-width: 860px) {
+  .uboss-settings-nav {
+    max-height: none;
+    position: static;
+  }
 }
 
 /* The settings filter. It sits inside the scrolling nav rather than above it, so it stays with
@@ -3281,6 +3310,111 @@ textarea.uboss-input,
 .uboss-kv-value {
   font-weight: 600;
   text-align: right;
+}
+
+/*
+ * A value with its own edit control beside it, in the row where the value already lives.
+ *
+ * The alternative is a dialog, and a dialog for one field is three clicks to change a word. This
+ * keeps the change where the thing is: the value, the pencil, and — once pressed — the field and
+ * its Save, all on the line the reader was already looking at.
+ */
+.uboss-inline-edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/*
+ * Setting when an agent runs: the days, the time, and what to do about it.
+ *
+ * A grid rather than a row, because this is the one place in a key/value list that needs three
+ * lines — and squeezing seven day boxes, a clock and three buttons onto one line is how a control
+ * becomes something people are afraid to touch.
+ */
+/*
+ * A name in a table row, with its own small control beside it.
+ *
+ * The control only appears on hover or focus, so a list of twenty agents is twenty names rather
+ * than twenty names and twenty pencils — and it stays visible on keyboard focus, because a
+ * control somebody can reach by tabbing must not be invisible when they get there.
+ */
+.uboss-row-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.uboss-row-name .uboss-btn {
+  opacity: 0;
+  transition: opacity var(--uboss-motion-micro) var(--uboss-ease-standard);
+}
+
+tr:hover .uboss-row-name .uboss-btn,
+.uboss-row-name .uboss-btn:focus-visible {
+  opacity: 1;
+}
+
+/* Touch has no hover, so the control is simply always there. */
+@media (hover: none) {
+  .uboss-row-name .uboss-btn {
+    opacity: 1;
+  }
+}
+
+.uboss-schedule-edit {
+  display: grid;
+  gap: 10px;
+  justify-items: end;
+  text-align: right;
+}
+
+.uboss-schedule-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.uboss-schedule-days label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border: 1px solid var(--uboss-border);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* The ticked day reads as chosen without needing the checkbox to be found first. */
+.uboss-schedule-days label:has(input:checked) {
+  border-color: var(--uboss-blue);
+  color: var(--uboss-blue);
+  background: var(--uboss-surface-raised);
+}
+
+.uboss-schedule-time .uboss-input {
+  width: auto;
+  min-width: 130px;
+}
+
+.uboss-schedule-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.uboss-inline-edit .uboss-input {
+  /* Wide enough for a real agent name, and it gives the row back if the drawer is narrow. */
+  min-width: 180px;
+  flex: 1 1 180px;
+  text-align: left;
+  font-weight: 500;
 }
 
 /* ============================================================
@@ -3833,6 +3967,17 @@ textarea.uboss-input,
   centring would push its first rank off the top edge where no amount of panning is obvious. Safe
   centring falls back to the top exactly then.
 */
+/*
+ * The chart is panned by dragging it, not by scrollbars.
+ *
+ * This briefly had `overflow: auto`, on a reading that the chart could not be moved at all — six
+ * of thirty-three people on screen with no way to reach the rest. That reading was wrong: this
+ * component has always panned, by pointer drag, by wheel and by the arrow keys. The check that
+ * said otherwise had been dragging from a point that sat on top of a card.
+ *
+ * What the overflow did add was two browser scrollbars painted across the chart — the loudest
+ * thing on the screen, and a piece of the browser rather than a piece of this product. Removed.
+ */
 .uboss-org-stage {
   position: absolute;
   inset: 0;
@@ -5378,19 +5523,71 @@ table.uboss-wfg {
 
 /* ---- Workspace Chat (§7) ---- */
 
+/*
+ * Chat holds its own height, and scrolls inside itself.
+ *
+ * It used to grow the document: the conversation rail and the message history both ran down the
+ * page, so scrolling to find a conversation dragged the composer and the history off screen with
+ * it, and on a workspace with a dozen conversations the page was taller than the window before
+ * anybody had said anything. Every other chat application in the world keeps the frame still and
+ * moves the list inside it, and that is what somebody expects the moment they see two panes.
+ *
+ * The height is the content region — the viewport less the top bar and the content's own vertical
+ * padding, the same two maintained variables the Dashboard stage uses — less the row of page
+ * actions this screen puts above the frame. Those two are declared beside the padding they
+ * describe, so a breakpoint that changes the padding changes this with it; the third is local,
+ * because it is this page's own header row and nothing else shares it.
+ *
+ * `min-height` is the escape hatch: on a short window the panes stop shrinking and the page scrolls
+ * as it used to, which is better than two boxes too small to read.
+ */
+.chat-screen {
+  /* The page-actions row above this screen, plus the gap under it. */
+  --chat-actions-row: 42px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--uboss-space-4);
+  height: calc(
+    100dvh - var(--uboss-topbar-height) - var(--uboss-content-pad-y) - var(--chat-actions-row)
+  );
+  min-height: 420px;
+}
+
 .chat-layout {
   display: grid;
   grid-template-columns: 280px 1fr;
   gap: var(--uboss-space-4);
-  align-items: start;
+  align-items: stretch;
+  /* Takes the height the disclosure underneath does not — see `.chat-screen`. */
+  flex: 1;
+  min-height: 0;
 }
 
-/* One column below the sidebar's breakpoint: two panes at 900px leave neither readable. */
-@media (max-width: 900px) {
-  .chat-layout {
-    grid-template-columns: 1fr;
-  }
+/* Each side is a column that may shrink; without `min-height: 0` a grid child refuses to, and the
+   overflow further down never engages. */
+.chat-layout > * {
+  min-height: 0;
+  display: grid;
 }
+
+/*
+ * The card body on each side fills its card and clips.
+ *
+ * A flex column rather than a grid with named rows: the rail's body holds three children on a
+ * quiet workspace and four when a search is open, so any fixed row list is wrong half the time —
+ * the extra child lands in an implicit row and grows straight through the bottom of the card,
+ * which is exactly how the rail ended up 83px past its own frame.
+ */
+.chat-layout > * > .uboss-card-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The single-column treatment for this layout is with the rest of the chat rules further down,
+   where it sits beside the frame and the scrolling it has to undo. Two blocks changing the same
+   grid from opposite ends of one file is how they end up disagreeing. */
 
 .chat-search {
   margin-bottom: var(--uboss-space-3);
@@ -7090,17 +7287,50 @@ table.uboss-wfg {
   display: none;
 }
 
+/*
+ * The wires, and why they now drift.
+ *
+ * They were drawn once and stood perfectly still, which made the map read as a printed diagram.
+ * The dash travels from the core outward along each wire, so the picture is alive without
+ * claiming anything: this is not telemetry, nothing is brighter because something is happening,
+ * and the speed is the same on every wire whatever the numbers say. It is the drawing breathing.
+ *
+ * The movement is the dash pattern sliding, not the line redrawing, so the wire itself never
+ * changes shape and nothing jumps when the window is resized and the paths are measured again.
+ */
 .uboss-orch-wire {
   fill: none;
   stroke: var(--uboss-blue);
   stroke-width: 1.4;
   stroke-linecap: round;
   opacity: 0.5;
+  stroke-dasharray: 5 9;
+  animation: uboss-orch-drift var(--uboss-motion-ambient-wire) linear infinite;
 }
 
 .uboss-orch-wire--oversight {
   stroke-dasharray: 3 7;
   opacity: 0.42;
+  /* The slower side. Oversight is where work is reviewed, not where it is moving. */
+  animation-duration: calc(var(--uboss-motion-ambient-wire) * 1.6);
+}
+
+@keyframes uboss-orch-drift {
+  to {
+    stroke-dashoffset: -28;
+  }
+}
+
+/* At rest, resolved: the wires stay exactly where they are, drawn solid as they always were. */
+@media (prefers-reduced-motion: reduce) {
+  .uboss-orch-wire {
+    animation: none;
+    stroke-dasharray: none;
+  }
+
+  .uboss-orch-wire--oversight {
+    stroke-dasharray: 3 7;
+  }
 }
 
 /* ---------------------------------------------------------------- the core */
@@ -7214,6 +7444,23 @@ table.uboss-wfg {
     transform var(--uboss-motion-micro) var(--uboss-ease-standard);
 }
 
+/*
+ * The node whose card is open below.
+ *
+ * Marked, because the card underneath has to belong to something. Without this, four areas look
+ * identical while one of them is the reason there is a card on screen — and pressing a second
+ * node would look like nothing happened except the contents changing.
+ */
+.uboss-orch-node--open {
+  border-color: var(--uboss-blue);
+  box-shadow: var(--uboss-shadow-2);
+}
+
+.uboss-orch-node--open .uboss-orch-node-plate {
+  border-color: var(--uboss-blue);
+  color: var(--uboss-blue);
+}
+
 .uboss-orch-node:hover {
   border-color: var(--uboss-border-control);
   box-shadow: var(--uboss-shadow-2);
@@ -7282,7 +7529,17 @@ table.uboss-wfg {
 @media (min-width: 1100px) {
   .uboss-orch-map {
     grid-template-columns: minmax(0, 1fr) minmax(200px, 250px) minmax(0, 1fr);
-    align-items: center;
+    /*
+      Both columns start at the top; the core alone is centred.
+
+      They used to be centred as columns, which was fine while they held three tiles and four.
+      With seven on the left and five on the right, centring puts the two headings at different
+      heights — the shorter column drifts down the screen and the two sides stop looking like a
+      pair. Starting both at the top makes the left read exactly like the right, which is what
+      was asked for, and the core keeps its own `align-self` so it still sits level with the
+      middle of the diagram rather than at the top of it.
+    */
+    align-items: start;
     column-gap: 56px;
     row-gap: 0;
   }
@@ -7296,9 +7553,23 @@ table.uboss-wfg {
     max-width: 360px;
   }
 
+  /*
+    Two columns of work around the core, not two columns and a strip underneath.
+
+    Build & Setup was a full-width row below the map. It read as a footer — a separate thing that
+    happened to be on the same screen — and the client's words were that it did not look right
+    down there. It belongs in the left column with the rest of the work, under its own heading,
+    because *what the company does* and *how the company is set up* are both things on the left of
+    a diagram whose right-hand side is oversight.
+
+    The core and the oversight column span both rows, so the core stays level with the middle of
+    everything beside it rather than with the top of the first lane.
+  */
   .uboss-orch-core {
     grid-column: 2;
     grid-row: 1;
+    /* The one thing that stays centred while the columns start at the top. */
+    align-self: center;
   }
 
   .uboss-orch-lane--execution {
@@ -7310,6 +7581,19 @@ table.uboss-wfg {
     grid-column: 3;
     grid-row: 1;
   }
+
+  /*
+   * There is no Build & Setup lane any more — it is one list on the left.
+   *
+   * It went from a full-width strip under the map, to its own lane stacked under Execution, to
+   * this: the four set-up areas simply in the same column as the three work areas, one after
+   * another under one heading. Each step was the client looking at it and saying it still read as
+   * a separate thing tacked on, and they were right each time. A reader comparing seven tiles
+   * should not have to notice a rule halfway down and work out what changed.
+   *
+   * The heading widened to match — "Execution & Setup", "Where work is set up and carried out" —
+   * because a column holding Settings cannot be called Execution and still be true.
+   */
 
   /*
     One side only — an employee whose permissions reach no oversight module.
@@ -7339,23 +7623,19 @@ table.uboss-wfg {
   }
 
   /*
-    The left side is mirrored, so its plates sit against the core and its text runs outward. A
-    branch diagram whose two halves both read left-to-right has one half pointing away from the
-    thing it branches from.
+    Nothing is mirrored any more. Both columns are built the same way.
+
+    The left lane used to be a mirror image — number first, text right-aligned, icon against the
+    core, heading pushed to the right — on the reasoning that a branch diagram should have both
+    halves pointing at the thing they branch from. It is a real argument and it lost twice: first
+    on the tiles, then on the heading. The plainer one wins. Somebody reading this screen is
+    comparing twelve tiles across two columns, and anything laid out backwards on one side makes
+    the eye re-learn the pattern halfway across.
+
+    So the two columns are now identical in every respect: heading top-left over the column, then
+    cards reading icon, name, number. The only thing that differs is which side of the core they
+    sit on, and the wires say that.
   */
-  .uboss-orch-map:not(.uboss-orch-map--solo) .uboss-orch-lane--execution .uboss-orch-lane-head,
-  .uboss-orch-map:not(.uboss-orch-map--solo) .uboss-orch-lane--execution .uboss-orch-lane-nodes {
-    align-items: flex-end;
-    text-align: right;
-  }
-
-  .uboss-orch-map:not(.uboss-orch-map--solo) .uboss-orch-lane--execution .uboss-orch-node {
-    flex-direction: row-reverse;
-  }
-
-  .uboss-orch-map:not(.uboss-orch-map--solo) .uboss-orch-lane--execution .uboss-orch-node-text {
-    align-items: flex-end;
-  }
 }
 
 @keyframes uboss-orch-breathe {
@@ -8149,15 +8429,35 @@ table.uboss-wfg {
   outline-offset: var(--uboss-focus-offset);
 }
 
+/*
+ * Plainly off, not slightly faded.
+ *
+ * This was `opacity: 0.55` alone, and on a white button with a full-colour brand mark that still
+ * reads as clickable at a glance — three of them sat on the sign-in screen looking ready. The
+ * difference matters more here than anywhere: this is the screen a person meets first, and a
+ * control that looks ready and is not teaches them the product is broken rather than that their
+ * company has not set it up.
+ *
+ * The mark loses its colour, the surface goes flat, and the hover lift is already withheld above.
+ * The reason is still in the `title`, which is what says *why* — this only says *not now*.
+ */
 .uboss-provider-btn[disabled] {
   opacity: 0.55;
   cursor: not-allowed;
+  background: var(--uboss-surface-raised);
+  color: var(--uboss-text-3);
+  box-shadow: none;
 }
 
 .uboss-provider-mark {
   display: inline-flex;
   align-items: center;
   flex: none;
+}
+
+/* A brand mark in full colour is the thing that makes a disabled button look alive. */
+.uboss-provider-btn[disabled] .uboss-provider-mark {
+  filter: grayscale(1);
 }
 
 /* Apple's mark is a silhouette and follows the text, so it inverts with the theme. */
@@ -8172,6 +8472,20 @@ table.uboss-wfg {
   Microsoft" does not fit beside two others on a narrow form, and a truncated provider name is
   worse than a taller stack.
 */
+/*
+ * The one line under a sign-in form that points the other way.
+ *
+ * Quiet on purpose. Almost everybody arriving here already has an account, so this is for the
+ * minority who do not — and a prominent "Sign up" beside the Sign In button would ask every
+ * returning person to read past an offer that is not for them.
+ */
+.uboss-auth-switch {
+  margin: 18px 0 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--uboss-text-3);
+}
+
 .uboss-provider-row {
   display: flex;
   flex-direction: column;
@@ -8621,9 +8935,21 @@ tr[data-drop-target='true'] td {
    application: conversations grouped by what they are, a way to start one, and a composer
    that can carry a file.
    ============================================================ */
+/*
+ * The whole rail scrolls, not each list inside it.
+ *
+ * Direct messages, groups and department workshops are three sections of one list to a reader, and
+ * giving each its own scrollbar produced three tiny scrolling boxes stacked up — while the rail
+ * itself still grew the page, which was the complaint. One scroller, under the search box, which
+ * stays put.
+ */
 .chat-rail {
   display: grid;
+  align-content: start;
   gap: 18px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .chat-rail-section {
@@ -8757,13 +9083,25 @@ tr[data-drop-target='true'] td {
   display: grid;
   gap: 0;
   grid-template-rows: auto 1fr auto;
-  min-height: 64vh;
+  /* Fills the frame rather than setting its own height — the frame is what the window decides. */
+  min-height: 0;
+  height: 100%;
 }
 
+/*
+ * The history is the only thing in the pane that moves.
+ *
+ * `align-content: end` keeps a short conversation sitting on the composer rather than floating at
+ * the top of an empty box; once it overflows, this is what scrolls, and the title above and the
+ * composer below stay exactly where they were.
+ */
 .chat-messages {
   align-content: end;
-  max-height: none;
   min-height: 0;
+  /* `flex: 1` as well as the grid row, because the card body around it is a flex column — the
+     history takes whatever the title above and the composer below leave, either way. */
+  flex: 1;
+  overflow-y: auto;
   padding-bottom: 12px;
 }
 
@@ -8780,11 +9118,40 @@ tr[data-drop-target='true'] td {
   width: 100%;
 }
 
-/* One column on a phone, where two panes leave neither readable — the rail scrolls above the
-   conversation rather than beside it, and the pane keeps its own height. */
+/*
+ * One column on a phone, where two panes leave neither readable.
+ *
+ * The frame is given up here on purpose: stacked, there is no second pane to keep still, so the
+ * page scrolls as a page and each part takes the height it needs. Holding a viewport-height frame
+ * on a phone would put a scrollbar inside a scrollbar.
+ */
 @media (max-width: 900px) {
+  .chat-screen {
+    height: auto;
+    min-height: 0;
+  }
+
+  .chat-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 0;
+  }
+
+  .chat-layout > * > * {
+    overflow: visible;
+  }
+
+  .chat-list {
+    max-height: 42vh;
+  }
+
   .chat-pane {
     min-height: 56vh;
+    height: auto;
+  }
+
+  .chat-messages {
+    overflow-y: visible;
   }
 }
 
@@ -9047,4 +9414,898 @@ tr[data-drop-target='true'] td {
   .uboss-bar-label {
     grid-column: 1 / -1;
   }
+}
+
+/* ============================================================
+   Five more ways for a report to draw itself
+
+   Everything below exists because the bars above were being asked to answer questions bars cannot
+   answer. A proportion drawn as two bars makes the reader do the division; days drawn as bars
+   sorted by height are no longer days; a single figure drawn as a single bar is a picture of a
+   number, which is worse than the number. Each block here is one question's shape.
+
+   Colour is data on this screen and nowhere else in the product. The six inks come from the chart
+   palette in tokens.css, and they are only ever used where the parts of a chart are genuinely
+   different things — slices of a ring, parts of a split bar, bands of an aging chart. A ranking of
+   nine people is one ink: nine colours would say those nine people differ in kind.
+   ============================================================ */
+
+/* The inks, once, for every legend swatch, slice and segment that needs one. */
+.is-ink-1 {
+  --uboss-ink: var(--uboss-chart-1);
+}
+
+.is-ink-2 {
+  --uboss-ink: var(--uboss-chart-2);
+}
+
+.is-ink-3 {
+  --uboss-ink: var(--uboss-chart-3);
+}
+
+.is-ink-4 {
+  --uboss-ink: var(--uboss-chart-4);
+}
+
+.is-ink-5 {
+  --uboss-ink: var(--uboss-chart-5);
+}
+
+.is-ink-6 {
+  --uboss-ink: var(--uboss-chart-6);
+}
+
+/*
+   Inside an overview panel the chart is not a card of its own — the panel is the card. Without
+   this it drew a bordered box inside a bordered box, which is how a dashboard starts to look like
+   a filing form.
+ */
+.uboss-report-chart.is-compact {
+  background: none;
+  border: 0;
+  gap: 10px;
+  margin-bottom: 0;
+  padding: 0;
+}
+
+/*
+   A bar is one ink with a sweep along it.
+
+   The sweep is a gradient between two neighbours of the same family, not between two data colours:
+   it gives the bar some depth at a glance without implying that its left end and its right end
+   mean different things.
+ */
+.uboss-bar-fill {
+  background: var(--uboss-chart-sweep);
+}
+
+/*
+   Bands of an aging chart get warmer as they get longer, and only bands do.
+
+   Here the position genuinely is a severity — a fortnight is worse than a day — so the colour
+   repeats what the axis already says instead of adding a meaning of its own.
+ */
+.uboss-bar-fill.is-band-1 {
+  background: var(--uboss-chart-1);
+}
+
+.uboss-bar-fill.is-band-2 {
+  background: var(--uboss-chart-6);
+}
+
+.uboss-bar-fill.is-band-3 {
+  background: var(--uboss-chart-2);
+}
+
+.uboss-bar-fill.is-band-4 {
+  background: var(--uboss-chart-4);
+}
+
+.uboss-bar-fill.is-band-5 {
+  background: var(--uboss-chart-5);
+}
+
+/* ---- The ring: parts of one whole ----
+
+   `ring`, not `donut`, and the name matters.
+
+   These classes were first written as `uboss-donut-*`, which is what the Company Workspace
+   Dashboard's locked two-slice chart is already called. Both then matched, and the dashboard's
+   `uboss-donut-draw` animation — which drives `stroke-dasharray` — won: it set `none` over every
+   slice length this chart had computed. A presentation attribute loses to any author rule, so the
+   ring drew as one solid violet circle with a six-colour legend beside it claiming otherwise. It
+   rendered, it animated, nothing reported a thing.
+ */
+
+.uboss-ring-wrap {
+  align-items: center;
+  display: grid;
+  gap: 20px;
+  grid-template-columns: 190px 1fr;
+}
+
+.uboss-ring-wrap.is-compact {
+  gap: 14px;
+  grid-template-columns: 132px 1fr;
+}
+
+.uboss-ring {
+  display: block;
+  height: auto;
+  width: 100%;
+}
+
+.uboss-ring-track {
+  fill: none;
+  stroke: var(--uboss-bg-2);
+  stroke-width: 20;
+}
+
+.uboss-ring-arc {
+  fill: none;
+  stroke: var(--uboss-ink);
+  stroke-width: 20;
+  /* From twelve o'clock, clockwise — where every clock, dial and pie chart starts. */
+  transform: rotate(-90deg);
+  transform-origin: center;
+  transition:
+    stroke-dasharray var(--uboss-motion-panel) var(--uboss-ease),
+    stroke-dashoffset var(--uboss-motion-panel) var(--uboss-ease);
+}
+
+/*
+   The ring draws itself once, on arrival.
+
+   A rotation, not a redraw: the arcs already carry their true lengths, and this turns the whole
+   group through a quarter as it fades up. Nothing about the figures changes while it runs, so a
+   screenshot taken mid-animation still shows the right chart. `--uboss-motion-signature` is the
+   token reserved for exactly this — the donut draw is what it was named for.
+ */
+.uboss-ring-arcs {
+  animation: uboss-ring-in var(--uboss-motion-signature) var(--uboss-ease-enter) both;
+  transform-origin: center;
+}
+
+@keyframes uboss-ring-in {
+  from {
+    opacity: 0;
+    transform: rotate(-90deg);
+  }
+
+  to {
+    opacity: 1;
+    transform: rotate(0deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .uboss-ring-arcs {
+    animation: none;
+  }
+}
+
+.uboss-ring-total {
+  fill: var(--uboss-text);
+  font-family: var(--uboss-font-mono);
+  font-size: 30px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-anchor: middle;
+}
+
+.uboss-ring-caption {
+  fill: var(--uboss-text-3);
+  font-size: 12px;
+  letter-spacing: var(--uboss-tracking-caps);
+  text-anchor: middle;
+  text-transform: uppercase;
+}
+
+/* ---- Legends: the same four columns for every chart that has one ---- */
+
+.uboss-chart-legend,
+.uboss-ring-legend {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  /*
+     A legend is a reading, not a layout.
+
+     Left to fill the card, its percentages ended up hard against the right edge — half a metre
+     from the slice they describe on a wide screen, so the eye had to travel the whole card to pair
+     a colour with its figure.
+   */
+  max-width: 460px;
+  padding: 0;
+}
+
+.uboss-chart-legend > li,
+.uboss-ring-legend > li {
+  align-items: center;
+  display: grid;
+  font-size: var(--uboss-font-size-sm);
+  gap: 10px;
+  grid-template-columns: 10px 1fr auto auto;
+}
+
+.uboss-chart-swatch {
+  background: var(--uboss-ink);
+  border-radius: 3px;
+  display: block;
+  height: 10px;
+  width: 10px;
+}
+
+.uboss-chart-name {
+  color: var(--uboss-text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+   The percentage is the figure people read off a chart, so it is the one set in the numeric face
+   and the heavier weight. The raw count follows it, quieter, because a percentage of an unstated
+   whole is how a reporting screen misleads without saying anything false.
+ */
+.uboss-chart-figure {
+  color: var(--uboss-text);
+  font-family: var(--uboss-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* ---- The line: days ---- */
+
+.uboss-line {
+  display: block;
+  height: auto;
+  overflow: visible;
+  width: 100%;
+}
+
+.uboss-line-path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.5;
+}
+
+/*
+   A wash under the line, not a second reading of it.
+
+   It carries no figure of its own — it is there so the eye finds the line's shape at a glance on a
+   pale card. It fades to nothing at the baseline, deliberately: a solid block under the curve
+   reads as an area chart, which would claim the space under the line is a quantity.
+ */
+.uboss-line-wash-top {
+  stop-color: var(--uboss-chart-1);
+  stop-opacity: 0.28;
+}
+
+.uboss-line-wash-bottom {
+  stop-color: var(--uboss-chart-1);
+  stop-opacity: 0;
+}
+
+.uboss-line-ink-start {
+  stop-color: var(--uboss-chart-1);
+}
+
+.uboss-line-ink-end {
+  stop-color: var(--uboss-chart-6);
+}
+
+.uboss-line-grid {
+  stroke: var(--uboss-chart-grid);
+  stroke-width: 1;
+}
+
+.uboss-line-dot {
+  fill: var(--uboss-chart-6);
+  stroke: var(--uboss-surface);
+  stroke-width: 2.5;
+}
+
+/* The worst day, marked in the warning ink, because that is the point somebody is looking for. */
+.uboss-line-peak {
+  fill: var(--uboss-chart-4);
+  stroke: var(--uboss-surface);
+  stroke-width: 2;
+}
+
+/* First day at the left, last day at the right — the two ends are the axis. */
+.uboss-line-axis {
+  color: var(--uboss-text-3);
+  display: flex;
+  font-family: var(--uboss-font-mono);
+  font-size: var(--uboss-font-size-xs);
+  justify-content: space-between;
+  margin: 0;
+}
+
+.uboss-chart-single {
+  margin: 0;
+}
+
+.uboss-chart-single strong {
+  font-family: var(--uboss-font-mono);
+  font-size: 26px;
+  font-variant-numeric: tabular-nums;
+  margin-right: 8px;
+}
+
+/* ---- The share: one bar, cut up ---- */
+
+.uboss-share {
+  background: var(--uboss-bg-2);
+  border-radius: var(--uboss-radius-pill);
+  display: flex;
+  gap: 2px;
+  height: 20px;
+  overflow: hidden;
+  width: 100%;
+}
+
+/*
+   Two pixels between the parts, and that is the whole trick.
+
+   Without the gap, two slices of similar weight in different colours still read as one bar with a
+   colour change somewhere in it. The hairline makes them two things, which is what they are.
+ */
+.uboss-share-part {
+  background: var(--uboss-ink);
+  display: block;
+}
+
+/* ---- The tally: the answer is one number ---- */
+
+.uboss-tally {
+  align-items: baseline;
+  display: flex;
+  gap: 10px;
+  margin: 0;
+}
+
+.uboss-tally-figure {
+  color: var(--uboss-chart-1);
+  font-family: var(--uboss-font-mono);
+  font-size: 38px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+
+.uboss-tally.is-concern .uboss-tally-figure {
+  color: var(--uboss-chart-4);
+}
+
+.uboss-tally-unit {
+  color: var(--uboss-text-2);
+  font-size: var(--uboss-font-size-body);
+}
+
+.uboss-tally-detail {
+  font-size: var(--uboss-font-size-sm);
+  margin: 0;
+}
+
+/* ---- The status strip: a handful of things with states ---- */
+
+.uboss-statuses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/*
+   A chip says the name and what happened, never a colour alone.
+
+   The tone is the quick read; the sentence under the name is the actual answer, and it is what
+   somebody using a screen reader — or anybody who does not know which green this product means —
+   gets instead.
+ */
+.uboss-status-chip {
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-control);
+  column-gap: 8px;
+  display: grid;
+  grid-template-columns: 8px 1fr;
+  padding: 9px 12px;
+  row-gap: 2px;
+}
+
+.uboss-status-dot {
+  border-radius: var(--uboss-radius-pill);
+  height: 8px;
+  margin-top: 5px;
+  width: 8px;
+}
+
+.uboss-status-name {
+  color: var(--uboss-text);
+  font-size: var(--uboss-font-size-sm);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uboss-status-said {
+  font-size: var(--uboss-font-size-xs);
+  grid-column: 2;
+}
+
+.uboss-status-chip.is-well {
+  background: var(--uboss-success-050);
+  border-color: var(--uboss-success-050);
+}
+
+.uboss-status-chip.is-well .uboss-status-dot {
+  background: var(--uboss-success);
+}
+
+.uboss-status-chip.is-well .uboss-status-said {
+  color: var(--uboss-success);
+}
+
+.uboss-status-chip.is-unproven {
+  background: var(--uboss-bg-2);
+}
+
+.uboss-status-chip.is-unproven .uboss-status-dot {
+  background: var(--uboss-text-3);
+}
+
+.uboss-status-chip.is-unproven .uboss-status-said {
+  color: var(--uboss-text-3);
+}
+
+.uboss-status-chip.is-bad {
+  background: var(--uboss-danger-050);
+  border-color: var(--uboss-danger-050);
+}
+
+.uboss-status-chip.is-bad .uboss-status-dot {
+  background: var(--uboss-danger);
+}
+
+.uboss-status-chip.is-bad .uboss-status-said {
+  color: var(--uboss-danger);
+}
+
+/* ============================================================
+   The overview: the questions, before the reports
+
+   Whoever opens Reports is not looking for the Dependency Waiting report. They want to know
+   whether anything is stuck, and they had to know which of eleven tabs that lived behind before
+   the product would tell them. These panels answer first; each one opens the report it was drawn
+   from.
+   ============================================================ */
+.uboss-overview {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  margin-top: 16px;
+}
+
+.uboss-overview-panel {
+  background: var(--uboss-surface);
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-panel);
+  cursor: pointer;
+  display: grid;
+  gap: 12px;
+  padding: 18px 20px 16px;
+  position: relative;
+  transition:
+    border-color var(--uboss-motion-fast) var(--uboss-ease),
+    box-shadow var(--uboss-motion-fast) var(--uboss-ease),
+    transform var(--uboss-motion-fast) var(--uboss-ease);
+}
+
+/*
+   A hairline of the brand along the top edge, drawn only on the panel being pointed at.
+
+   Always-on it would be six coloured rules competing with six charts. On hover it is what tells
+   somebody the whole card is a door, before they find out by clicking.
+ */
+.uboss-overview-panel::before {
+  background: var(--uboss-chart-sweep);
+  border-radius: var(--uboss-radius-panel) var(--uboss-radius-panel) 0 0;
+  content: '';
+  height: 3px;
+  left: 0;
+  opacity: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+  transition: opacity var(--uboss-motion-fast) var(--uboss-ease);
+}
+
+.uboss-overview-panel:hover {
+  border-color: var(--uboss-border-control);
+  box-shadow: var(--uboss-shadow-2);
+  transform: translateY(-2px);
+}
+
+.uboss-overview-panel:hover::before {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .uboss-overview-panel:hover {
+    transform: none;
+  }
+}
+
+/*
+   The heading is the button, and the card only follows it.
+
+   The whole card is clickable because that is what a pointer expects of a panel, but a card is not
+   a control: making the card itself the button would announce the entire chart as one enormous
+   label. The question is the control, so a keyboard reaches it in one tab and hears "What cannot
+   start yet, button" — which is the thing being opened.
+ */
+.uboss-overview-question {
+  margin: 0;
+}
+
+.uboss-overview-question > button {
+  background: none;
+  border: 0;
+  color: var(--uboss-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--uboss-font-size-h2);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  padding: 0;
+  text-align: left;
+}
+
+.uboss-overview-panel:hover .uboss-overview-question > button {
+  color: var(--uboss-chart-1);
+}
+
+.uboss-overview-question > button:focus-visible {
+  border-radius: var(--uboss-radius-control);
+  outline: 2px solid var(--uboss-border-control-focus);
+  outline-offset: 3px;
+}
+
+.uboss-overview-open {
+  border-top: 1px solid var(--uboss-border-2);
+  color: var(--uboss-text-3);
+  font-size: var(--uboss-font-size-xs);
+  margin: 0;
+  padding-top: 10px;
+}
+
+.uboss-overview-panel:hover .uboss-overview-open {
+  color: var(--uboss-chart-1);
+}
+
+/* On a phone the ring goes above its legend rather than squeezing both onto one line. */
+@media (max-width: 640px) {
+  .uboss-ring-wrap,
+  .uboss-ring-wrap.is-compact {
+    gap: 14px;
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+
+  .uboss-ring {
+    max-width: 200px;
+  }
+
+  .uboss-ring-legend {
+    width: 100%;
+  }
+}
+
+/* ============================================================
+   A heading on the left, its controls on the right
+
+   `uboss-row uboss-row--between` is written on four screens — Reports, Profile Search, Knowledge &
+   Data, Support — and neither class was ever defined. Nothing failed: the div stayed a block, the
+   heading and its controls stacked, and every one of those headers has been reading as two
+   paragraphs of chrome above the content. The markup was right the whole time.
+
+   Wrapping rather than shrinking: at a phone width the controls drop under the heading, which is
+   what they should do, instead of squeezing a select down to nothing.
+   ============================================================ */
+.uboss-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--uboss-space-3);
+}
+
+.uboss-row--between {
+  justify-content: space-between;
+}
+
+/*
+   A field sitting among a header's controls is a control, not a form row.
+
+   `.uboss-field` carries a bottom margin for stacked forms, which pushed the period selector out
+   of line with the button beside it; and its caption is a span rather than a <label>, so it
+   inherited none of the label styling and read as body text floating above the control.
+ */
+.uboss-actions .uboss-field {
+  margin-bottom: 0;
+}
+
+.uboss-actions .uboss-field > span {
+  color: var(--uboss-text-2);
+  display: block;
+  font-size: var(--uboss-font-size-xs);
+  font-weight: 600;
+  letter-spacing: var(--uboss-tracking-caps);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+
+/*
+   Every tab visible, on a strip that offers twelve of them.
+
+   The scrolling version is right for a control with a few options in a narrow space. Reports is
+   neither: its twelve reports ran off the right edge mid-word with nothing to say they continued,
+   so a reader had no way to know that six of the company's reports existed. Wrapped, the strip is
+   two lines and the whole catalogue is in front of them.
+ */
+.uboss-seg--wrap {
+  display: flex;
+  flex-wrap: wrap;
+  overflow-x: visible;
+  row-gap: 2px;
+}
+
+/*
+   The Settings list, banded by what somebody came to do.
+
+   A dozen sections in one column, in no order anybody could name, meant reading the whole list
+   every time to find one. These headings are the sidebar's own, in the colour a settings panel
+   needs rather than the sidebar's ink — the nav sits on a card here, not on the violet chrome.
+ */
+.uboss-settings-nav-group {
+  color: var(--uboss-text-3);
+  font-size: var(--uboss-font-size-xs);
+  font-weight: 600;
+  letter-spacing: var(--uboss-tracking-caps);
+  margin: 16px 10px 4px;
+  text-transform: uppercase;
+}
+
+/* The first band sits under the search box and needs no extra air above it. */
+.uboss-settings-nav > div:first-of-type .uboss-settings-nav-group {
+  margin-top: 4px;
+}
+
+/* ============================================================
+   A row's actions, behind one control
+
+   Users & Access rendered every action as its own button in every row — Access · Change role ·
+   Suspend · Offboard, plus Invite, Resend or Cancel — so twenty-four people made ninety-odd
+   buttons on one screen. The cost that matters is not the clutter: Offboard sat a few pixels from
+   Suspend, a temporary hold beside the end of somebody's employment, rendered identically on a row
+   that scrolls.
+   ============================================================ */
+.uboss-rowmenu {
+  display: inline-block;
+  position: relative;
+}
+
+.uboss-rowmenu-trigger {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--uboss-radius-control);
+  color: var(--uboss-text-2);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 4px 8px;
+}
+
+.uboss-rowmenu-trigger:hover {
+  background: var(--uboss-bg-2);
+  border-color: var(--uboss-border);
+  color: var(--uboss-text);
+}
+
+.uboss-rowmenu-trigger:focus-visible {
+  outline: var(--uboss-focus-outline);
+  outline-offset: var(--uboss-focus-offset);
+}
+
+/*
+   Right-aligned, because the control sits in the last column: opening leftwards keeps the panel
+   on screen instead of pushing the table sideways.
+ */
+.uboss-rowmenu-panel {
+  background: var(--uboss-surface);
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-card);
+  box-shadow: var(--uboss-shadow-3);
+  display: grid;
+  min-width: 190px;
+  padding: 4px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 40;
+}
+
+.uboss-rowmenu-item {
+  background: none;
+  border: 0;
+  border-radius: var(--uboss-radius-control);
+  color: var(--uboss-text);
+  cursor: pointer;
+  display: grid;
+  font: inherit;
+  font-size: var(--uboss-font-size-sm);
+  gap: 1px;
+  padding: 7px 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.uboss-rowmenu-item:hover:not(:disabled) {
+  background: var(--uboss-bg-2);
+}
+
+.uboss-rowmenu-item:focus-visible {
+  outline: var(--uboss-focus-outline);
+  outline-offset: calc(var(--uboss-focus-offset) * -1);
+}
+
+.uboss-rowmenu-item:disabled {
+  color: var(--uboss-text-3);
+  cursor: not-allowed;
+}
+
+.uboss-rowmenu-detail {
+  color: var(--uboss-text-3);
+  font-size: var(--uboss-font-size-xs);
+}
+
+/*
+   Ending somebody's employment sits below a line, in the danger tone, at the bottom.
+
+   All three do the same job: make it the one thing in the menu you cannot reach by accident on
+   the way to something else.
+ */
+.uboss-rowmenu-item.is-destructive {
+  border-top: 1px solid var(--uboss-border-2);
+  color: var(--uboss-danger);
+  margin-top: 4px;
+  padding-top: 9px;
+}
+
+.uboss-rowmenu-item.is-destructive:hover:not(:disabled) {
+  background: var(--uboss-danger-050);
+}
+
+/*
+   Skip to content — the first thing in the tab order, and invisible until it is focused.
+
+   Tab from the address bar and the first twelve stops were the sidebar, on every screen, with no
+   way past. Somebody using a keyboard had to walk the whole menu to reach the page they had
+   already opened.
+
+   Positioned off the top rather than hidden with `display: none` or `visibility`, because both of
+   those remove an element from the tab order — a skip link that cannot be focused is a skip link
+   that does nothing.
+ */
+.uboss-skip-link {
+  background: var(--uboss-surface);
+  border: 1px solid var(--uboss-border-control-focus);
+  border-radius: var(--uboss-radius-control);
+  color: var(--uboss-text);
+  font-size: var(--uboss-font-size-sm);
+  font-weight: 600;
+  left: 12px;
+  padding: 10px 14px;
+  position: fixed;
+  text-decoration: none;
+  top: -100px;
+  transition: top var(--uboss-motion-fast) var(--uboss-ease);
+  z-index: 100;
+}
+
+.uboss-skip-link:focus-visible {
+  outline: var(--uboss-focus-outline);
+  outline-offset: var(--uboss-focus-offset);
+  top: 12px;
+}
+
+/* Under reduced motion it appears rather than slides: the point is that it is reachable. */
+@media (prefers-reduced-motion: reduce) {
+  .uboss-skip-link {
+    transition: none;
+  }
+}
+
+/*
+   The content region takes focus when the skip link sends somebody to it.
+
+   Without `tabindex="-1"` on the target, following an in-page link moves the *reading* position in
+   some browsers and the keyboard focus in none of them — so the next Tab went back to the second
+   sidebar item and the link achieved nothing. It is not focusable by tabbing, only by being
+   targeted, and it draws no outline of its own.
+ */
+.uboss-content:focus {
+  outline: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Choosing a plan, and buying tokens — Settings → Billing
+   ---------------------------------------------------------------------------
+
+   The plan cards sit side by side so the three can be compared at a glance, which is the whole
+   job of this block: a company deciding whether to move is comparing a price, a seat count and a
+   button, and reading them in a column means holding two of them in your head.
+
+   `minmax(0, 1fr)` rather than `1fr`: a `1fr` track has an implicit `auto` minimum, so a long
+   plan name would push the row wider than its container instead of wrapping.
+*/
+.uboss-plan-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 220px));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.uboss-plan-choice {
+  display: grid;
+  /* The button sits on the bottom edge of every card whatever the text above it does, so the row
+     of buttons reads as one row rather than a staircase. */
+  grid-template-rows: auto auto auto 1fr;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-control);
+  background: var(--uboss-surface);
+}
+
+/* The plan they are on is marked, not hidden: "what am I on now" is the first question somebody
+   opening this card is answering, and removing it would make them go and look elsewhere. */
+.uboss-plan-choice--current {
+  border-color: var(--uboss-border-control);
+  background: var(--uboss-surface-raised);
+}
+
+.uboss-plan-choice__price {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--uboss-text);
+}
+
+.uboss-plan-choice__seats {
+  margin: 0;
+  font-size: 13px;
+}
+
+/* Recent top-ups, under the form that buys one. Short on purpose: this is a receipt stub, and the
+   full history belongs with the invoices rather than inside the form that creates them. */
+.uboss-topup-history {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.uboss-topup-history > li {
+  padding-top: 8px;
+  border-top: 1px solid var(--uboss-border-2);
 }

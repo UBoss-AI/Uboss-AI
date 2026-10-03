@@ -3427,3 +3427,85 @@ watching it refuse. Neither of those depends on anybody's judgement.
 Also worth stating plainly: **only one account has access to this repository today**, so there is no
 second reviewer to name even as policy. That must change before the first production promotion, and
 it is a staffing fact rather than a configuration one.
+
+**S-347 — A company is shown tokens, never per-usage money. Both together is the leak.**
+The thing worth refusing is the **pair**. Given a charge and a token count on the same screen, a
+customer divides one by the other, reads off a per-million rate, matches it against a public price
+list, and so learns both which provider is behind the product and what the margin is. Either figure
+alone divides into nothing.
+
+So the split is: **money on the plan, tokens on the usage.** A company is quoted a plan price in
+rupees and everything it consumes is counted in tokens — the owner's arrangement, and the same one
+every reader already knows from other AI products. `GET /tenants/:id/cost/usage` strips `spentMinor`
+and `currency` before answering; `EngineAgentView.usage` carries `promptTokens`,
+`completionTokens`, `totalTokens` and `calls` and no money field at all, with a test asserting that
+none of its keys matches `/minor|currency|cost|price|amount/`. The Engine Agents column is headed
+**Tokens**, and Settings reports tokens used and AI calls.
+
+**This paragraph replaced its own opposite, written earlier the same day.** The first version had
+the company shown settled spend and no tokens, on the reasoning above — which was right about the
+danger and wrong about which half to keep. The owner settled it the other way, and the reasoning
+survives the reversal intact because it was never an argument for money: it was an argument against
+the pair.
+
+What did not change: the engine still counts both, because the platform plane reads the money and
+one query serving two readers cannot disagree with itself about the same ledger. The AI **budget**
+is also still money-denominated — the plan's `aiAllowanceMinor`, the wallet, the thresholds and the
+hard stop — so a company's budget administration screens remain in rupees. Converting that to a
+token allowance is a decided but unstarted change (schema, wallet, reservations, alerts, master
+console), deliberately not attempted on a release day.
+
+**S-348 — Signing in with Google creates nothing.**
+There is no public signup in UBoss, and that does not stop being true because the identity arrived
+from an identity provider everybody already has. After Google confirms an email address,
+`resolveSocialIdentity` requires three things before a session exists: a company that has **verified
+that email's domain**, a user who already exists, and a membership that is **Active**. Any of the
+three missing is a refusal, and the refusal does not say which — a sign-in screen that distinguishes
+"no such user" from "not a member here" is a membership oracle for any domain somebody cares to try.
+
+The social request is also told apart from a company's own `sso_connection` by
+`SsoAuthRequest.flowKind` rather than by the absence of a tenant id, because "no tenant" is a shape
+a bug can produce and a named flow kind is not. The browser never names a tenant on the start call;
+it is refused if it tries, since choosing which company to be admitted to is not the browser's to
+make.
+
+**S-349 — A company's plan is an authorization input, not a navigation hint.**
+`entitled_modules` decided what the sidebar drew and nothing else. The fourteen `COMPANY_MODULES`
+are exactly the fourteen the Enterprise plan sells, and the role templates grant permissions for
+all of them whatever the plan, so a company on Pilot — five modules — held grants for fourteen and
+the API answered fourteen. Proven on the development company, which is on `growth` and not
+entitled to `performance`: `GET /tenants/:id/performance/me` returned 200 with real data. Hiding a
+link was the whole control, and a URL got round it.
+
+`PermissionGuard` now asks `ModuleEntitlementService` before it asks the role engine, because the
+plan is the blunter fact: telling somebody their _role_ is insufficient, when the truth is their
+company never bought the feature, sends them to an administrator who cannot help them.
+`AuthorizationContext.visibleModules` is narrowed the same way so the sidebar and the API agree —
+without that, closing the hole would have created a navigation item that leads to a refusal.
+`granted` is untouched: it is the decision data the engine reads.
+
+**A company with no subscription is not gated.** It is not on a plan, and reading an absent
+subscription as "entitled to nothing" would lock a company out of its own product; two such
+companies already exist in development. `null` means _do not gate_ and is a different answer from
+an empty set.
+
+Both injection sites take the service `@Optional`, or every test module that builds a Nest
+application would have to provide the commercial plane for reasons unrelated to what it tests.
+That is a fail-open, so `global-guard-order.spec.ts` asserts against the real `AppModule` graph
+that the provider is reachable. Unwire the commercial plane and that test fails, which is the only
+reason the optionality is acceptable.
+
+**S-350 — The browser is sent the headers it needs, by both front ends.**
+The API has `helmet()`. The web application had nothing: no `X-Frame-Options`, no
+`frame-ancestors`, no `nosniff`, no referrer policy — on the origin that holds the session cookie
+and renders the approvals screen. Any site could frame the signed-in console, overlay its own
+controls, and have an administrator approve or grant something they never saw.
+
+Both applications now send `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors
+'none'`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: strict-origin-when-cross-origin`,
+with `Permissions-Policy` additionally denying camera, microphone, geolocation and payment in the
+product. Verified against the running servers.
+
+A `script-src` policy is deliberately absent: one strict enough to matter needs per-request nonces
+through Next's inline bootstrap, and one added blind fails on pages nobody tests. That is a named
+next step, not an oversight. HSTS stays with Caddy, which terminates TLS — one policy, one place.

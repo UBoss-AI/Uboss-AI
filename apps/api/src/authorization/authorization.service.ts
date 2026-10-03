@@ -45,6 +45,7 @@ import {
 } from '../persistence/tenant-context.js';
 import { getActor } from '../request-context/request-context.js';
 import { isPlatformActor, isTenantActor } from '../request-context/authenticated-actor.js';
+import { ModuleEntitlementService } from '../commercial/module-entitlement.service.js';
 import { SECURITY_ACTIONS, SecurityEventPublisher } from '../auth/security-event.publisher.js';
 
 /** Registered by whichever module owns the hierarchy. Absent until Prompt 12. */
@@ -142,8 +143,33 @@ export class AuthorizationService {
     private readonly repository: AuthorizationRepository,
     private readonly securityEvents: SecurityEventPublisher,
     private readonly platform: PlatformRepository,
+    @Optional() private readonly entitlement?: ModuleEntitlementService,
     @Optional() @Inject(HIERARCHY_RESOLVER) private readonly hierarchy?: HierarchyResolver,
   ) {}
+
+  /**
+   * Narrow a module list to the ones this company's plan includes.
+   *
+   * A company with no subscription is not on a plan, so the list is returned untouched — the
+   * same rule `ModuleEntitlementService` applies, stated in one place and read here.
+   *
+   * ## Why the service is optional
+   *
+   * It lives in the commercial plane, and many test modules build this service without it. Made
+   * required, every one of them fails on a dependency that has nothing to do with what they
+   * test. Absent therefore means "this process has no commercial plane", and the list passes
+   * through unnarrowed.
+   *
+   * That is a fail-open, so it is not left to trust: `global-guard-order.spec.ts` asserts
+   * against the **whole application module** that the commercial plane is in the graph. Unwire
+   * it and that test fails, which is the point of it.
+   */
+  private async withinPlan(tenantId: string, modules: ModuleKey[]): Promise<ModuleKey[]> {
+    if (this.entitlement === undefined) return modules;
+    const entitled = await this.entitlement.modulesFor(tenantId);
+    if (entitled === null) return modules;
+    return modules.filter((module) => entitled.has(module));
+  }
 
   /**
    * Resolve one person's authority in one company.
@@ -222,7 +248,20 @@ export class AuthorizationService {
       userId,
       userType: (membership.userType as UserType) ?? 'InternalUser',
       granted: granted as PermissionSet,
-      visibleModules: Object.keys(granted) as ModuleKey[],
+      /*
+       * What this person holds a grant on, **and** what their company bought.
+       *
+       * `granted` stays whole: it is the decision data, and the engine's refusals read it. This
+       * is the derived list the navigation and the dashboard tiles render from, and it has to
+       * agree with what the API will actually answer — `PermissionGuard` now refuses a module
+       * the plan does not include, and a sidebar entry that leads to a refusal is worse than no
+       * entry at all.
+       *
+       * The company's own comment on `filterNavigation` already states the principle: one
+       * mechanism, read twice. Before this, the two mechanisms were different — the sidebar read
+       * grants and the plan read nothing.
+       */
+      visibleModules: await this.withinPlan(scope.tenantId, Object.keys(granted) as ModuleKey[]),
       // No assignment means no scope at all — not "own work". Someone with a membership and no
       // role assignment can do nothing, which is the correct fail-closed answer.
       scope: widestGrant(grants) ?? { kind: 'OwnWork', selectedResourceIds: [] },

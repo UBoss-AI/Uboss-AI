@@ -49,6 +49,19 @@ export const SETTINGS_CATEGORIES = [
   'appearance',
   'uboss',
   'performance',
+  /*
+   * Help & Support — a category with no settings of its own, and open to everybody.
+   *
+   * It holds no switches: the screen behind it raises a ticket with UBoss and shows whether UBoss
+   * itself is up. It is listed here because a Settings section only exists for a reader when the
+   * server returns a category of the same name, so a section without one is a section nobody ever
+   * sees.
+   *
+   * Deliberately absent from `CATEGORY_VISIBILITY`. Every other category is gated on a grant;
+   * asking for help is not something a company should be able to take away from an employee, and
+   * a person who cannot raise a ticket has no way to report that they cannot raise a ticket.
+   */
+  'help',
 ] as const;
 
 export type SettingsCategory = (typeof SETTINGS_CATEGORIES)[number];

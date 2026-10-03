@@ -20,6 +20,12 @@ export default function HowItWorksPage() {
         accent="A team in motion."
         description="See how an outcome becomes a governed workflow, how the work is shared, and where people keep authority."
         primary="See it with your workflow"
+        secondary={{ label: 'The skills behind it', href: '/skills' }}
+        facts={[
+          { value: '4 steps', label: 'Objective, plan, work, decision' },
+          { value: 'Human', label: 'Approval is a step, not a setting' },
+          { value: 'Hash-chained', label: 'Every action lands in an append-only trail' },
+        ]}
       />
       <HowItWorks />
       <Workforce />

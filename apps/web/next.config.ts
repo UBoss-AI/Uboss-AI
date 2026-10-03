@@ -81,6 +81,58 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [{ source: '/api/:path*', destination: `${apiTarget}/:path*` }];
   },
+
+  /**
+   * The headers a browser needs, which this application sent none of.
+   *
+   * The API is behind `helmet()`. The web application — the thing a person's browser actually
+   * loads, and where the session cookie lives — answered with no `X-Frame-Options`, no
+   * `frame-ancestors`, no `nosniff` and no referrer policy. So any site on the internet could
+   * put the signed-in admin console in an invisible iframe, overlay its own buttons, and have
+   * an administrator approve, grant or delete something they never saw. Clickjacking against an
+   * approvals screen is not a theoretical risk; it is the screen's whole purpose turned around.
+   *
+   * ## Why `frame-ancestors` and `X-Frame-Options` both
+   *
+   * `frame-ancestors` is the one modern browsers honour and `X-Frame-Options` is what older ones
+   * and some corporate proxies read. They say the same thing here, so there is nothing to drift.
+   *
+   * ## Why this is not a full Content-Security-Policy
+   *
+   * A `script-src` policy strict enough to be worth having needs per-request nonces threaded
+   * through Next's inline bootstrap, and one added blind breaks the application in ways that
+   * only show on some pages. `frame-ancestors` needs none of that and closes the gap that
+   * matters most for an authenticated console. The rest is a deliberate next step, not an
+   * oversight.
+   *
+   * ## Why no HSTS here
+   *
+   * Caddy terminates TLS and sets `Strict-Transport-Security` itself. Setting it here as well
+   * would mean two places to change one policy, and over plain HTTP in development it is ignored
+   * anyway.
+   */
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
+          // A response whose type the browser second-guesses is how a stored file becomes script.
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          // A workspace URL can carry a company's id and an objective's; it has no business
+          // arriving at a third-party site as a referrer.
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          // Nothing in this product uses them, and a page that cannot ask cannot be tricked into
+          // asking.
+          {
+            key: 'Permissions-Policy',
+            value: 'camera=(), microphone=(), geolocation=(), payment=()',
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -33,6 +34,7 @@ import {
   GrantPlatformRoleDto,
   ResolveServiceAlertDto,
   RevokePlatformRoleDto,
+  SetPlanPriceDto,
   SetSubscriptionDto,
   UpdateFeatureFlagDto,
   UpdatePlanDto,
@@ -167,6 +169,30 @@ export class PlatformConsoleController {
   @RequirePermission({ module: 'companies', action: 'View' })
   async companies(): Promise<unknown> {
     return { companies: await this.console.companies() };
+  }
+
+  /**
+   * What every company pays, what it costs to serve, and the difference.
+   *
+   * Filed under `billing` rather than `companies`, so it moves with the commercial permission
+   * and not with the one a support engineer uses to open a customer's configuration. That is a
+   * filing decision, not a restriction: every platform role reads every platform module by
+   * design — `readAcrossPlatform()` in `platform-roles.ts` says so — and what separates the roles
+   * is what they may administer. Anyone who reaches the console already reads the platform.
+   */
+  @Get('economics')
+  @RequirePermission({ module: 'billing', action: 'View' })
+  async economics(@Query('from') from?: string, @Query('to') to?: string): Promise<unknown> {
+    const parse = (value: string | undefined, name: string): Date | undefined => {
+      if (value === undefined) return undefined;
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) {
+        throw new BadRequestException(`${name} is not a date.`);
+      }
+      return parsed;
+    };
+
+    return this.console.economics({ from: parse(from, 'from'), to: parse(to, 'to') });
   }
 
   @Get('companies/:tenantId')
@@ -341,6 +367,35 @@ export class PlatformConsoleController {
       sortOrder: body.sortOrder,
     });
     return { id: plan.id, code: plan.code, active: plan.active, version: plan.version };
+  }
+
+  /** What this plan costs in each currency it is sold in. */
+  @Get('plans/:planId/prices')
+  @RequirePermission({ module: 'plans', action: 'View' })
+  async planPrices(@Param('planId', new ParseUUIDPipe()) planId: string): Promise<unknown> {
+    return { prices: await this.administration.planPrices(planId) };
+  }
+
+  /**
+   * Set — or remove — this plan's price in one currency.
+   *
+   * `Administer`, because this is the figure a customer's card is charged. One currency per call:
+   * a payload carrying the whole list would mean a currency left out of it was a currency
+   * silently deleted.
+   */
+  @Put('plans/:planId/prices/:currency')
+  @RequirePermission({ module: 'plans', action: 'Administer' })
+  async setPlanPrice(
+    @Param('planId', new ParseUUIDPipe()) planId: string,
+    @Param('currency') currency: string,
+    @Body() body: SetPlanPriceDto,
+  ): Promise<unknown> {
+    return this.administration.setPlanPrice({
+      actorUserId: this.currentUserId(),
+      planId,
+      currency,
+      priceMinor: body.priceMinor,
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -635,13 +690,15 @@ export class PlatformConsoleController {
           module: moduleForMasterNavKey('credits'),
           title: 'AI Usage & Allowance',
           state: 'live',
-          // Prompts 30 and 31 built this. What remains blocked is narrower and worth stating
-          // precisely: the numbers are real but small, because no provider has ever been
-          // called — every gateway call is answered by the mock adapter at zero cost.
+          // Prompts 30 and 31 built this. The note that used to sit here said no provider had
+          // ever been called and that revenue reporting did not exist. Both stopped being true:
+          // Anthropic has answered real calls, and `GET economics` now puts what a company paid
+          // next to what it cost to serve. What is left is narrower and worth stating exactly.
           blockedOn:
-            'Usage is metered for real, but no provider credential has been supplied, so every ' +
-            'call costs nothing and the figures stay at zero until one is. Revenue reporting ' +
-            'across companies is not built: this is per-company allowance and history.',
+            'Usage is metered for real and the provider is reached for real. A model with no ' +
+            'published price still settles at zero, so spend is understated until every model ' +
+            'in the routing table is priced — `answeringModelIsUnpriced` on the routing screen ' +
+            'names which, and `uncostedCalls` on economics says how many charges it affected.',
           available:
             'Per-company allowance, used, reserved and remaining; the immutable cost ledger; ' +
             'credit requests with Finance approval, adjustment and rejection; credit grants ' +
@@ -653,14 +710,15 @@ export class PlatformConsoleController {
           module: moduleForMasterNavKey('providers'),
           title: 'Providers & Models',
           state: 'live',
-          // Prompt 29 built this. What remains blocked is narrower and worth stating precisely:
-          // adapters exist for Anthropic and OpenAI and have never been run, because no
-          // credential has been supplied. Provider *health* in the sense of live latency and
-          // error rates needs real calls to measure.
+          // Prompt 29 built this. The note here used to say no credential had been supplied and
+          // that every call recorded producedByRealModel = false. Neither is true any more —
+          // Anthropic has been reached and has answered. The OpenAI adapter still has not.
           blockedOn:
-            'No provider credential has been supplied, so the Anthropic and OpenAI adapters are ' +
-            'implemented but have never reached a provider. Live health and error rates need ' +
-            'real calls; every gateway call today records producedByRealModel = false.',
+            'The Anthropic adapter reaches a real provider and its calls record ' +
+            'producedByRealModel = true. The OpenAI adapter is implemented and has never been ' +
+            'run against a credential. A registered model with no published pricing version ' +
+            'costs nothing when it answers — the routing view reports that per model, because ' +
+            'nothing here will invent a price to cover it.',
           available:
             'Provider profiles and modes, models and their capabilities, logical model profile ' +
             'routing with fallback policy, immutable pricing versions, provider/model lifecycle, ' +

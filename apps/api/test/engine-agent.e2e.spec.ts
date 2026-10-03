@@ -22,6 +22,7 @@ import { AgentBuilderService } from '../src/agents/agent-builder.service.js';
 import { EngineAgentController } from '../src/agents/engine-agent.controller.js';
 import { EngineAgentService } from '../src/agents/engine-agent.service.js';
 import { ApprovalService } from '../src/approvals/approval.service.js';
+import { PerformanceService } from '../src/performance/performance.service.js';
 import { HumanTaskService } from '../src/tasks/human-task.service.js';
 import { WorkReleaseService } from '../src/tasks/work-release.service.js';
 import { AuditEventService } from '../src/audit/audit-event.service.js';
@@ -180,6 +181,10 @@ describe('engine agent registry and versioning (e2e)', () => {
         // Prompt 28: activation approval is now a real record this service creates and
         // `activateVersion` verifies, so the registry cannot be tested without it.
         ApprovalService,
+        // `HumanTaskService` scores a completion, so the module it is built in needs the
+        // service that records it. In the running product `PerformanceModule` is global;
+        // a test module assembles only what it names.
+        PerformanceService,
         HumanTaskService,
         WorkReleaseService,
         TenantContextService,
@@ -731,6 +736,28 @@ describe('engine agent registry and versioning (e2e)', () => {
       assert.equal(view.usage.hasData, false);
       assert.equal(view.usage.promptTokens, null);
       assert.equal(view.usage.completionTokens, null);
+      assert.equal(view.usage.totalTokens, null);
+      assert.equal(view.usage.calls, 0);
+    });
+
+    it('never puts a money figure on an agent a company can see', async () => {
+      /*
+       * A company is quoted a plan price in money and everything it consumes is counted in
+       * tokens. Both on one screen is the shape worth refusing: divide the charge by the tokens
+       * and a reader has a per-million rate to match against a published price list, which names
+       * the provider and exposes the margin. One without the other divides into nothing.
+       *
+       * So this checks the field names rather than a rendered string — a `spentMinor` that no
+       * screen draws today is still a money figure sitting in a company's payload, one `JSON`
+       * away from being drawn beside the token count by somebody who did not know why not.
+       */
+      const { agentId } = await liveAgent();
+      const view = await registry().view({ scope: scope(), actorUserId: managerUserId, agentId });
+
+      const money = Object.keys(view.usage).filter((field) =>
+        /minor|currency|cost|price|amount/i.test(field),
+      );
+      assert.deepEqual(money, [], `usage carries money fields: ${money.join(', ')}`);
     });
 
     it('offers only the actions the status permits', async () => {

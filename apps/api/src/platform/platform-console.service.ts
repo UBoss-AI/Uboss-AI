@@ -164,8 +164,27 @@ export class PlatformConsoleService {
     const companies = rows.map((row) => PlatformConsoleService.summarise(row));
     const currency = rows.find((row) => row.currency)?.currency ?? 'USD';
 
-    const aiConsumedMinor = rows.reduce((sum, row) => sum + row.aiConsumedMinor, 0);
-    const aiAllowanceMinor = rows.reduce((sum, row) => sum + row.aiAllowanceMinor, 0);
+    /*
+     * The platform's AI position, added up from the wallets that enforce it.
+     *
+     * This summed `ai_consumed_minor` across the subscriptions — a column nothing writes — so the
+     * tile read zero consumed against a real allowance, for every company, always, and the screen
+     * labelled it "demo data" because at the time that was true. It is not true any more: the
+     * wallets carry settled spend derived from an append-only ledger, and this is the one place an
+     * operator looks to see what the platform is spending against what it has sold.
+     *
+     * Company scope only. Departmental and per-agent wallets are slices of the same company
+     * allowance, and adding them would count the same money twice.
+     */
+    const companyWallets = await this.prisma.runAsPlatformOperation(() =>
+      this.prisma.client.budgetWallet.findMany({
+        where: { scope: 'Company', subjectId: null },
+        select: { allowanceMinor: true, usedMinor: true },
+      }),
+    );
+
+    const aiConsumedMinor = companyWallets.reduce((sum, wallet) => sum + wallet.usedMinor, 0);
+    const aiAllowanceMinor = companyWallets.reduce((sum, wallet) => sum + wallet.allowanceMinor, 0);
 
     return {
       kpis: {
@@ -189,7 +208,8 @@ export class PlatformConsoleService {
           consumedMinor: aiConsumedMinor,
           allowanceMinor: aiAllowanceMinor,
           currency,
-          provenance: 'demo',
+          // Measured now, and the label on the tile follows this rather than repeating a word.
+          provenance: 'measured',
         },
         openIncidents: {
           value: totals.openAlerts,
@@ -269,6 +289,186 @@ export class PlatformConsoleService {
   async companies(): Promise<CompanySummary[]> {
     const rows = await this.platform.companyOverview();
     return rows.map((row) => PlatformConsoleService.summarise(row));
+  }
+
+  /**
+   * What each company pays, what it costs to serve, and the difference.
+   *
+   * ## Why this did not exist
+   *
+   * The console's own module status said it: "Revenue reporting across companies is not built:
+   * this is per-company allowance and history." Every number needed was already stored — invoices
+   * carry what was billed and paid, the cost ledger carries what the provider charged — and
+   * nothing put them in the same row. So the one question a platform operator has about a
+   * customer, *are we making money on them*, had no answer anywhere in the product.
+   *
+   * ## Three numbers, not two
+   *
+   * - **`aiChargedMinor`** — what the company was charged for AI, from its own ledger. This is
+   *   the sell price, which is what UBoss earns on AI.
+   * - **`providerCostMinor`** — what those calls cost UBoss, from `model_gateway_calls`. The buy
+   *   price, which never leaves this plane.
+   * - **`paidMinor`** — what the company actually paid on its invoices. Subscription revenue.
+   *
+   * `aiMarginMinor` is the first minus the second, and it is the number the AI business runs on.
+   * Reading the margin off the ledger alone would be wrong now that the two prices differ: the
+   * ledger holds the sell price, and subtracting it from itself gives zero for ever.
+   *
+   * ## Paid, not billed
+   *
+   * Subscription margin is computed against what a company actually **paid**, never what it was
+   * invoiced. An unpaid invoice is a claim; treating it as revenue reports a profit on a customer
+   * who has not paid. What was invoiced is returned beside it so the gap is visible.
+   *
+   * ## An understated cost says so
+   *
+   * A call whose model had no published price costs nothing and is charged nothing, so
+   * `uncostedCalls` travels with every row: a margin computed over calls that were never priced
+   * is **too good**, and a row that did not say so would be a confident wrong answer.
+   * `costIsComplete` is the plain reading of it.
+   *
+   * ## Nothing is inferred from an empty table
+   *
+   * A company with no paid invoice gets `marginMinor: null`, not zero. Zero would mean "we broke
+   * even on them"; null means "nobody has paid us yet", and those are not the same sentence.
+   */
+  async economics(input: { from?: Date | undefined; to?: Date | undefined } = {}): Promise<{
+    currency: string;
+    companies: {
+      tenantId: string;
+      name: string;
+      planCode: string | null;
+      invoicedMinor: number;
+      paidMinor: number;
+      /** What the company was charged for AI — the sell price, from its own ledger. */
+      aiChargedMinor: number;
+      /** What those calls cost UBoss — the buy price. Never leaves this plane. */
+      providerCostMinor: number;
+      /** Charged minus cost. The number the AI business runs on. */
+      aiMarginMinor: number;
+      marginMinor: number | null;
+      calls: number;
+      uncostedCalls: number;
+      costIsComplete: boolean;
+    }[];
+    totals: {
+      invoicedMinor: number;
+      paidMinor: number;
+      aiChargedMinor: number;
+      providerCostMinor: number;
+      aiMarginMinor: number;
+      marginMinor: number | null;
+      uncostedCalls: number;
+    };
+    generatedAt: string;
+  }> {
+    const window =
+      input.from === undefined && input.to === undefined
+        ? {}
+        : {
+            ...(input.from === undefined ? {} : { gte: input.from }),
+            ...(input.to === undefined ? {} : { lte: input.to }),
+          };
+    const windowed = Object.keys(window).length === 0 ? {} : { occurredAt: window };
+    const invoiceWindow = Object.keys(window).length === 0 ? {} : { createdAt: window };
+
+    return this.prisma.runAsPlatformOperation(async () => {
+      const [tenants, subscriptions, invoices, charges] = await Promise.all([
+        this.prisma.client.tenant.findMany({ select: { id: true, name: true } }),
+        this.prisma.client.tenantSubscription.findMany({
+          select: { tenantId: true, plan: { select: { code: true } } },
+        }),
+        this.prisma.client.billingInvoice.findMany({
+          where: invoiceWindow,
+          select: {
+            tenantId: true,
+            amountDueMinor: true,
+            amountPaidMinor: true,
+            currency: true,
+          },
+        }),
+        this.prisma.client.costLedgerEntry.findMany({
+          where: { kind: { in: ['Settle', 'Refund'] }, ...windowed },
+          select: {
+            tenantId: true,
+            amountMinor: true,
+            currency: true,
+            pricingVersionId: true,
+          },
+        }),
+      ]);
+
+      /*
+       * The buy side, read from the gateway rather than the ledger.
+       *
+       * The ledger holds what the company was *charged*; `model_gateway_calls` holds what the
+       * call *cost*. They stopped being the same number the day AI started being sold at a
+       * margin, and taking the cost from the ledger would now subtract a figure from itself and
+       * report zero margin for ever.
+       */
+      const gatewayCalls = await this.prisma.client.modelGatewayCall.findMany({
+        where: {
+          outcome: 'Succeeded',
+          ...(Object.keys(window).length === 0 ? {} : { occurredAt: window }),
+        },
+        select: { tenantId: true, costMinorUnits: true },
+      });
+
+      const planOf = new Map(
+        subscriptions.map((row) => [row.tenantId, row.plan?.code ?? null] as const),
+      );
+
+      const rows = tenants.map((tenant) => {
+        const theirInvoices = invoices.filter((row) => row.tenantId === tenant.id);
+        const theirCharges = charges.filter((row) => row.tenantId === tenant.id);
+
+        const invoicedMinor = theirInvoices.reduce((sum, row) => sum + row.amountDueMinor, 0);
+        const paidMinor = theirInvoices.reduce((sum, row) => sum + row.amountPaidMinor, 0);
+        const aiChargedMinor = theirCharges.reduce((sum, row) => sum + row.amountMinor, 0);
+        const providerCostMinor = gatewayCalls
+          .filter((row) => row.tenantId === tenant.id)
+          .reduce((sum, row) => sum + (row.costMinorUnits ?? 0), 0);
+        const uncostedCalls = theirCharges.filter((row) => row.pricingVersionId === null).length;
+
+        return {
+          tenantId: tenant.id,
+          name: tenant.name,
+          planCode: planOf.get(tenant.id) ?? null,
+          invoicedMinor,
+          paidMinor,
+          aiChargedMinor,
+          providerCostMinor,
+          aiMarginMinor: aiChargedMinor - providerCostMinor,
+          // Null, not zero — see the docblock. Nobody paying is not the same as breaking even.
+          marginMinor: paidMinor === 0 ? null : paidMinor - providerCostMinor,
+          calls: theirCharges.length,
+          uncostedCalls,
+          costIsComplete: uncostedCalls === 0,
+        };
+      });
+
+      const totalPaid = rows.reduce((sum, row) => sum + row.paidMinor, 0);
+      const totalCost = rows.reduce((sum, row) => sum + row.providerCostMinor, 0);
+
+      return {
+        // One currency across the platform: every wallet is opened in INR and every invoice is
+        // issued in the currency of the plan that produced it. Read from the data rather than
+        // assumed, so the day that stops being true this reports the first one it saw instead of
+        // silently adding two currencies together.
+        currency: invoices[0]?.currency ?? charges[0]?.currency ?? 'INR',
+        companies: rows.sort((a, b) => b.paidMinor - a.paidMinor),
+        totals: {
+          invoicedMinor: rows.reduce((sum, row) => sum + row.invoicedMinor, 0),
+          paidMinor: totalPaid,
+          aiChargedMinor: rows.reduce((sum, row) => sum + row.aiChargedMinor, 0),
+          providerCostMinor: totalCost,
+          aiMarginMinor: rows.reduce((sum, row) => sum + row.aiMarginMinor, 0),
+          marginMinor: totalPaid === 0 ? null : totalPaid - totalCost,
+          uncostedCalls: rows.reduce((sum, row) => sum + row.uncostedCalls, 0),
+        },
+        generatedAt: new Date().toISOString(),
+      };
+    });
   }
 
   /**

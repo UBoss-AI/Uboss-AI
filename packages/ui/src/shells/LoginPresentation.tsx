@@ -19,6 +19,14 @@ export interface LoginPresentationProps {
    * offers a company workspace.
    */
   variant?: 'customer' | 'platform';
+  /**
+   * What the right-hand column is for, for a screen reader.
+   *
+   * It was the literal string "Sign in", which stopped being true when registration started using
+   * this same panel: somebody arriving at `/start` with a screen reader was told they had reached
+   * a sign-in. The default keeps every existing caller unchanged.
+   */
+  formLabel?: string;
 }
 
 /**
@@ -34,16 +42,25 @@ export interface LoginPresentationProps {
  * Task. All six remain until the client approves a different grouping. They are presentation
  * only and grant no application access.
  *
- * There is NO public company signup anywhere in UBoss: the Master Console provisions customer
- * companies, and "Activate" only enables an already-invited identity. This component therefore
- * offers no sign-up affordance, by design.
+ * This panel offers no sign-up affordance of its own, and that is still deliberate: a person who
+ * arrives at `/login` is somebody their company already invited, and a "create an account" link
+ * on a sign-in screen for an enterprise product invites people to try to make one who cannot.
+ *
+ * Self-serve registration does exist — `/start`, where a company proves its work address and its
+ * domain — and it **renders inside this same panel**, so the two front doors are one composition
+ * seen twice rather than two designs that drift apart. That is why `formLabel` exists: the right
+ * column is not always a sign-in, and saying so to a screen reader costs one prop.
  */
-export function LoginPresentation({ children, variant = 'customer' }: LoginPresentationProps) {
+export function LoginPresentation({
+  children,
+  variant = 'customer',
+  formLabel = 'Sign in',
+}: LoginPresentationProps) {
   const left = LOGIN_CAPABILITIES.filter((capability) => capability.side === 'left');
   const right = LOGIN_CAPABILITIES.filter((capability) => capability.side === 'right');
 
   if (variant === 'platform') {
-    return <PlatformLoginPresentation>{children}</PlatformLoginPresentation>;
+    return <PlatformLoginPresentation formLabel={formLabel}>{children}</PlatformLoginPresentation>;
   }
 
   return (
@@ -224,7 +241,7 @@ export function LoginPresentation({ children, variant = 'customer' }: LoginPrese
         </div>
       </section>
 
-      <section className="uboss-login-right" aria-label="Sign in">
+      <section className="uboss-login-right" aria-label={formLabel}>
         <div className="uboss-login-card">{children}</div>
       </section>
     </div>
@@ -251,7 +268,13 @@ export function LoginPresentation({ children, variant = 'customer' }: LoginPrese
  *
  * The grid behind them is a motif and nothing more. It is drawn, not measured.
  */
-function PlatformLoginPresentation({ children }: { children?: ReactNode }) {
+function PlatformLoginPresentation({
+  children,
+  formLabel,
+}: {
+  children?: ReactNode;
+  formLabel: string;
+}) {
   return (
     <div className="uboss-login uboss-login--platform">
       <section className="uboss-login-left" aria-label="About the UBoss platform console">
@@ -342,7 +365,7 @@ function PlatformLoginPresentation({ children }: { children?: ReactNode }) {
         </div>
       </section>
 
-      <section className="uboss-login-right" aria-label="Sign in">
+      <section className="uboss-login-right" aria-label={formLabel}>
         <div className="uboss-login-card">{children}</div>
       </section>
     </div>
@@ -353,23 +376,38 @@ function PlatformLoginPresentation({ children }: { children?: ReactNode }) {
 const PLATFORM_CONSOLE_WORDS = ['Platform', 'Governance', 'Operations', 'Security'] as const;
 
 /**
- * There is no public signup, said plainly on every screen that could be mistaken for one.
+ * Who can let you in, said plainly on every screen that could be mistaken for a signup.
  *
  * Kept as a component so it cannot drift between the login, activation and access-help screens.
+ *
+ * ## It used to say something that stopped being true
+ *
+ * The wording was "No public signup. A UBoss company account is set up for you." That was a fact
+ * about the product for most of its life and stopped being one when self-serve registration
+ * shipped: a company *can* now set itself up, by proving a work address and control of a domain.
+ *
+ * The two sentences never appeared on one screen — this notice renders on `/activate` and on the
+ * sign-in flow's workspace step, neither of which offers `/start`. So nobody was reading a denial
+ * directly above an invitation. It was simply a claim the product had outgrown, on a screen a
+ * stranger reads.
+ *
+ * What is still true — and is the part worth saying — is the half about *people*. Nobody joins a
+ * company that already exists by signing up; they are invited, and "Activate" only enables an
+ * identity somebody already created. A company starting its own workspace is a different door
+ * and lets nobody into somebody else's company.
  *
  * The wording avoids UBoss's own vocabulary on purpose. It used to read "Tenants are provisioned
  * from the UBoss Master Console", which is true and is written for us: a customer does not have a
  * word for a tenant, has never seen the Master Console, and does not need to learn that UBoss has
- * an inside in order to understand that they cannot sign themselves up. The fact is the same; only
- * the audience changed.
+ * an inside in order to understand how they get in.
  */
 export function NoPublicSignupNotice() {
   return (
     <p className="uboss-auth-note">
       <Icon name="shield" size={16} />
       <span>
-        No public signup. A UBoss company account is set up for you, and &ldquo;Activate&rdquo; only
-        enables an identity that has already been invited.
+        You cannot add yourself to a company. Someone there invites you, and &ldquo;Activate&rdquo;
+        enables the identity they created.
       </span>
     </p>
   );

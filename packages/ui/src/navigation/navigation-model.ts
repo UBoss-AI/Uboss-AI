@@ -80,7 +80,9 @@ export const COMPANY_NAV: readonly NavGroup[] = [
     items: [
       { key: 'hierarchy', label: 'Hierarchy', icon: 'tree', href: '/hierarchy' },
       { key: 'objective', label: 'Objective Optimization', icon: 'target', href: '/objective' },
-      { key: 'agent-builder', label: 'Agent Builder', icon: 'bot', href: '/agent-builder' },
+      // A spanner, not a bot: Engine Agents three rows below is the bot. Building an agent and
+      // running one are different acts, and two identical icons made the sidebar say otherwise.
+      { key: 'agent-builder', label: 'Agent Builder', icon: 'wrench', href: '/agent-builder' },
     ],
   },
   {
@@ -126,12 +128,16 @@ export const COMPANY_NAV: readonly NavGroup[] = [
        * Access is three tabs of tables and bulk operations; in an eight-hundred-pixel modal it
        * would be worse than the page, not tidier.
        */
-      {
-        key: 'profile-search',
-        label: 'UBoss Profile Search',
-        icon: 'search',
-        href: '/profile-search',
-      },
+      /*
+       * UBoss Profile Search is in Settings now, not here.
+       *
+       * It is an occasional lookup — somebody's UBoss history, checked before a hire — and it sat
+       * permanently in ADMINISTRATION at the same weight as the screens people are in all day.
+       * The client asked for it to live in Settings; it is a section there, and selecting it opens
+       * this same screen.
+       *
+       * The route is untouched and the screen is unchanged. What moved is the door.
+       */
       { key: 'settings', label: 'Settings', icon: 'gear', href: '/settings' },
     ],
   },
@@ -186,12 +192,36 @@ export const MASTER_NAV: readonly NavGroup[] = [
   },
 ] as const;
 
+/**
+ * The bands the Settings list is divided into.
+ *
+ * A flat list of nineteen is a list nobody reads: General, Users & Access, Roles & Permissions,
+ * Objective Rules, Agent Policy, Tokens & Usage, Integrations, Notifications, Security, Billing,
+ * Appearance — in no order anybody could name, so finding anything meant reading all of them every
+ * time. Grouped by what somebody came to do, most of the list stops being in the way.
+ *
+ * Deliberately six words, each one plain: this is the screen where the product's own vocabulary
+ * does the most damage, and a band called "Governance" would put the reader back where they
+ * started.
+ */
+export const SETTINGS_GROUPS = [
+  'This company',
+  'People',
+  'The work',
+  'Money',
+  'Trust and safety',
+  'Help',
+] as const;
+export type SettingsGroup = (typeof SETTINGS_GROUPS)[number];
+
 export interface SettingsSection {
   key: string;
   label: string;
   /** Label shown instead of `label` for non-admin roles, per the approved UI reference. */
   personalLabel?: string;
   description: string;
+  /** Which band it belongs to. The list is drawn in `SETTINGS_GROUPS` order. */
+  group: SettingsGroup;
 }
 
 /**
@@ -213,6 +243,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
      */
     personalLabel: 'How this company works',
     description: 'Company and workspace identity.',
+    group: 'This company',
   },
   /*
    * Organization is not a section, because Hierarchy is already a screen.
@@ -222,22 +253,41 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
    * building a hierarchy expects to find it, and a second door into the same room is the
    * duplication this list was cleared of.
    */
-  { key: 'users', label: 'Users & Access', description: 'Employees, guests and invitations.' },
+  {
+    key: 'users',
+    label: 'Users & Access',
+    description: 'Employees, guests and invitations.',
+    group: 'People',
+  },
   {
     key: 'roles',
     label: 'Roles & Permissions',
     description: 'Roles, scope, module visibility and allowed actions.',
+    group: 'People',
   },
+  /*
+   * "Objective Rules", not "Objective & Approval Rules".
+   *
+   * The approval gates this named were removed with the roles that carried them: an administrator
+   * defines the work and an employee does it, and nothing sits between those two to gate an
+   * objective. The one setting the category actually holds is `objective.closure_sign_off`, which
+   * is about who agrees a *closure* — a different thing from a gate between steps.
+   *
+   * Left pointing at something that no longer exists, the label promised a screen full of gates to
+   * configure and delivered one closure question, which reads as a screen that failed to load.
+   */
   {
     key: 'objective',
-    label: 'Objective & Approval Rules',
-    description: 'Objective lifecycle and approval gates.',
+    label: 'Objective Rules',
+    description: 'Objective lifecycle, and who signs off a closure.',
+    group: 'The work',
   },
   {
     key: 'agent',
     label: 'Agent Policy',
     personalLabel: 'My Agent Preferences',
-    description: 'Engine Agent governance.',
+    description: 'How Engine Agents are allowed to run.',
+    group: 'The work',
   },
   /*
    * Skills & AI is deliberately absent.
@@ -249,25 +299,48 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
    * still what gives those pins a meaning. This removes a door, not a room.
    */
   // providers: Providers and model profiles are a platform decision, not a company setting.
-  { key: 'tokens', label: 'Tokens & Cost', description: 'Budgets and the AI cost lifecycle.' },
+  {
+    key: 'tokens',
+    /*
+     * "Cost" came off the label when the screen stopped showing any.
+     *
+     * A company is quoted a plan price in money and counts everything it consumes in tokens, so
+     * this screen reports tokens and calls and no amounts at all. Leaving "Cost" in the name
+     * would send somebody looking for an invoice to a page that has none — Billing is where that
+     * lives, two rows down.
+     */
+    label: 'Tokens & Usage',
+    /*
+     * "Budgets" and "cost" stay in the sentence, and that is not padding.
+     *
+     * The search box matches descriptions as well as titles, so the words people hunt for have to
+     * be in here — and a reader looking for this screen types "budget" or "cost" long before they
+     * type "tokens". Rewriting it to the plainer phrase alone quietly made it unfindable.
+     */
+    description: 'Budgets and cost: what AI work is allowed to use, and what it has used.',
+    group: 'Money',
+  },
   // schedules: Scheduling policy is set per objective, where the schedule is.
   {
     key: 'integrations',
     label: 'Integrations & Connections',
     personalLabel: 'My Connections',
     description: 'Connected systems and their health.',
+    group: 'The work',
   },
   // knowledge: Approved sources are managed where the knowledge is, not here.
   {
     key: 'notifications',
     label: 'Notifications & Escalations',
     description: 'Alerts and escalation chains.',
+    group: 'The work',
   },
   {
     key: 'security',
     label: 'Security',
     personalLabel: 'Login & Security',
     description: 'Sessions, MFA policy and security events.',
+    group: 'Trust and safety',
   },
   /*
    * Audit & Activity is absent, and that is a gap rather than a decision.
@@ -283,9 +356,59 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
    * over it. Offering a door to the diagnostic was worse than offering none, because it looked
    * like the feature.
    */
-  { key: 'billing', label: 'Billing', description: 'Plan and invoices.' },
-  { key: 'appearance', label: 'Appearance', description: 'Branding and accessibility.' },
-  // uboss: Cross-company lookup policy has no company-level switch today.
+  { key: 'billing', label: 'Billing', description: 'Plan and invoices.', group: 'Money' },
+  /*
+   * Help & Support, out of Security and into a band of its own.
+   *
+   * It was a panel on the Security screen, on the reasoning that a company authorizing UBoss to
+   * enter their workspace is a security decision. That is true of one panel and of nothing else
+   * there: raising a ticket, reading the reply and checking whether UBoss is up are what people
+   * open it for, and somebody with a problem does not think "this is a security question". The one
+   * screen answering "who do I ask" sat behind the word they had least reason to press.
+   */
+  {
+    key: 'help',
+    label: 'Help & Support',
+    description: 'Raise a ticket with UBoss, and see whether UBoss itself is having trouble.',
+    group: 'Help',
+  },
+  {
+    key: 'appearance',
+    label: 'Appearance',
+    description: 'Branding and accessibility.',
+    group: 'This company',
+  },
+  /*
+   * UBoss Profile Search, moved here out of the sidebar.
+   *
+   * It is a lookup somebody reaches for occasionally — checking a candidate's UBoss history before
+   * hiring them — and it sat in the sidebar's ADMINISTRATION group beside Settings, permanently,
+   * at the same weight as the screens people work in all day. The client asked for it to live in
+   * Settings, and that is the right shape: the sidebar is for the work, Settings is for the things
+   * you go and find.
+   *
+   * A section rather than a panel, opening the screen itself — the same treatment as Users &
+   * Access and Billing, for the same reason: the section *is* the entry point, and a panel whose
+   * only content is a button describing the screen is a second click for nothing.
+   */
+  {
+    /*
+     * `uboss` — the category the server already has for the cross-company lookup, reused rather
+     * than a new key invented beside it.
+     *
+     * A section is only offered when the server returns a category of the same name, and the
+     * server builds those from `SETTINGS_CATEGORIES`. A `profile-search` key would be filtered out
+     * on every load and the section would simply never appear — which is exactly what happened
+     * when it was first added under that name.
+     *
+     * Reusing `uboss` also inherits the right gate: `CATEGORY_VISIBILITY` requires
+     * `settings:Administer` for it, which is who should be looking people up across companies.
+     */
+    key: 'uboss',
+    label: 'UBoss Profile Search',
+    description: 'Look somebody up across the companies on UBoss.',
+    group: 'People',
+  },
   // performance: Scoring and badge thresholds are the product’s, and identical everywhere.
 ] as const;
 

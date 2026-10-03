@@ -5,7 +5,12 @@ import { FileService } from './file.service.js';
 import { KnowledgeController } from './knowledge.controller.js';
 import { KnowledgeService } from './knowledge.service.js';
 import { MALWARE_SCANNER, MockMalwareScanner } from './malware-scanner.js';
-import { InMemoryStorageAdapter, STORAGE_ADAPTER } from './storage-adapter.js';
+import {
+  DiskStorageAdapter,
+  InMemoryStorageAdapter,
+  STORAGE_ADAPTER,
+  StorageAdapter,
+} from './storage-adapter.js';
 
 /**
  * Knowledge, files and safe uploads — Prompt 35.
@@ -32,7 +37,27 @@ import { InMemoryStorageAdapter, STORAGE_ADAPTER } from './storage-adapter.js';
   providers: [
     FileService,
     KnowledgeService,
-    { provide: STORAGE_ADAPTER, useClass: InMemoryStorageAdapter },
+    /*
+     * Disk when a directory is configured, memory otherwise.
+     *
+     * The in-memory adapter was what every deployment got, including a real one — so every
+     * uploaded file would have lived in the API process and vanished on the next restart. The
+     * record would survive and the bytes would not, which shows up as a download that fails long
+     * after the upload was forgotten.
+     *
+     * An environment variable rather than `NODE_ENV`, because "is there somewhere durable to put
+     * files" is a fact about the deployment and not about the mode it thinks it is in. Absent
+     * means memory, which is right for tests and for a development run with no volume.
+     */
+    {
+      provide: STORAGE_ADAPTER,
+      useFactory: (): StorageAdapter => {
+        const directory = process.env['UBOSS_FILE_STORAGE_DIR']?.trim();
+        return directory === undefined || directory === ''
+          ? new InMemoryStorageAdapter()
+          : new DiskStorageAdapter(directory);
+      },
+    },
     { provide: MALWARE_SCANNER, useClass: MockMalwareScanner },
   ],
   exports: [FileService, KnowledgeService, STORAGE_ADAPTER, MALWARE_SCANNER],

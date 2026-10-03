@@ -24,7 +24,9 @@ import { InvitationController } from '../src/auth/invitation.controller.js';
 import { InvitationService } from '../src/auth/invitation.service.js';
 import { CaptchaService } from '../src/auth/captcha.service.js';
 import { LoginService } from '../src/auth/login.service.js';
+import { IdentityMailService } from '../src/auth/identity-mail.service.js';
 import { PasswordResetService } from '../src/auth/password-reset.service.js';
+import { EmailAdapter, LoggingEmailAdapter } from '../src/notifications/email-adapter.js';
 import { PasswordService } from '../src/auth/password.service.js';
 import { SecurityEventService } from '../src/audit/security-event.service.js';
 import { SecurityEventPublisher } from '../src/auth/security-event.publisher.js';
@@ -141,6 +143,15 @@ describe('authentication (e2e)', () => {
         LoginService,
         InvitationService,
         PasswordResetService,
+        /*
+         * The reset link, and a transport that records rather than sends.
+         *
+         * `LoggingEmailAdapter` is what a deployment with no SMTP gets, and it is the right thing
+         * here: the assertion is that the controller *asks* for the mail, which is what it did
+         * not do. It minted a token, stored it and answered "a link has been sent".
+         */
+        IdentityMailService,
+        { provide: EmailAdapter, useClass: LoggingEmailAdapter },
         TenantContextService,
         Reflector,
         {
@@ -854,6 +865,70 @@ describe('authentication (e2e)', () => {
       assert.deepEqual(known.body, unknown.body);
     });
 
+    it('actually sends the link, rather than only saying it did', async () => {
+      /*
+       * The response has always claimed "a password reset link has been sent to it". Nothing sent
+       * one: the service minted a token, hashed it, stored it and returned it — its own docblock
+       * said "returned from the service so the notifications module can deliver it" — and the
+       * controller discarded it. Nobody could reset a password, and the product said otherwise.
+       *
+       * Asserted on the adapter being asked, which is the seam where the gap was. Whether a
+       * provider then accepts it is the adapter's business and is proved in its own spec.
+       */
+      const adapter = app.get(EmailAdapter) as LoggingEmailAdapter;
+      const sent: { to: string; text: string }[] = [];
+      const original = adapter.send.bind(adapter);
+      (adapter as { send: unknown }).send = async (email: { to: string; text: string }) => {
+        sent.push(email);
+        return original(email as never);
+      };
+
+      try {
+        await agent()
+          .post('/auth/password-reset/request')
+          .send({ email: 'invitee@auth.example' })
+          .expect(202);
+
+        assert.equal(sent.length, 1, 'no password reset email was sent');
+        assert.equal(sent[0]?.to, 'invitee@auth.example');
+        assert.match(String(sent[0]?.text), /reset/i);
+
+        // The link carries the token, which is the entire point of sending it.
+        const stored = await ctx.prisma.runAsPlatformOperation(() =>
+          ctx.prisma.client.passwordResetToken.findFirst({
+            where: { userId: inviteeUserId },
+            orderBy: { createdAt: 'desc' },
+          }),
+        );
+        assert.ok(stored, 'no token was stored');
+        assert.match(String(sent[0]?.text), /\/login\/reset\?token=/);
+      } finally {
+        (adapter as { send: unknown }).send = original;
+      }
+    });
+
+    it('sends nothing for an address nobody has', async () => {
+      // The silence is the point: an email to an unknown address, or a different response, would
+      // both be an oracle for which addresses are registered.
+      const adapter = app.get(EmailAdapter) as LoggingEmailAdapter;
+      const sent: unknown[] = [];
+      const original = adapter.send.bind(adapter);
+      (adapter as { send: unknown }).send = async (email: unknown) => {
+        sent.push(email);
+        return original(email as never);
+      };
+
+      try {
+        await agent()
+          .post('/auth/password-reset/request')
+          .send({ email: 'nobody-at-all@auth.example' })
+          .expect(202);
+        assert.equal(sent.length, 0, 'an email went to an address with no account');
+      } finally {
+        (adapter as { send: unknown }).send = original;
+      }
+    });
+
     it('never returns the token in the response', async () => {
       const response = await agent()
         .post('/auth/password-reset/request')
@@ -1274,17 +1349,58 @@ describe('authentication (e2e)', () => {
         // nothing: both read the same deployment key.
       });
 
-      it('does not reuse one question’s signature for another', () => {
+      it('gives two different answers two different tokens', () => {
+        /*
+         * This asserted that two different *questions* get different tokens, which is not true
+         * and is not meant to be — the comment directly above says so: the token is
+         * `hash(answer) . expiry . hmac`, and nothing of the question is in it. "What is 2 + 6?"
+         * and "What is 4 + 4?" are different questions with the same answer, so they share a
+         * token, and in the same millisecond they share it exactly.
+         *
+         * The questions are `a op b` over 2..9 with two operators, so answers collide constantly
+         * and the old assertion failed perhaps one run in ten — passing twice this morning and
+         * failing this afternoon on code nobody had touched. A test that is right nine times out
+         * of ten is worse than no test: it teaches people to re-run.
+         *
+         * Nothing is lost by binding the token to the answer alone. The browser submits the
+         * token and the answer, never the question, so a token "reused" for another question
+         * with the same answer accepts exactly the answer it was always going to accept.
+         *
+         * What has to hold, and is what this now checks: a token solved for one answer must not
+         * be accepted for a different one.
+         */
         const service = enabled();
-        const first = service.issue();
-        const second = service.issue();
-        assert.ok(first);
-        assert.ok(second);
 
-        // Two questions, two signatures — otherwise one solved token would answer all of them.
-        if (first.question !== second.question) {
-          assert.notEqual(first.token, second.token);
+        const byAnswer = new Map<string, string>();
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          const issued = service.issue();
+          assert.ok(issued);
+          // The answer is not returned, so it is read back out of the question it was built from.
+          const [, left, operator, right] =
+            issued.question.match(/What is (\d+) (.) (\d+)\?/) ?? [];
+          assert.ok(left && right, `unreadable question: ${issued.question}`);
+          const answer = String(
+            operator === '+' ? Number(left) + Number(right) : Number(left) * Number(right),
+          );
+
+          const seen = byAnswer.get(answer);
+          if (seen === undefined) {
+            byAnswer.set(answer, issued.token);
+            continue;
+          }
+          // Same answer: the answer segment matches by design. Only the expiry may differ.
+          assert.equal(issued.token.split('.')[0], seen.split('.')[0]);
         }
+
+        assert.ok(byAnswer.size > 3, `only ${byAnswer.size} distinct answers in 40 draws`);
+
+        // Different answers, different answer segments — every pair, not a sample.
+        const segments = [...byAnswer.values()].map((token) => token.split('.')[0]);
+        assert.equal(
+          new Set(segments).size,
+          segments.length,
+          'two different answers produced the same signed answer segment',
+        );
       });
     });
   });

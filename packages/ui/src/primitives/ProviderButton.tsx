@@ -112,15 +112,19 @@ export function ProviderButton({
  * the right default: a provider this does not know about is not a provider to guess at.
  */
 export function providerKindFrom(issuer: string | null | undefined): ProviderKind {
-  const value = (issuer ?? '').toLowerCase();
-  if (value.includes('accounts.google.com') || value.includes('google')) return 'google';
-  if (
-    value.includes('login.microsoftonline.com') ||
-    value.includes('sts.windows.net') ||
-    value.includes('microsoft')
-  ) {
+  if (!issuer) return 'generic';
+
+  let hostname: string;
+  try {
+    hostname = new URL(issuer).hostname.toLowerCase().replace(/\.$/, '');
+  } catch {
+    return 'generic';
+  }
+
+  if (hostname === 'accounts.google.com') return 'google';
+  if (hostname === 'login.microsoftonline.com' || hostname === 'sts.windows.net') {
     return 'microsoft';
   }
-  if (value.includes('appleid.apple.com') || value.includes('apple')) return 'apple';
+  if (hostname === 'appleid.apple.com') return 'apple';
   return 'generic';
 }

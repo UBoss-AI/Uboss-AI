@@ -19,16 +19,25 @@ import {
  * to prove that is where it lives.
  */
 
-test('the catalogue is the client’s six initial sources plus the dependency release', () => {
-  // Six were the initial list. WorkReady is the seventh, added when the rule arrived that a step
-  // unlocking its successor has to tell the person. A kind is vocabulary, so the count is pinned:
-  // an eighth should be a decision somebody made, not something that appeared.
-  assert.equal(NOTIFICATION_KINDS.length, 7);
-  assert.equal(NOTIFICATION_KIND_DEFINITIONS.length, 7);
+test('the catalogue is the six initial sources, the dependency release and the badge', () => {
+  /*
+   * Six were the initial list. `WorkReady` is the seventh, added when the rule arrived that a
+   * step unlocking its successor has to tell the person.
+   *
+   * `Badge` is the eighth, and the pinned count did its job: it was a decision somebody made.
+   * Crossing a performance threshold changed a row and wrote an audit event, and the person whose
+   * badge it was found out by opening the screen. Its own kind rather than borrowing one — a
+   * badge is somebody's standing, not work waiting on them, and folding it into an existing kind
+   * would either silence something else along with it or make it unmutable for no reason.
+   */
+  assert.equal(NOTIFICATION_KINDS.length, 9);
+  assert.equal(NOTIFICATION_KIND_DEFINITIONS.length, 9);
   assert.ok(NOTIFICATION_KINDS.includes('WorkReady'));
+  assert.ok(NOTIFICATION_KINDS.includes('Badge'));
+  assert.ok(NOTIFICATION_KINDS.includes('SubscriptionLapsed'));
 
   const kinds = NOTIFICATION_KIND_DEFINITIONS.map((definition) => definition.kind);
-  assert.deepEqual(new Set(kinds).size, 7, 'no duplicate kinds');
+  assert.deepEqual(new Set(kinds).size, 9, 'no duplicate kinds');
   for (const kind of NOTIFICATION_KINDS) {
     assert.ok(kinds.includes(kind), kind);
   }
@@ -45,7 +54,16 @@ test('every kind has a severity tone, a label and a stated producer', () => {
 });
 
 test('security alerts are mandatory at every severity', () => {
-  assert.deepEqual([...ALWAYS_MANDATORY_KINDS], ['SecurityEvent']);
+  /*
+   * Two kinds, and the second one is deliberate.
+   *
+   * `SubscriptionLapsed` joined them because muting it means learning that the workspace has gone
+   * read-only by failing to save something — the exact outcome the read-only design exists to
+   * avoid. Every other commercial alert stays mutable: a budget warning somebody chooses not to
+   * see costs them tokens, not the product.
+   */
+  // Definition order, which puts the commercial kinds before the security one.
+  assert.deepEqual([...ALWAYS_MANDATORY_KINDS], ['SubscriptionLapsed', 'SecurityEvent']);
 
   for (const severity of ['Info', 'Warning', 'Critical'] as const) {
     assert.equal(
@@ -61,9 +79,14 @@ test('a critical alert of any kind is mandatory, and a warning is not', () => {
     assert.equal(isMandatoryNotification({ kind, severity: 'Critical' }), true, kind);
   }
 
-  // Everything except the always-mandatory kind is optional below critical. This is the half of
-  // the rule a preference screen relies on: it must offer real choices for the rest.
-  for (const kind of NOTIFICATION_KINDS.filter((k) => k !== 'SecurityEvent')) {
+  /*
+   * Everything except the always-mandatory kinds is optional below critical. This is the half of
+   * the rule a preference screen relies on: it must offer real choices for the rest.
+   *
+   * Derived from `ALWAYS_MANDATORY_KINDS` rather than naming them, so adding a mandatory kind
+   * cannot silently turn this into an assertion about nothing.
+   */
+  for (const kind of NOTIFICATION_KINDS.filter((k) => !ALWAYS_MANDATORY_KINDS.includes(k))) {
     assert.equal(isMandatoryNotification({ kind, severity: 'Warning' }), false, kind);
     assert.equal(isMandatoryNotification({ kind, severity: 'Info' }), false, kind);
   }

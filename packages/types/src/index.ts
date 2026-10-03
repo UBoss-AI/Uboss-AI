@@ -60,6 +60,8 @@ export type {
 
 export {
   PLATFORM_PERMISSIONS,
+  COMPANY_ASSIGNABLE_ROLE_KINDS,
+  COMPANY_GRANTABLE_ROLES,
   ROLE_TEMPLATES,
   templateActions,
   templateModules,
@@ -636,6 +638,10 @@ export {
   TERMINAL_RUN_STATES,
   weekdayIn,
   WEEKDAYS,
+  agentScheduleProblems,
+  agentScheduleToBusinessCron,
+  scheduleFromBusinessCron,
+  describeAgentSchedule,
 } from './runs.js';
 export type {
   BlockedRunState,
@@ -647,6 +653,7 @@ export type {
   RunState,
   RunTrigger,
   Weekday,
+  AgentSchedule,
 } from './runs.js';
 
 // ---- The Executor Agent and Exception Center (Prompt 27) ----
@@ -843,6 +850,7 @@ export {
   LEDGER_ENTRY_KIND_LABELS,
   LEDGER_ENTRY_KINDS,
   mayMoveReservation,
+  nextReset,
   projectedExhaustion,
   reconcileBalance,
   remainingMinor,
@@ -850,6 +858,8 @@ export {
   RESERVATION_EXPIRY_MINUTES,
   RESERVATION_STATE_LABELS,
   RESERVATION_STATES,
+  RESET_CADENCE_LABELS,
+  RESET_CADENCES,
   reservationHasExpired,
   reservationIsOpen,
   scopesToCheck,
@@ -859,6 +869,7 @@ export {
 export type {
   BudgetScope,
   CostThreshold,
+  ResetCadence,
   LedgerEntryKind,
   ReconciliationFinding,
   ReservationState,
@@ -911,10 +922,15 @@ export {
   PLAN_CHANGE_POLICY_LABELS,
   RESET_POLICIES,
   RESET_POLICY_LABELS,
+  MAXIMUM_TOP_UP_TOKENS,
+  MINIMUM_TOP_UP_TOKENS,
+  TOKEN_PURCHASE_STATUS_LABELS,
+  TOKEN_PURCHASE_STATUSES,
   validateCreditDecision,
   validateCreditPolicy,
   validateCreditRequest,
   validateReallocation,
+  validateTopUpTokens,
 } from './credits.js';
 export type {
   BillingChoice,
@@ -926,6 +942,7 @@ export type {
   NegativeBalancePolicy,
   PlanChangePolicy,
   ResetPolicy,
+  TokenPurchaseStatus,
 } from './credits.js';
 
 // ---------------------------------------------------------------------------
@@ -1193,6 +1210,7 @@ export {
   DASHBOARD_LANE_LABELS,
   DASHBOARD_LANE_MEASURE,
   DASHBOARD_LANES,
+  DASHBOARD_TILE_DESCRIPTION,
   DASHBOARD_TILE_DESTINATIONS,
   DASHBOARD_TILE_LABELS,
   DASHBOARD_TILE_LANE,
@@ -1207,7 +1225,12 @@ export {
   MAX_REPORT_RANGE_DAYS,
   permissionsForReport,
   REPORT_EXPORT_PERMISSION,
+  REPORT_COLUMN_LABELS,
+  REPORT_COLUMNS_HIDDEN_FROM_COMPANY,
   REPORT_KEYS,
+  REPORT_MONEY_COLUMNS,
+  REPORT_OVERVIEW,
+  reportColumnLabel,
   REPORT_RANGE_DAYS,
   REPORT_RANGE_LABELS,
   REPORT_RANGES,
@@ -1231,6 +1254,7 @@ export {
   type ExportFormat,
   type ReportChart,
   type ReportDefinition,
+  type ReportOverviewPanel,
   type ReportKey,
   type ReportRange,
   type ReportScope,
@@ -1564,3 +1588,36 @@ export {
   type ReleaseFlag,
   type ReleaseFlagKey,
 } from './release-flags.js';
+
+// ---------------------------------------------------------------------------
+// Money — what currency a company is billed in
+// ---------------------------------------------------------------------------
+export {
+  BILLING_CURRENCIES,
+  COUNTRY_BILLING_CURRENCY,
+  CURRENCY_MINOR_UNITS,
+  CURRENCY_SYMBOLS,
+  DEFAULT_BILLING_CURRENCY,
+  currencyForCountry,
+  formatMoney,
+  isBillingCurrency,
+  priceInCurrency,
+  type BillingCurrency,
+  type PlanPrice,
+} from './money.js';
+
+// ---------------------------------------------------------------------------
+// Self-serve registration — a company signs itself up
+// ---------------------------------------------------------------------------
+export {
+  MAX_DOMAIN_CHECKS,
+  REGISTRATION_STATE_LABELS,
+  REGISTRATION_STATES,
+  REGISTRATION_WINDOW_DAYS,
+  UNPROVABLE_EMAIL_DOMAINS,
+  emailDomain,
+  isUnprovableEmailDomain,
+  likelyCountryFromDomain,
+  validateRegistrationAddress,
+  type RegistrationState,
+} from './registration.js';

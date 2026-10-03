@@ -28,7 +28,10 @@ import { PerformanceService } from '../src/performance/performance.service.js';
 import { AuditEventRepository } from '../src/persistence/audit-event.repository.js';
 import { AuditTrailRepository } from '../src/persistence/audit-trail.repository.js';
 import { AuthorizationRepository } from '../src/persistence/authorization.repository.js';
+import { NotificationService } from '../src/notifications/notification.service.js';
 import { OrganizationRepository } from '../src/persistence/organization.repository.js';
+import { NotificationRepository } from '../src/persistence/notification.repository.js';
+import { OutboxRepository } from '../src/persistence/outbox.repository.js';
 import { PlatformRepository } from '../src/persistence/platform.repository.js';
 import { PrismaService } from '../src/persistence/prisma.service.js';
 import { tenantScopeForPlatformOperation } from '../src/persistence/tenant-context.js';
@@ -159,6 +162,10 @@ describe('reward rules and awards (e2e)', () => {
         SecurityEventService,
         SecurityEventPublisher,
         AuthorizationService,
+        // PerformanceService announces a badge change, so the person is told they climbed the ladder.
+        NotificationService,
+        NotificationRepository,
+        OutboxRepository,
         PerformanceService,
         ObjectiveService,
         RewardService,

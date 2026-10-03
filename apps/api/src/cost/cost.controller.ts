@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Post, Query, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+  UnauthorizedException,
+} from '@nestjs/common';
 import {
   IsIn,
   IsInt,
@@ -21,7 +29,9 @@ import {
   LEDGER_ENTRY_KINDS,
   RESERVATION_STATE_LABELS,
   RESERVATION_STATES,
+  RESET_CADENCES,
   type BudgetScope,
+  type ResetCadence,
 } from '@uboss/types';
 
 import { RequirePermission } from '../authorization/authorization.decorators.js';
@@ -37,6 +47,15 @@ export class SetAllowanceDto {
   @IsInt() @Min(0) allowanceMinor!: number;
   /** Required: a budget change nobody explained cannot be reviewed. */
   @IsString() @MinLength(1) @MaxLength(500) reason!: string;
+  /**
+   * How often it comes back. Absent means a one-off, which is what every allowance was before.
+   *
+   * "Give this person ₹500 a day" is one sentence and is one call: the amount set here is also
+   * the amount each period grants.
+   */
+  @IsOptional()
+  @IsIn(RESET_CADENCES as readonly string[])
+  resetCadence?: ResetCadence;
 }
 
 /**
@@ -123,6 +142,79 @@ export class CostController {
     });
   }
 
+  /**
+   * Who spent it — §20's usage drill-down.
+   *
+   * The ledger has carried the department, the objective, the agent and the person on every
+   * charge since it was written, and nothing grouped by any of them. One company total and a
+   * list of individual entries does not answer "which department is spending this", which is
+   * the first thing anybody asks about an AI bill.
+   *
+   * `View` on settings, like the wallets and the ledger beside it: this reports what the
+   * company spent, and reading it changes nothing.
+   */
+  @Get('usage')
+  @RequirePermission({ module: 'settings', action: 'View' })
+  async usage(
+    @Query('by') by?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ): Promise<unknown> {
+    const dimensions = ['department', 'objective', 'agent', 'user'] as const;
+    if (by === undefined || !(dimensions as readonly string[]).includes(by)) {
+      throw new BadRequestException(
+        `by must be one of: ${dimensions.join(', ')} — what the spend should be grouped under.`,
+      );
+    }
+
+    // A window that cannot be read is a window nobody meant. Refused rather than silently
+    // widened to everything, which would quietly report a year where a month was asked for.
+    const parse = (value: string | undefined, name: string): Date | undefined => {
+      if (value === undefined) return undefined;
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) {
+        throw new BadRequestException(`${name} is not a date.`);
+      }
+      return parsed;
+    };
+
+    const breakdown = await this.cost.usageBreakdown({
+      scope: this.tenantContext.requireScope(),
+      by: by as 'department' | 'objective' | 'agent' | 'user',
+      from: parse(from, 'from'),
+      to: parse(to, 'to'),
+    });
+
+    /*
+     * Tokens leave this route; money does not.
+     *
+     * This is a tenant-scoped endpoint, so every reader of it is a company, and a company is
+     * quoted a plan price in money and counts everything it consumes in tokens. The pair on one
+     * screen is the shape that matters: divide the charge by the tokens and a reader has a
+     * per-million rate to match against a published price list, which names the provider and
+     * exposes the margin.
+     *
+     * Stripped here rather than left out of the engine, because the engine's sums serve the
+     * platform plane too, and one query that both readers share cannot disagree with itself
+     * about the same ledger. `currency` goes with it: a currency beside a token count is a label
+     * for a number that is not money.
+     */
+    return {
+      by: breakdown.by,
+      rows: breakdown.rows.map((row) => ({
+        key: row.key,
+        tokens: row.tokens,
+        calls: row.calls,
+        uncostedCalls: row.uncostedCalls,
+      })),
+      totals: {
+        tokens: breakdown.totals.tokens,
+        calls: breakdown.totals.calls,
+        uncostedCalls: breakdown.totals.uncostedCalls,
+      },
+    };
+  }
+
   @Post('allowance')
   @RequirePermission({ module: 'settings', action: 'Administer' })
   async setAllowance(@Body() body: SetAllowanceDto): Promise<unknown> {
@@ -133,6 +225,7 @@ export class CostController {
       subjectId: body.subjectId ?? null,
       allowanceMinor: body.allowanceMinor,
       reason: body.reason,
+      ...(body.resetCadence === undefined ? {} : { resetCadence: body.resetCadence }),
     });
   }
 

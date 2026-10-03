@@ -62,6 +62,20 @@ export interface ModelRequest {
   objectiveId?: string | undefined;
   engineAgentId?: string | undefined;
   agentRunId?: string | undefined;
+
+  /**
+   * Whose request this is, so their own allowance is one of the limits it must satisfy.
+   *
+   * The four above all describe *work*. None of them is keyed to a person, so a company's budget
+   * was the only thing between one employee and the whole month's AI — one person running an
+   * agent in a loop could exhaust it in an afternoon, and everybody else would then be refused
+   * for something they did not do.
+   *
+   * Omitted for work the engine does on its own behalf, which belongs to nobody. Somebody with no
+   * allowance set is unconstrained by it, so passing this never tightens a limit that was not
+   * deliberately placed.
+   */
+  actorUserId?: string | undefined;
 }
 
 export interface ModelResponse {

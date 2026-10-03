@@ -155,14 +155,32 @@ export function emptyOrchestrationCounts(): OrchestrationCounts {
   return { waiting: 0, ready: 0, inProgress: 0, completed: 0 };
 }
 
+/**
+ * Every work area the dashboard can offer.
+ *
+ * ## Why it is now all twelve and not seven
+ *
+ * The sidebar reaches twelve places and the dashboard carried seven, so Hierarchy, Agent Builder,
+ * Workspace Chat and Settings were reachable only from the rail. The client's instruction is that
+ * the dashboard is the shortcut to everything — a person should be able to start their day on one
+ * screen and get anywhere from it.
+ *
+ * Adding a tile does not widen anybody's access. Each one is gated on its own module below, and
+ * the server only ever returns the tiles that person already holds a grant on.
+ */
 export const DASHBOARD_TILES = [
   'objectives',
   'tasks',
   'agents',
+  'hierarchy',
+  'agent-builder',
+  'chat',
   'approvals',
   'exceptions',
   'performance',
   'reports',
+  'settings',
+  'stage',
 ] as const;
 export type DashboardTile = (typeof DASHBOARD_TILES)[number];
 
@@ -171,20 +189,42 @@ export const DASHBOARD_TILE_MODULE: Record<DashboardTile, string> = {
   objectives: 'objective',
   tasks: 'todo',
   agents: 'agents',
+  hierarchy: 'hierarchy',
+  'agent-builder': 'agent-builder',
+  // Chat is open to everybody in a company — the sidebar entry carries `module: null` for the
+  // same reason. There is no `chat` module to gate it on, and inventing one here would be a
+  // permission the authorization engine has never heard of.
+  chat: 'dashboard',
   approvals: 'approvals',
   exceptions: 'executor',
   performance: 'performance',
   reports: 'reports',
+  settings: 'settings',
+  // The stage overview is objective work, so it is gated exactly as objectives are.
+  stage: 'objective',
 };
 
+/**
+ * The words on each tile, which are the words in the sidebar.
+ *
+ * `agents` reads **Engine Agents**, not *Job Agents*: the sidebar, the screen's own heading and
+ * its breadcrumb all say Engine Agents, and the dashboard was the one place calling the same
+ * thing something else. A shortcut whose label does not match its destination is a shortcut
+ * somebody checks twice.
+ */
 export const DASHBOARD_TILE_LABELS: Record<DashboardTile, string> = {
   objectives: 'Objectives',
   tasks: 'Tasks',
-  agents: 'Job Agents',
+  agents: 'Engine Agents',
+  hierarchy: 'Hierarchy',
+  'agent-builder': 'Agent Builder',
+  chat: 'Workspace Chat',
   approvals: 'Approvals',
   exceptions: 'Exceptions',
   performance: 'Performance',
   reports: 'Reports',
+  settings: 'Settings',
+  stage: 'Where the work is',
 };
 
 /**
@@ -195,13 +235,48 @@ export const DASHBOARD_TILE_LABELS: Record<DashboardTile, string> = {
  * legitimately see different numbers.
  */
 export const DASHBOARD_TILE_MEASURE: Record<DashboardTile, string | null> = {
-  objectives: 'Active in your scope',
-  tasks: 'Still needing somebody',
-  agents: 'Built and not archived',
+  objectives: 'Live, in your scope',
+  tasks: 'Assigned and not finished',
+  agents: 'Published and running',
+  'agent-builder': 'Waiting to be built',
   approvals: 'Waiting on a decision',
   exceptions: 'Open and unresolved',
+  // No count, so nothing to measure. What these areas *are* is `DASHBOARD_TILE_DESCRIPTION`.
+  hierarchy: null,
+  chat: null,
   performance: null,
   reports: null,
+  settings: null,
+  stage: null,
+};
+
+/**
+ * What is behind each door, for the areas that have no number.
+ *
+ * ## Why this is not the same field as the measure
+ *
+ * Because they answer different questions. A measure explains a figure — *45 what?* — and only a
+ * tile with a figure has one. A description explains a destination, and every tile has one of
+ * those. Putting both in one field is how Performance and Reports ended up reading *"Everything
+ * this area holds"*: a fallback sentence, identical on both, which told a reader nothing about
+ * either and was the first thing the client noticed.
+ *
+ * Counted tiles have a description too. It is simply not what the screen shows them, because the
+ * measure is the more useful of the two when there is a number above it.
+ */
+export const DASHBOARD_TILE_DESCRIPTION: Record<DashboardTile, string> = {
+  objectives: 'Business intent, its workflow and its outcome',
+  tasks: 'The work that is yours to do',
+  agents: 'Published AI workers and their runs',
+  hierarchy: 'Departments, reporting lines and people',
+  'agent-builder': 'Turn assigned AI work into an agent',
+  chat: 'Conversations and department workshops',
+  approvals: 'Decisions waiting on somebody',
+  exceptions: 'What the Executor could not resolve',
+  performance: 'Scores, badges and how work turned out',
+  reports: 'Objectives, cost, agents and the audit trail',
+  settings: 'Company rules, people, roles and billing',
+  stage: 'Stage, department and what is waiting',
 };
 
 /** Where each tile goes. Every destination is a route that exists. */
@@ -209,10 +284,16 @@ export const DASHBOARD_TILE_DESTINATIONS: Record<DashboardTile, string> = {
   objectives: '/objective',
   tasks: '/todo',
   agents: '/agents',
+  hierarchy: '/hierarchy',
+  'agent-builder': '/agent-builder',
+  chat: '/chat',
   approvals: '/approvals',
   exceptions: '/executor',
   performance: '/performance',
   reports: '/reports',
+  settings: '/settings',
+  // It has no screen of its own: the card under the map is the whole of it.
+  stage: '/dashboard',
 };
 
 /**
@@ -235,7 +316,7 @@ export const DASHBOARD_LANES = ['execution', 'oversight'] as const;
 export type DashboardLane = (typeof DASHBOARD_LANES)[number];
 
 export const DASHBOARD_LANE_LABELS: Record<DashboardLane, string> = {
-  execution: 'Execution',
+  execution: 'Execution & Setup',
   oversight: 'Oversight',
 };
 
@@ -247,14 +328,27 @@ export const DASHBOARD_LANE_LABELS: Record<DashboardLane, string> = {
  * them.
  */
 export const DASHBOARD_LANE_MEASURE: Record<DashboardLane, string> = {
-  execution: 'Where work is defined and carried out',
+  execution: 'Where work is set up and carried out',
   oversight: 'Where it is decided on and reviewed',
 };
 
+/**
+ * Which side each area belongs to.
+ *
+ * The third lane exists because *setting something up* is neither doing the work nor reviewing it.
+ * Hierarchy, Agent Builder and Settings are things somebody configures once and returns to rarely;
+ * putting them beside the daily queues made both harder to find. Workspace Chat sits with them
+ * because it is where a change gets asked for, which is the step before it is set up.
+ */
 export const DASHBOARD_TILE_LANE: Record<DashboardTile, DashboardLane> = {
   objectives: 'execution',
   tasks: 'execution',
   agents: 'execution',
+  hierarchy: 'execution',
+  'agent-builder': 'execution',
+  chat: 'execution',
+  settings: 'execution',
+  stage: 'oversight',
   approvals: 'oversight',
   exceptions: 'oversight',
   performance: 'oversight',
@@ -311,20 +405,24 @@ export const REPORT_KEYS = [
   'AiUsageAndCost',
   'AuditActivity',
   'PerformanceAndBadges',
+  'AgentRunsPerDay',
 ] as const;
 export type ReportKey = (typeof REPORT_KEYS)[number];
 
 /**
  * How a report draws itself, when a picture says it better than the table does.
  *
- * Declared per report rather than guessed by the screen, and deliberately narrow: a chart is
- * built by counting rows that share a value in one column, or by reading two numbers the report
- * already computed. Nothing is interpolated, smoothed or projected — if the report does not
- * already know it, the chart does not show it.
+ * Declared per report rather than guessed by the screen, and every kind is built out of the rows
+ * the report already returned: counting them, reading a column they already carry, or binning a
+ * number they already hold. Nothing is interpolated, smoothed or projected — if the report does
+ * not already know it, the chart does not show it.
  *
- * `groupBy` counts rows per distinct value: statuses, people, departments. `compare` reads named
- * figures out of the summary the report returned. A report with neither simply has no chart, and
- * that is a better answer than a decorative one.
+ * **The kind is chosen by the question, not by habit.** Every report here used to draw the same
+ * bar chart, which is how a screen ends up with eleven pictures that all look alike and only two
+ * of them mean anything: a distribution wants bars, a proportion wants one bar cut up, days want a
+ * line, a single figure wants to be read as a figure, and a handful of things with states want
+ * their states. A report whose data suits none of these has no chart, and that is a better answer
+ * than a decorative one.
  */
 export type ReportChart =
   /**
@@ -361,6 +459,109 @@ export type ReportChart =
       kind: 'buckets';
       column: string;
       edges: number[];
+      unit: string;
+      title: string;
+      note?: string;
+    }
+  /**
+   * A total per step of time, drawn as a line.
+   *
+   * The one shape where a line is honest, and the distinction is the whole reason this kind
+   * exists: a line between two categories invents a journey from one to the other, but a line
+   * across days is drawn along the axis the rows are already ordered by. The report grouped its
+   * own rows into days before returning them, so each point is a day's real total and the segment
+   * between two points says only "this came after that" — which is true.
+   *
+   * Rows are drawn in the order the report returned them. Nothing is re-sorted: the order *is*
+   * the axis, and sorting a time series by height would destroy it.
+   */
+  | {
+      kind: 'line';
+      labelColumn: string;
+      valueColumn: string;
+      title: string;
+      note?: string;
+      /** Minor units rendered as money. Anything else is a plain count. */
+      format?: 'money';
+    }
+  /**
+   * One bar, cut into the parts that make it up.
+   *
+   * For the question that is about proportion rather than size — how much of the work is done by
+   * people and how much by agents. Two bars side by side answer it only after the reader does the
+   * division; one bar split in two answers it before they have finished reading the title.
+   *
+   * Right only for a handful of parts that genuinely sum to a meaningful whole. Sixteen
+   * departments in one bar is a stripe, not an answer.
+   */
+  | {
+      kind: 'share';
+      labelColumn: string;
+      valueColumn: string;
+      title: string;
+      note?: string;
+    }
+  /**
+   * One number, because one number is the entire answer.
+   *
+   * "What cannot start yet" is a count. Drawing it as a bar chart of one bar, or as a bar per
+   * objective, buries the only figure that matters inside a picture of itself — and three of these
+   * reports return a single row, where a chart is not a summary of the table but a slower copy of
+   * it.
+   *
+   * The number is the rows the report returned; `detail` reads a second figure out of the summary
+   * the report already computed. Neither is derived from anything else.
+   */
+  | {
+      kind: 'tally';
+      title: string;
+      /** What one row is, in words. Pluralised by the screen. */
+      unit: string;
+      /** A second line, read from a key of the report's own summary. */
+      detail?: { key: string; label: string };
+      /**
+       * At or above this count, the figure is something to act on rather than to note.
+       *
+       * It changes the colour and nothing else. No threshold is invented for a report that did
+       * not name one — an absent `concernAt` means every count is drawn plainly, because a number
+       * the product has no opinion about must not be coloured as though it had.
+       */
+      concernAt?: number;
+      note?: string;
+    }
+  /**
+   * Parts of one whole, as a ring.
+   *
+   * The question this answers is "how is it divided", where every row belongs to exactly one part
+   * and the parts together are everything — objectives by state, exceptions by severity. Bars
+   * answer "which is biggest"; a ring answers "how much of it is that", and the difference is the
+   * one a manager is actually asking when they look at a status breakdown.
+   *
+   * Wrong wherever the parts do not make a whole. Cost per day is not parts of anything, and a
+   * ring of days would invite a reader to think of Tuesday as a share of the week's budget.
+   *
+   * Not the dashboard's donut, which is a locked two-slice contract for one screen and stays that
+   * way. This is a general reading of a report's own rows.
+   */
+  | { kind: 'donut'; column: string; title: string; note?: string }
+  /**
+   * A chip per row, coloured by how that row is doing.
+   *
+   * For a report whose rows are *things with a state* rather than a distribution — the agents, in
+   * practice. This company has one agent, so the bar chart of agents-by-status was a single bar of
+   * height one: a picture that took a quarter of the screen to say nothing the row beneath it did
+   * not already say.
+   *
+   * The tone is read from the columns named here and from nothing else: anything that failed is
+   * bad, anything that never ran is unproven, everything else is well. There is no health score
+   * and no judgement the rows do not contain.
+   */
+  | {
+      kind: 'status';
+      labelColumn: string;
+      totalColumn: string;
+      failedColumn: string;
+      /** What is being counted — a run, an evaluation. Pluralised by the screen. */
       unit: string;
       title: string;
       note?: string;
@@ -404,7 +605,7 @@ export const REPORTS: readonly ReportDefinition[] = [
   {
     key: 'ObjectiveProgress',
     chart: {
-      kind: 'groupBy',
+      kind: 'donut',
       column: 'status',
       title: 'Where the objectives are',
       note: 'Every objective in this period, counted by the state it is in now.',
@@ -417,8 +618,14 @@ export const REPORTS: readonly ReportDefinition[] = [
   },
   {
     key: 'HumanVsAiWorkMix',
+    /*
+     * One bar cut in two, because the question is a proportion.
+     *
+     * Two bars side by side made a reader compare two lengths and do the division themselves to
+     * reach the number they came for. The split bar is the answer: the share is the width.
+     */
     chart: {
-      kind: 'series',
+      kind: 'share',
       labelColumn: 'kind',
       valueColumn: 'completed',
       title: 'Work finished, by who finished it',
@@ -445,10 +652,22 @@ export const REPORTS: readonly ReportDefinition[] = [
   },
   {
     key: 'EngineAgentHealth',
+    /*
+     * The agents themselves, each with how it is doing.
+     *
+     * Counting agents by status was a bar chart of one bar in every company that has one agent,
+     * and of three identical bars in a company whose agents are all Active — the status column
+     * says whether somebody switched an agent on, which is not the same question as whether it is
+     * working. Failures and disuse are, and they are in the rows already.
+     */
     chart: {
-      kind: 'groupBy',
-      column: 'status',
-      title: 'Agents by state',
+      kind: 'status',
+      labelColumn: 'agent',
+      totalColumn: 'runs',
+      failedColumn: 'failed',
+      unit: 'run',
+      title: 'How each agent is doing',
+      note: 'Runs in this period. An agent that has not run at all is unproven rather than well.',
     },
     label: 'Engine Agent Health',
     question: 'Which agents are succeeding, which are failing, and which have stopped being used?',
@@ -458,10 +677,10 @@ export const REPORTS: readonly ReportDefinition[] = [
   {
     key: 'SkillUsageAndQuality',
     chart: {
-      kind: 'groupBy',
+      kind: 'donut',
       column: 'status',
       title: 'Skill versions by state',
-      note: 'One bar per state. How many are published and running, and how many never left draft.',
+      note: 'How many are published and running, and how many never left draft.',
     },
     label: 'Skill Usage & Quality',
     question: 'Which Skills are actually used, and what do reviewers say about what they produce?',
@@ -491,9 +710,10 @@ export const REPORTS: readonly ReportDefinition[] = [
   {
     key: 'ExecutorExceptions',
     chart: {
-      kind: 'groupBy',
+      kind: 'donut',
       column: 'severity',
       title: 'Exceptions by severity',
+      note: 'Each exception counted once. How much of what the Executor stopped was serious.',
     },
     label: 'Executor Agent Exceptions',
     question: 'What did the Executor Agent stop, escalate or flag, and is any of it still open?',
@@ -518,19 +738,20 @@ export const REPORTS: readonly ReportDefinition[] = [
   {
     key: 'AiUsageAndCost',
     /*
-     * Cost per day, which is what the rows already are.
+     * Cost per day, as a line, because days are an axis.
      *
-     * The report groups its ledger by day before returning it, so each bar is a day's total
-     * rather than a charge — the one reading that does not turn a list of charges into a
-     * trend it never measured.
+     * The report groups its ledger by day before returning it, so each point is a day's real
+     * total rather than a charge. Drawn as bars sorted tallest-first — which is what every chart
+     * on this screen used to do — the days came out of order, and the one thing a cost chart is
+     * opened for is whether the spend is climbing.
      */
     chart: {
-      kind: 'series',
+      kind: 'line',
       labelColumn: 'day',
       valueColumn: 'amountMinor',
       format: 'money',
       title: 'What AI work cost, by day',
-      note: 'One bar per day in the period.',
+      note: 'One point per day in the period.',
     },
     label: 'AI Usage & Cost',
     question: 'What has AI work cost, and where did it go?',
@@ -568,6 +789,40 @@ export const REPORTS: readonly ReportDefinition[] = [
     label: 'Performance / Badge History',
     question: 'How have people scored over time, and what have they earned?',
     sourcePermission: { module: 'performance', action: 'View' },
+    scoped: true,
+  },
+  {
+    key: 'AgentRunsPerDay',
+    /*
+     * How much AI work this company actually did, by day.
+     *
+     * A line, because days are an axis and the question is a direction: is the product doing more
+     * for us this month than last. Bars sorted by height would answer "which day was busiest",
+     * which nobody asks — and would put the days out of order, which is the one thing that makes
+     * a trend unreadable.
+     *
+     * It is a count of runs, not of successes: a day with forty runs of which ten failed is a busy
+     * day with a problem, and splitting that into two lines here would answer the health question
+     * badly when Engine Agent Health answers it properly. The table beside the chart carries the
+     * split, so the number is never just a total with nothing behind it.
+     */
+    chart: {
+      kind: 'line',
+      labelColumn: 'day',
+      valueColumn: 'runs',
+      title: 'Agent runs, by day',
+      note: 'One point per day in the period. Every run, whatever it ended as.',
+    },
+    label: 'Agent Runs per Day',
+    question: 'How many agent runs happen each day, and is that going up?',
+    /*
+     * `agents: View` — the same permission that reads an agent's own history.
+     *
+     * Not `settings: Administer` like the cost report: how much work the company's agents did is
+     * operational rather than commercial, and the people who run agents are the people who should
+     * see whether they are running. What it costs is a different question with a different answer.
+     */
+    sourcePermission: { module: 'agents', action: 'View' },
     scoped: true,
   },
 ];
@@ -780,3 +1035,229 @@ export function toCsv(
   const body = rows.map((row) => columns.map((column) => csvCell(row[column])).join(','));
   return [header, ...body].join('\r\n');
 }
+
+// ---------------------------------------------------------------------------
+// What a column is called on screen
+// ---------------------------------------------------------------------------
+
+/**
+ * A readable heading for every report column.
+ *
+ * ## Why this exists
+ *
+ * The report screens rendered the column *key* as the heading, so a manager reading a report saw
+ * `slaOutcome`, `lastRunAt`, `waitingSince`, `resourceType` and `amountMinor` — the names a
+ * programmer gave the database. Across eleven reports that is about fifty headings, and a report
+ * is the one screen somebody shows their own boss.
+ *
+ * ## Labels here rather than renaming the keys
+ *
+ * The key is what a row is looked up by and what the CSV export writes, so renaming it would
+ * change the data's shape for anyone who already builds on the export. The key stays; the screen
+ * gains a name.
+ *
+ * ## Written as the question a person would ask
+ *
+ * `waitingOn` is "Waiting for", not "Waiting On" — title-casing the key is the same mistake in a
+ * nicer font. Where a column is ambiguous on its own the label says which thing it counts:
+ * `events` in the audit report is "Times it happened", and in the performance report it is
+ * "Scored events".
+ */
+export const REPORT_COLUMN_LABELS: Record<string, string> = {
+  action: 'What happened',
+  agent: 'Agent',
+  // Money is stored in minor units and must never be *shown* in them — see `formatReportCell`.
+  amountMinor: 'Cost',
+  badgeChanges: 'Badge changes',
+  closedAt: 'Closed',
+  completed: 'Completed',
+  currentBadge: 'Badge now',
+  day: 'Day',
+  dueAt: 'Due',
+  entries: 'Charges',
+  evaluations: 'Reviews',
+  events: 'Times',
+  failed: 'Failed',
+  inFlight: 'In progress',
+  inputTokens: 'Input tokens',
+  kind: 'Kind',
+  lastAt: 'Last seen',
+  lastRunAt: 'Last run',
+  objective: 'Objective',
+  open: 'Open',
+  openedAt: 'Raised',
+  outputTokens: 'Output tokens',
+  overdue: 'Overdue',
+  owner: 'Owner',
+  passed: 'Passed',
+  person: 'Person',
+  points: 'Points',
+  requestedBy: 'Asked by',
+  resourceType: 'What it was about',
+  runs: 'Runs',
+  severity: 'Severity',
+  skill: 'Skill',
+  slaOutcome: 'On time?',
+  state: 'State',
+  status: 'Status',
+  step: 'Step',
+  succeeded: 'Succeeded',
+  title: 'What',
+  type: 'Type',
+  verdict: 'Verdict',
+  version: 'Version',
+  waitingDays: 'Waiting (days)',
+  waitingOn: 'Waiting for',
+  waitingSince: 'Waiting since',
+};
+
+/**
+ * The heading for a column, falling back to the key split into words.
+ *
+ * A key with no label is a column somebody added without naming it. Splitting `someNewField`
+ * into "Some new field" is better than printing it raw, and it stays obviously unfinished — which
+ * is the point: the fallback should not be comfortable enough to live with.
+ */
+export function reportColumnLabel(column: string): string {
+  const known = REPORT_COLUMN_LABELS[column];
+  if (known !== undefined) return known;
+  const spaced = column.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+/** Columns holding money in minor units. Shown as an amount, never as the integer. */
+export const REPORT_MONEY_COLUMNS: readonly string[] = ['amountMinor'];
+
+/**
+ * Columns a **company** must not be shown.
+ *
+ * Token counts are a provider's unit of account. A customer who has them can divide the charge by
+ * the tokens, read off a per-million rate and match it against a public price list — which names
+ * the provider as surely as printing its name would, and shows the margin besides. They were
+ * removed from the cost drill-down and the ledger; this report was missed.
+ *
+ * The columns stay in the data, and the platform plane reads them.
+ */
+export const REPORT_COLUMNS_HIDDEN_FROM_COMPANY: readonly string[] = [
+  'inputTokens',
+  'outputTokens',
+];
+
+/**
+ * The overview: the four or five questions somebody opens this section to answer.
+ *
+ * ## Why a layer above the reports at all
+ *
+ * Eleven reports behind eleven tabs is a filing cabinet, not a screen. Whoever opens Reports is
+ * not looking for the Dependency Waiting report — they are looking to find out whether anything
+ * is stuck, and they have to already know which drawer that lives in before the product will tell
+ * them. So the first thing the screen does now is answer, and the reports are what the answers
+ * open into.
+ *
+ * ## Each panel reads one report, and that is not a limitation
+ *
+ * A panel is a compact drawing of rows the reader's own permissions already allowed them to run.
+ * Nothing here is a new query, a new aggregate or a new number: the cost panel runs the AI Usage &
+ * Cost report and draws the days it returned. The consequences matter more than the tidiness —
+ *
+ *   * **A panel a reader may not see is absent.** The catalogue is filtered by the server, so an
+ *     Employee without `settings:Administer` gets no cost panel, exactly as they get no cost tab.
+ *     Building the overview from its own endpoint would have meant a second authorization path
+ *     over the same data, which is the shape of every reporting leak.
+ *   * **The scope is the reader's scope.** Each report applies the reporting tree itself, so a
+ *     manager's workload panel is their own people, not the company's.
+ *   * **The panel and the report can never disagree**, because clicking the panel runs the same
+ *     report over the same period the panel was drawn from.
+ *
+ * ## Why these five
+ *
+ * They are the questions asked daily rather than the reports that were easiest to summarise:
+ * what it is costing, how much of it the agents are doing, who is carrying too much, what cannot
+ * move, and whether the agents are working at all. Objectives are deliberately not here — the
+ * Dashboard already carries them, and the locked contract puts exactly one picture of objectives
+ * in this product.
+ */
+export interface ReportOverviewPanel {
+  key: string;
+  /** The question, in the words somebody would use to ask it out loud. */
+  question: string;
+  /** The report this panel draws, and the one a click opens in full. */
+  report: ReportKey;
+  /**
+   * How the panel draws — usually a more compact reading than the report's own chart.
+   *
+   * The workload report draws a bar per person; the panel draws the same bars but only the few at
+   * the top, because "who is carrying the most" is answered by the top of that list and the rest
+   * is the report's job.
+   */
+  chart: ReportChart;
+}
+
+export const REPORT_OVERVIEW: readonly ReportOverviewPanel[] = [
+  {
+    key: 'cost',
+    question: 'What is AI work costing?',
+    report: 'AiUsageAndCost',
+    chart: {
+      kind: 'line',
+      labelColumn: 'day',
+      valueColumn: 'amountMinor',
+      format: 'money',
+      title: 'Cost by day',
+    },
+  },
+  {
+    key: 'mix',
+    question: 'How much of the work is AI doing?',
+    report: 'HumanVsAiWorkMix',
+    chart: {
+      kind: 'share',
+      labelColumn: 'kind',
+      valueColumn: 'completed',
+      title: 'Finished work',
+    },
+  },
+  {
+    key: 'load',
+    question: 'Who is carrying the most?',
+    report: 'EmployeeWorkload',
+    chart: {
+      kind: 'series',
+      labelColumn: 'person',
+      valueColumn: 'open',
+      title: 'Open items',
+    },
+  },
+  {
+    key: 'stuck',
+    question: 'What cannot start yet?',
+    report: 'DependencyWaiting',
+    /*
+     * A number, not a picture.
+     *
+     * The answer is a count and a date — how many steps are held, and how long the oldest has
+     * been held. Charting a count of one against a count of nothing is a bar chart that says
+     * "one", in a space that could have said "one step, waiting since the 4th".
+     */
+    chart: {
+      kind: 'tally',
+      title: 'Held by something earlier',
+      unit: 'step',
+      detail: { key: 'oldestWaitingSince', label: 'Longest wait since' },
+      concernAt: 1,
+    },
+  },
+  {
+    key: 'agents',
+    question: 'Are the agents working?',
+    report: 'EngineAgentHealth',
+    chart: {
+      kind: 'status',
+      labelColumn: 'agent',
+      totalColumn: 'runs',
+      failedColumn: 'failed',
+      unit: 'run',
+      title: 'Each agent',
+    },
+  },
+];

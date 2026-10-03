@@ -15,6 +15,8 @@ export const NOTIFICATION_KINDS = [
   'BudgetThreshold',
   'SecurityEvent',
   'WorkReady',
+  'Badge',
+  'SubscriptionLapsed',
 ] as const;
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
@@ -107,6 +109,33 @@ export const NOTIFICATION_KIND_DEFINITIONS: readonly NotificationKindDefinition[
     producedBy: 'live — Plans & Entitlements (Prompt 11)',
   },
   {
+    kind: 'SubscriptionLapsed',
+    label: 'Subscription and access',
+    description:
+      'This company’s subscription was not paid and the workspace has gone read-only, or has ' +
+      'been paid and is working again.',
+    /*
+     * Mandatory, and this is the one commercial kind that is.
+     *
+     * Everything else under `settings` is a warning somebody may reasonably choose not to see.
+     * This one says the workspace has stopped: a person who muted it would discover the fact by
+     * failing to save their work, which is the outcome the whole read-only design exists to
+     * avoid. The client's rule is that an alert may be mandatory when ignoring it costs the
+     * company the product, and this is that case.
+     */
+    alwaysMandatory: true,
+    /*
+     * It does not escalate.
+     *
+     * Escalation chases somebody who is failing to act. There is nobody above a company
+     * administrator to chase here — the next step is UBoss contacting the customer, which is a
+     * commercial conversation and not a notification.
+     */
+    escalatesAfterSetting: null,
+    module: 'settings',
+    producedBy: 'live — the payment provider’s webhook',
+  },
+  {
     kind: 'WorkReady',
     label: 'Work ready for you',
     description: 'A step you own is no longer waiting on anything else, and can be started.',
@@ -131,6 +160,24 @@ export const NOTIFICATION_KIND_DEFINITIONS: readonly NotificationKindDefinition[
     escalatesAfterSetting: null,
     module: 'settings',
     producedBy: 'live — Audit & Security (Prompt 8)',
+  },
+  {
+    kind: 'Badge',
+    label: 'Your badge changed',
+    description: 'Your performance badge moved up or down a level.',
+    /*
+     * Mutable, and it escalates nothing.
+     *
+     * A badge is the person's own standing, not a task and not an alert — there is nothing to
+     * chase and nobody to escalate to. Somebody who would rather not be told about it should be
+     * able to say so, which is why this is not mandatory; the score itself is on their
+     * performance screen either way, so turning the notification off hides an announcement
+     * rather than a fact.
+     */
+    alwaysMandatory: false,
+    escalatesAfterSetting: null,
+    module: 'performance',
+    producedBy: 'live — the performance engine, when a badge period closes',
   },
 ];
 

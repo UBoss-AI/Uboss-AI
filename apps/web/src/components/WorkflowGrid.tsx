@@ -130,7 +130,20 @@ export function WorkflowGrid({
   expanded = false,
   className,
 }: WorkflowGridProps) {
-  const columns = FORM2_WORKFLOW_COLUMNS;
+  /*
+   * Every column the client's form has, except the approval gate.
+   *
+   * The gate is gone by decision, not by oversight. A step that says "Manager sign-off" stops the
+   * work between two people until somebody with that role decides, and the company this is built
+   * for has two kinds of person: an administrator who defines the work, and an employee who does
+   * it. There is no Manager to stop it for, so a gate set here would be work that waits for
+   * nobody.
+   *
+   * The column, its values and every approval already recorded stay where they are — an objective
+   * published before this still runs, and its decisions are still readable. What changes is that
+   * a new one cannot be created, which is the only part an administrator sees.
+   */
+  const columns = FORM2_WORKFLOW_COLUMNS.filter((column) => column.key !== 'approval');
 
   /*
    * Row identity, kept here rather than on the step.

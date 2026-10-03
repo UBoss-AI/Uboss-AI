@@ -4,6 +4,8 @@ import { useSearchParams } from 'next/navigation';
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { COMPANY_GRANTABLE_ROLES, ROLE_KIND_LABELS } from '@uboss/types';
+
 import {
   Banner,
   Button,
@@ -15,6 +17,8 @@ import {
   FormField,
   Modal,
   PageHeader,
+  RowMenu,
+  type RowMenuItem,
   SearchField,
   SegmentedControl,
   SkeletonText,
@@ -56,6 +60,28 @@ function activationTone(person: AccessPerson): StatusTone {
     return 'grey';
   }
   return person.invitation ? 'blue' : 'grey';
+}
+
+/**
+ * The plain English for what somebody holds. `ROLE_KIND_LABELS` names them the same everywhere.
+ *
+ * Somebody with more than one used to read **"2 roles"**, which answers a question nobody asked.
+ * The column is headed Role and exists so an administrator can see who can do what; a count tells
+ * them only that they have to click to find out, on the one screen where the whole point is to see
+ * it. Aman Singh holds Employee and Approver — two names, and they fit.
+ *
+ * Past three the names would out-run the column, so that is where a count belongs: the row still
+ * leads with what they mostly are, and says how much else there is.
+ */
+function roleLabelFor(person: AccessPerson): string {
+  if (person.userType === 'ExternalGuest') return 'Guest';
+  if (person.roleKinds.length === 0) return 'No role';
+
+  const named = person.roleKinds.map(
+    (kind) => ROLE_KIND_LABELS[kind as keyof typeof ROLE_KIND_LABELS] ?? kind,
+  );
+  if (named.length <= 3) return named.join(' · ');
+  return `${named.slice(0, 2).join(' · ')} +${named.length - 2} more`;
 }
 
 function activationLabel(person: AccessPerson): string {
@@ -121,7 +147,6 @@ function UsersAccessInner() {
     displayName: '',
     resourceIds: '',
     accessDays: '30',
-    reason: '',
   });
 
   const [suspendFor, setSuspendFor] = useState<AccessPerson | null>(null);
@@ -148,6 +173,17 @@ function UsersAccessInner() {
    * version of this screen went wrong.
    */
   const [inviteAs, setInviteAs] = useState<'Employee' | 'CompanyAdmin'>('Employee');
+
+  /*
+   * Changing somebody's role after they are already in.
+   *
+   * The role was chosen once, in the invitation dialog, and there was no way to change it
+   * afterwards from any screen. With two roles in the company model that left the most ordinary
+   * administrative act in the product — promoting somebody to administrator, or standing one
+   * down — with no route at all short of the platform console.
+   */
+  const [roleFor, setRoleFor] = useState<AccessPerson | null>(null);
+  const [roleTo, setRoleTo] = useState<(typeof COMPANY_GRANTABLE_ROLES)[number]>('Employee');
 
   const [bulkKind, setBulkKind] = useState('ImportEmployees');
   const [bulkContent, setBulkContent] = useState('');
@@ -282,7 +318,7 @@ function UsersAccessInner() {
       <PageHeader
         title="Users & Access"
         description="Activation and account lifecycle."
-        breadcrumbs={[{ label: 'Settings' }, { label: 'Users & Access' }]}
+        breadcrumbs={[{ label: 'Settings', href: '/settings' }, { label: 'Users & Access' }]}
       />
 
       {error ? <Banner tone="danger">{error}</Banner> : null}
@@ -373,23 +409,31 @@ function UsersAccessInner() {
                       ),
                     },
                     {
+                      /*
+                       * The role, not a count of roles.
+                       *
+                       * This read "1 role", which answers a question nobody asks and made an
+                       * administrator and an employee look identical in a list whose purpose is
+                       * telling them apart. With two roles in the company model the name is the
+                       * whole content of the column.
+                       *
+                       * More than one is still shown as a count, because that is a company with a
+                       * custom role in play and naming three things in a table cell is worse than
+                       * saying how many there are.
+                       */
                       key: 'role',
                       header: 'Role',
                       render: (person) => (
                         <StatusBadge
-                          status={
-                            person.userType === 'ExternalGuest'
-                              ? 'Guest'
-                              : person.roleCount === 0
-                                ? 'No role'
-                                : `${person.roleCount} role${person.roleCount === 1 ? '' : 's'}`
-                          }
+                          status={roleLabelFor(person)}
                           tone={
                             person.userType === 'ExternalGuest'
                               ? 'purple'
                               : person.roleCount === 0
                                 ? 'warn'
-                                : 'grey'
+                                : person.roleKinds.includes('CompanyAdmin')
+                                  ? 'blue'
+                                  : 'grey'
                           }
                         />
                       ),
@@ -440,105 +484,171 @@ function UsersAccessInner() {
                     {
                       key: 'actions',
                       header: '',
-                      render: (person) => (
-                        <span className="uboss-actions">
-                          {/*
-                            Prompt 40A (CR-03) §1 — Access & Permissions.
+                      render: (person) => {
+                        /*
+                          One primary action, and the rest behind ⋯.
 
-                            Shown only to somebody holding `users:ManageAccess`, because reading the
-                            step is gated as tightly as writing it: the response describes the
-                            caller's own authority. Asked of `/my-access` rather than a role label.
-                          */}
-                          {mayManageAccess && person.accountState !== 'Offboarded' ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={busy}
-                              onClick={() => setAccessFor(person)}
-                              data-testid="open-access-step"
-                            >
-                              Access
-                            </Button>
-                          ) : null}
+                          This column used to render every action as its own button, so twenty-four
+                          people made ninety-odd buttons on one screen. Two things were wrong with
+                          that, and the second is the serious one:
 
-                          {person.accountState !== 'Active' &&
+                            * a wall of small grey words where the eye is looking for a name; and
+                            * **Offboard sat next to Suspend** — a temporary hold beside the end of
+                              somebody's employment, rendered alike, a few pixels apart, on a row
+                              that scrolls. The confirm dialog is what stopped the mistake, and a
+                              dialog should not be a product's only defence against a mis-click.
+
+                          The primary action stays a real button, because putting the common case
+                          behind a menu is how overflow menus earn their bad name. Which one is
+                          primary depends on where the person is: somebody not yet in the company
+                          needs inviting, everybody else needs their access.
+                        */
+                        const menu: RowMenuItem[] = [];
+
+                        if (
+                          mayManageAccess &&
+                          person.userType === 'InternalUser' &&
+                          person.accountState !== 'Offboarded'
+                        ) {
+                          menu.push({
+                            key: 'role',
+                            label: 'Change role',
+                            onSelect: () => {
+                              setRoleFor(person);
+                              setRoleTo(
+                                person.roleKinds.includes('CompanyAdmin')
+                                  ? 'Employee'
+                                  : 'CompanyAdmin',
+                              );
+                            },
+                          });
+                        }
+
+                        if (person.invitation) {
+                          menu.push({
+                            key: 'cancel',
+                            label: 'Cancel invitation',
+                            detail: 'The link stops working immediately.',
+                            onSelect: () =>
+                              void run(async () => {
+                                await accessApi.cancelInvitation(
+                                  tenantId as string,
+                                  person.invitation!.id,
+                                );
+                                return 'Invitation cancelled. The link stops working immediately.';
+                              }),
+                          });
+                        }
+
+                        if (mayManageAccess && person.accountState === 'Active') {
+                          menu.push({
+                            key: 'suspend',
+                            label: 'Suspend',
+                            detail: 'Reversible. Keeps everything.',
+                            onSelect: () => setSuspendFor(person),
+                          });
+                        }
+
+                        if (person.accountState === 'Suspended') {
+                          menu.push({
+                            key: 'reinstate',
+                            label: 'Reinstate',
+                            onSelect: () =>
+                              void run(async () => {
+                                await accessApi.reinstate(
+                                  tenantId as string,
+                                  person.userId,
+                                  'Reinstated from Users & Access.',
+                                );
+                                return `${person.displayName} is active again.`;
+                              }),
+                          });
+                        }
+
+                        if (mayManageAccess && person.accountState !== 'Offboarded') {
+                          menu.push({
+                            key: 'offboard',
+                            label: 'Offboard',
+                            detail: 'Ends their employment. Deletes nothing.',
+                            destructive: true,
+                            onSelect: () => openOffboard(person),
+                          });
+                        }
+
+                        const needsInvite =
+                          person.accountState !== 'Active' &&
                           person.accountState !== 'Offboarded' &&
-                          person.userType === 'InternalUser' ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={busy || !person.readiness.ready}
-                              onClick={() => {
-                                setInviteFor(person);
-                                setInviteEmail(person.email);
-                              }}
-                            >
-                              {person.invitation ? 'Resend' : 'Invite'}
-                            </Button>
-                          ) : null}
+                          person.userType === 'InternalUser';
 
-                          {person.invitation ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={busy}
-                              onClick={() =>
-                                void run(async () => {
-                                  await accessApi.cancelInvitation(
-                                    tenantId as string,
-                                    person.invitation!.id,
-                                  );
-                                  return 'Invitation cancelled. The link stops working immediately.';
-                                })
+                        return (
+                          <span className="uboss-actions">
+                            {/*
+                              Prompt 40A (CR-03) §1 — Access & Permissions.
+
+                              Shown only to somebody holding `users:ManageAccess`, because reading
+                              the step is gated as tightly as writing it: the response describes
+                              the caller's own authority. Asked of `/my-access` rather than a role
+                              label.
+                            */}
+                            {needsInvite ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={busy || !person.readiness.ready}
+                                /*
+                                 * The same sentence the row already carries, on the control that
+                                 * is dead because of it. The row says "Needs …" beside the status
+                                 * badge; somebody whose eye is on the button does not necessarily
+                                 * look left, and a disabled button with no reason reads as broken.
+                                 */
+                                title={
+                                  person.readiness.ready
+                                    ? undefined
+                                    : `Needs ${person.readiness.missing.join(', ')} before an invitation can be sent.`
+                                }
+                                onClick={() => {
+                                  setInviteFor(person);
+                                  setInviteEmail(person.email);
+                                }}
+                              >
+                                {person.invitation ? 'Resend' : 'Invite'}
+                              </Button>
+                            ) : mayManageAccess && person.accountState !== 'Offboarded' ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={busy}
+                                onClick={() => setAccessFor(person)}
+                                data-testid="open-access-step"
+                              >
+                                Access
+                              </Button>
+                            ) : null}
+
+                            {/*
+                              Somebody waiting on an invitation still needs their access setting
+                              up, so it moves into the menu rather than disappearing.
+                            */}
+                            <RowMenu
+                              subject={person.displayName}
+                              items={
+                                needsInvite &&
+                                mayManageAccess &&
+                                person.accountState !== 'Offboarded'
+                                  ? [
+                                      {
+                                        key: 'access',
+                                        label: 'Access & permissions',
+                                        onSelect: () => setAccessFor(person),
+                                      },
+                                      ...menu,
+                                    ]
+                                  : menu
                               }
-                            >
-                              Cancel
-                            </Button>
-                          ) : null}
-
-                          {mayManageAccess && person.accountState === 'Active' ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={busy}
-                              onClick={() => setSuspendFor(person)}
-                            >
-                              Suspend
-                            </Button>
-                          ) : null}
-
-                          {person.accountState === 'Suspended' ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={busy}
-                              onClick={() =>
-                                void run(async () => {
-                                  await accessApi.reinstate(
-                                    tenantId as string,
-                                    person.userId,
-                                    'Reinstated from Users & Access.',
-                                  );
-                                  return `${person.displayName} is active again.`;
-                                })
-                              }
-                            >
-                              Reinstate
-                            </Button>
-                          ) : null}
-
-                          {mayManageAccess && person.accountState !== 'Offboarded' ? (
-                            <Button
-                              variant="danger-ghost"
-                              size="sm"
-                              disabled={busy}
-                              onClick={() => openOffboard(person)}
-                            >
-                              Offboard
-                            </Button>
-                          ) : null}
-                        </span>
-                      ),
+                            />
+                          </span>
+                        );
+                      },
                     },
                   ]}
                   rows={rows}
@@ -732,8 +842,7 @@ function UsersAccessInner() {
                 busy ||
                 guest.email.trim() === '' ||
                 guest.displayName.trim() === '' ||
-                guest.resourceIds.trim() === '' ||
-                guest.reason.trim().length < 5
+                guest.resourceIds.trim() === ''
               }
               onClick={() =>
                 void run(async () => {
@@ -745,7 +854,6 @@ function UsersAccessInner() {
                       .map((id) => id.trim())
                       .filter(Boolean),
                     accessDays: Number(guest.accessDays),
-                    reason: guest.reason.trim(),
                   });
                   setGuestOpen(false);
                   return `Guest invited. Access ends ${new Date(
@@ -794,7 +902,24 @@ function UsersAccessInner() {
             />
           )}
         </FormField>
-        <FormField label="Access for (days)" required hint="Capped at 365 days.">
+        {/*
+          Four fields, and the last one already has an answer in it.
+
+          This form had five required fields to let one person read two documents, and the fifth
+          was a free-text box asking why. Nobody is approving this — an administrator has already
+          decided — and the invitation records what it grants regardless: this person, these
+          resources, until this date. A required "why" on a decision already taken collects the
+          word "guest", and a compliance record made of the word "guest" is worse than none,
+          because it looks like a reason somebody gave.
+
+          Thirty days was already the value in the box; it is now stated as the default rather
+          than presented as a question with a number pre-filled.
+        */}
+        <FormField
+          label="Access for (days)"
+          required
+          hint="30 days unless you change it. 365 is the most anybody can be given."
+        >
           {(wiring) => (
             <input
               {...wiring}
@@ -802,17 +927,6 @@ function UsersAccessInner() {
               inputMode="numeric"
               value={guest.accessDays}
               onChange={(event) => setGuest({ ...guest, accessDays: event.target.value })}
-            />
-          )}
-        </FormField>
-        <FormField label="Why they need access" required>
-          {(wiring) => (
-            <textarea
-              {...wiring}
-              className="uboss-input"
-              rows={2}
-              value={guest.reason}
-              onChange={(event) => setGuest({ ...guest, reason: event.target.value })}
             />
           )}
         </FormField>
@@ -1007,6 +1121,82 @@ function UsersAccessInner() {
           </>
         )}
       </Modal>
+
+      {/*
+        Change of role.
+
+        A `ConfirmDialog` rather than a form, because the choice has already been made on the row —
+        the button offers the one role the person does not hold — and what is left is whether the
+        administrator meant it. Promoting somebody to administrator hands them every screen in the
+        company, and standing one down takes those screens away; neither is a thing to do on a
+        mis-click.
+      */}
+      <ConfirmDialog
+        open={roleFor !== null}
+        title={
+          roleTo === 'CompanyAdmin'
+            ? `Make ${roleFor?.displayName ?? ''} an administrator`
+            : `Make ${roleFor?.displayName ?? ''} an employee`
+        }
+        description={
+          roleTo === 'CompanyAdmin'
+            ? 'They will be able to define objectives, build agents, manage people and change ' +
+              'company settings — everything you can do.'
+            : 'They keep their own work, their tasks and their performance record, and lose ' +
+              'administration of the company.'
+        }
+        impact={[
+          { label: 'New role', value: ROLE_KIND_LABELS[roleTo] },
+          {
+            label: 'Previous role',
+            value:
+              (roleFor?.roleKinds ?? [])
+                .map((kind) => ROLE_KIND_LABELS[kind as keyof typeof ROLE_KIND_LABELS] ?? kind)
+                .join(', ') || 'None',
+          },
+          // Said plainly, because it is the question an administrator asks before pressing it.
+          { label: 'Their work', value: 'Untouched — tasks, evidence and history stay theirs' },
+          { label: 'Reversible', value: 'Yes — change it back the same way' },
+        ]}
+        requireReason
+        reasonLabel="Why is this role changing?"
+        confirmLabel={roleTo === 'CompanyAdmin' ? 'Make administrator' : 'Make employee'}
+        onCancel={() => setRoleFor(null)}
+        onConfirm={(reason) => {
+          const person = roleFor;
+          const target = roleTo;
+          setRoleFor(null);
+          void run(async () => {
+            await accessApi.grantRole(tenantId as string, person!.userId, {
+              roleKind: target,
+              scopeKind: target === 'CompanyAdmin' ? 'WholeCompany' : 'OwnWork',
+              justification: reason ?? '',
+            });
+
+            /*
+             * The old role is revoked after the new one is granted, never before.
+             *
+             * If the grant fails, they keep what they had. The other order would leave somebody
+             * with no role at all on a failure, which is an account that signs in and reaches
+             * nothing — and `activationReadiness` treats "no role" as not activatable, so it
+             * would not be a state they could be rescued from on this screen.
+             */
+            const held = await accessApi.rolesOf(tenantId as string, person!.userId);
+            for (const assignment of held.assignments) {
+              if (assignment.expired) continue;
+              if (assignment.roleKind === target) continue;
+              // Only the built-in company roles. A custom role the company wrote for itself is
+              // somebody's deliberate work and is not swept away by a change of the main one.
+              if (!(COMPANY_GRANTABLE_ROLES as readonly string[]).includes(assignment.roleKind)) {
+                continue;
+              }
+              await accessApi.revokeRole(tenantId as string, assignment.id);
+            }
+
+            return `${person!.displayName} is now ${ROLE_KIND_LABELS[target].toLowerCase()}.`;
+          });
+        }}
+      />
 
       <ConfirmDialog
         open={suspendFor !== null}

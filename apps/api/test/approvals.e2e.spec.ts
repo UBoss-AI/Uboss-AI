@@ -34,6 +34,7 @@ import { ExecutorService } from '../src/executor/executor.service.js';
 import { RunController } from '../src/runs/run.controller.js';
 import { CompanySettingsService } from '../src/settings/company-settings.service.js';
 import { ApprovalService } from '../src/approvals/approval.service.js';
+import { PerformanceService } from '../src/performance/performance.service.js';
 import { HumanTaskService } from '../src/tasks/human-task.service.js';
 import { WorkReleaseService } from '../src/tasks/work-release.service.js';
 import { AuditEventService } from '../src/audit/audit-event.service.js';
@@ -212,6 +213,10 @@ describe('approval engine, delegation and four-eyes (e2e)', () => {
         // Prompt 28: the Executor now raises a real approval row for RequestApproval, rather
         // than reporting that it asked for a decision nobody could see.
         ApprovalService,
+        // `HumanTaskService` scores a completion, so the module it is built in needs the
+        // service that records it. In the running product `PerformanceModule` is global;
+        // a test module assembles only what it names.
+        PerformanceService,
         HumanTaskService,
         WorkReleaseService,
         CompanySettingsService,
@@ -2258,6 +2263,74 @@ describe('approval engine, delegation and four-eyes (e2e)', () => {
       assert.equal(after.status, 'Completed');
       assert.ok(after.completedAt, 'a completed task records when it completed');
       assert.ok(after.submittedAt, 'and keeps when it was submitted');
+    });
+
+    it('charges the submitter when their submission is sent back', async () => {
+      /*
+       * `QualityRejected` sat in every company's policy at −10 with nothing able to produce it,
+       * so work that had to be redone twice scored the same as work accepted first time.
+       *
+       * Nothing here moves the task. ADR-295's rule holds — the product defines no task
+       * transition for a rejection and inventing one during an integration is how a lifecycle
+       * acquires semantics nobody approved. What is recorded is the score the policy already
+       * described.
+       */
+      const { taskId, approvalId } = await taskAwaitingApproval();
+
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: managerUserId,
+        approvalId,
+        decision: 'Reject',
+        note: 'The reconciliation is missing two branches.',
+      });
+
+      const events = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.performanceEvent.findMany({
+          where: { tenantId, sourceKind: 'approval_request', sourceId: approvalId },
+        }),
+      );
+
+      assert.equal(events.length, 1, 'a rejected submission scored nothing');
+      assert.equal(events[0]?.kind, 'QualityRejected');
+      assert.equal(
+        events[0]?.subjectUserId,
+        workerUserId,
+        'the rejection should cost the person who submitted, not the one who read it',
+      );
+      assert.ok((events[0]?.points ?? 0) < 0, 'a rejection should cost something');
+
+      // The task itself is exactly where it was.
+      assert.equal((await statusOf(taskId)).status, 'WaitingApproval');
+    });
+
+    it('charges each rejection once, however often reconciliation runs', async () => {
+      /*
+       * Keyed on the approval rather than the task, so a resubmission that is sent back again is
+       * a second outcome and re-reading the same rejection is not.
+       */
+      const { taskId, approvalId } = await taskAwaitingApproval();
+
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: managerUserId,
+        approvalId,
+        decision: 'Reject',
+        note: 'Two branches short.',
+      });
+
+      await tasks().reconcileApprovalOutcome({
+        scope: scope(),
+        taskId,
+        actorUserId: managerUserId,
+      });
+
+      const charged = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.performanceEvent.count({
+          where: { tenantId, sourceKind: 'approval_request', sourceId: approvalId },
+        }),
+      );
+      assert.equal(charged, 1, 'the same rejection was charged twice');
     });
 
     it('keeps the evidence, the approver and the decision on the completed task', async () => {

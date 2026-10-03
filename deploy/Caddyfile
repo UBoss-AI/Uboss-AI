@@ -10,6 +10,10 @@ ubossai.com {
 	reverse_proxy marketing:3100
 }
 
+chiefagent.ubossai.com {
+	reverse_proxy marketing:3100
+}
+
 app.ubossai.com {
 	reverse_proxy web:3000
 }

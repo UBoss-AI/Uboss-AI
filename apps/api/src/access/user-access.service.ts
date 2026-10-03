@@ -32,6 +32,14 @@ export interface AccessPerson {
   reportingManagerName: string | null;
   employmentState: string | null;
   roleCount: number;
+  /**
+   * Which roles this person holds.
+   *
+   * The screen showed the count — "1 role" — which made an administrator and an employee read
+   * identically in a list whose whole purpose is telling them apart. With two roles in the model
+   * the useful answer is the name.
+   */
+  roleKinds: string[];
   /** Guests only. */
   guestAccessExpiresAt: string | null;
   guestExpired: boolean;
@@ -157,6 +165,7 @@ export class UserAccessService {
       reportingManagerName: row.reportingManagerName,
       employmentState: row.employmentState,
       roleCount: row.roleCount,
+      roleKinds: row.roleKinds,
       guestAccessExpiresAt: row.guestAccessExpiresAt?.toISOString() ?? null,
       guestExpired: row.guestAccessExpiresAt !== null && row.guestAccessExpiresAt.getTime() <= now,
       invitation:
@@ -180,6 +189,9 @@ export class UserAccessService {
               },
         roleCount: row.roleCount,
         companyHasReportingRoot,
+        // Passed at last. Left out, it defaulted to false and the founding administrator was told
+        // on every page load that they needed an employment record they can never have.
+        hasBootstrapRole: row.hasBootstrapRole,
       }),
     };
   }

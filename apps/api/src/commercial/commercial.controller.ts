@@ -165,7 +165,7 @@ export class CompanyCommercialController {
    * should learn *why* they are not rather than assume an oversight.
    */
   @Get('position')
-  @RequirePermission({ module: 'settings', action: 'View' })
+  @RequirePermission({ module: 'settings', action: 'Administer' })
   async position(): Promise<unknown> {
     return this.commercial.positionForCompany(
       this.tenantContext.requireScope(),
@@ -173,7 +173,14 @@ export class CompanyCommercialController {
     );
   }
 
-  /** Just the seat numbers, for a screen deciding whether to offer an Invite button. */
+  /**
+   * Just the seat numbers, for a screen deciding whether to offer an Invite button.
+   *
+   * `View`, where everything else on this controller is `Administer`, and the difference is the
+   * point. `position` carries what the company pays; this carries how many seats are left. A
+   * manager who may invite people but may not see the bill still has to know whether there is a
+   * seat to invite into — without it they invite somebody straight into a refusal.
+   */
   @Get('seats')
   @RequirePermission({ module: 'settings', action: 'View' })
   async seatPosition(): Promise<unknown> {
@@ -181,7 +188,7 @@ export class CompanyCommercialController {
   }
 
   @Get('requests')
-  @RequirePermission({ module: 'settings', action: 'View' })
+  @RequirePermission({ module: 'settings', action: 'Administer' })
   async requests(): Promise<unknown> {
     const requests = await this.commercial.requestsForCompany(
       this.tenantContext.requireScope(),

@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common';
 
-import { COMPANY_MODULES } from '@uboss/types';
+import { BILLING_CURRENCIES, COMPANY_MODULES, isBillingCurrency } from '@uboss/types';
 
 import { AuditEventService } from '../audit/audit-event.service.js';
 import { SECURITY_ACTIONS, SecurityEventPublisher } from '../auth/security-event.publisher.js';
@@ -85,7 +85,16 @@ export interface ProvisionCompanyInput {
   };
 
   /** The platform actor performing the provisioning. Never taken from a request body. */
-  actorUserId: string;
+  /**
+   * Who at UBoss provisioned this company, or **null** when nobody did.
+   *
+   * Null is for a self-serve signup: a company that created itself after proving its own address
+   * and domain, with no person at UBoss involved at any point. Every column this value reaches is
+   * nullable, and null in them is the truth — the alternative was inventing a system user and
+   * attributing a customer's own decision to it, which would make the audit trail say something
+   * that did not happen.
+   */
+  actorUserId: string | null;
   /** Retry safety: the same key provisions once. See `provision`. */
   idempotencyKey: string;
 }
@@ -452,7 +461,7 @@ export class CompanyProvisioningService {
         tenantId: tenant.id,
         email: input.admin.workEmail,
         displayName: input.admin.name,
-        invitedByUserId: input.actorUserId,
+        invitedByUserId: input.actorUserId ?? undefined,
       });
 
       // The outbox row: written in this transaction, delivered afterwards.
@@ -482,7 +491,7 @@ export class CompanyProvisioningService {
         resourceType: 'tenant',
         resourceId: tenant.id,
         resourceRef: tenant.code ?? tenant.slug,
-        actorUserId: input.actorUserId,
+        actorUserId: input.actorUserId ?? undefined,
         summary: `${tenant.name} provisioned on the ${plan.name} plan with ${input.seats} seat(s).`,
         reason: 'Company provisioning through the Master Console. There is no public signup.',
         metadata: {
@@ -503,7 +512,7 @@ export class CompanyProvisioningService {
         action: 'company.bootstrap_admin_granted',
         resourceType: 'role_assignment',
         resourceId: bootstrapRole.id,
-        actorUserId: input.actorUserId,
+        actorUserId: input.actorUserId ?? undefined,
         summary: `${adminUser.displayName} became the initial Company Super Admin.`,
         reason:
           'Granted by provisioning, with no prior Company Admin to grant it. This is the one ' +
@@ -522,7 +531,7 @@ export class CompanyProvisioningService {
       await this.securityEvents.recordWithinCurrentScope({
         action: SECURITY_ACTIONS.companyBootstrapAdminGranted,
         tenantId: tenant.id,
-        actorUserId: input.actorUserId,
+        actorUserId: input.actorUserId ?? undefined,
         resourceType: 'role_assignment',
         resourceId: bootstrapRole.id,
         summary: `Bootstrap Company Admin granted for ${tenant.name}.`,
@@ -573,6 +582,25 @@ export class CompanyProvisioningService {
     }
     if (input.budget.warningPercent < 1 || input.budget.warningPercent > 100) {
       throw new BadRequestException('The warning threshold is a percentage: 1 to 100.');
+    }
+
+    /*
+     * The currency has to be one UBoss prices plans in.
+     *
+     * A company created in a currency no plan carries a price for is a company that cannot be
+     * shown what it owes — and it is created with that currency written into its wallet, its
+     * ledger and its subscription, none of which can be changed afterwards without changing what
+     * every stored integer means. Refused here rather than discovered at the first invoice.
+     *
+     * Not cross-checked against the country, deliberately. `currencyForCountry` gives the default
+     * a self-serve signup uses, and a deliberate mismatch is legitimate: an Indian subsidiary of a
+     * US group is often billed in dollars, and that is the kind of thing a contract decides.
+     */
+    if (!isBillingCurrency(input.currency)) {
+      throw new BadRequestException(
+        `${input.currency} is not a currency UBoss prices plans in. ` +
+          `The ones it does: ${BILLING_CURRENCIES.join(', ')}.`,
+      );
     }
 
     const modules = new Set<string>(COMPANY_MODULES);

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { Banner, Card, CardBody, DashboardAmbience, PageHeader, SkeletonText } from '@uboss/ui';
 
@@ -19,6 +19,7 @@ import { RoutedAppShell } from '../../components/RoutedAppShell';
 import type { OrchestrationView } from '@uboss/types';
 import { OrchestrationMap } from '../../components/OrchestrationMap';
 import { StageOverview } from '../../components/StageOverview';
+import { TileDetail } from '../../components/TileDetail';
 import {
   forgetWorkspace,
   readRememberedWorkspace,
@@ -63,6 +64,31 @@ export default function DashboardPage(): React.JSX.Element {
   const [meta, setMeta] = useState<DashboardMeta | null>(null);
   const [orchestration, setOrchestration] = useState<OrchestrationView | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  /**
+   * Which work area's card is open under the map.
+   *
+   * Held here rather than inside the map, because the card is a sibling of the map and not a part
+   * of it: the map is a picture of what exists, the card is what one of those things holds, and
+   * the two are stacked rather than nested.
+   */
+  const [selected, setSelected] = useState<string | null>(null);
+
+  /*
+   * The selected area, resolved against what the server actually returned.
+   *
+   * Looked up rather than trusted. `selected` is a string this screen set, and resolving it
+   * through `meta.tiles` means a selection can only ever name an area the server permitted — so
+   * there is no path, including a stale value left behind by a permission change, that opens a
+   * card for something this person may not see.
+   */
+  const selectedTile = useMemo(() => {
+    if (selected === null || meta === null) return null;
+    const entry = meta.tiles.find((tile) => tile.key === selected);
+    if (entry === undefined) return null;
+    if (!counts?.tiles.some((tile) => tile.tile === selected)) return null;
+    return entry;
+  }, [counts, meta, selected]);
 
   const tenantId =
     resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
@@ -174,22 +200,56 @@ export default function DashboardPage(): React.JSX.Element {
                 </CardBody>
               </Card>
             ) : (
-              <OrchestrationMap
-                tiles={counts.tiles}
-                meta={meta}
-                scope={counts.scope}
-                onOpen={(href) => router.push(href)}
-              />
+              <>
+                <OrchestrationMap
+                  tiles={counts.tiles}
+                  meta={meta}
+                  scope={counts.scope}
+                  selected={selected}
+                  onSelect={setSelected}
+                />
+
+                {/*
+                  The card for whichever area was pressed, under the map it came from.
+
+                  Pressing a tile used to leave this screen at once. The client's instruction is
+                  that it opens here instead, so four areas can be looked at in four clicks
+                  without losing the screen you started on — and going in is the second,
+                  deliberate click on the card's own Open button.
+
+                  Rendered only when a tile is selected and only when the tile is one the server
+                  returned, so a stale selection cannot resurrect an area this person may not see.
+                */}
+                {/*
+                  Where the work has got to, as a card like every other.
+
+                  It used to sit permanently under the map: a figure row, a stage table and a
+                  department table, open on arrival whether or not anybody had asked for it — so
+                  the dashboard opened with three tables under a diagram and the diagram was the
+                  part people came for. It is now the "Where the work is" tile, and it opens where
+                  the others open, when it is pressed.
+
+                  Absent rather than empty when the server refused it: an employee seeing an
+                  orchestration table of zeroes would read it as "the company has nothing on",
+                  which is a claim about everybody else's work they are not entitled to make.
+                */}
+                {selectedTile?.key === 'stage' ? (
+                  orchestration === null ? null : (
+                    <StageOverview view={orchestration} onClose={() => setSelected(null)} />
+                  )
+                ) : selectedTile === null || tenantId === null ? null : (
+                  <TileDetail
+                    tile={selectedTile.key}
+                    label={selectedTile.label}
+                    measure={selectedTile.measures}
+                    href={selectedTile.href}
+                    tenantId={tenantId}
+                    onOpen={(href) => router.push(href)}
+                    onClose={() => setSelected(null)}
+                  />
+                )}
+              </>
             )}
-
-            {/*
-              Under the tiles, and only for somebody entitled to it.
-
-              Absent rather than empty when the server refused: an employee seeing an orchestration
-              table of zeroes would read it as "the company has nothing on", which is a claim about
-              everybody else's work that they are not entitled to make.
-            */}
-            {orchestration === null ? null : <StageOverview view={orchestration} />}
           </>
         )}
       </div>

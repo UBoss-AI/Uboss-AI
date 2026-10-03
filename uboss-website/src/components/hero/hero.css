@@ -1,0 +1,449 @@
+/*
+ * The hero.
+ *
+ * Geometry taken from the reference the client supplied — display caps around 6.4vw at a 0.9 line
+ * height, copy anchored hard left in a ~33ch column and riding slightly high, glass cards sitting
+ * below it, a foot strip along the bottom. The colour is this product's own: the reference is
+ * ember orange over black, and Chief Agent is violet for AI and cyan for human work, the same two
+ * the rest of the site uses.
+ *
+ * The two scales exist so the whole block can be tuned at once. `--scale` moves the display type
+ * and the vertical rhythm together; `--ui-scale` moves the small copy, the badge and the buttons.
+ * Changing a font size by hand anywhere below this line is how a hero drifts out of proportion.
+ */
+.hero {
+  --scale: 1;
+  --ui-scale: 1;
+  --hero-gutter: clamp(20px, 4vw, 68px);
+
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  min-height: 100svh;
+  overflow: hidden;
+  padding: calc(76px * var(--scale)) var(--hero-gutter) calc(18px * var(--scale));
+  /*
+     A violet that is almost black, not black.
+
+     A flat #000 ground behind a violet field makes the points look pasted on. Lifting the ground a
+     few percent towards the accent is what makes the scene sit *in* the page.
+   */
+  background: radial-gradient(120% 90% at 22% 18%, #17102b 0%, #0a0a12 46%, #050507 100%);
+}
+
+/* ---------- media ---------- */
+
+.hero__media {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+}
+
+.hero__canvas {
+  position: absolute !important;
+  inset: 0;
+  /*
+     Faded in by the browser rather than by React: the canvas mounts empty and its first frame
+     arrives a beat later, and a hard cut from nothing to a full field is the one thing that makes
+     a page feel like it loaded twice.
+   */
+  animation: hero-field-in 1.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes hero-field-in {
+  from {
+    opacity: 0;
+    transform: scale(1.06);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/*
+   Heaviest under the copy, almost nothing on the right, and a floor at the bottom.
+
+   Three gradients rather than one: a symmetric scrim either washes the whole field out or leaves
+   the headline's first word on top of a cluster of moving points.
+ */
+.hero__scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(
+      98deg,
+      rgba(5, 5, 7, 0.94) 0%,
+      rgba(7, 6, 12, 0.76) 28%,
+      rgba(10, 8, 18, 0.24) 54%,
+      rgba(10, 8, 18, 0) 72%
+    ),
+    linear-gradient(0deg, rgba(5, 5, 7, 0.86) 0%, rgba(5, 5, 7, 0.16) 26%, rgba(0, 0, 0, 0) 44%),
+    linear-gradient(180deg, rgba(5, 5, 7, 0.62) 0%, rgba(0, 0, 0, 0) 20%);
+}
+
+/* Three hairlines, to give the empty right-hand side some structure without drawing anything. */
+.hero__rules {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 28%;
+  pointer-events: none;
+}
+
+.hero__rules span {
+  width: 1px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.06) 40%,
+    rgba(255, 255, 255, 0) 100%
+  );
+}
+
+.hero__rules span:nth-child(2) {
+  margin-left: 16px;
+}
+
+/* ---------- layout ---------- */
+
+/*
+   Two columns: the claim, and the product's flow beside it.
+
+   The flow column is fixed rather than fractional — it holds a diagram with labels in it, and a
+   diagram that reflows is a diagram whose text stops fitting. Below 980px the flow removes itself
+   (see its own stylesheet) and this collapses to one column without needing to know.
+ */
+.hero__inner {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 520px;
+  align-items: center;
+  gap: clamp(20px, 3vw, 56px);
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+}
+
+@media (max-width: 980px) {
+  .hero__inner {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.hero__lead {
+  max-width: 660px;
+}
+
+/* ---------- the name above the headline ---------- */
+
+.hero__note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  max-width: 320px;
+  padding-top: calc(13px * var(--ui-scale));
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: calc(11.5px * var(--ui-scale));
+  line-height: 1.45;
+  letter-spacing: 0.005em;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.hero__note-icon {
+  width: calc(19px * var(--ui-scale));
+  height: calc(19px * var(--ui-scale));
+  flex: none;
+  color: var(--color-ai-soft, #a78bfa);
+}
+
+/* ---------- headline ---------- */
+
+.hero__title {
+  margin-top: calc(20px * var(--scale));
+  font-size: calc(clamp(2.6rem, 6.4vw, 5.9rem) * var(--scale));
+  font-weight: 600;
+  line-height: 0.9;
+  letter-spacing: -0.035em;
+  color: #fff;
+  text-shadow: 0 6px 44px rgba(0, 0, 0, 0.5);
+}
+
+/*
+   One word in an italic serif, and only one.
+
+   It is the reference's trick and it works because of the contrast — a geometric sans at -0.035em
+   beside a serif italic at almost none. Two such words in a headline and the effect is gone; the
+   second reads as a mistake.
+ */
+.hero__title em {
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, 'Times New Roman', serif;
+  font-weight: 400;
+  font-style: italic;
+  letter-spacing: -0.005em;
+  background: linear-gradient(96deg, #ffffff 0%, #c4b5fd 62%, #a78bfa 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+.hero__sub {
+  margin-top: calc(18px * var(--scale));
+  max-width: calc(470px * var(--scale));
+  font-size: calc(15.5px * var(--ui-scale));
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.68);
+}
+
+/* ---------- call to action ---------- */
+
+.hero__cta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: calc(22px * var(--ui-scale));
+  margin-top: calc(24px * var(--scale));
+}
+
+.hero__go {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0.5em 0.5em 0.5em 1.5em;
+  border-radius: 999px;
+  background: linear-gradient(96deg, #7c3aed 0%, #a78bfa 100%);
+  color: #fff;
+  font-size: calc(15px * var(--ui-scale));
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  box-shadow: 0 14px 40px rgba(124, 58, 237, 0.4);
+  transition:
+    transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hero__go:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 22px 54px rgba(124, 58, 237, 0.52);
+}
+
+.hero__go-dot {
+  display: grid;
+  place-items: center;
+  width: 2.55em;
+  height: 2.55em;
+  border-radius: 999px;
+  background: #fff;
+  color: #1a0630;
+}
+
+.hero__go-dot svg {
+  width: 1.15em;
+  height: 1.15em;
+}
+
+.hero__second {
+  font-size: calc(14.5px * var(--ui-scale));
+  color: rgba(255, 255, 255, 0.7);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.22);
+  padding-bottom: 2px;
+  transition:
+    color 0.25s ease,
+    border-color 0.25s ease;
+}
+
+.hero__second:hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+/* ---------- the three figures ---------- */
+
+.hero__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(14px * var(--scale));
+  margin: calc(22px * var(--scale)) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hero .stat {
+  position: relative;
+  display: grid;
+  align-content: space-between;
+  gap: 10px;
+  width: calc(208px * var(--scale));
+  min-height: calc(108px * var(--scale));
+  padding: calc(18px * var(--ui-scale));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  /*
+     Warm-tinted glass, not neutral grey.
+
+     Grey glass over a violet field reads as a panel somebody pasted on afterwards. Tinting it
+     towards the ground underneath is what makes it look like part of the same photograph.
+   */
+  background: rgba(30, 20, 56, 0.44);
+  backdrop-filter: blur(18px) saturate(1.15);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.hero .stat:nth-child(2) {
+  background: linear-gradient(150deg, rgba(74, 42, 140, 0.5), rgba(26, 16, 48, 0.5));
+}
+
+.hero .stat__mark {
+  position: absolute;
+  top: calc(14px * var(--ui-scale));
+  right: calc(16px * var(--ui-scale));
+  font-size: calc(15px * var(--ui-scale));
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.hero .stat__value {
+  font-size: calc(clamp(1.7rem, 2.4vw, 2.3rem) * var(--scale));
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: #fff;
+}
+
+.hero .stat__label {
+  font-size: calc(11.5px * var(--ui-scale));
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.52);
+}
+
+.hero .stat__rule {
+  height: 1px;
+  background: linear-gradient(90deg, rgba(167, 139, 250, 0.5), rgba(255, 255, 255, 0));
+}
+
+/* ---------- foot ---------- */
+
+.hero__foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding-top: calc(16px * var(--scale));
+}
+
+/*
+   The wordmark, very large and very quiet.
+
+   It is the platform's name under the product's name — set at a size that would shout if it were
+   not at four percent opacity, which is the whole idea: present, and never competing with the
+   headline it sits under.
+ */
+.hero__watermark {
+  font-size: calc(clamp(2.2rem, 5.2vw, 4.4rem) * var(--scale));
+  font-weight: 700;
+  line-height: 0.78;
+  letter-spacing: -0.04em;
+  color: rgba(255, 255, 255, 0.045);
+  user-select: none;
+}
+
+.hero__marks {
+  display: grid;
+  gap: 10px;
+  justify-items: end;
+}
+
+.hero__marks-label {
+  font-size: calc(10.5px * var(--ui-scale));
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.36);
+}
+
+.hero__marks ul {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: calc(10px * var(--ui-scale));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hero__marks li {
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: calc(11.5px * var(--ui-scale));
+  color: rgba(255, 255, 255, 0.62);
+}
+
+/* ---------- smaller screens ---------- */
+
+@media (max-width: 1100px) {
+  .hero {
+    --scale: 0.88;
+    --ui-scale: 0.95;
+  }
+
+  .hero__rules {
+    padding: 0 18%;
+  }
+}
+
+@media (max-width: 720px) {
+  .hero {
+    --scale: 0.78;
+    --ui-scale: 0.92;
+    padding-top: calc(92px * var(--scale));
+  }
+
+  /*
+     The foot stacks and the watermark goes.
+
+     At this width it would sit under the marks rather than beside them, and a six-rem word
+     underneath a row of pills is not quiet any more — it is the largest thing on the screen.
+   */
+  .hero__foot {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .hero__watermark {
+    display: none;
+  }
+
+  .hero__marks {
+    justify-items: start;
+  }
+
+  .hero__marks ul {
+    justify-content: flex-start;
+  }
+
+  .hero .stat {
+    width: calc(50% - 7px);
+    min-width: 150px;
+  }
+}
+
+/*
+   No canvas is mounted under reduced motion — see the component — so what is left is the gradient
+   and the copy. These stop the entrance animations that would otherwise still run.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .hero__canvas {
+    animation: none;
+  }
+
+  .hero__go {
+    transition: none;
+  }
+}

@@ -19,6 +19,8 @@ import {
   overlapDecision,
   retryDelayMs,
   runIdempotencyKey,
+  RUN_STATE_LABELS,
+  TERMINAL_RUN_STATES,
   type OverlapPolicy,
   type Retryability,
   type RunProgressEvent,
@@ -428,6 +430,7 @@ export class RunEngineService implements OnModuleInit {
         attempt: created.run.attempt,
         at: new Date().toISOString(),
         correlationId: created.run.correlationId,
+        aiWorkAssignmentId: created.run.aiWorkAssignmentId,
       });
 
       // Enqueued after the transaction commits. Enqueuing inside it can hand a worker a run id
@@ -582,19 +585,36 @@ export class RunEngineService implements OnModuleInit {
     // the queue job, because a job is a durable message and adding attribution to it would mean
     // old messages in the queue lacked it. One query at the moment of use is the honest cost.
     const attribution = await this.spendAttribution(job);
+    const brief = await this.workBrief(job);
 
     const response = await this.modelGateway.complete({
       // Section 18: "normal AI work".
       profile: 'AGENT_STANDARD',
       purpose: 'EngineAgentRun',
       instruction: 'Perform the assigned AI work for this run and report the result.',
-      context: `Run ${job.runId}, attempt ${job.attempt}, correlation ${job.correlationId}`,
+      /*
+       * The work, not the identifiers.
+       *
+       * This used to send `Run <id>, attempt 1, correlation <id>` and nothing else — so the
+       * runtime answers the person typed, the agent's own configuration and the objective it
+       * belongs to never reached the model at all. Proven against the running product: a real
+       * Claude call came back with *"I don't have enough information to complete this request. I
+       * received only identifiers… there's no actual task description, instructions, input data,
+       * or context."*
+       *
+       * And the run still recorded `Completed` with `producedByRealModel: true`, which is the
+       * worst shape this failure could take: the loop looked like it worked, the money was spent,
+       * and the answer was an apology. A person reading their operations screen would see a
+       * finished run.
+       */
+      context: brief,
       maxTokens: 800,
       tenantId: job.tenantId,
       agentRunId: job.runId,
       ...(attribution.engineAgentId === null ? {} : { engineAgentId: attribution.engineAgentId }),
       ...(attribution.objectiveId === null ? {} : { objectiveId: attribution.objectiveId }),
       ...(attribution.departmentId === null ? {} : { departmentId: attribution.departmentId }),
+      ...(attribution.actorUserId === null ? {} : { actorUserId: attribution.actorUserId }),
     });
 
     return {
@@ -612,20 +632,160 @@ export class RunEngineService implements OnModuleInit {
    * happens against the levels that can be: a spend attributable to fewer budgets is checked
    * against fewer, never against none, since the company level is always present.
    */
+  /**
+   * What this run is actually being asked to do.
+   *
+   * ## The gap this closes
+   *
+   * The model was sent `Run <id>, attempt 1, correlation <id>` and nothing else. The runtime
+   * answers the person typed, the agent's published configuration and the objective it serves all
+   * existed in the database and none of them travelled. A real Claude call answered *"there's no
+   * actual task description, instructions, input data, or context"* — and the run recorded
+   * `Completed` with `producedByRealModel: true`, so the failure was invisible to everybody
+   * except whoever read the output.
+   *
+   * ## Assembled here rather than carried on the job
+   *
+   * For the same reason `spendAttribution` is: a queue job is a durable message, and widening it
+   * would mean every message already queued lacked the new fields. One read at the moment of use
+   * is the honest cost, and it also means the brief reflects the agent as it is *now* rather than
+   * as it was when somebody pressed Run.
+   *
+   * ## Never invents the missing parts
+   *
+   * A section with nothing behind it is left out, not filled with a plausible sentence. An agent
+   * whose configuration cannot be read should produce a model answer that says it was not told
+   * what to do — which is exactly the signal that caught this — rather than one confidently
+   * answering a question nobody asked.
+   */
+  private async workBrief(job: RunJob): Promise<string> {
+    const lines: string[] = [];
+
+    await this.prisma.runInTenantTransaction(
+      { tenantId: job.tenantId } as TenantScope,
+      async () => {
+        const run = await this.prisma.client.agentRun.findFirst({
+          where: { tenantId: job.tenantId, id: job.runId },
+          select: {
+            runtimeInputs: true,
+            engineAgentVersionId: true,
+            aiWorkAssignmentId: true,
+            objectiveId: true,
+          },
+        });
+        if (run === null) return;
+
+        if (run.objectiveId !== null) {
+          // The name and the expected result live on the *version*, not on the objective: an
+          // objective is a code and an owner, and everything a person writes about it is versioned.
+          const version = await this.prisma.client.objectiveVersion.findFirst({
+            where: { tenantId: job.tenantId, objectiveId: run.objectiveId },
+            orderBy: { createdAt: 'desc' },
+            select: { objectiveName: true, expectedFinalResult: true },
+          });
+          if (version !== null) {
+            lines.push(`Objective: ${version.objectiveName}`);
+            if (version.expectedFinalResult) {
+              lines.push(`What the objective must end with: ${version.expectedFinalResult}`);
+            }
+          }
+        }
+
+        if (run.aiWorkAssignmentId !== null) {
+          const assignment = await this.prisma.client.aiWorkAssignment.findFirst({
+            where: { tenantId: job.tenantId, id: run.aiWorkAssignmentId },
+            select: { title: true, setupPrefill: true, executionSetup: true },
+          });
+          if (assignment !== null) {
+            lines.push(`Assigned work: ${assignment.title}`);
+            // The prefill carries what the analysis worked out about this step — its inputs, its
+            // expected output, where the work happens. Serialised rather than picked apart: the
+            // shape is the analysis's and narrowing it here would drop whatever it learns next.
+            const setup = {
+              ...(assignment.setupPrefill as object),
+              ...(assignment.executionSetup as object),
+            };
+            const described = Object.entries(setup)
+              .filter(([, value]) => typeof value === 'string' && value.trim() !== '')
+              .map(([key, value]) => `  ${key}: ${String(value)}`);
+            if (described.length > 0) {
+              lines.push('How this step is set up:', ...described);
+            }
+          }
+        }
+
+        const version = await this.prisma.client.engineAgentVersion.findFirst({
+          where: { tenantId: job.tenantId, id: run.engineAgentVersionId },
+          select: { config: true },
+        });
+        const config = version?.config as { assignedWork?: string } | null;
+        if (config?.assignedWork) {
+          lines.push(`The agent's own description of its work: ${config.assignedWork}`);
+        }
+
+        /*
+         * Last, and labelled, because this is the thing being worked on.
+         *
+         * Everything above is configuration — it is the same on every run. These are the answers
+         * this person gave for this run, and folding them in among the settings gets them read as
+         * another setting.
+         */
+        const answers = (run.runtimeInputs ?? {}) as Record<string, unknown>;
+        const supplied = Object.entries(answers).filter(
+          ([, value]) => typeof value === 'string' && value.trim() !== '',
+        );
+        if (supplied.length > 0) {
+          lines.push('', 'What this run was asked to work on:');
+          for (const [key, value] of supplied) lines.push(`  ${key}: ${String(value)}`);
+        }
+      },
+    );
+
+    /*
+     * A run with nothing to say is not dressed up.
+     *
+     * If none of the above could be read, the model is told so plainly. It will answer that it
+     * was not given the work — which is the truth, and the signal that found this bug — rather
+     * than answering a question nobody asked.
+     */
+    if (lines.length === 0) {
+      return (
+        `Run ${job.runId} has no readable configuration, assignment or inputs. ` +
+        'Report that you were not told what to do; do not invent a task.'
+      );
+    }
+
+    return lines.join('\n');
+  }
+
   private async spendAttribution(job: RunJob): Promise<{
     engineAgentId: string | null;
     objectiveId: string | null;
     departmentId: string | null;
+    actorUserId: string | null;
   }> {
     return this.prisma.runInTenantTransaction(
       { tenantId: job.tenantId } as TenantScope,
       async () => {
         const run = await this.prisma.client.agentRun.findFirst({
           where: { tenantId: job.tenantId, id: job.runId },
-          select: { engineAgentId: true, objectiveId: true },
+          /*
+           * `startedByUserId` is the person this run is charged to.
+           *
+           * This is the exact case a per-person allowance exists for: an employee pressing Run on
+           * an agent, repeatedly. Every other attribution here describes work — the agent, the
+           * objective, the department — and none of them stops one person consuming a company's
+           * whole month. Null for a scheduled run, which nobody pressed.
+           */
+          select: { engineAgentId: true, objectiveId: true, startedByUserId: true },
         });
         if (run === null) {
-          return { engineAgentId: null, objectiveId: null, departmentId: null };
+          return {
+            engineAgentId: null,
+            objectiveId: null,
+            departmentId: null,
+            actorUserId: null,
+          };
         }
 
         const agent = await this.prisma.client.engineAgent.findFirst({
@@ -645,6 +805,7 @@ export class RunEngineService implements OnModuleInit {
           engineAgentId: run.engineAgentId,
           objectiveId: run.objectiveId,
           departmentId: employment?.departmentId ?? null,
+          actorUserId: run.startedByUserId,
         };
       },
     );
@@ -889,6 +1050,67 @@ export class RunEngineService implements OnModuleInit {
     });
   }
 
+  /**
+   * Every run this company has not finished with — the picture the live stream then keeps current.
+   *
+   * ## Why a screen needs this as well as the stream
+   *
+   * Because the stream publishes *changes*, and a run that has been running for two minutes made
+   * its last change two minutes ago. A screen opened now would show nothing until that run next
+   * moved, which on a long step is minutes of a workspace that looks idle while it is not — and
+   * the one frame somebody is waiting for, the ending, is the only one they would ever get.
+   *
+   * So the screen reads this once on arrival and listens for changes after. The record is the
+   * truth and the stream is the notification, which is the same division every other part of this
+   * works by.
+   *
+   * ## Why the shape is a progress event
+   *
+   * It is the same thing the stream sends, so a client merges the two by run id without
+   * translating either. A second shape here would be a second thing to keep in agreement, and the
+   * disagreement would show up as a lane that changed appearance the moment it first reported.
+   *
+   * Blocked and waiting runs are included. They are unfinished work that somebody has to clear,
+   * and leaving them out would mean the runs most in need of attention are the ones nobody sees.
+   */
+  async listUnfinished(input: {
+    scope: TenantScope;
+    limit?: number | undefined;
+  }): Promise<{ runs: RunProgressEvent[]; note: string }> {
+    return this.prisma.runInTenantTransaction(input.scope, async () => {
+      const runs = await this.prisma.client.agentRun.findMany({
+        where: {
+          tenantId: input.scope.tenantId,
+          state: { notIn: [...TERMINAL_RUN_STATES] },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: Math.min(input.limit ?? 50, 200),
+      });
+
+      return {
+        runs: runs.map((run) => ({
+          runId: run.id,
+          engineAgentId: run.engineAgentId,
+          state: run.state as RunState,
+          percent: run.percent,
+          /*
+           * The row's own last word, not a sentence composed here. `move` writes the message it
+           * published alongside the state, so this is the same text the stream would have sent
+           * for this run — which is what makes the two mergeable rather than merely similar.
+           */
+          message: run.progressMessage ?? RUN_STATE_LABELS[run.state as RunState],
+          attempt: run.attempt,
+          at: run.updatedAt.toISOString(),
+          correlationId: run.correlationId,
+          aiWorkAssignmentId: run.aiWorkAssignmentId,
+        })),
+        note:
+          'What is unfinished right now. The live stream carries every change after this was ' +
+          'read, so a screen holding both is never behind.',
+      };
+    });
+  }
+
   // -------------------------------------------------------------------------
   // Internals
   // -------------------------------------------------------------------------
@@ -972,6 +1194,7 @@ export class RunEngineService implements OnModuleInit {
       attempt: updated.attempt,
       at: new Date().toISOString(),
       correlationId: updated.correlationId,
+      aiWorkAssignmentId: updated.aiWorkAssignmentId,
     };
     this.progress.publish(tenantId, event);
 

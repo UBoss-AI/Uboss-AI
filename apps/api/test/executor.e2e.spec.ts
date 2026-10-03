@@ -30,6 +30,7 @@ import { ExecutorService } from '../src/executor/executor.service.js';
 import { RunController } from '../src/runs/run.controller.js';
 import { CompanySettingsService } from '../src/settings/company-settings.service.js';
 import { ApprovalService } from '../src/approvals/approval.service.js';
+import { PerformanceService } from '../src/performance/performance.service.js';
 import { HumanTaskService } from '../src/tasks/human-task.service.js';
 import { WorkReleaseService } from '../src/tasks/work-release.service.js';
 import { AuditEventService } from '../src/audit/audit-event.service.js';
@@ -202,6 +203,10 @@ describe('executor agent and exception center (e2e)', () => {
         // Prompt 28: the Executor now raises a real approval row for RequestApproval, rather
         // than reporting that it asked for a decision nobody could see.
         ApprovalService,
+        // `HumanTaskService` scores a completion, so the module it is built in needs the
+        // service that records it. In the running product `PerformanceModule` is global;
+        // a test module assembles only what it names.
+        PerformanceService,
         HumanTaskService,
         WorkReleaseService,
         CompanySettingsService,

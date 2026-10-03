@@ -3,6 +3,15 @@ import type { Session } from '../generated/prisma/client.js';
 
 import { PrismaService } from './prisma.service.js';
 
+/**
+ * How many live sessions the Active Sessions screen is handed at once.
+ *
+ * A hundred, because somebody with a hundred live devices has a different problem from the one
+ * this screen solves, and because the list is for recognising a device rather than auditing every
+ * one. The ordering is newest-seen first, so a cap removes the stalest entries.
+ */
+const LIVE_SESSION_PAGE = 100;
+
 export interface CreateSessionInput {
   userId: string;
   tokenHash: string;
@@ -73,10 +82,29 @@ export class SessionRepository {
   }
 
   /** A person's own live sessions, newest first. */
+  /**
+   * The sessions on the Active Sessions screen.
+   *
+   * ## Why expiry is in the `where` and was not
+   *
+   * This asked only for sessions nobody had revoked, so a session that had passed its absolute
+   * lifetime months ago still appeared as live. The screen is the one somebody opens when they
+   * think an account is compromised, and it was listing devices that could not sign in anything —
+   * the opposite of what it is for, and the kind of list that makes a person revoke things at
+   * random because none of it can be trusted.
+   *
+   * ## Why there is a ceiling
+   *
+   * Without one this returned every row. On this machine that is 620 of them in one page with no
+   * paging, which is slow today and does not open at all after a year of a real company's
+   * sign-ins. Ordered newest-seen first, so the cap drops the oldest and the devices somebody is
+   * actually looking for are the ones that survive it.
+   */
   async listLiveForUser(userId: string): Promise<Session[]> {
     return this.prisma.client.session.findMany({
-      where: { userId, revokedAt: null },
+      where: { userId, revokedAt: null, absoluteExpiresAt: { gt: new Date() } },
       orderBy: { lastSeenAt: 'desc' },
+      take: LIVE_SESSION_PAGE,
     });
   }
 

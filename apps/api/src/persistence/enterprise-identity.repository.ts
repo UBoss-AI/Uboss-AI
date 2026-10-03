@@ -263,6 +263,49 @@ export class EnterpriseIdentityRepository {
 
   // ---- In-flight authorization requests ----
 
+  /**
+   * A request for a sign-in through UBoss's own Google, Microsoft or Apple application.
+   *
+   * No tenant and no connection, and that is the shape of the flow rather than a gap: which
+   * company this person belongs to is not known until the provider has returned a **verified**
+   * address and that address has been matched to a membership. Writing a tenant here would mean
+   * guessing it from something the browser said.
+   *
+   * `providerKind` is what the callback routes on, so a request that came back from Google is
+   * completed against Google's configuration and nothing else.
+   */
+  /** Lower case everywhere in the product, capitalised in the column. Translated once, here. */
+  private static readonly PROVIDER_KIND_COLUMN = {
+    google: 'Google',
+    microsoft: 'Microsoft',
+    apple: 'Apple',
+  } as const;
+
+  async createSocialAuthRequest(input: {
+    providerKind: 'google' | 'microsoft' | 'apple';
+    stateHash: string;
+    nonceHash: string;
+    codeVerifierCiphertext: string;
+    redirectAfter?: string | undefined;
+    expiresAt: Date;
+  }): Promise<SsoAuthRequest> {
+    return this.prisma.client.ssoAuthRequest.create({
+      data: {
+        flowKind: 'SocialProvider',
+        /*
+         * The database enum is capitalised and the rest of the product spells these in lower
+         * case, so the one translation between the two lives here rather than at each caller.
+         */
+        providerKind: EnterpriseIdentityRepository.PROVIDER_KIND_COLUMN[input.providerKind],
+        stateHash: input.stateHash,
+        nonceHash: input.nonceHash,
+        codeVerifierCiphertext: input.codeVerifierCiphertext,
+        ...optional('redirectAfter', input.redirectAfter),
+        expiresAt: input.expiresAt,
+      },
+    });
+  }
+
   async createAuthRequest(input: {
     tenantId: string;
     connectionId: string;

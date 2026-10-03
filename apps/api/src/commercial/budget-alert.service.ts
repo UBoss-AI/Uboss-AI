@@ -5,6 +5,7 @@ import { notificationDedupeKey } from '@uboss/types';
 import { NotificationService } from '../notifications/notification.service.js';
 import { PrismaService } from '../persistence/prisma.service.js';
 import type { TenantScope } from '../persistence/tenant-context.js';
+import { companyAdminUserIds } from './company-admins.js';
 import { SEAT_WARNING_FRACTION } from './seat.service.js';
 
 /**
@@ -55,8 +56,16 @@ export interface BudgetAlertOutcome {
  * **A consequence worth stating:** because the key has no period in it, a company that renews and
  * crosses 80% again in the *next* period is not notified again until the subscription row
  * changes. The AI cost lifecycle (Prompts 25–30) is what introduces a per-period consumption
- * record, and the key gains the period then. Until then a renewal resets `aiConsumedMinor` and
- * the old notification stands — which is visible in the center rather than lost.
+ * record, and the key gains the period then. Until then a renewal resets the wallet and the old
+ * notification stands — which is visible in the center rather than lost.
+ *
+ * ## It reads the wallet, and until recently it read nothing
+ *
+ * The figures come from each company's budget wallet: an allowance moved only by ledger entries,
+ * and settled spend the hard stop refuses calls against. This swept `ai_consumed_minor` on the
+ * subscription instead — a column nothing has ever written — so every sweep read zero, found
+ * nothing crossed, and reported success. The alert could not fire at any threshold for any
+ * company, and nothing said so; the sweep's own outcome counted tenants checked, which was true.
  */
 @Injectable()
 export class BudgetAlertService {
@@ -83,13 +92,34 @@ export class BudgetAlertService {
         select: {
           id: true,
           tenantId: true,
-          aiAllowanceMinor: true,
-          aiConsumedMinor: true,
           seatsLicensed: true,
           currency: true,
         },
       }),
     );
+
+    /*
+     * The allowance and the spend, from the wallets rather than from the subscription.
+     *
+     * This swept `ai_consumed_minor`, a column nothing has ever written. So the sweep ran on
+     * schedule, read zero for every company, concluded that nobody had crossed any threshold, and
+     * reported success — for as long as the feature has existed. A budget alert that cannot fire
+     * is worse than no budget alert, because somebody is relying on it.
+     *
+     * One query for every company rather than one per company: the sweep runs over the whole
+     * platform, and a wallet read inside the loop would be a query per tenant per sweep.
+     */
+    const wallets = await this.prisma.runAsPlatformOperation(() =>
+      this.prisma.client.budgetWallet.findMany({
+        where: {
+          scope: 'Company',
+          subjectId: null,
+          tenantId: { in: subscriptions.map((row) => row.tenantId) },
+        },
+        select: { tenantId: true, allowanceMinor: true, usedMinor: true },
+      }),
+    );
+    const spendByTenant = new Map(wallets.map((wallet) => [wallet.tenantId, wallet]));
 
     let raised = 0;
     let alreadyNotified = 0;
@@ -102,7 +132,14 @@ export class BudgetAlertService {
         continue;
       }
 
-      const alerts = await this.dueFor(subscription);
+      // No wallet means no AI has ever been paid for by this company, so nothing can have been
+      // crossed. Zero rather than skipped, so the seat alerts below still run.
+      const spend = spendByTenant.get(subscription.tenantId);
+      const alerts = await this.dueFor({
+        ...subscription,
+        aiAllowanceMinor: spend?.allowanceMinor ?? 0,
+        aiConsumedMinor: spend?.usedMinor ?? 0,
+      });
 
       for (const alert of alerts) {
         for (const recipientUserId of admins) {
@@ -226,28 +263,15 @@ export class BudgetAlertService {
    * company on every sweep would be a great deal of work to answer a question the role kind
    * already answers.
    */
+  /**
+   * Shared with the subscription notices, which need the same answer.
+   *
+   * `company-admins.ts` records why the shared version is a plain function rather than a
+   * provider: a new constructor argument on this service would break the specs that assemble
+   * their modules by hand.
+   */
   private async companyAdmins(tenantId: string): Promise<string[]> {
-    const rows = await this.prisma.runAsPlatformOperation(() =>
-      this.prisma.client.roleAssignment.findMany({
-        where: { tenantId, roleKind: 'CompanyAdmin' },
-        select: { userId: true },
-      }),
-    );
-
-    const active = await this.prisma.runAsPlatformOperation(() =>
-      this.prisma.client.tenantMembership.findMany({
-        where: {
-          tenantId,
-          userId: { in: rows.map((row) => row.userId) },
-          accountState: 'Active',
-        },
-        select: { userId: true },
-      }),
-    );
-
-    // Active memberships only: notifying somebody who has been offboarded would be telling a
-    // person who has left about a company they can no longer reach.
-    return [...new Set(active.map((row) => row.userId))];
+    return companyAdminUserIds(this.prisma, tenantId);
   }
 
   /** For a company-facing read: which thresholds this company has already been alerted at. */

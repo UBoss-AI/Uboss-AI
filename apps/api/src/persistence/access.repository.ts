@@ -26,6 +26,10 @@ export interface AccessRow {
   reportingManagerName: string | null;
   employmentState: string | null;
   roleCount: number;
+  /** Whether they hold the grant provisioning issued to the company's first administrator. */
+  hasBootstrapRole: boolean;
+  /** Which roles, not only how many — see the query. */
+  roleKinds: string[];
   /** The live invitation, when there is one. */
   invitationId: string | null;
   invitationExpiresAt: Date | null;
@@ -75,6 +79,8 @@ export class AccessRepository {
            mgr."display_name"           AS "reportingManagerName",
            e."state"::text              AS "employmentState",
            COALESCE(r."role_count", 0)::int AS "roleCount",
+           COALESCE(r."has_bootstrap_role", false) AS "hasBootstrapRole",
+           COALESCE(r."role_kinds", ARRAY[]::text[]) AS "roleKinds",
            i."id"                       AS "invitationId",
            i."expires_at"               AS "invitationExpiresAt",
            i."created_at"               AS "invitationSentAt"
@@ -85,7 +91,33 @@ export class AccessRepository {
          LEFT JOIN "departments" d ON d."id" = e."department_id"
          LEFT JOIN "users" mgr ON mgr."id" = e."reporting_manager_user_id"
          LEFT JOIN LATERAL (
-           SELECT count(*) AS "role_count"
+           /*
+            * The kinds as well as the count.
+            *
+            * The screen used to render "1 role", which answers a question nobody asks. With two
+            * roles in the model — an administrator who defines the work and an employee who does
+            * it — the useful column is *which*, and a count made an administrator and an employee
+            * look identical in the list.
+            *
+            * Sorted so two people holding the same roles read the same way down the column.
+            */
+           SELECT count(*) AS "role_count",
+                  array_agg(DISTINCT ra."role_kind"::text ORDER BY ra."role_kind"::text)
+                    AS "role_kinds",
+                  /*
+                   * Whether this is the grant company provisioning issued.
+                   *
+                   * Exactly one account per company holds it: the administrator who set the
+                   * company up, created before there were any departments to put them in. The
+                   * readiness rule needs it, and without it here every screen reading this roster
+                   * assumed false — so the founding administrator came out needing an employment
+                   * record, Active and working, on the first row of Users and Access, with
+                   * nothing anybody could do about it.
+                   *
+                   * (No backticks in this comment: it sits inside a template literal, and one
+                   * would end the SQL string here rather than quoting a word.)
+                   */
+                  bool_or(ra."bootstrap") AS "has_bootstrap_role"
              FROM "role_assignments" ra
             WHERE ra."tenant_id" = m."tenant_id"
               AND ra."user_id" = m."user_id"

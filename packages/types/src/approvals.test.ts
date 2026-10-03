@@ -26,7 +26,11 @@ import {
 } from './approvals.js';
 import { APPROVAL_REQUEST_STATUSES, APPROVAL_REQUEST_TYPES } from './assignments.js';
 import { COMPANY_MODULES, ROLE_KINDS } from './authorization.js';
-import { ROLE_TEMPLATES } from './role-templates.js';
+import {
+  COMPANY_ASSIGNABLE_ROLE_KINDS,
+  COMPANY_GRANTABLE_ROLES,
+  ROLE_TEMPLATES,
+} from './role-templates.js';
 import { STEP_APPROVAL_KINDS } from './objectives.js';
 
 const HOUR = 3_600_000;
@@ -110,27 +114,23 @@ describe('approval type to module mapping', () => {
     assert.equal(outcome.ok, true);
   });
 
-  it('decides a Change Request with a permission only the CompanyAdmin holds', () => {
-    const permission = decisionPermissionFor('ChangeRequest');
-    assert.deepEqual(permission, { module: 'settings', action: 'Administer' });
+  it('sends a Change Request to the administrator, who can decide it', () => {
+    /*
+     * This once asserted the opposite — that the CompanyAdmin must *not* hold
+     * `approvals:Approve`, and that a Change Request was decided by a permission only they held.
+     * That was the narrow way out of a deadlock: the request was addressed to an administrator
+     * who could not decide it, so nobody could.
+     *
+     * The company model then changed by decision: an administrator who defines the work and
+     * employees who do it, with no Manager, Head or Approver in between. The administrator holds
+     * `Approve` outright now, so the detour is gone and this asserts the plain arrangement.
+     */
     assert.equal(APPROVAL_TYPE_ADDRESSED_ROLE['ChangeRequest'], 'CompanyAdmin');
-
-    // Narrow on purpose: this must not have handed anybody the general approval power.
-    for (const [name, template] of Object.entries(ROLE_TEMPLATES)) {
-      const approvals = template.permissions.approvals ?? [];
-      if (name === 'CompanyAdmin') {
-        assert.ok(
-          !approvals.includes('Approve'),
-          'the CompanyAdmin must still not hold approvals:Approve — that was the point',
-        );
-      }
-    }
-
-    // And only the CompanyAdmin can reach it.
-    const holders = Object.entries(ROLE_TEMPLATES)
-      .filter(([, template]) => (template.permissions.settings ?? []).includes('Administer'))
-      .map(([name]) => name);
-    assert.deepEqual(holders, ['CompanyAdmin']);
+    assert.deepEqual(decisionPermissionFor('ChangeRequest'), {
+      module: 'approvals',
+      action: 'Approve',
+    });
+    assert.ok((ROLE_TEMPLATES.CompanyAdmin.permissions.approvals ?? []).includes('Approve'));
   });
 
   it('leaves every other type deciding on Approve, exactly as before', () => {
@@ -585,5 +585,43 @@ describe('escalation', () => {
       alreadyEscalated: false,
     });
     assert.equal(outcome.due, false);
+  });
+});
+
+describe('what a company may grant', () => {
+  /*
+   * Two sets, deliberately, and the difference between them is the point.
+   *
+   * `COMPANY_GRANTABLE_ROLES` filters the catalogue, which is built from `ROLE_TEMPLATES` and so
+   * has no `Custom` entry — a company's own roles are listed by another route and named by id.
+   * `COMPANY_ASSIGNABLE_ROLE_KINDS` is what the grant route accepts, and it has to include
+   * `Custom` or a company could write a role and never assign one.
+   */
+  it('offers the administrator and the employee, and nothing that carried approvals', () => {
+    assert.deepEqual([...COMPANY_GRANTABLE_ROLES], ['CompanyAdmin', 'Employee']);
+
+    for (const retired of ['Manager', 'Head', 'Approver', 'Auditor'] as const) {
+      assert.ok(
+        !(COMPANY_GRANTABLE_ROLES as readonly string[]).includes(retired),
+        `${retired} is still offered, and there is nothing between an admin and an employee`,
+      );
+      assert.ok(
+        !(COMPANY_ASSIGNABLE_ROLE_KINDS as readonly string[]).includes(retired),
+        `${retired} can still be granted, so the list narrowed and the route did not`,
+      );
+    }
+  });
+
+  it('keeps Custom assignable, since a company writes its own roles', () => {
+    assert.ok((COMPANY_ASSIGNABLE_ROLE_KINDS as readonly string[]).includes('Custom'));
+    // ...and out of the catalogue, which would otherwise advertise a built-in that has no template.
+    assert.ok(!(COMPANY_GRANTABLE_ROLES as readonly string[]).includes('Custom'));
+    assert.ok(!('Custom' in ROLE_TEMPLATES));
+  });
+
+  it('names only real role kinds', () => {
+    for (const kind of COMPANY_ASSIGNABLE_ROLE_KINDS) {
+      assert.ok((ROLE_KINDS as readonly string[]).includes(kind), `${kind} is not a role kind`);
+    }
   });
 });

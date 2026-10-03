@@ -725,11 +725,40 @@ describe('role templates', () => {
     assert.ok(!(ROLE_TEMPLATES.Manager.permissions.objective ?? []).includes('Approve'));
   });
 
-  it('keeps Approve out of Company Admin', () => {
-    // Administering a company is not being an approver in its workflow. Blanket approval for an
-    // administrator is how "the admin approved their own change" happens.
-    for (const [, actions] of Object.entries(ROLE_TEMPLATES.CompanyAdmin.permissions)) {
-      assert.ok(!(actions ?? []).includes('Approve'), 'CompanyAdmin must not carry Approve');
+  it('gives Company Admin Approve, and leaves the self-approval control standing', () => {
+    /*
+     * This asserted the opposite, and its reason was sound: "administering a company is not being
+     * an approver in its workflow", because blanket approval is how "the admin approved their own
+     * change" happens.
+     *
+     * The client's decision replaced the company model it assumed. There is an administrator who
+     * defines the work and employees who do it, and no Manager, Head or Approver in between — so
+     * a request addressed to one of those would wait for somebody who does not exist. Measured
+     * before the change: an employee's Change Request sat `Pending` with nobody in the company
+     * able to decide it, and an objective could be written and never released.
+     *
+     * What did **not** change is the control that test was really protecting. `NoSelfApproval` is
+     * a mandatory platform policy on `Approve`, and holding the permission does not satisfy it:
+     * an administrator still cannot approve something they created. Releasing their own objective
+     * goes through `Publish`, which the policy's own migration deliberately leaves out — "
+     * publishing your own draft is normal in a small team" — and the version records who released
+     * it either way.
+     */
+    const permissions = ROLE_TEMPLATES.CompanyAdmin.permissions;
+
+    for (const module of ['objective', 'agents', 'approvals'] as const) {
+      assert.ok(
+        (permissions[module] ?? []).includes('Approve'),
+        `CompanyAdmin needs Approve on ${module}: nobody else holds it`,
+      );
+    }
+
+    // Still not everywhere. Approve belongs where a decision is actually raised, not as a blanket.
+    for (const module of ['users', 'settings', 'hierarchy', 'performance'] as const) {
+      assert.ok(
+        !(permissions[module] ?? []).includes('Approve'),
+        `CompanyAdmin should not carry Approve on ${module}`,
+      );
     }
   });
 

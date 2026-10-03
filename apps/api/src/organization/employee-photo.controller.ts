@@ -3,6 +3,8 @@ import {
   Controller,
   Delete,
   Get,
+  Logger,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Post,
@@ -17,6 +19,7 @@ import { actorUserId } from '../request-context/authenticated-actor.js';
 import { getActor } from '../request-context/request-context.js';
 import { TenantScoped } from '../tenancy/tenancy.decorators.js';
 import { TenantContextService } from '../tenancy/tenant-context.service.js';
+import { StorageUnavailableError } from '../knowledge/storage-adapter.js';
 import {
   EmployeePhotoService,
   MAX_PHOTO_BYTES,
@@ -57,6 +60,8 @@ class UploadPhotoDto {
 @Controller('tenants/:tenantId/photos')
 @TenantScoped()
 export class EmployeePhotoController {
+  private readonly logger = new Logger(EmployeePhotoController.name);
+
   constructor(
     private readonly photos: EmployeePhotoService,
     private readonly tenantContext: TenantContextService,
@@ -88,11 +93,36 @@ export class EmployeePhotoController {
     @Param('userId', new ParseUUIDPipe()) userId: string,
     @Res() response: Response,
   ): Promise<void> {
-    const found = await this.photos.content({
-      scope: this.tenantContext.requireScope(),
-      actorUserId: this.currentUserId(),
-      subjectUserId: userId,
-    });
+    /*
+     * A photo whose bytes are gone is a missing photo, not a server error.
+     *
+     * Seen on the running product: an avatar uploaded before a restart left its `files` row behind
+     * while the bytes went with the process, and this route answered **500** — which the Hierarchy
+     * screen reported as a failure of the whole page rather than as one face it could not draw.
+     *
+     * 404 is the honest answer: the record exists and its content does not. It is also the one the
+     * browser already knows how to handle — an `<img>` that 404s falls back to its placeholder,
+     * and the rest of the org chart draws.
+     *
+     * The storage failure itself is a real problem and is not swallowed: `StorageUnavailableError`
+     * carries its own reason and the adapter logs it. What changes is who is told — an operator
+     * reading logs, rather than every person opening the org chart.
+     */
+    const found = await this.photos
+      .content({
+        scope: this.tenantContext.requireScope(),
+        actorUserId: this.currentUserId(),
+        subjectUserId: userId,
+      })
+      .catch((error: unknown) => {
+        if (error instanceof StorageUnavailableError) {
+          this.logger.warn(
+            `The photo record for ${userId} has no bytes behind it: ${error.message}`,
+          );
+          throw new NotFoundException('That photo is no longer stored.');
+        }
+        throw error;
+      });
 
     response.setHeader('Content-Type', found.contentType);
     response.setHeader('Cache-Control', 'private, max-age=300');

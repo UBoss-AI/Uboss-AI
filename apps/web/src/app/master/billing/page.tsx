@@ -73,6 +73,31 @@ const STATE_TONE: Record<string, StatusTone> = {
   Cancelled: 'grey',
 };
 
+/**
+ * The company's lifecycle state, in words a person running the platform would use.
+ *
+ * `ReadOnly` reads as a setting; "Read-only" reads as a condition the customer is in, which is
+ * what this column is about.
+ */
+const ACCESS_LABEL: Record<string, string> = {
+  Active: 'Working',
+  ReadOnly: 'Read-only',
+  Suspended: 'Locked out',
+  Closed: 'Closed',
+  Provisioning: 'Being set up',
+  PendingActivation: 'Not activated',
+};
+
+/** Read-only is a warning, not a failure: the company is still there and can still pay. */
+const ACCESS_TONE: Record<string, StatusTone> = {
+  Active: 'success',
+  ReadOnly: 'warn',
+  Suspended: 'danger',
+  Closed: 'grey',
+  Provisioning: 'blue',
+  PendingActivation: 'blue',
+};
+
 const OUTCOME_TONE: Record<string, StatusTone> = {
   applied: 'success',
   ignored: 'grey',
@@ -350,6 +375,33 @@ export default function MasterBillingPage() {
                       status={row.billingState}
                       tone={BILLING_TONE[row.billingState] ?? 'grey'}
                     />
+                  ),
+                },
+                {
+                  key: 'access',
+                  header: 'Access',
+                  /*
+                   * What the company can actually do, beside what it has agreed to.
+                   *
+                   * The two columns to the left are the commercial record. This one is the column
+                   * the request guard enforces, and the difference is not academic: a company can
+                   * be Suspended under Subscription and still be working normally, which is
+                   * exactly the condition that went unnoticed until the webhook began moving
+                   * lifecycle too. Showing both is how a disagreement becomes visible.
+                   */
+                  render: (row) => (
+                    <>
+                      <StatusBadge
+                        status={ACCESS_LABEL[row.lifecycleState] ?? row.lifecycleState}
+                        tone={ACCESS_TONE[row.lifecycleState] ?? 'grey'}
+                      />
+                      {row.accessReasonCode === 'PaymentOverdue' ? (
+                        <>
+                          <br />
+                          <small className="uboss-muted-3">stopped for non-payment</small>
+                        </>
+                      ) : null}
+                    </>
                   ),
                 },
                 {

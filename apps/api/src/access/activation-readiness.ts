@@ -97,7 +97,30 @@ export function activationReadiness(subject: ActivationSubject): ActivationReadi
    */
   const isBootstrapAdmin = subject.hasBootstrapRole === true && !subject.companyHasReportingRoot;
 
-  if (!subject.employment && !isBootstrapAdmin) {
+  /*
+   * The founding administrator, **after** they have activated, is not missing anything.
+   *
+   * The exemption above is about the gate: it is deliberately narrow, it closes the moment a
+   * reporting root exists, and that narrowness is correct for deciding whether an account may
+   * activate. What it produced afterwards was a false warning.
+   *
+   * Provisioning creates the first administrator with no employment record, because there is no
+   * department to put them in yet. They sign in, build the hierarchy *underneath* themselves, and
+   * a reporting root appears — at which point `isBootstrapAdmin` stops applying and the person who
+   * set the company up starts failing a check they never could pass. Users & Access showed it on
+   * its very first row: the company's own administrator, Active and working, flagged **"needs an
+   * employment record"**, with nothing anybody could do about it. The only action the warning
+   * implies is filing the owner of the company under one of their own departments.
+   *
+   * `accountState` is what separates the two cases, and it is the whole of the difference: before
+   * activation this is a gate and stays exactly as narrow as it was; after activation it is a
+   * status line, and describing a working account as unready is simply false. An ordinary employee
+   * is unaffected — this needs the bootstrap grant, which exactly one account per company holds.
+   */
+  const isActivatedFoundingAdmin =
+    subject.hasBootstrapRole === true && subject.accountState === 'Active';
+
+  if (!subject.employment && !isBootstrapAdmin && !isActivatedFoundingAdmin) {
     missing.push('an employment record (department and reporting manager)');
   } else if (subject.employment) {
     if (!subject.employment.departmentId) {

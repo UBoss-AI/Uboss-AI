@@ -155,7 +155,18 @@ export const APPROVAL_TYPE_MODULE: Record<ApprovalRequestType, CompanyModuleKey>
 export const APPROVAL_TYPE_DECISION_OVERRIDE: Partial<
   Record<ApprovalRequestType, { module: CompanyModuleKey; action: Action }>
 > = {
-  ChangeRequest: { module: 'settings', action: 'Administer' },
+  /*
+   * Empty, and worth keeping.
+   *
+   * `ChangeRequest` was here, decided by `settings:Administer` because the administrator it is
+   * addressed to did not hold `approvals:Approve` and so could not resolve one at all. The
+   * company model has since become an administrator and employees with nobody in between, and the
+   * administrator now holds `Approve` outright — so the detour is gone and the ordinary path
+   * does the work.
+   *
+   * The map stays because the next type addressed to a role that cannot decide it will need it,
+   * and because `everyAddressedRoleCanDecide` reads it.
+   */
 };
 
 /** Which permission decides this request. `Approve` on its module unless it says otherwise. */

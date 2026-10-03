@@ -6,6 +6,7 @@ import { NotificationOperationsController } from './notification-operations.cont
 import { NotificationController } from './notification.controller.js';
 import { NotificationService } from './notification.service.js';
 import { SecurityNotificationBridge } from './security-notification.bridge.js';
+import { OutboxDispatchRunner } from './outbox-dispatch.runner.js';
 import { chooseEmailAdapter } from './smtp-email-adapter.js';
 
 /**
@@ -32,6 +33,9 @@ import { chooseEmailAdapter } from './smtp-email-adapter.js';
   providers: [
     NotificationService,
     NotificationDispatcherService,
+    // Nothing called the dispatcher on a clock, so every queued notification sat Pending with
+    // zero attempts. The controller's own docblock had said so since it was written.
+    OutboxDispatchRunner,
     { provide: EmailAdapter, useFactory: () => chooseEmailAdapter() },
     // Subscribes to the Prompt 8 suspicious-activity seam, which was built for exactly this.
     SecurityNotificationBridge,

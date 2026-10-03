@@ -50,7 +50,44 @@ export interface WorkflowDraftView {
    * no sign that the newer result was never applied. So the draft says so, and the screen can too.
    */
   supersededByRunId: string | null;
+  /**
+   * What each node is doing, for the screen that draws the plan.
+   *
+   * ## Why this is resolved here and not in the browser
+   *
+   * The three things that make a node active live in three tables — `HumanTask`, `AgentRun` by way
+   * of `AiWorkAssignment`, and `ApprovalRequest` — and all three point at the graph by `nodeId`.
+   * Joining them in the client would mean three more requests, three more permission checks, and a
+   * join written against row-level security from outside it. Here the scope is already open and
+   * the objective version is already known.
+   *
+   * ## Why only nodes that are doing something appear
+   *
+   * A node with no entry is idle, which is the overwhelming majority of a plan at any moment.
+   * Sending a row for each would make the payload grow with the plan to say nothing.
+   */
+  activity: NodeActivity[];
   note: string;
+}
+
+/**
+ * What one node is doing, in one vocabulary.
+ *
+ * Deliberately not any of the three underlying state machines. A human task, an agent run and an
+ * approval request have different states and different words for them, and a screen drawing one
+ * picture needs one set. Translating here keeps the translation beside the data that justifies it.
+ */
+export interface NodeActivity {
+  nodeId: string;
+  state: 'working' | 'waiting' | 'done' | 'failed';
+  /**
+   * 0-100, or null when the work cannot report a fraction honestly.
+   *
+   * Only an agent run ever has one. A person's task has no meaningful percentage and an approval
+   * is a decision, not a quantity — both are null, and a screen must not invent a bar for them.
+   */
+  percent: number | null;
+  message: string;
 }
 
 /** What an edit says about the node it creates or changes. */
@@ -938,6 +975,162 @@ export class WorkflowEditorService {
     });
   }
 
+  /**
+   * What each node of this plan is doing, from the three places that know.
+   *
+   * ## The translation, and why each line of it is what it is
+   *
+   * **A human task.** `InProgress` is somebody working. `Assigned`, `Waiting`, `NeedsInput` and
+   * `WaitingApproval` are all waiting — on a person, on another step, on an answer — and none of
+   * them is work happening, so none of them animates. `Blocked` is a person saying they cannot
+   * proceed, which is also waiting, and the reason is worth showing. `Submitted` and `Completed`
+   * are done.
+   *
+   * **An agent run.** `Running` and `Retrying` are working; everything else is a form of waiting,
+   * finished, or stopped. The blocked states carry their own cause into the message, because
+   * "blocked" without "by what" is the kind of status somebody raises a ticket about.
+   *
+   * **An approval.** `Pending` is the gate holding, which is the one still moment the picture
+   * should have. Anything decided is done.
+   *
+   * ## Why the newest row per node wins
+   *
+   * A node can have been through several attempts — a task reassigned, a run retried — and the
+   * question the screen asks is what it is doing *now*. Ordering by creation and taking the first
+   * answers that; keeping them all would make a finished step look busy forever.
+   */
+  private async activityFor(draft: ObjectiveWorkflowDraft): Promise<NodeActivity[]> {
+    const where = {
+      tenantId: draft.tenantId,
+      objectiveVersionId: draft.objectiveVersionId,
+    } as const;
+
+    const [tasks, assignments, approvals] = await Promise.all([
+      this.prisma.client.humanTask.findMany({
+        where,
+        select: { nodeId: true, status: true, blockedReason: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.client.aiWorkAssignment.findMany({
+        where,
+        select: { id: true, nodeId: true },
+      }),
+      this.prisma.client.approvalRequest.findMany({
+        where: { tenantId: draft.tenantId, objectiveVersionId: draft.objectiveVersionId },
+        select: { workflowNodeId: true, status: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    const activity = new Map<string, NodeActivity>();
+
+    // Oldest-wins is avoided by iterating newest-first and refusing to overwrite: the first row
+    // seen for a node is the newest one, and that is the answer.
+    const put = (nodeId: string | null, value: Omit<NodeActivity, 'nodeId'>): void => {
+      if (nodeId === null || activity.has(nodeId)) return;
+      activity.set(nodeId, { nodeId, ...value });
+    };
+
+    for (const task of tasks) {
+      if (task.status === 'InProgress') {
+        put(task.nodeId, { state: 'working', percent: null, message: 'being worked on' });
+      } else if (task.status === 'Completed' || task.status === 'Submitted') {
+        put(task.nodeId, { state: 'done', percent: null, message: 'done' });
+      } else if (task.status === 'Cancelled') {
+        put(task.nodeId, { state: 'failed', percent: null, message: 'cancelled' });
+      } else if (task.status === 'Blocked') {
+        put(task.nodeId, {
+          state: 'waiting',
+          percent: null,
+          message: task.blockedReason ?? 'blocked',
+        });
+      } else {
+        put(task.nodeId, { state: 'waiting', percent: null, message: 'with a person' });
+      }
+    }
+
+    /*
+     * The newest run per assignment, in one query.
+     *
+     * `AgentRun` carries `aiWorkAssignmentId` as a plain column rather than a Prisma relation, so
+     * this cannot be an `include`. One query for all of them and a grouping in code beats one
+     * query per node, which on a twenty-step plan would be twenty round trips to draw one picture.
+     */
+    const runs =
+      assignments.length === 0
+        ? []
+        : await this.prisma.client.agentRun.findMany({
+            where: {
+              tenantId: draft.tenantId,
+              aiWorkAssignmentId: { in: assignments.map((row) => row.id) },
+            },
+            select: {
+              aiWorkAssignmentId: true,
+              state: true,
+              percent: true,
+              failureReason: true,
+            },
+            orderBy: { createdAt: 'desc' },
+          });
+
+    const newestRun = new Map<string, (typeof runs)[number]>();
+    for (const run of runs) {
+      if (run.aiWorkAssignmentId !== null && !newestRun.has(run.aiWorkAssignmentId)) {
+        newestRun.set(run.aiWorkAssignmentId, run);
+      }
+    }
+
+    for (const assignment of assignments) {
+      const run = newestRun.get(assignment.id);
+      if (run === undefined) continue;
+
+      if (run.state === 'Running' || run.state === 'Retrying') {
+        put(assignment.nodeId, {
+          state: 'working',
+          // Exactly as the engine reported it. Null stays null — the type says null means the
+          // work cannot report a fraction honestly, and a screen must not fill that in.
+          percent: run.percent,
+          message: run.state === 'Retrying' ? 'retrying' : 'running',
+        });
+      } else if (run.state === 'Completed') {
+        put(assignment.nodeId, { state: 'done', percent: null, message: 'done' });
+      } else if (run.state === 'Failed' || run.state === 'Cancelled') {
+        put(assignment.nodeId, {
+          state: 'failed',
+          percent: null,
+          message: run.failureReason ?? run.state.toLowerCase(),
+        });
+      } else {
+        // Queued, Reserved, waiting on a person or an approval, or blocked by budget, a
+        // connection or a permission. None of those is work happening, and the cause travels with
+        // it because "blocked" with no "by what" is what makes somebody raise a ticket.
+        put(assignment.nodeId, {
+          state: 'waiting',
+          percent: null,
+          message: run.state.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase(),
+        });
+      }
+    }
+
+    for (const approval of approvals) {
+      if (approval.status === 'Pending') {
+        put(approval.workflowNodeId, {
+          state: 'waiting',
+          percent: null,
+          message: 'waiting for a decision',
+        });
+      } else {
+        put(approval.workflowNodeId, {
+          state: 'done',
+          percent: null,
+          message: approval.status.toLowerCase(),
+        });
+      }
+    }
+
+    return [...activity.values()];
+  }
+
   private async viewOf(draft: ObjectiveWorkflowDraft): Promise<WorkflowDraftView> {
     /*
      * Newer than the run this draft came from. Compared by completion time rather than by id,
@@ -975,6 +1168,7 @@ export class WorkflowEditorService {
       assignedByUserId: draft.assignedByUserId,
       editable: draft.assignedAt === null,
       supersededByRunId,
+      activity: await this.activityFor(draft),
       note:
         'This is the workflow the company is shaping. The AI analysis it was seeded from is kept ' +
         'unchanged as the record of what was proposed. Nothing here publishes: Approve & Assign ' +

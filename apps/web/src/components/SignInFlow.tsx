@@ -16,6 +16,7 @@ import {
 } from '@uboss/ui';
 
 import { rememberWorkspace } from '../lib/active-workspace';
+import { TermsSummary } from './TermsSummary';
 import {
   ApiError,
   authApi,
@@ -75,7 +76,13 @@ type Step =
  * codes are rendered from the one response that contains them and are never written to storage:
  * only hashes exist on the server, so there is no endpoint that could show them again.
  *
- * There is **no public company signup** anywhere.
+ * **Nobody adds themselves to a company that already exists.** A person is invited and then
+ * activates; there is no route on any of these screens that creates an identity inside somebody
+ * else's workspace.
+ *
+ * A company starting its *own* workspace is a different door and it does exist — `/start`, where
+ * a work address and control of a domain are both proved before anything is created. This file
+ * used to claim there was no signup anywhere, which stopped being true the day that shipped.
  */
 /**
  * The three providers, in a fixed order.
@@ -111,6 +118,21 @@ export function SignInFlow({ plane }: SignInFlowProps) {
 
   const [methods, setMethods] = useState<SignInMethods | null>(null);
   const [methodsFor, setMethodsFor] = useState<string | null>(null);
+
+  /*
+   * The deployment's social providers, fetched once on arrival.
+   *
+   * Not taken from `methods`, which needs an email: the three buttons are on screen before
+   * anybody types one, and reading them from an email-shaped answer meant they rendered disabled
+   * saying "not set up for this deployment yet" about a provider that was set up. Somebody who
+   * reached for the Google button precisely so they would not have to type their address was
+   * told the feature did not exist.
+   *
+   * Null while it is in flight, so "not yet known" and "none configured" stay apart.
+   */
+  const [deploymentProviders, setDeploymentProviders] = useState<
+    { kind: 'google' | 'microsoft' | 'apple'; displayName: string }[] | null
+  >(null);
   const [ssoError, setSsoError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -160,6 +182,28 @@ export function SignInFlow({ plane }: SignInFlowProps) {
     if (reason) {
       setSsoError(reason);
     }
+  }, []);
+
+  /*
+   * Which providers this deployment offers, asked once and not again.
+   *
+   * A failure leaves the list empty rather than showing an error: the three buttons then read
+   * "not set up", which is what an unreachable server means here anyway, and a red banner about
+   * provider discovery above a perfectly usable password box would be noise.
+   */
+  useEffect(() => {
+    let live = true;
+    authApi
+      .socialProviders()
+      .then((result) => {
+        if (live) setDeploymentProviders(result.socialProviders);
+      })
+      .catch(() => {
+        if (live) setDeploymentProviders([]);
+      });
+    return () => {
+      live = false;
+    };
   }, []);
 
   /**
@@ -731,8 +775,11 @@ export function SignInFlow({ plane }: SignInFlowProps) {
    * UBoss's own Google, Microsoft and Apple applications, as opposed to a company's enterprise
    * connection. The server lists only the ones this deployment holds credentials for, so an
    * unconfigured provider is absent rather than present-and-broken.
+   *
+   * The email-shaped answer wins once there is one, because it is the fresher read of the same
+   * list; before that, the list fetched on arrival stands in for it.
    */
-  const socialProviders = methods?.socialProviders ?? [];
+  const socialProviders = methods?.socialProviders ?? deploymentProviders ?? [];
   const showPassword = methods === null || methods.allowPassword;
 
   return (
@@ -920,13 +967,16 @@ export function SignInFlow({ plane }: SignInFlowProps) {
           <div className="uboss-provider-row">
             {SOCIAL_PROVIDERS.map(({ kind, label }) => {
               const configured = socialProviders.find((provider) => provider.kind === kind);
+              // Until the list has arrived, the honest state is "not known yet" — not "not set
+              // up", which is an answer, and for the first moments of every visit the wrong one.
+              const known = methods !== null || deploymentProviders !== null;
               return (
                 <ProviderButton
                   key={kind}
                   kind={kind}
                   label={configured?.displayName ?? label}
                   disabled={busy || configured === undefined}
-                  {...(configured === undefined
+                  {...(configured === undefined && known
                     ? {
                         title: `${label.replace('Continue with ', '')} sign-in is not set up for this deployment yet.`,
                       }
@@ -968,14 +1018,24 @@ export function SignInFlow({ plane }: SignInFlowProps) {
         ) : null}
 
         {/*
-          Nothing below the form.
+          The way in for a company that has no workspace yet.
 
-          "Forgot password" has moved up beside the Password label. The provisioning notice is gone
-          from this screen: it explains that nobody can sign themselves up, which is a thing a
-          person needs when they are looking for a way in — and this page no longer offers one, so
-          the sentence was answering a question the screen had stopped raising. It still appears on
-          /activate and /access-help, which are where somebody without an account actually lands.
+          This space held nothing, under a note explaining that "nobody can sign themselves up".
+          That stopped being true: self-serve registration is built, tested and live — a company
+          proves its work address and its domain and the workspace is created, on the Pilot plan,
+          with nobody to approve it. The flow simply had no door, and a visitor who had read the
+          pricing page could reach it only with a tool like curl.
+
+          Under the form rather than beside the heading: somebody arriving here almost always has
+          an account, and the one who does not is looking for exactly this sentence.
+
+          It does not say "free trial" or name a price. What a signup gets is the Pilot plan, and
+          the server decides that — a screen that promised anything else would be promising on the
+          server's behalf.
         */}
+        <p className="uboss-auth-switch">
+          No workspace yet? <Link href="/start">Start one for your company</Link>
+        </p>
       </form>
 
       {/*
@@ -985,36 +1045,11 @@ export function SignInFlow({ plane }: SignInFlowProps) {
         terms would be punished for it. The dialog also means the tick and the thing it refers to
         are on the same screen, which is the only way the tick means anything.
 
-        The text is deliberately short and deliberately generic. A real agreement is a legal
-        document the client supplies and a lawyer writes; what belongs here is the acknowledgement
-        and a place to put it. Inventing clauses would be worse than leaving the placeholder
-        visible, because an invented clause reads as though somebody approved it.
+        The text lives in `TermsSummary` because `/start` asks for the same acknowledgement, and
+        two copies would drift the first time one was edited.
       */}
       <Modal open={showTerms} onClose={() => setShowTerms(false)} title="Terms &amp; Conditions">
-        <p>
-          UBoss is an enterprise workforce and operations platform licensed to your company. By
-          signing in you acknowledge that you are using it on your company's behalf and under its
-          policies.
-        </p>
-        <p>
-          <b>Acceptable use.</b> Your account is yours alone. Do not share your password, and do not
-          attempt to reach data, objectives, agents or people outside the access your role grants
-          you. Every action you take is recorded against your name in an audit trail your company
-          can read.
-        </p>
-        <p>
-          <b>AI-assisted work.</b> UBoss drafts, analyses and proposes. A draft is not a decision:
-          work that commits your company is approved by a person, and you remain accountable for
-          what you approve.
-        </p>
-        <p>
-          <b>Your company's terms govern.</b> This acknowledgement does not replace the agreement
-          between your company and UBoss, or your own employment terms. Where they differ, they take
-          precedence over this summary.
-        </p>
-        <Banner tone="info">
-          Your company administrator can tell you which policies apply to your account.
-        </Banner>
+        <TermsSummary context="sign-in" />
         <div className="uboss-actions" style={{ marginTop: 14 }}>
           <Button
             variant="primary"

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { ArrowRight, Check, ShieldCheck } from 'lucide-react';
 import { PLANS, PRICING_COMPARISON } from '@/lib/pricing';
+import { PRODUCT_START_URL } from '@/lib/product-login';
 
 export function Pricing({ detailed = false }: { detailed?: boolean }) {
   return (
@@ -43,8 +44,19 @@ export function Pricing({ detailed = false }: { detailed?: boolean }) {
                 {plan.price}
                 <span>Custom quote · agreed scope and usage</span>
               </div>
+              {/*
+                Starts a workspace, like every other plan card on this site.
+
+                All three used to go to `/demo`, so the pricing page — the page a buyer reaches
+                *after* deciding — was the one page with no way to begin. A reader who got this
+                far and pressed the button was put in a queue for a phone call.
+              */}
               <Link
-                href={`/demo?plan=${plan.name.toLowerCase()}`}
+                href={
+                  PRODUCT_START_URL === ''
+                    ? `/demo?plan=${plan.name.toLowerCase()}`
+                    : `${PRODUCT_START_URL}?plan=${plan.name.toLowerCase()}`
+                }
                 className={`plan-button ${plan.featured ? 'primary' : ''}`}
               >
                 {plan.cta}

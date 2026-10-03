@@ -1,0 +1,339 @@
+/*
+ * The approval gate.
+ *
+ * One loop of eight seconds, and the timings below are the argument the picture makes:
+ *
+ *   0–28%   the work travels in
+ *   28–52%  it HOLDS at the gate — the longest single beat, because that is the point
+ *   40–56%  a person's mark lands
+ *   56–78%  it continues, and leaves
+ *   78–100% empty, so the loop has a breath and does not read as a conveyor belt
+ *
+ * Eight seconds rather than three: this sits beside a paragraph somebody is reading, and a fast
+ * loop in the corner of the eye is an interruption. It should be noticed on the second glance.
+ */
+
+.gate {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 400px;
+  background: radial-gradient(ellipse, rgba(87, 132, 153, 0.05), transparent 65%);
+}
+
+/* ---------- the orbits ---------- */
+
+.gate__orbit {
+  position: absolute;
+  width: 330px;
+  height: 330px;
+  border: 1px solid rgba(132, 182, 194, 0.16);
+  border-radius: 50%;
+  transform: rotateX(45deg) rotateZ(25deg);
+  animation: gate-orbit-a 38s linear infinite;
+}
+
+/*
+   The second turns the other way, and at a different rate.
+
+   Two rings turning together read as one rigid object with a spin on it. Turning against each
+   other they read as depth, which is what the panel was drawn for.
+ */
+.gate__orbit--second {
+  width: 270px;
+  height: 370px;
+  border-color: rgba(132, 182, 194, 0.12);
+  transform: rotateY(50deg) rotateZ(-35deg);
+  animation: gate-orbit-b 52s linear infinite;
+}
+
+@keyframes gate-orbit-a {
+  from {
+    transform: rotateX(45deg) rotateZ(25deg);
+  }
+  to {
+    transform: rotateX(45deg) rotateZ(385deg);
+  }
+}
+
+@keyframes gate-orbit-b {
+  from {
+    transform: rotateY(50deg) rotateZ(-35deg);
+  }
+  to {
+    transform: rotateY(50deg) rotateZ(-395deg);
+  }
+}
+
+/* ---------- the track the work travels ---------- */
+
+.gate__track {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(360px, 88%);
+  height: 2px;
+  transform: translate(-50%, -50%);
+}
+
+.gate__rail {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(142, 205, 179, 0) 0%,
+    rgba(142, 205, 179, 0.22) 22%,
+    rgba(142, 205, 179, 0.22) 78%,
+    rgba(142, 205, 179, 0) 100%
+  );
+}
+
+/*
+   The work itself.
+
+   Green rather than the violet used for AI: this is a piece of work, not an agent, and the site
+   uses green for something that has completed correctly. It brightens as it is held — the moment
+   it is being looked at is the moment it should be brightest.
+ */
+.gate__work {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 9px;
+  height: 9px;
+  margin-top: -4.5px;
+  border-radius: 999px;
+  background: #8ecdb3;
+  box-shadow: 0 0 14px rgba(142, 205, 179, 0.85);
+  animation: gate-work 8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes gate-work {
+  0% {
+    left: 0%;
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  6% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  /* Arrives at the gate and stops dead. */
+  28% {
+    left: 34%;
+    opacity: 1;
+    transform: scale(1);
+  }
+  /* Held. Brighter and slightly larger, because this is the beat that matters. */
+  40% {
+    left: 34%;
+    transform: scale(1.35);
+  }
+  52% {
+    left: 34%;
+    transform: scale(1.35);
+  }
+  /* Let through. */
+  78% {
+    left: 100%;
+    opacity: 1;
+    transform: scale(1);
+  }
+  84%,
+  100% {
+    left: 100%;
+    opacity: 0;
+    transform: scale(0.7);
+  }
+}
+
+/* ---------- the gate ---------- */
+
+.gate__card {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 140px;
+  height: 160px;
+  border: 1px solid rgba(150, 197, 212, 0.24);
+  border-radius: 26px;
+  background: linear-gradient(130deg, rgba(137, 196, 223, 0.1), rgba(52, 89, 109, 0.02));
+  color: #a3ccd8;
+  box-shadow: 0 0 60px rgba(144, 193, 208, 0.07);
+  transform: rotate(-7deg);
+  /* Lifted above the track, so the work passes *behind* the gate rather than over it. */
+  z-index: 1;
+  animation: gate-card 8s ease-in-out infinite;
+}
+
+/* The gate brightens while it is holding something, and settles again once it has let it go. */
+@keyframes gate-card {
+  0%,
+  24% {
+    border-color: rgba(150, 197, 212, 0.24);
+    box-shadow: 0 0 60px rgba(144, 193, 208, 0.07);
+  }
+  34%,
+  52% {
+    border-color: rgba(142, 205, 179, 0.55);
+    box-shadow: 0 0 74px rgba(142, 205, 179, 0.22);
+  }
+  70%,
+  100% {
+    border-color: rgba(150, 197, 212, 0.24);
+    box-shadow: 0 0 60px rgba(144, 193, 208, 0.07);
+  }
+}
+
+/*
+   The mark a person leaves.
+
+   A ring that closes rather than a tick that appears: a tick is the product's own confirmation,
+   and this is somebody's decision landing on the work. It is drawn with a border so it reads as
+   something stamped on the gate rather than as another icon inside it.
+ */
+.gate__stamp {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #8ecdb3;
+  border-radius: 999px;
+  opacity: 0;
+  transform: scale(0.4);
+  animation: gate-stamp 8s ease-out infinite;
+}
+
+.gate__stamp::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 999px;
+  background: #8ecdb3;
+}
+
+@keyframes gate-stamp {
+  0%,
+  38% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  46% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+  52% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  68% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  78%,
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+/* ---------- the labels ---------- */
+
+.gate__tag {
+  position: absolute;
+  right: 35px;
+  bottom: 95px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid rgba(149, 186, 196, 0.2);
+  border-radius: 5px;
+  background: #111c24;
+  color: #b9d4db;
+  font: 8px var(--font-mono);
+  letter-spacing: 0.1em;
+}
+
+.gate__tag > span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #8ecdb3;
+  animation: gate-pip 8s ease-in-out infinite;
+}
+
+/* The pip on the label tracks the gate: lit while something is being held. */
+@keyframes gate-pip {
+  0%,
+  30% {
+    opacity: 0.35;
+  }
+  40%,
+  56% {
+    opacity: 1;
+    box-shadow: 0 0 8px #8ecdb3;
+  }
+  70%,
+  100% {
+    opacity: 0.35;
+  }
+}
+
+.gate__caption {
+  position: absolute;
+  bottom: 10px;
+  color: #889ea7;
+  font: 8px var(--font-mono);
+  letter-spacing: 0.1em;
+}
+
+@media (max-width: 900px) {
+  .gate {
+    min-height: 320px;
+  }
+
+  .gate__orbit {
+    width: 240px;
+    height: 240px;
+  }
+
+  .gate__orbit--second {
+    width: 190px;
+    height: 270px;
+  }
+
+  .gate__tag {
+    right: 12px;
+    bottom: 60px;
+  }
+}
+
+/*
+   At rest, in the state that makes the point.
+
+   Everything stops with the work through and the mark shown, rather than frozen mid-journey — a
+   still frame of something halfway along a line reads as an animation that failed, and the
+   resolved state says what the section says anyway.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .gate__orbit,
+  .gate__orbit--second,
+  .gate__card,
+  .gate__tag > span {
+    animation: none;
+  }
+
+  .gate__work {
+    animation: none;
+    left: 100%;
+    opacity: 0;
+  }
+
+  .gate__stamp {
+    animation: none;
+    opacity: 1;
+    transform: scale(1);
+  }
+}

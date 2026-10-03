@@ -42,10 +42,18 @@ export interface SkillsPanelProps {
   mayAdminister: boolean;
 }
 
-/** The reference's sub-navigation: Library / Governance / Custom skills. */
+/**
+ * The reference's sub-navigation: Library / Governance / Custom skills.
+ *
+ * The middle tab is labelled for what it holds rather than for what the reference called it. Its
+ * contents are the rules about running a Skill — what may run unattended, what needs a person to
+ * approve it — and "Governance" is the word an architect uses for that, not the word somebody
+ * looking for those rules would think to click. The `value` is unchanged, so links and state that
+ * name the tab still work.
+ */
 const TABS = [
   { value: 'library', label: 'Library' },
-  { value: 'governance', label: 'Governance' },
+  { value: 'governance', label: 'Rules for running' },
   { value: 'custom', label: 'Custom skills' },
 ];
 
@@ -518,7 +526,7 @@ export function SkillsPanel({ tenantId, mayAdminister }: SkillsPanelProps) {
               </>
             )}
 
-            <div className="uboss-section-label">Governance</div>
+            <div className="uboss-section-label">How it is allowed to run</div>
             <div className="uboss-kv">
               <span className="uboss-kv-key">Autonomy</span>
               <span className="uboss-kv-value">
@@ -581,7 +589,7 @@ export function SkillsPanel({ tenantId, mayAdminister }: SkillsPanelProps) {
 
             {history === null || history.length === 0 ? null : (
               <>
-                <div className="uboss-section-label">Governance trail</div>
+                <div className="uboss-section-label">What changed, and who changed it</div>
                 {history.map((row, index) => (
                   <div className="uboss-kv" key={index}>
                     <span className="uboss-kv-key">

@@ -6,7 +6,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import { COMPANY_MODULES, PLATFORM_ROLE_TEMPLATES, type PlatformRoleKind } from '@uboss/types';
+import {
+  BILLING_CURRENCIES,
+  COMPANY_MODULES,
+  isBillingCurrency,
+  PLATFORM_ROLE_TEMPLATES,
+  type PlatformRoleKind,
+} from '@uboss/types';
 
 import { AuditEventService } from '../audit/audit-event.service.js';
 import { SECURITY_ACTIONS, SecurityEventPublisher } from '../auth/security-event.publisher.js';
@@ -217,6 +223,10 @@ export class PlatformAdministrationService {
     sortOrder?: number | undefined;
   }): Promise<Plan> {
     PlatformAdministrationService.assertCompanyModules(input.entitledModules);
+    PlatformAdministrationService.assertFreePlanSpendsNothing(
+      input.priceMinor,
+      input.aiAllowanceMinor,
+    );
 
     const clash = await this.platform.findPlanByCode(input.code);
     if (clash) {
@@ -278,6 +288,19 @@ export class PlatformAdministrationService {
       PlatformAdministrationService.assertCompanyModules(input.entitledModules);
     }
 
+    /*
+     * Checked against what the plan will BE, not against what was sent.
+     *
+     * An update carries only the fields being changed, so testing the two inputs alone would let
+     * the rule be walked around in two steps: set the price to zero today, add the allowance
+     * tomorrow. Each call looks harmless on its own and the pair is a free plan spending UBoss's
+     * money. Falling back to the stored value makes the guard about the resulting plan.
+     */
+    PlatformAdministrationService.assertFreePlanSpendsNothing(
+      input.priceMinor === undefined ? existing.priceMinor : input.priceMinor,
+      input.aiAllowanceMinor === undefined ? existing.aiAllowanceMinor : input.aiAllowanceMinor,
+    );
+
     // Retiring a plan that companies are on would leave them entitled by a plan nobody can see
     // on the Plans screen. Refused, with the count, so the operator can move them first.
     if (input.active === false) {
@@ -322,6 +345,119 @@ export class PlatformAdministrationService {
     });
 
     return plan;
+  }
+
+  /**
+   * Set what a plan costs in one currency.
+   *
+   * ## Why this is its own operation
+   *
+   * A plan's price list is a list, and the question asked of it is "what does this cost in
+   * rupees" — one row, set or cleared on its own. Folding the whole list into `updatePlan` would
+   * mean every edit sending every currency, and a currency left out of the payload would be a
+   * currency silently deleted.
+   *
+   * ## Why nothing here converts
+   *
+   * Each row is a figure somebody agreed. There is no exchange rate in this service and there
+   * must not be: a price converted at a rate this product invented is a number the invoice will
+   * not match, and the customer finds out after paying.
+   *
+   * ## Why a change does not reach existing customers
+   *
+   * A provider price is immutable, so companies already subscribed keep charging the published
+   * one until the plan is published again and they are moved. That is correct — a live
+   * subscription's price is a contract — and the Billing screen marks a plan whose published
+   * price has gone stale so the gap is visible rather than silent.
+   */
+  async setPlanPrice(input: {
+    actorUserId: string;
+    planId: string;
+    currency: string;
+    /** Null removes the price, which means the plan is no longer sold in that currency. */
+    priceMinor: number | null;
+  }): Promise<{ currency: string; priceMinor: number | null }> {
+    const existing = await this.platform.findPlan(input.planId);
+    if (!existing) {
+      throw new NotFoundException('No such plan.');
+    }
+
+    const currency = input.currency.trim().toUpperCase();
+    if (!isBillingCurrency(currency)) {
+      throw new BadRequestException(
+        `${currency} is not a currency UBoss prices plans in. ` +
+          `The ones it does: ${BILLING_CURRENCIES.join(', ')}.`,
+      );
+    }
+
+    if (input.priceMinor !== null) {
+      if (!Number.isInteger(input.priceMinor) || input.priceMinor < 0) {
+        throw new BadRequestException(
+          'A price is a whole number of minor units, and not negative.',
+        );
+      }
+      /*
+       * The free-plan rule applies per currency too.
+       *
+       * Otherwise it could be walked around by pricing the plan at zero in one currency while it
+       * carries an AI allowance — a free plan spending UBoss's money, reached by a route the
+       * original guard does not watch.
+       */
+      PlatformAdministrationService.assertFreePlanSpendsNothing(
+        input.priceMinor,
+        existing.aiAllowanceMinor,
+      );
+    }
+
+    const result = await this.prisma.runAsPlatformOperation(async () => {
+      if (input.priceMinor === null) {
+        await this.prisma.client.planPrice.deleteMany({
+          where: { planId: existing.id, currency },
+        });
+        return { currency, priceMinor: null };
+      }
+
+      const row = await this.prisma.client.planPrice.upsert({
+        where: { planId_currency: { planId: existing.id, currency } },
+        create: { planId: existing.id, currency, priceMinor: input.priceMinor },
+        update: { priceMinor: input.priceMinor },
+      });
+      return { currency, priceMinor: row.priceMinor };
+    });
+
+    await this.record({
+      action: input.priceMinor === null ? 'plan.price_removed' : 'plan.price_set',
+      resourceType: 'plan',
+      resourceId: existing.id,
+      resourceRef: existing.code,
+      resourceVersion: existing.version,
+      actorUserId: input.actorUserId,
+      summary:
+        input.priceMinor === null
+          ? `${existing.name} is no longer sold in ${currency}.`
+          : `${existing.name} is priced at ${input.priceMinor} ${currency} minor units.`,
+      reason: null,
+      metadata: {
+        currency,
+        priceMinor: input.priceMinor === null ? 'removed' : String(input.priceMinor),
+        // Said plainly in the trail, because "did the change reach our customers" is the first
+        // question asked after a price moves.
+        affectsExistingSubscribers: 'no — they keep the published price until republished',
+      },
+    });
+
+    return result;
+  }
+
+  /** Every currency a plan is priced in, for the console. */
+  async planPrices(planId: string): Promise<{ currency: string; priceMinor: number }[]> {
+    return this.prisma.runAsPlatformOperation(() =>
+      this.prisma.client.planPrice.findMany({
+        where: { planId },
+        orderBy: { currency: 'asc' },
+        select: { currency: true, priceMinor: true },
+      }),
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -902,6 +1038,44 @@ export class PlatformAdministrationService {
    * selling a customer access to the platform's own control plane, which is the kind of mistake
    * a validation list exists to make impossible rather than to catch in review.
    */
+  /**
+   * A plan nobody pays for does not get an AI allowance.
+   *
+   * Every rupee of a company's AI allowance is a rupee UBoss has already paid a provider for. A
+   * free plan carrying one is therefore not a discount — it is UBoss buying tokens and giving them
+   * away, per company, every month, with nothing coming back and no ceiling but the number of
+   * companies somebody creates.
+   *
+   * The Pilot plan was exactly that: `price 0`, allowance `$100`, which at the sell multiplier is
+   * about ₹1,922 of real provider spend for each evaluation company. Nothing was wrong with the
+   * code; the number had simply been chosen before there was a provider bill behind it.
+   *
+   * Enforced rather than corrected in the data, because correcting the row fixes today and this
+   * fixes every plan anybody creates afterwards — including the obvious mistake of copying an
+   * existing plan to make a trial.
+   *
+   * **A trial is still possible, and it stays deliberate.** A free plan entitles a company to the
+   * whole product — every screen, objectives, agents, hierarchy, the lot — and refuses only the
+   * step that spends money at a provider. Where a prospect should see an agent actually run, the
+   * platform grants that one company a top-up by hand, which is audited and belongs to a person.
+   * What is refused here is the standing arrangement that spends without anybody deciding to.
+   */
+  private static assertFreePlanSpendsNothing(
+    priceMinor: number | null | undefined,
+    aiAllowanceMinor: number | null | undefined,
+  ): void {
+    const free = (priceMinor ?? 0) === 0;
+    const allowance = aiAllowanceMinor ?? 0;
+    if (free && allowance > 0) {
+      throw new BadRequestException(
+        'A plan with no price cannot include an AI allowance. That allowance is provider spend ' +
+          'UBoss pays for up front, so a free plan carrying one gives away real money for every ' +
+          'company on it. Either price the plan, or leave its AI allowance at zero and grant a ' +
+          'trial company a top-up by hand when you want it to run something.',
+      );
+    }
+  }
+
   private static assertCompanyModules(modules: readonly string[]): void {
     const allowed = new Set<string>(COMPANY_MODULES);
     const invalid = modules.filter((module) => !allowed.has(module));

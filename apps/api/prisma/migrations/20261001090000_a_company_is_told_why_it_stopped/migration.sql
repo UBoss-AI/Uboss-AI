@@ -1,0 +1,35 @@
+-- A company that has stopped working is told why.
+--
+-- ## What was wrong
+--
+-- When the payment provider gives up collecting, the company is moved to `ReadOnly` and every
+-- write is refused with: "This company is in read-only mode, so changes cannot be saved."
+--
+-- That sentence is true and useless. It does not say the reason is money, and it does not say
+-- what to do about it — so the person reading it files a support ticket, which is the outcome the
+-- whole read-only design exists to avoid. The design is "they can still read, and they can still
+-- pay"; nothing in the product was telling them to pay.
+--
+-- ## Why a code rather than the reason we already have
+--
+-- `tenant_lifecycle_transitions.reason` is free text written by whoever made the change. A
+-- platform operator's reason can contain things an employee must never read: a fraud suspicion, a
+-- legal hold, the name of whoever complained. The guard refuses writes on *every* request, so
+-- anything it prints is printed to everyone in the company.
+--
+-- A closed set of codes lets the refusal be specific without ever quoting an internal note. The
+-- product maps the code to a fixed sentence it wrote itself.
+--
+-- ## Why on `tenants` rather than read from the transition
+--
+-- The request guard already loads this row to read `lifecycle_state`. One more column on a query
+-- that already runs is free; finding the latest transition instead would add a second query to
+-- every request in the product, to render a message.
+
+ALTER TABLE "tenants" ADD COLUMN "access_reason_code" VARCHAR(30);
+
+-- Deliberately no default and no backfill.
+--
+-- Null means "nothing in particular to say", which is the truth for every company that exists
+-- today: none of them were moved by billing, because until now billing could not move anything.
+-- Guessing a reason for them would be inventing a history.

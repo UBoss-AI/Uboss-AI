@@ -165,6 +165,41 @@
   --uboss-purple-050: #f1ecfc; /* 6.14:1 */
 
   /* ==========================================================================
+     The chart palette
+
+     Six inks, for the one place in this product where colour carries meaning rather than tone.
+     Everything else here is a single violet family on purpose — a reporting screen is not, and a
+     chart whose parts are four shades of one hue is a chart nobody can read the legend of.
+
+     Chosen against three constraints, in this order:
+
+       1. **Each clears 3:1 against the card it is drawn on**, which is the contrast a shape needs
+          to be seen at all. That is why none of these are the obvious bright versions: #14b8a6
+          measures 2.3:1 on white and disappears into it at chart sizes.
+       2. **Adjacent inks stay apart for a red-green colour-blind reader.** The order is violet,
+          sky, teal, amber, pink, indigo — hue jumps first, so the two hardest to tell apart are
+          never neighbours in a legend.
+       3. **The brand leads.** Ink 1 is the product's violet, so a single-series chart still looks
+          like this product rather than like a spreadsheet.
+
+     No chart relies on colour alone: every part carries its label and its figure as text beside
+     it. The palette makes a chart quick to read, never possible to read.
+     ========================================================================== */
+
+  --uboss-chart-1: #7c3aed; /* violet — the brand, and the default single series */
+  --uboss-chart-2: #0284c7; /* sky */
+  --uboss-chart-3: #0d9488; /* teal */
+  --uboss-chart-4: #d97706; /* amber */
+  --uboss-chart-5: #db2777; /* pink */
+  --uboss-chart-6: #6366f1; /* indigo */
+
+  /* The sweep along a bar and the wash under a line. Two stops of one family, never two unrelated
+     hues: a gradient between two *different* inks reads as a boundary somewhere in the middle,
+     which is a value the data does not have. */
+  --uboss-chart-sweep: linear-gradient(90deg, var(--uboss-chart-1), var(--uboss-chart-6));
+  --uboss-chart-grid: #e9edf3;
+
+  /* ==========================================================================
      Neutral surfaces
      ========================================================================== */
 
@@ -293,8 +328,19 @@
      Typography
      ========================================================================== */
 
-  --uboss-font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --uboss-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* The faces the application self-hosts, each with the name it would have had otherwise.
+
+     The fallback inside `var()` is not decoration. A `var()` with no fallback that resolves to
+     nothing makes the *whole* declaration invalid at computed-value time — not just that one
+     name — so a page which had not set the variable would lose the entire stack, system fallbacks
+     included, and inherit whatever it could. Naming the family inside the fallback means this
+     stylesheet still works wherever it is used without Next: a design review, a test renderer,
+     anything that loads the tokens on their own. */
+  --uboss-font-family:
+    var(--uboss-font-inter, Inter), system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --uboss-font-mono:
+    var(--uboss-font-jetbrains, 'JetBrains Mono'), ui-monospace, SFMono-Regular, Menlo, Consolas,
+    monospace;
   --uboss-font-size-body: 14px;
   --uboss-font-size-sm: 13px;
   --uboss-font-size-xs: 11.5px;
@@ -385,6 +431,16 @@
    * ever pulling the eye off a count.
    */
   --uboss-motion-ambient-ring: 7.5s;
+  /*
+   * The dashboard's orchestration wires, drifting from the core toward each work area.
+   *
+   * Its own token rather than a borrowed one. The ambient scale's other entries belong to the
+   * atmosphere behind a screen; this one is in front of the reader, joining things they are about
+   * to press, so it needs to be slow enough to read as a current rather than as traffic. Four
+   * seconds is one unhurried pass of a wire, which is movement without a claim: nothing is being
+   * measured and nothing is flowing — it is the drawing breathing.
+   */
+  --uboss-motion-ambient-wire: 4s;
   /* The three signature curves on the sign-in panel, each slower than the last. */
   --uboss-motion-ambient-sig-1: 9s;
   --uboss-motion-ambient-sig-2: 12s;
@@ -483,6 +539,16 @@
     --uboss-purple: #a78bfa;
     --uboss-purple-050: #201a33; /* 6.14:1 */
 
+    /* The chart palette, lifted for a dark card. Not the same six colours dimmed — the light
+       ones measure 2:1 or worse on #171821 and a chart drawn in them is a chart of shadows. */
+    --uboss-chart-1: #a78bfa;
+    --uboss-chart-2: #38bdf8;
+    --uboss-chart-3: #2dd4bf;
+    --uboss-chart-4: #fbbf24;
+    --uboss-chart-5: #f472b6;
+    --uboss-chart-6: #818cf8;
+    --uboss-chart-grid: #262836;
+
     --uboss-surface: #171821; /* card */
     --uboss-surface-raised: #1d1e29;
     --uboss-bg: #0b0b0f; /* the page */
@@ -579,6 +645,14 @@
   --uboss-info-050: #0e2735;
   --uboss-purple: #a78bfa;
   --uboss-purple-050: #201a33;
+
+  --uboss-chart-1: #a78bfa;
+  --uboss-chart-2: #38bdf8;
+  --uboss-chart-3: #2dd4bf;
+  --uboss-chart-4: #fbbf24;
+  --uboss-chart-5: #f472b6;
+  --uboss-chart-6: #818cf8;
+  --uboss-chart-grid: #262836;
 
   --uboss-surface: #171821; /* card */
   --uboss-surface-raised: #1d1e29;

@@ -24,6 +24,7 @@ import {
   type CompanySummary,
   type DataProvenance,
   type PlatformDashboard,
+  type PlatformEconomics,
 } from '../../../lib/api-client';
 
 /**
@@ -57,6 +58,7 @@ import {
 export default function MasterDashboardPage() {
   const router = useRouter();
   const [data, setData] = useState<PlatformDashboard | null>(null);
+  const [economics, setEconomics] = useState<PlatformEconomics | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -66,6 +68,21 @@ export default function MasterDashboardPage() {
       .catch((caught: unknown) =>
         setError(caught instanceof ApiError ? caught.message : 'Could not load the dashboard.'),
       );
+  }, []);
+
+  /*
+   * Fetched separately, and its failure does not take the dashboard down.
+   *
+   * Margin is guarded by `billing:View` while the rest of this screen is not, so a reader who may
+   * see the console but not its commercial position gets everything else rather than an error
+   * page. It also crosses every company's ledger, which is the one query here that grows with the
+   * customer base.
+   */
+  useEffect(() => {
+    platformApi
+      .economics()
+      .then(setEconomics)
+      .catch(() => setEconomics(null));
   }, []);
 
   const attentionColumns: DataTableColumn<CompanySummary>[] = [
@@ -161,25 +178,165 @@ export default function MasterDashboardPage() {
         <MetricCard
           label="Platform seats"
           value={data.kpis.platformSeats.used}
-          delta={
+          delta={`${
             data.kpis.platformSeats.utilisationPercent === null
               ? `of ${data.kpis.platformSeats.licensed} licensed`
               : `${data.kpis.platformSeats.utilisationPercent}% of ${data.kpis.platformSeats.licensed} licensed`
-          }
+          } · ${provenanceWord(data.kpis.platformSeats.provenance)}`}
         />
+        {/*
+          One row, one way of saying where a figure came from.
+
+          These four tiles said it three different ways: one ran `provenanceWord`, two had the
+          words "demo data" typed into them, and one said nothing at all. Read across, an operator
+          could not tell whether the silent tile was measured, or whether somebody had forgotten
+          to label it — which is the question the labels exist to answer.
+
+          They all go through `provenanceWord` now, and the AI tile is no longer demo: it reads the
+          wallets that enforce the allowance, so it says "measured" because it is.
+        */}
         <MetricCard
           label="AI allowance consumed"
           value={formatMinor(data.kpis.aiSpend.consumedMinor, data.kpis.aiSpend.currency)}
-          // Named as demo on the tile itself. The reference calls this "AI spend (MTD)"; calling
-          // it spend would imply a metered figure, and nothing here is metered yet.
-          delta={`of ${formatMinor(data.kpis.aiSpend.allowanceMinor, data.kpis.aiSpend.currency)} · demo data`}
+          delta={`of ${formatMinor(data.kpis.aiSpend.allowanceMinor, data.kpis.aiSpend.currency)} · ${provenanceWord(
+            data.kpis.aiSpend.provenance,
+          )}`}
         />
         <MetricCard
           label="Open service alerts"
           value={data.kpis.openIncidents.value}
-          delta={`${data.kpis.openIncidents.critical} critical · demo data`}
+          delta={`${data.kpis.openIncidents.critical} critical · ${provenanceWord(
+            data.kpis.openIncidents.provenance,
+          )}`}
         />
       </div>
+
+      {/*
+        What the AI business earns.
+
+        The console could say what companies were allowed to spend and never what UBoss made on
+        them — its own module status said so: "Revenue reporting across companies is not built."
+        Charged and cost come from different tables on purpose: the ledger holds the sell price and
+        `model_gateway_calls` holds the buy price, and they stopped being the same number the day
+        AI started being sold at a margin.
+      */}
+      <Card>
+        <CardHeader
+          title="AI margin"
+          aside={
+            economics === null ? null : (
+              <span className="uboss-muted-3">
+                {economics.totals.uncostedCalls > 0
+                  ? `${economics.totals.uncostedCalls.toLocaleString()} calls unpriced — the cost is understated`
+                  : 'every call priced'}
+              </span>
+            )
+          }
+        />
+        <CardBody>
+          {economics === null ? (
+            <SkeletonText lines={2} />
+          ) : (
+            <div
+              className="uboss-grid"
+              style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))' }}
+            >
+              <MetricCard
+                label="Charged to companies"
+                value={formatMinor(economics.totals.aiChargedMinor, economics.currency)}
+                delta="what companies pay for AI"
+              />
+              <MetricCard
+                label="Paid to the provider"
+                value={formatMinor(economics.totals.providerCostMinor, economics.currency)}
+                delta="never shown to a company"
+              />
+              <MetricCard
+                label="AI margin"
+                value={formatMinor(economics.totals.aiMarginMinor, economics.currency)}
+                delta={
+                  economics.totals.aiChargedMinor === 0
+                    ? 'nothing charged yet'
+                    : `${Math.round(
+                        (economics.totals.aiMarginMinor / economics.totals.aiChargedMinor) * 100,
+                      )}% of what was charged`
+                }
+              />
+              <MetricCard
+                label="Subscriptions paid"
+                value={formatMinor(economics.totals.paidMinor, economics.currency)}
+                // Paid, never invoiced. An unpaid invoice is a claim, and counting it would show
+                // a profit on a customer who has not paid.
+                delta={`of ${formatMinor(economics.totals.invoicedMinor, economics.currency)} invoiced`}
+              />
+            </div>
+          )}
+        </CardBody>
+        {economics !== null && economics.companies.length > 0 && (
+          <DataTable
+            caption="Per company"
+            rows={economics.companies}
+            rowKey={(row) => row.tenantId}
+            columns={[
+              {
+                key: 'company',
+                header: 'Company',
+                render: (row) => (
+                  <>
+                    <b>{row.name}</b>
+                    <br />
+                    <small className="uboss-muted-3">{row.planCode ?? 'no plan'}</small>
+                  </>
+                ),
+              },
+              {
+                key: 'charged',
+                header: 'AI charged',
+                numeric: true,
+                render: (row) => formatMinor(row.aiChargedMinor, economics.currency),
+              },
+              {
+                key: 'cost',
+                header: 'Provider cost',
+                numeric: true,
+                render: (row) => formatMinor(row.providerCostMinor, economics.currency),
+              },
+              {
+                key: 'margin',
+                header: 'AI margin',
+                numeric: true,
+                render: (row) => (
+                  <>
+                    {formatMinor(row.aiMarginMinor, economics.currency)}
+                    {row.costIsComplete ? null : (
+                      <>
+                        <br />
+                        {/* A margin computed over calls that were never priced is too good, and
+                            a row that did not say so would be a confident wrong answer. */}
+                        <small className="uboss-muted-3">
+                          {row.uncostedCalls.toLocaleString()} unpriced
+                        </small>
+                      </>
+                    )}
+                  </>
+                ),
+              },
+              {
+                key: 'paid',
+                header: 'Paid',
+                numeric: true,
+                render: (row) =>
+                  row.paidMinor === 0 ? (
+                    // Not "₹0" — nobody has paid, which is a different statement from paying nothing.
+                    <span className="uboss-muted-3">not yet</span>
+                  ) : (
+                    formatMinor(row.paidMinor, economics.currency)
+                  ),
+              },
+            ]}
+          />
+        )}
+      </Card>
 
       <div
         className="uboss-grid"

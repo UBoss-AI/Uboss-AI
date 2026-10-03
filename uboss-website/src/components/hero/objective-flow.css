@@ -1,0 +1,422 @@
+/*
+ * The objective flow that sits on the right of the hero.
+ *
+ * Six nodes rather than the reference's eight, and the shapes are the product's own — a goal, work
+ * a person owns, work an agent runs, and the gate where it stops. A reader who opens the product
+ * later meets the same four in the workflow canvas.
+ *
+ * ## The timing, and why it changed
+ *
+ * The first version ran one spark down each branch over nine seconds. It was *correct* and it read
+ * as a loading bar: a single dot crawling, most of the diagram empty most of the time. The
+ * reference this follows streams light continuously, and that is what makes a diagram look alive
+ * rather than drawn.
+ *
+ * So: four sparks a branch at 3.6 seconds, each a beat behind the last. The connectors are never
+ * empty. Then one thing still stops —
+ *
+ *   0–58%    down the branch, both sides, continuously
+ *   58–76%   HELD at the gate
+ *   66–76%   a person's mark lands
+ *   76–100%  released, and gone
+ *
+ * Speeding everything else up made the hold louder, not quieter. It is now the only still moment
+ * in a picture that otherwise never stops.
+ */
+
+/*
+   The column is sized by the grid, not by this element.
+
+   Everything inside is absolutely positioned — the svg and the nodes both — so the element has no
+   intrinsic width at all. In an `auto` grid column that collapsed it to nothing and the nodes
+   spilled off the right of the page. The grid gives it 520px explicitly; this fills it.
+ */
+.oflow {
+  position: relative;
+  width: 100%;
+  height: 620px;
+}
+
+.oflow__svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* ---------- the connectors ---------- */
+
+.oflow__link {
+  stroke: url(#oflow-link);
+  stroke-width: 1.5;
+  fill: none;
+}
+
+/* What leaves the gate is green, like the mark that released it. */
+.oflow__link--out {
+  stroke: rgba(110, 231, 183, 0.4);
+}
+
+/*
+   The return path, dashed and travelling.
+
+   A rejected approval sends work back in this product. Dashed because it is the exception rather
+   than the route, and crawling because a static dashed line reads as a border.
+ */
+.oflow__return {
+  stroke: rgba(251, 191, 36, 0.45);
+  stroke-width: 1.2;
+  stroke-dasharray: 3 7;
+  fill: none;
+  animation: oflow-return 2s linear infinite;
+}
+
+@keyframes oflow-return {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+/* ---------- the stream ---------- */
+
+.oflow__spark {
+  fill: #c4b5fd;
+  filter: drop-shadow(0 0 6px rgba(167, 139, 250, 0.95));
+  opacity: 0;
+}
+
+/*
+   `offset-path` rather than animating x/y.
+
+   The connectors are curves, and a point moved along a curve by keyframed coordinates either
+   follows a polygon or needs a keyframe every few pixels. `offset-path` takes the same path data
+   the line is drawn from, so the work travels exactly where the line goes and the two can never
+   drift apart.
+ */
+.oflow__spark--left {
+  offset-path: path(
+    'M260 96 L260 150 C 260 190, 140 180, 140 226 L140 300 L140 350 L140 424 C 140 470, 260 460, 260 496'
+  );
+  animation: oflow-run 3.6s linear infinite;
+}
+
+/* The agent branch runs a third of a beat behind: two sides in lockstep would look scripted. */
+.oflow__spark--right {
+  offset-path: path(
+    'M260 96 L260 150 C 260 190, 380 180, 380 226 L380 300 L380 350 L380 424 C 380 470, 260 460, 260 496'
+  );
+  animation: oflow-run 3.6s linear infinite;
+}
+
+/*
+   Linear, and that is deliberate.
+
+   An eased spark accelerates and slows on a straight line, which reads as hesitation. Work moving
+   through a system moves at a rate; the only thing that should change pace is the stop.
+ */
+@keyframes oflow-run {
+  0% {
+    offset-distance: 0%;
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  /* Down the branch, steadily. */
+  58% {
+    offset-distance: 100%;
+    opacity: 1;
+  }
+  /* Held at the gate, and brighter for being held. */
+  62%,
+  76% {
+    offset-distance: 100%;
+    opacity: 1;
+  }
+  /* Handed on to the green spark below the gate. */
+  84%,
+  100% {
+    offset-distance: 100%;
+    opacity: 0;
+  }
+}
+
+/* What leaves the gate once a person has signed it off. */
+.oflow__spark--out {
+  fill: #6ee7b7;
+  filter: drop-shadow(0 0 8px rgba(110, 231, 183, 0.95));
+  offset-path: path('M260 570 L260 606');
+  animation: oflow-out 3.6s linear infinite;
+}
+
+@keyframes oflow-out {
+  0%,
+  72% {
+    offset-distance: 0%;
+    opacity: 0;
+  }
+  78% {
+    opacity: 1;
+  }
+  96% {
+    offset-distance: 100%;
+    opacity: 1;
+  }
+  100% {
+    offset-distance: 100%;
+    opacity: 0;
+  }
+}
+
+/* ---------- the nodes ---------- */
+
+.oflow__nodes {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+   Every node carries its own colour through one variable.
+
+   The reference gives each card a hue, an icon in that hue and a numbered badge in it too, and
+   that is most of why it reads as designed rather than diagrammed. Here the hue means something
+   as well: cyan is human work and violet is agent work, the same two the rest of the site uses,
+   and the gate is the only green.
+ */
+.onode {
+  --ink: #a78bfa;
+
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  transform: translate(-50%, -50%);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 10px;
+  width: 186px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--ink) 34%, transparent);
+  border-radius: 13px;
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--ink) 14%, rgba(12, 11, 20, 0.92)),
+    rgba(10, 9, 16, 0.92)
+  );
+  backdrop-filter: blur(14px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+/*
+   The badge sits on the top edge rather than inside.
+
+   Inside, it is another line of text competing with the title. On the edge it reads as a marker
+   on the card — which is what a step number is — and it gives the eye the order to read them in.
+ */
+.onode__num {
+  position: absolute;
+  top: -8px;
+  left: 12px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--ink);
+  color: #0a0910;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.onode__icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--ink) 30%, transparent);
+  background: color-mix(in srgb, var(--ink) 16%, transparent);
+  color: var(--ink);
+}
+
+.onode__text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.onode__title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #f4f4f5;
+}
+
+.onode__sub {
+  font-size: 10px;
+  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.46);
+}
+
+/* The four kinds, each in the colour the rest of the site already uses for it. */
+.onode--goal {
+  --ink: #a78bfa;
+}
+
+.onode--human {
+  --ink: #22d3ee;
+}
+
+.onode--ai {
+  --ink: #8b5cf6;
+}
+
+.onode--watch {
+  --ink: #fbbf24;
+}
+
+.onode--budget {
+  --ink: #818cf8;
+}
+
+/*
+   The gate, and it is deliberately the loudest node on the diagram.
+
+   Everything above it is work being done; this is the one place the product stops and asks. It
+   brightens while it is holding something, on the same clock as the sparks.
+ */
+.onode--gate {
+  --ink: #6ee7b7;
+
+  width: 208px;
+  animation: oflow-gate 3.6s ease-in-out infinite;
+}
+
+@keyframes oflow-gate {
+  0%,
+  52% {
+    border-color: rgba(110, 231, 183, 0.32);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.07),
+      0 10px 30px rgba(0, 0, 0, 0.4);
+  }
+  62%,
+  76% {
+    border-color: rgba(110, 231, 183, 0.9);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.1),
+      0 0 38px rgba(110, 231, 183, 0.3);
+  }
+  88%,
+  100% {
+    border-color: rgba(110, 231, 183, 0.32);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.07),
+      0 10px 30px rgba(0, 0, 0, 0.4);
+  }
+}
+
+/* The mark a person leaves, landing only once the work has waited. */
+.onode__stamp {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 17px;
+  height: 17px;
+  border: 2px solid #6ee7b7;
+  border-radius: 999px;
+  background: #0a1412;
+  opacity: 0;
+  transform: scale(0.4);
+  animation: oflow-stamp 3.6s ease-out infinite;
+}
+
+.onode__stamp::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 999px;
+  background: #6ee7b7;
+}
+
+@keyframes oflow-stamp {
+  0%,
+  60% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  67% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+  72%,
+  86% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  95%,
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+.oflow__return-label {
+  position: absolute;
+  top: 296px;
+  right: 2px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: rgba(251, 191, 36, 0.62);
+}
+
+/* ---------- smaller screens ---------- */
+
+@media (max-width: 1240px) {
+  .oflow {
+    transform: scale(0.82);
+    transform-origin: top right;
+  }
+}
+
+/*
+   Below the hero's two-column breakpoint the flow is not shown at all.
+
+   Scaled to fit a phone it becomes six unreadable cards, and a diagram nobody can read is worse
+   than none — the headline and the figures carry the hero there, which is what they are for.
+ */
+@media (max-width: 980px) {
+  .oflow {
+    display: none;
+  }
+}
+
+/*
+   At rest, resolved: the work through, the gate lit, the mark shown.
+
+   A still frame of something halfway down a line reads as a diagram that failed to load. The
+   resolved state says what the animation says.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .oflow__return,
+  .oflow__spark,
+  .onode--gate {
+    animation: none;
+  }
+
+  .oflow__spark {
+    opacity: 0;
+  }
+
+  .onode__stamp {
+    animation: none;
+    opacity: 1;
+    transform: scale(1);
+  }
+}

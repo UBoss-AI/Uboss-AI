@@ -134,7 +134,10 @@ function startCaptureServer(options: { rejectRecipients?: boolean } = {}): Promi
  * is reachable only from a config object built here — `readSmtpConfig`, the only path a
  * deployment takes, always sets it on a plain port, and a test below holds that.
  */
-function adapterFor(port: number): SmtpEmailAdapter {
+function adapterFor(
+  port: number,
+  allowedRecipientDomains: readonly string[] = [],
+): SmtpEmailAdapter {
   return new SmtpEmailAdapter({
     host: '127.0.0.1',
     port,
@@ -144,6 +147,7 @@ function adapterFor(port: number): SmtpEmailAdapter {
     password: 'throwaway',
     fromEmail: 'notifications@uboss.test',
     fromName: 'UBoss',
+    allowedRecipientDomains,
   });
 }
 
@@ -228,6 +232,96 @@ describe('SMTP email adapter', () => {
 
       adapter.close();
       await server.close();
+    });
+  });
+
+  describe('a deployment that may only mail certain domains', () => {
+    /*
+     * The failure this exists to prevent, measured on this product.
+     *
+     * Development's people are fixtures at domains that do not exist — `@aarohan.uboss.local`,
+     * `@uboss.example`. The first time SMTP was configured there, the notification backlog that
+     * had accumulated because nothing could ever send it went out in one go: **65 messages
+     * accepted by the provider in under three minutes**, every one to an address that cannot
+     * receive, every one about to bounce into the sending mailbox.
+     *
+     * A provider accepts before it resolves the recipient's domain, so no amount of reading the
+     * SMTP response prevents this. It has to be refused before the connection.
+     */
+    it('refuses a recipient outside the list, before it opens a connection', async () => {
+      // No server at all: if this reached the transport it would fail on connect instead, and
+      // the assertion on the message is what distinguishes the two.
+      const adapter = adapterFor(1, ['ubossai.com']);
+
+      await assert.rejects(
+        adapter.send({
+          to: 'neha.verma@aarohan.uboss.local',
+          subject: 'Approval needed',
+          text: 'A fixture person at a domain that does not exist.',
+          reference: 'outbox-row-44',
+        }),
+        (error: unknown) => {
+          assert.match(String(error), /may only send to ubossai\.com/i);
+          // Masked, like every other place this adapter names a recipient.
+          assert.doesNotMatch(String(error), /neha\.verma/);
+          return true;
+        },
+      );
+
+      adapter.close();
+    });
+
+    it('sends to a domain on the list', async () => {
+      const server = await startCaptureServer({});
+      const adapter = adapterFor(server.port, ['uboss.test', 'ubossai.com']);
+
+      const result = await adapter.send({
+        to: 'dev@ubossai.com',
+        subject: 'Allowed',
+        text: 'This domain is on the list.',
+        reference: 'outbox-row-45',
+      });
+
+      assert.equal(result.channel, 'smtp');
+      adapter.close();
+      await server.close();
+    });
+
+    it('mails anybody when the list is empty, which is what production does', async () => {
+      const server = await startCaptureServer({});
+      const adapter = adapterFor(server.port);
+
+      const result = await adapter.send({
+        to: 'anybody@some-customer.example',
+        subject: 'Unrestricted',
+        text: 'No list configured.',
+        reference: 'outbox-row-46',
+      });
+
+      assert.equal(result.channel, 'smtp');
+      adapter.close();
+      await server.close();
+    });
+
+    it('reads the list from the environment, lower-cased and trimmed', () => {
+      const config = readSmtpConfig({
+        UBOSS_SMTP_HOST: 'smtp.example.com',
+        UBOSS_SMTP_USERNAME: 'dev@ubossai.com',
+        UBOSS_SMTP_PASSWORD: 'secret',
+        UBOSS_SMTP_ALLOWED_RECIPIENT_DOMAINS: ' UBossAI.com , example.org ,, ',
+      });
+
+      assert.deepEqual(config?.allowedRecipientDomains, ['ubossai.com', 'example.org']);
+    });
+
+    it('defaults to no restriction, so production is unaffected', () => {
+      const config = readSmtpConfig({
+        UBOSS_SMTP_HOST: 'smtp.example.com',
+        UBOSS_SMTP_USERNAME: 'dev@ubossai.com',
+        UBOSS_SMTP_PASSWORD: 'secret',
+      });
+
+      assert.deepEqual(config?.allowedRecipientDomains, []);
     });
   });
 

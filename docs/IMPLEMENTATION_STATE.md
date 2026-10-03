@@ -3753,3 +3753,399 @@ What the audit caught and what was fixed:
   arrival, buttons, cards, tables, tabs, dialogs, states — but were not given screen-specific
   signature motion of their own.
 - Verification was Chromium-only.
+
+## Go-live pass — 2026-10-03
+
+What was asked: verify the admin console, the website's plan → registration path, the business
+flow and payment end to end, **and make Sign in with Google actually work**, before the product is
+put in front of the client.
+
+### Sign in with Google existed as three buttons and nothing behind them
+
+The configuration reader, the database columns and the three provider buttons were all present.
+The middle was not: there was no route behind the button, and `SsoService.complete` refused a
+social request outright. The screen offered a provider the moment credentials appeared in the
+environment, so setting `GOOGLE_CLIENT_ID` on the production host would have switched on a button
+that 404ed — the failure would have looked like a broken product rather than a missing key.
+
+What was built:
+
+| Piece                                      | What it does                                                                                          |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `POST /auth/sso/social/start`              | Takes only a provider name. Returns an authorization URL.                                             |
+| `SsoService.beginSocial`                   | Reuses the existing OIDC machinery — PKCE S256, state and nonce stored as hashes, never in the clear. |
+| `createSocialAuthRequest`                  | Writes an auth request with `flowKind: 'SocialProvider'` and **no tenant and no connection**.         |
+| `SsoService.complete`                      | Routes on `flowKind`, so a company connection and a social sign-in share one callback.                |
+| `completeSocial` → `resolveSocialIdentity` | Verifies with the provider, then matches the **verified** email to an existing active membership.     |
+
+**Signing in with Google never creates anything.** There is no public signup in UBoss, and that
+does not stop being true because the identity arrived from Google. After the provider confirms an
+address, that address must already belong to a company that has **verified the domain**, to a user
+that already exists, and to a membership that is **Active** — otherwise the sign-in is refused.
+Anybody can obtain a Google account; that must not be a way into somebody's company.
+
+`SOCIAL_SIGN_IN_IS_IMPLEMENTED` stays in the source rather than being deleted. The condition it
+expresses is real and the next person needs it: a provider is offered when this deployment has
+credentials **and** the product can finish the job. Holding one without the other is how a dead
+button ships looking alive.
+
+#### What was proven, and what could not be
+
+14 checks against the running API. The authorization request goes to `accounts.google.com`, asks
+for a code with `code_challenge_method=S256`, carries a state and a nonce over 20 characters, comes
+back to this API's own `/auth/sso/callback`, and requests `openid email profile` and nothing more.
+Two starts never share a state. A provider with no credentials is refused without revealing that
+it is merely unconfigured; an unknown provider is refused outright; a browser that names a
+`tenantId` is refused, because choosing which company to be let into is not the browser's to make.
+A callback with no code, with an invented state, or with a real state and a bogus code is sent back
+to `/login` with an error and **never** to `/dashboard`, and a state cannot be replayed.
+
+What could not be proven here is a real round trip through Google, which needs Google's own
+credentials and a browser at `accounts.google.com`. The verification above used a placeholder
+client id supplied **in-process only** — never written to a file, a log, the repository or this
+chat — purely to make the provider count as configured.
+
+### Two findings fixed on the way
+
+**The Cost column on Engine Agents was a token count, and it was permanently empty.** The agent
+view carried `promptTokens` and `completionTokens`, hard-coded to null, under a column headed
+_Cost_. Nothing ever filled them, so the column read `—` on every agent for as long as the screen
+has existed — and the emptiness is what hid the real problem. Token counts are a provider's unit
+of account: publish them next to the charge and a customer can divide one by the other, read off a
+per-million rate, match it against a public price list, and so learn both the provider's name and
+the margin. `CostEngineService.usageBreakdown` already refuses to select those columns and says
+why; this view disagreed with it and was saved only by never having data.
+
+It now reports settled ledger spend net of refunds, in the company's own currency, with the number
+of charged calls. Reserved-but-unfinished work is excluded, because a reservation can still be
+released. A test pins the guarantee that no field of `usage` mentions tokens, so restoring one is
+a visible decision rather than an accident.
+
+**A stranger could create a company without agreeing to anything.** Sign-in has carried a Terms &
+Conditions tick since it shipped. `/start` — the only screen where somebody who is not yet a
+customer brings a company into existence — had none. The person with the most to agree to was
+asked for the least. The acknowledgement is now on step 1, gating the button, with the text in one
+shared `TermsSummary` component so the two dialogs cannot drift. It is still a summary and says so
+in its own last paragraph: a real agreement is a document the client supplies and a lawyer writes,
+and inventing clauses would be worse than an honest summary because an invented clause reads as
+though somebody approved it.
+
+### Still blocking a real sale, and not fixable from here
+
+- **Stripe is not live.** The account is US-registered with `charges_enabled: false`. Checkout
+  produces a real `cs_test_` session; a customer cannot be charged until the account is completed.
+- **Five secrets are not set in GitHub Actions**: `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`,
+  `STRIPE_WEBHOOK_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`. Absent, the deploy still
+  succeeds and the features are simply not offered — a plan cannot be bought and the Google button
+  does not appear. Nothing half-works.
+- **`https://api.ubossai.com/auth/sso/callback` is not registered** in the Google Cloud Console.
+  Until it is, Google refuses the authorization request before the person sees a password box.
+
+### Carried forward, unchanged
+
+- **Agent sharing has no screen.** The server and its tests exist; nothing in the UI reaches it,
+  the same shape of gap that self-serve signup had before `/start` was built.
+
+### The way in, which no screen reached
+
+The product has had self-serve registration and a `/start` screen for it since earlier today. The
+marketing site did not use them. Walking the site as a visitor, which had not been done:
+
+| Where                 | What it did                                         | What it does now                                |
+| --------------------- | --------------------------------------------------- | ----------------------------------------------- |
+| Header, every page    | **Sign In** and **Book a Demo**                     | **Sign In** and **Start a workspace**           |
+| Home, Pilot card      | `/start`                                            | `/start?plan=pilot`                             |
+| Home, the other three | `/demo` — "Talk to us"                              | `/start?plan=…`                                 |
+| `/pricing`, all three | `/demo?plan=…` — "Discuss a Pilot", "Talk to Sales" | `/start?plan=…`                                 |
+| Enterprise            | only `/demo`                                        | starts, **and** a quieter "talk to sales first" |
+
+So the one page a buyer reaches _after_ deciding — pricing — was the one page with no way to
+begin, and a reader who had chosen Growth was put in a queue for a phone call. The reasoning for
+the old behaviour was sound and the conclusion was not: a paid price _is_ a conversation, and a
+signup _cannot_ name its own plan (the server refuses a `planCode` outright). Both true; neither
+is a reason to make somebody wait for a workspace they could have in two minutes.
+
+The chosen plan travels as `?plan=` and `/start` says it back — "You chose Growth. Every workspace
+opens on Pilot while your domain is verified; an admin moves to Growth under Settings." Naming it
+and explaining where it gets applied is honest. Dropping it silently would read as a click that
+missed, and acting on it would be a promise the server will not keep.
+
+Proven in a browser, not in the source: 18 checks walking site → plan → registration, including
+pressing **Start with Growth** on `/pricing` and landing on `/start?plan=growth` rather than
+`/login`. Then a real submission — a registration row reaches `AwaitingEmail` and the screen moves
+to "Check founder@…" — with the 27 server tests covering the two proofs the browser cannot fake
+(the mailed link, the DNS TXT record) still green.
+
+### AI usage is counted in tokens
+
+Decided by the owner, mid-release: **plan price in money, consumption in tokens**, the way every
+other AI product reads. `GET /tenants/:id/cost/usage` strips the money before answering, the Engine
+Agents column is headed **Tokens** (6,653 across 7 calls on the dev agent, a real figure that the
+old permanently-null field had been hiding), and Settings → **Tokens & Usage** reports tokens used
+and AI calls rather than four rupee tiles. See **S-347**, which this reversed and which survives
+the reversal: the rule was never "show money", it was "never show both".
+
+Still money, and said plainly rather than hidden: the **budget** itself. The plan's
+`aiAllowanceMinor`, the wallet, the warning thresholds and the hard stop are all denominated in
+rupees, so the screens where an admin _administers_ a budget still show rupees. Converting that to
+a token allowance is agreed and not started — it reaches the schema, the wallet, reservations,
+alerts and the master console, and was not something to begin on a release day.
+
+### Registration is the same front door as signing in
+
+`/start` was a narrow card centred on an empty page with a small wordmark above it — correct, and
+nothing like the product. It rendered its own brand line, its own full-page grid and its own
+heading styles. The original reasoning was that somebody registering has not decided to use the
+product yet, so a wall of marketing beside a form asks them to read rather than to start. Sound,
+and the wrong conclusion: sign-in and registration are the only two screens a stranger ever sees,
+they are one click apart, and a visitor going website → registration → sign-in met three
+compositions on the way to one workspace.
+
+It now renders inside `LoginPresentation` — the component, not a copy, so the two cannot drift.
+Measured against `/login` at 1440×900: left panel `0,0 648×900`, right column `648,0 792×900`,
+card `854,… 380` wide — identical on both, with no horizontal scroll. `start.css` lost its page
+grid, its brand line and its heading rules; what remains is the form rows, the DNS record block
+and the footnote. Headings use the login card's own classes.
+
+One prop was added: `formLabel`, defaulting to `Sign in`. The right column's `aria-label` was the
+literal string "Sign in", so a screen reader arriving at registration was told it had reached a
+sign-in. The component's docstring also still said there is no public signup anywhere in UBoss,
+which stopped being true when `/start` shipped; it now says what is actually true — the sign-in
+panel offers no sign-up affordance _of its own_, deliberately, and registration reuses the panel.
+
+`?plan=` is capitalised before it is shown. It arrives lowercase because that is how plan codes
+are written, and the first screen a buyer saw read "You chose growth".
+
+## Pre-production acceptance audit — 2026-10-03
+
+A full re-audit against the current repository rather than against earlier reports. Scale of what
+was examined: **60 web routes, 54 controllers, 98 services, 127 Prisma models, 71 migrations, 59
+spec files, 128 database tables.**
+
+The acceptance contract was the 72-part brief in the request. The document it names,
+`UBOSS_AI_Final_Product_Functional_UI_Deployment_Acceptance_Blueprint.docx`, **is not in the
+repository and was not attached** — stated here rather than worked around, because a clause of it
+could change a verdict below.
+
+### Three defects found, all fixed
+
+**1 — Plan entitlement was not enforced. (HIGH)**
+
+`entitled_modules` decided what the sidebar drew and nothing else. Every one of the fourteen
+`COMPANY_MODULES` is sellable — they are exactly the fourteen the Enterprise plan lists — while the
+role templates grant permissions for all fourteen regardless of plan. So the gap was the full width
+of the commercial model:
+
+| Plan     | Modules sold | CompanyAdmin held grants for | Reachable by URL |
+| -------- | ------------ | ---------------------------- | ---------------- |
+| `pilot`  | 5            | 14                           | **9 unpaid**     |
+| `growth` | 12           | 14                           | **2 unpaid**     |
+
+Proven, not inferred: the development company is on `growth`, which omits `performance`, and
+`GET /tenants/:id/performance/me` answered **200** with real data.
+
+`CommercialService.entitledModulesFor` already existed, documented as "exported for the
+feature/entitlement gate that later prompts will need", with **zero callers**. The prompt never
+came. The same sentence pattern — a future tense that was never redeemed — produced defect 2.
+
+Fixed with `ModuleEntitlementService`: one cached lookup (15s), consulted by `PermissionGuard`
+before the role question, because the plan is the blunter fact and telling somebody their _role_
+is insufficient sends them to an administrator who cannot help. **A company with no subscription
+is not gated** — it is not on a plan, and reading an absent subscription as "entitled to nothing"
+would lock it out of its own product. Two such companies already exist in development.
+
+`AuthorizationContext.visibleModules` is narrowed the same way, so the sidebar and the API agree.
+Without that the fix would have created exactly what Part 40 forbids: a navigation item leading to
+a refusal. `granted` is left whole — it is the decision data the engine reads; `visibleModules` is
+the derived list screens render.
+
+Both injection sites take the service `@Optional`, or every test module building a Nest application
+would have to provide the commercial plane for reasons unrelated to what it tests. That is a
+fail-open, so it is not left to trust: `global-guard-order.spec.ts` asserts against the real
+`AppModule` graph that the provider is reachable. Unwire the commercial plane and that test fails.
+
+After: `performance/me` → **403**, a module on the plan → **200**.
+
+**2 — `/health` did not report Redis. (MEDIUM)**
+
+The health service checked PostgreSQL alone and carried the comment "Redis and BullMQ (Prompt 21)
+will add their own entries". BullMQ shipped; this did not follow. On the production stack
+`REDIS_URL` is set and every agent run goes through the broker, so Redis could be unreachable while
+`/health` answered `ok`: the orchestrator keeps the container in rotation, each run is accepted and
+never executes, and the first report comes from a customer.
+
+`RunQueue.health()` already existed on both implementations and nothing called it. Now reported —
+and only when the deployment actually has a broker, because the in-process queue is a legitimate
+configuration and must not show as a missing Redis.
+
+The first attempt imported `RunsModule` into `HealthModule` and dragged the whole run engine into
+the graph of anything importing health; the health spec failed immediately with "Nest can't resolve
+dependencies of the RunEngineService". `RunsModule` is already `@Global`, so the import was never
+needed: the queue is injected `@Optional` instead.
+
+**3 — No test asserted RLS coverage. (MEDIUM)**
+
+128 tables, 109 carrying `tenant_id`, 108 with `FORCE ROW LEVEL SECURITY`. The isolation spec
+proves RLS _works_ on the tables it names; nothing proved RLS was _present_ on the table a
+migration added last week — the silent failure, because a new tenant-owned table with no policy
+reads across companies while every existing test stays green.
+
+The two exclusions are correct and were undocumented: `pending_registrations` and
+`stripe_webhook_events` both have a **nullable** `tenant_id` because they exist before their tenant
+does. That is now written down next to each, and two tests hold the line — one asserting every
+tenant-owned table is protected, one asserting the exclusions are still true, so a stale exemption
+cannot sit in the list being read as "this was considered".
+
+### A critical advisory that is not reachable
+
+`next@16.3.4` carries **GHSA-vcvr-r3jv-pc5j, remote code execution in `next/og` ImageResponse**
+(critical, range 16.2.0–16.3.5). `next/og` and `ImageResponse` appear nowhere in either
+application, so the vulnerable entry point does not exist in this product. The fix is `16.3.8`, a
+patch bump. Also found: `apps/web` pins `16.3.4` and `uboss-website` pins `16.3.6`, so the two
+applications disagree about their framework version.
+
+Remaining: `brace-expansion` (high, DoS, transitive, non-breaking fix), `fast-uri` and
+`@nestjs/platform-express`/`multer` (moderate, non-major fixes). `exceljs`/`uuid` (moderate) would
+require **downgrading** exceljs across a major version, which is the destabilising kind of change
+S-345 already refused once.
+
+### What was checked and found correct
+
+Verified by reading the current code and, where stated, by running it:
+
+- **Billing idempotency.** The Stripe event id _is_ the primary key. A duplicate delivery hits the
+  conflict and the loser treats it as a duplicate; a failed event is reclaimed by a conditional
+  `updateMany` so two retries cannot both take it.
+- **One provider boundary.** Exactly one file imports the Anthropic SDK and exactly one place reads
+  `ANTHROPIC_API_KEY`.
+- **No double charge or double reserve.** Tests cover concurrent agents against one balance, a
+  heavier race, settling the same reservation twice, a double settle refused _in the database_, and
+  ledger entries replaying to the balance.
+- **The dependency chain.** First step only, early start refused by the server, exactly one release
+  per completion, a finished task refused a second submission, one notification.
+- **Change Request deadlock.** Fixed, and fixed narrowly: decided with `settings:Administer`, which
+  only a CompanyAdmin holds, rather than by granting generic approval authority. FourEyes and
+  NoSelfApproval are untouched.
+- **Files.** Executables refused before storage, filenames containing a path refused, content-type
+  allowlist, size limit recorded in the security trail, infected and unscanned downloads refused,
+  classification ceilings enforced.
+- **Deployment.** Only the gateway publishes ports; the `private` network is `internal: true`; the
+  application refuses to boot on a database role with `SUPERUSER` or `BYPASSRLS`; a BullMQ `Worker`
+  is created in-process, so the deployment is not producer-only.
+- **CI.** No `continue-on-error`, no `|| true`. Migration validation fails on drift between
+  `schema.prisma` and the migrations.
+- **No fake anything.** No `Math.random` in product data paths, no lorem/dummy/mock fixtures, and
+  **zero** `TODO`/`FIXME`/`HACK` in product code.
+- **States.** All 45 data-fetching pages have error states; all have loading states (five express it
+  as `busy`/`submitting`/`searching` rather than the word "loading").
+- **Navigation.** Every one of the 26 sidebar links resolves to a real page. `/operations` is a
+  deliberate redirect to `/todo`, kept so existing links do not 404.
+- **Performance ladder.** Shown as Starter…Legend, stored as Bronze…Diamond, so historical badges
+  and the audit rows naming them are not rewritten.
+
+### Two findings left for the owner, not fixed unilaterally
+
+- **"Workspace Chat" or "Workshop Chat".** The product says _Workspace Chat_ in 25 user-facing
+  places; the acceptance brief and the commit that built the feature both say _Workshop Chat_. Only
+  internal comments use the latter. It is a one-line change in `navigation-model.ts` plus the
+  screen title, in whichever direction is wanted — but renaming what a client has already seen in
+  demos is a product decision, not an engineering one.
+- **The brief's Part 2 says "no public company signup".** Self-serve registration was made
+  reachable from every plan card and the site header earlier the same day, at the owner's explicit
+  instruction. The brief itself says the latest rules win, so the instruction was followed; the
+  conflict is recorded rather than silently resolved.
+
+### Two further defects, found after the first pass
+
+**4 — Neither front end sent a single security header. (MEDIUM-HIGH)**
+
+The API is behind `helmet()`. The web application — the thing a browser actually loads, where the
+session cookie lives, and where an administrator approves work and grants access — answered with
+no `X-Frame-Options`, no `frame-ancestors`, no `nosniff` and no referrer policy. Any site could
+put the signed-in console in an invisible frame, overlay its own buttons, and have an admin
+approve or grant something they never saw. Clickjacking against an approvals screen is that
+screen's purpose turned around.
+
+Both applications now send `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors
+'none'`, `nosniff` and `strict-origin-when-cross-origin`; the product also sends a
+`Permissions-Policy` denying camera, microphone, geolocation and payment, none of which it uses.
+Verified on the running servers, not in the config.
+
+A full `script-src` policy is deliberately **not** included: one strict enough to be worth having
+needs per-request nonces threaded through Next's inline bootstrap, and one added blind breaks
+pages that only fail in production. `frame-ancestors` needs none of that and closes the gap that
+matters for an authenticated console. HSTS stays with Caddy, which terminates TLS.
+
+**5 — The sign-in surface still claimed the product had no signup. (LOW)**
+
+`NoPublicSignupNotice` read "No public signup. A UBoss company account is set up for you", and
+`SignInFlow`'s own header comment said there was no public company signup _anywhere_. Both became
+false the day self-serve registration shipped.
+
+**A correction to how this was first written up:** the initial justification claimed the notice sat
+four lines above "No workspace yet? Start one for your company" on the same screen. It does not —
+the notice renders on `/activate` and on the sign-in flow's workspace-chooser step, neither of
+which offers `/start`. The two sentences never appear together. The defect is narrower than first
+stated: a claim the product had outgrown, on a screen a stranger reads, not a visible
+contradiction. The fix is the same and the reasoning in the source now says the true version.
+
+The notice now states the part that did not change — _you cannot add yourself to a company;
+someone there invites you_ — which is an access-control fact. That a company may start its own
+workspace is a commercial decision, and only the first belongs in a test. Both tests that pinned
+the old wording were rewritten to assert the surviving guarantee rather than loosened.
+
+### Dependencies
+
+| Advisory                          | Before   | After    | Action                                         |
+| --------------------------------- | -------- | -------- | ---------------------------------------------- |
+| `next` — RCE in `next/og`         | critical | —        | 16.3.4 → **16.3.8**, a patch bump              |
+| `brace-expansion` — quadratic DoS | high     | —        | non-breaking transitive bump                   |
+| `fast-uri`, `multer`              | moderate | —        | `@nestjs/platform-express` 12.0.1 → **12.1.2** |
+| `uuid` via `exceljs`              | moderate | moderate | **accepted** — see below                       |
+
+`next/og` and `ImageResponse` appear nowhere in either application, so the critical advisory was
+never reachable; it was taken anyway because the fix is a patch. The two applications had also
+drifted apart — `apps/web` pinned 16.3.4 and `uboss-website` 16.3.6 — and are now the same.
+
+The remaining two moderates are the `exceljs → uuid` chain, where npm's only offer is to
+**downgrade exceljs across a major version**. Accepted rather than taken, with evidence: the
+advisory is a missing buffer bounds check in `uuid` **v3/v5/v6 when `buf` is provided**, and
+exceljs imports exactly one function — `const {v4: uuidv4} = require('uuid')` — called with no
+arguments. The vulnerable code path does not exist in this product. S-345 already refused the
+same shape of "fix" once.
+
+### What the owner still has to decide
+
+- **Backups do not survive the loss of the host.** Documented in `DEPLOYMENT.md`: the dump is
+  daily, verified every seventh run, and written to a Docker volume on the same VPS as the
+  database. It covers a dropped table; it does not cover a lost VPS. Closing it needs an external
+  destination and a credential, which is a decision about where customer data may be copied to.
+- **"Workspace Chat" or "Workshop Chat".** 25 user-facing occurrences of the first; the acceptance
+  brief and the commit that built the feature both say the second. One line either way, once
+  somebody decides which is the product's word.
+- **Stripe is still `charges_enabled: false`** and five Actions secrets are unset, so payment and
+  Google sign-in are configured-but-absent rather than broken.
+
+### 6 — A flaky test, which is worse than a missing one. (MEDIUM)
+
+The final gate ran 2361 tests and failed exactly one: `does not reuse one question's signature
+for another`, in the sign-in captcha. It had passed in the two previous full runs on code nobody
+had touched, which is the tell.
+
+The captcha token is `hash(answer) . expiry . hmac` and carries **nothing of the question**. The
+questions are `a + b` or `a × b` over 2..9, so answers collide constantly — "What is 2 + 6?" and
+"What is 4 + 4?" are different questions with the same answer, and issued in the same millisecond
+they produce a byte-identical token. The test asserted that different _questions_ must produce
+different tokens, so it failed roughly one run in ten.
+
+The comment **two lines above it** already said so: _"Two questions with the same answer still
+hash identically — the hash is keyed, not salted."_ The test contradicted its own neighbour.
+
+Nothing is wrong with the implementation and nothing was weakened to make the test pass. The
+browser submits the token and the answer, never the question, so a token shared between two
+questions with one answer accepts exactly the answer it was always going to accept. The test now
+draws forty questions, groups them by answer, and asserts the invariant that has to hold: **two
+different answers never share a signed answer segment**, checked across every pair rather than a
+sample. Verified over five consecutive runs plus the full 60-test auth spec.
+
+A test that is right nine times in ten is worse than no test, because it teaches people to re-run.

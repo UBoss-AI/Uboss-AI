@@ -2,13 +2,14 @@
 
 import { motion } from 'motion/react';
 import { useSearchParams } from 'next/navigation';
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
   Banner,
   Button,
   Card,
   CardBody,
+  ConfirmDialog,
   Icon,
   PageHeader,
   StatusBadge,
@@ -55,6 +56,7 @@ import {
   JobMethodGrid,
 } from '../../components/JobMethodGrid';
 import { JobMethodImportExport } from '../../components/JobMethodImportExport';
+import { WorkflowCanvas, type NodeActivity } from '../../components/WorkflowCanvas';
 import { useCompanyNavigation } from '../../lib/use-company-navigation';
 import { can, useMyAccess } from '../../lib/use-my-access';
 
@@ -89,6 +91,7 @@ function AgentBuilderInner() {
   const params = useSearchParams();
   const assignmentId = params.get('assignmentId');
 
+  const [confirmingPublish, setConfirmingPublish] = useState(false);
   const [me, setMe] = useState<MeResponse | null>(null);
   const [meta, setMeta] = useState<AgentBuilderMetaView | null>(null);
   const [assignments, setAssignments] = useState<AgentBuilderView[]>([]);
@@ -145,9 +148,106 @@ function AgentBuilderInner() {
   const [expectedOutcome, setExpectedOutcome] = useState('');
   const testProblems = agentTestProblems({ sampleInput, expectedOutcome });
 
+  /*
+   * Whether a test is in flight, kept apart from `busy`.
+   *
+   * `busy` is true for every mutation this screen makes — saving a field, resolving a connection,
+   * activating. The canvas may only show the agent working while the agent is actually working,
+   * so it needs the one flag that means *this* request and not any request. Sharing `busy` would
+   * animate an agent because somebody renamed it.
+   */
+  const [testing, setTesting] = useState(false);
+
   // Newest first from the server, so the head is the run somebody just watched happen.
   const latestTest = selected?.testHistory[0] ?? null;
   const earlierTests = selected?.testHistory.slice(1) ?? [];
+
+  /**
+   * What a test is, as a graph: the sample goes in, the agent works, something comes out.
+   *
+   * Three nodes rather than one, because the two handoffs are where the light travels and the
+   * light is the whole point — a lone pulsing box says "busy", a sample moving into an agent and
+   * an answer coming out says what is busy and on whose behalf.
+   *
+   * The shapes are the product's locked rule, unchanged: the agent is a diamond because it is AI
+   * work, and the two ends are plain because they are not steps anybody performs.
+   */
+  const testCanvas = useMemo(
+    () => ({
+      nodes: [
+        {
+          id: 'sample',
+          kind: 'Trigger' as const,
+          label: 'Your sample',
+          shape: 'rectangle' as const,
+          subtitle:
+            sampleInput.trim() === '' ? 'nothing yet' : `${sampleInput.trim().length} characters`,
+        },
+        {
+          id: 'agent',
+          kind: 'Ai' as const,
+          /*
+           * The published agent's name once there is one, otherwise the name the builder is
+           * proposing. Never a placeholder: the point of drawing this is that somebody can see
+           * which agent they are watching.
+           */
+          label:
+            selected?.engineAgent?.name ?? selected?.prefill.suggestedAgentName ?? 'This agent',
+          shape: 'diamond' as const,
+          subtitle: selected?.readiness.readyToTest === true ? 'ready' : 'setup unfinished',
+        },
+        {
+          id: 'output',
+          kind: 'Goal' as const,
+          label: 'What came back',
+          shape: 'goal' as const,
+          subtitle: latestTest === null ? 'not tested yet' : `${latestTest.durationMs} ms`,
+        },
+      ],
+      edges: [
+        { fromNodeId: 'sample', toNodeId: 'agent', kind: 'Sequential' as const },
+        { fromNodeId: 'agent', toNodeId: 'output', kind: 'Sequential' as const },
+      ],
+    }),
+    [latestTest, sampleInput, selected],
+  );
+
+  /**
+   * What each of those three is doing — and only what the product can prove.
+   *
+   * While the request is open the agent is working, with a null percent: one call to a provider
+   * reports no fraction, and a bar inventing one would be the fake progress this product refuses
+   * everywhere else. When it is over, the verdict is the server's own `status` — `Error` is a
+   * fact about the test, `Failed` a fact about the agent, and neither is read out of the output.
+   */
+  const testActivity = useMemo(() => {
+    const map = new Map<string, NodeActivity>();
+
+    if (testing) {
+      map.set('sample', { state: 'done' });
+      map.set('agent', { state: 'working', percent: null });
+      map.set('output', { state: 'waiting', message: 'waiting for the answer' });
+      return map;
+    }
+
+    if (latestTest === null) return map;
+
+    map.set('sample', { state: 'done' });
+    map.set(
+      'agent',
+      latestTest.status === 'Passed'
+        ? { state: 'done' }
+        : {
+            state: 'failed',
+            message: latestTest.status === 'Error' ? 'could not run' : 'no output',
+          },
+    );
+    map.set(
+      'output',
+      latestTest.output === null ? { state: 'failed', message: 'nothing' } : { state: 'done' },
+    );
+    return map;
+  }, [latestTest, testing]);
   const [activateJustOpened, clearActivateCue] = useJustBecameTrue(
     selected?.readiness.readyToActivate ?? false,
   );
@@ -481,7 +581,7 @@ function AgentBuilderInner() {
       <PageHeader
         title="Agent Builder"
         description="Ask only for missing execution setup — never re-enter the whole method."
-        breadcrumbs={[{ label: 'Engine Agent' }, { label: 'Builder' }]}
+        breadcrumbs={[{ label: 'Engine Agents', href: '/agents' }, { label: 'Agent Builder' }]}
         actions={
           selected === null ? null : selected.engineAgent !== null ? (
             <Button size="sm" onClick={() => setSelected(null)}>
@@ -548,9 +648,19 @@ function AgentBuilderInner() {
                         // a mystery to somebody who has not scrolled to it yet.
                         (testProblems[0] ?? undefined)
                   }
-                  onClick={run((tenant, assignment) =>
-                    agentBuilderApi.test(tenant, assignment, sampleInput, expectedOutcome),
-                  )}
+                  onClick={() => {
+                    /*
+                     * The flag goes up before the request and comes down after it, including when
+                     * it fails. The canvas below reads it, so an agent drawn as working is an
+                     * agent with a request open to the provider — nothing more is being claimed.
+                     */
+                    setTesting(true);
+                    run((tenant, assignment) =>
+                      agentBuilderApi
+                        .test(tenant, assignment, sampleInput, expectedOutcome)
+                        .finally(() => setTesting(false)),
+                    )();
+                  }}
                 >
                   <Icon name="bolt" size={16} />
                   Test agent
@@ -569,9 +679,7 @@ function AgentBuilderInner() {
                       ? undefined
                       : 'A passing test and complete setup come first.'
                   }
-                  onClick={run((tenant, assignment) =>
-                    agentBuilderApi.activate(tenant, assignment),
-                  )}
+                  onClick={() => setConfirmingPublish(true)}
                 >
                   Publish agent
                 </Button>
@@ -579,6 +687,30 @@ function AgentBuilderInner() {
             </>
           )
         }
+      />
+
+      {/*
+        Publishing an agent is asked about before it happens.
+
+        A published agent is what runs against the company's real work, and nothing stands between
+        this button and that — no second person signs it off. So the click is confirmed, because
+        the one that happens by accident is the expensive one.
+      */}
+      <ConfirmDialog
+        open={confirmingPublish}
+        onCancel={() => setConfirmingPublish(false)}
+        onConfirm={() => {
+          setConfirmingPublish(false);
+          run((tenant, assignment) => agentBuilderApi.activate(tenant, assignment))();
+        }}
+        title="Publish this agent?"
+        description={
+          'It becomes the agent this objective step runs, and the people assigned to that step ' +
+          'can run it against real work. Later objectives needing the same work reuse it rather ' +
+          'than asking for it again.'
+        }
+        confirmLabel="Publish"
+        cancelLabel="Not yet"
       />
 
       {error === null ? null : <Banner tone="danger">{error}</Banner>}
@@ -836,6 +968,28 @@ function AgentBuilderInner() {
               {testProblems.length > 0 && sampleInput.trim() !== '' ? (
                 <Banner tone="warn">{testProblems.join(' ')}</Banner>
               ) : null}
+
+              {/*
+            The test, drawn as the work it is.
+
+            A test was a form and then a block of text, and the seconds in between were a disabled
+            button. What actually happens in those seconds is that the sample goes to the agent,
+            the agent works, and something comes back — three steps and two handoffs, which is a
+            graph, and the same graph the objective's plan is drawn as. The same canvas draws it,
+            so an agent working here looks like an agent working anywhere else in the product.
+
+            Nothing on it is invented. The middle node is working only while the request to the
+            test route is open, and it reports no percentage because a single provider call cannot
+            honestly give one. The verdict afterwards is the server's own status, not a reading of
+            the output.
+          */}
+              <div style={{ margin: '14px 0 2px' }}>
+                <WorkflowCanvas
+                  nodes={testCanvas.nodes}
+                  edges={testCanvas.edges}
+                  activity={testActivity}
+                />
+              </div>
 
               {/*
             The result, below the form.

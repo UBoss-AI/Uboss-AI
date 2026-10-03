@@ -14,13 +14,21 @@ import type { AuthenticatedActor } from '../request-context/authenticated-actor.
 import { getCorrelationId } from '../request-context/request-context.js';
 import {
   ALLOW_ANONYMOUS_KEY,
+  ALLOWED_WHEN_READ_ONLY_KEY,
   AUTHENTICATED_KEY,
   PLATFORM_ONLY_KEY,
   TENANT_SCOPED_KEY,
 } from './tenancy.decorators.js';
 import { TenantContextService } from './tenant-context.service.js';
 import { isTenantId } from '../persistence/tenant-context.js';
-import { effectiveCapability, isWriteMethod } from './tenant-lifecycle.js';
+import {
+  accountCapability,
+  effectiveCapability,
+  isWriteMethod,
+  lifecycleCapability,
+  refusalFor,
+  TenantLifecycleState,
+} from './tenant-lifecycle.js';
 
 /** Header a client uses to choose which company workspace a request applies to. */
 export const WORKSPACE_HEADER = 'x-uboss-workspace';
@@ -145,12 +153,44 @@ export class TenantGuard implements CanActivate {
     // whichever is more restrictive — see effectiveCapability.
     const capability = effectiveCapability(membership.lifecycleState, membership.accountState);
 
+    /*
+     * The company-level refusal, with its reason when there is one worth giving.
+     *
+     * Used only where the company is what blocked the request. Where the person's own account is
+     * the stricter of the two, `capability.reason` is already about them and must not be replaced
+     * by a sentence about the company's bill.
+     */
+    const companyRefusal = refusalFor(membership.lifecycleState, membership.accessReasonCode);
+    const blockedByCompany = !lifecycleCapability(membership.lifecycleState).canWrite;
+
     if (!capability.canAccess) {
       throw new ForbiddenException(capability.reason);
     }
 
     if (!capability.canWrite && isWriteMethod(request.method)) {
-      throw new ForbiddenException(capability.reason);
+      /*
+       * One waiver, and it is the way out of read-only.
+       *
+       * A company that stopped paying is put into `ReadOnly`, which blocks every write — and
+       * paying is a POST. Without this the product would lock a customer out of the one screen
+       * that gets them back, which is a trap rather than a lock.
+       *
+       * Three conditions, all required. The route must be marked `@AllowedWhenReadOnly`, which
+       * only the payment routes are. The company must be in `ReadOnly` specifically — every
+       * other blocked state refuses *access*, so this line is never reached for them. And the
+       * person's own account must permit writing, so a suspended employee still cannot pay.
+       *
+       * Nothing else is waived: membership was proved above, and `@RequirePermission` runs after
+       * this and still demands `settings:Administer`.
+       */
+      const payingTheWayOut =
+        this.reflector.getAllAndOverride<boolean>(ALLOWED_WHEN_READ_ONLY_KEY, targets) === true &&
+        membership.lifecycleState === TenantLifecycleState.ReadOnly &&
+        accountCapability(membership.accountState).canWrite;
+
+      if (!payingTheWayOut) {
+        throw new ForbiddenException(blockedByCompany ? companyRefusal : capability.reason);
+      }
     }
 
     return this.continueWith(context, {

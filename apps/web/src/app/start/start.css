@@ -1,0 +1,73 @@
+/*
+ * Signing a company up, inside the sign-in panel.
+ *
+ * It used to be a single centred column on an empty page, on the reasoning that somebody here has
+ * not decided to use the product yet and a wall of marketing beside a form asks them to read
+ * rather than to start. The reasoning was fine and the result was not: registration and sign-in
+ * are the only two screens a stranger ever sees, they are one click apart, and meeting a second
+ * composition on the way to the first workspace reads as two different products.
+ *
+ * So the page is `LoginPresentation` now — the same left panel, the same card on the right — and
+ * what is left here is only what is specific to registering: the form rows, the DNS record, the
+ * footnote. Headings and the card itself come from the login styles, so the two cannot drift.
+ */
+
+.start {
+  display: grid;
+  gap: 18px;
+}
+
+.start__form {
+  display: grid;
+  gap: 2px;
+}
+
+.start__note {
+  margin: 16px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--uboss-text-3);
+}
+
+.start__foot {
+  margin: 0;
+  font-size: 13px;
+  color: var(--uboss-text-3);
+}
+
+/* ---------- the DNS record ---------- */
+
+/*
+ * A definition list, because that is what it is: three labelled values somebody copies into
+ * another system. Laid out as rows so a long TXT value wraps under its label rather than
+ * squeezing the other two.
+ */
+.start__dns {
+  display: grid;
+  gap: 1px;
+  margin: 0 0 18px;
+  border: 1px solid var(--uboss-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.start__dns > div {
+  display: grid;
+  grid-template-columns: 76px 1fr;
+  gap: 12px;
+  padding: 10px 13px;
+  background: var(--uboss-surface-raised);
+}
+
+.start__dns dt {
+  font-size: 12px;
+  color: var(--uboss-text-3);
+}
+
+.start__dns dd {
+  margin: 0;
+  font-size: 13px;
+  color: var(--uboss-text);
+  /* A TXT value is long and has no spaces; without this it widens the card instead of wrapping. */
+  overflow-wrap: anywhere;
+}

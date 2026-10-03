@@ -99,6 +99,24 @@ model Tenant {
   /// them onward. The guard reads this on every tenant-scoped request.
   lifecycleState TenantLifecycleState @default(Provisioning) @map("lifecycle_state")
 
+  /// Why the company is in that state, as a **code** rather than as words. From
+  /// `ACCESS_REASON_CODES`. Null when there is nothing in particular to say.
+  ///
+  /// ## Why a code and not the reason already recorded on the transition
+  ///
+  /// `TenantLifecycleTransition.reason` is free text written by whoever made the change, and a
+  /// platform operator's reason can say things an employee must never read — a fraud suspicion, a
+  /// legal hold, the name of a complainant. The guard refuses writes on every request, so
+  /// whatever it prints is printed to everybody in the company. A closed set of codes lets the
+  /// refusal be specific without ever quoting an internal note.
+  ///
+  /// ## Why it lives here and not on the transition row
+  ///
+  /// The guard already loads this row to read `lifecycleState`, so reading one more column costs
+  /// nothing. Finding the latest transition instead would be a second query on every request in
+  /// the product, to render a message.
+  accessReasonCode String? @map("access_reason_code") @db.VarChar(30)
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -209,6 +227,12 @@ model Tenant {
 
   /// Which Industry Packs this company is entitled to. See `TenantSkillPack`.
   skillPacks TenantSkillPack[]
+
+  /// Top-ups this company has bought outright, beyond its plan's monthly allowance.
+  tokenPurchases TokenPurchase[]
+
+  /// The self-serve signup this company came from, where it came from one.
+  pendingRegistrations PendingRegistration[]
 
   /// The Master Console filters companies by lifecycle state.
   @@index([lifecycleState])
@@ -2114,9 +2138,52 @@ model Plan {
   subscriptions        TenantSubscription[]
   pendingSubscriptions TenantSubscription[] @relation("PendingPlan")
 
+  /// What this plan costs in each currency UBoss sells it in.
+  ///
+  /// `priceMinor` and `currency` above stay the plan's **base** price and are seeded into this
+  /// list, so there is one place to read from. A company is charged the row matching its own
+  /// currency, and where there is no such row the plan has no price for that company — which is a
+  /// real state, answered by asking for a conversation rather than by converting one of the
+  /// others at a rate this product would have invented.
+  prices PlanPrice[]
+
   @@unique([code])
   @@index([active, sortOrder])
   @@map("plans")
+}
+
+/// One plan's price in one currency.
+///
+/// ## Why this exists
+///
+/// A company is billed in the currency of the country it is in, and a plan with a single price
+/// could only ever show the same figure to everybody. The alternative — converting — is the one
+/// thing this product must not do: a rate it invented produces a number the invoice will not
+/// match, and the customer finds out after paying.
+///
+/// ## Why there is no exchange rate anywhere near it
+///
+/// Each row is a price somebody agreed, in that currency, as a decision. Adding a market means
+/// adding a row, not adding a rate.
+model PlanPrice {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  planId String @map("plan_id") @db.Uuid
+
+  /// ISO 4217, and one of `BILLING_CURRENCIES`. A check constraint holds the list, so a currency
+  /// nobody has agreed terms for cannot reach the column.
+  currency String @db.VarChar(3)
+
+  /// Minor units, integer. Never a float: a rounding difference here is an invoice dispute.
+  priceMinor Int @map("price_minor")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  plan Plan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, currency])
+  @@map("plan_prices")
 }
 
 /// A company's current commercial position: plan, seats, billing, renewal and
@@ -2351,6 +2418,132 @@ model StripeWebhookEvent {
   @@index([type, occurredAt(sort: Desc)])
   @@index([tenantId, occurredAt(sort: Desc)])
   @@map("stripe_webhook_events")
+}
+
+/// A company somebody is signing up, before it is a company.
+///
+/// ## The rule this exists to hold
+///
+/// **The company is created last.** A signup has two proofs to clear — the person controls the
+/// email address, and the company controls the domain — and until both are done there is nothing
+/// to create a company for.
+///
+/// The obvious alternative, creating the tenant first and filling it in, leaves a row for every
+/// abandoned form: an empty company with a half-finished administrator, in a database where a
+/// company is the unit everything else hangs off. Those rows are indistinguishable from real
+/// customers in every count, every report and every seat total, and nobody deletes them because
+/// nobody is certain they are safe to delete.
+///
+/// ## Why the two tokens are kept differently
+///
+/// `emailTokenHash` is hashed because it is a bearer credential: whoever holds it can complete the
+/// email proof. `domainToken` is in the clear because the company is asked to publish it in public
+/// DNS — hashing a value whose entire purpose is to be world-readable would only stop this product
+/// from checking it.
+model PendingRegistration {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  /// What the form collected. Four fields, and no plan: the plan is Pilot, fixed by the handler
+  /// and never read from the request.
+  workEmail   String @map("work_email") @db.VarChar(320)
+  fullName    String @map("full_name") @db.VarChar(200)
+  companyName String @map("company_name") @db.VarChar(200)
+  domain      String @db.VarChar(253)
+
+  emailTokenHash  String    @map("email_token_hash") @db.VarChar(100)
+  emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz(6)
+
+  domainToken      String    @map("domain_token") @db.VarChar(80)
+  domainVerifiedAt DateTime? @map("domain_verified_at") @db.Timestamptz(6)
+
+  /// How many times the DNS record has been looked for. Bounded, because each check is a network
+  /// call this product makes on an anonymous caller's say-so.
+  domainChecks Int @default(0) @map("domain_checks")
+
+  /// From `REGISTRATION_STATES`.
+  state String @db.VarChar(30)
+
+  /// Set when the company is finally created — the link between the signup and what it became.
+  tenantId String? @map("tenant_id") @db.Uuid
+
+  failureReason String? @map("failure_reason") @db.VarChar(500)
+
+  /// A coarse hint of where the form was submitted from — a /16, not an address.
+  ///
+  /// Full addresses are personal data with a retention cost, and the question this answers is
+  /// only "did a hundred of these come from the same place". Written by `clientHintFrom`, the
+  /// same reduction the security trail already uses.
+  createdFromHint String? @map("created_from_hint") @db.VarChar(45)
+
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  @@index([workEmail])
+  @@index([domain])
+  @@index([state, expiresAt])
+  @@map("pending_registrations")
+}
+
+/// One company buying more UBoss Tokens, outright, when its monthly allowance has run out.
+///
+/// ## Why the quote is written down before the browser leaves
+///
+/// A webhook says "this payment succeeded". Nothing in it says what the company was *told* it was
+/// buying. The number of tokens is quoted on the screen they agreed to, and if it is not recorded
+/// first, the only surviving record of the offer is the provider's — which is how a company ends
+/// up credited with a different number from the one it accepted.
+///
+/// ## Why `creditGrantId` is the idempotency and not `status`
+///
+/// `status` says what the provider reports. `creditGrantId` says whether this product has already
+/// moved credit into the wallet, and a retried delivery must be stopped by the second, not the
+/// first. A row that is Paid with no grant is a payment taken and not yet credited — exactly the
+/// thing somebody needs to be able to find.
+model TokenPurchase {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  tenantId String @map("tenant_id") @db.Uuid
+
+  /// The provider's Checkout session, and the payment that settled it.
+  providerSessionRef String  @unique @map("provider_session_ref") @db.VarChar(255)
+  providerPaymentRef String? @map("provider_payment_ref") @db.VarChar(255)
+
+  /// What was quoted, before the browser left — all three, because all three were on the screen.
+  ///
+  /// `tokenMinorUnits` is kept because the platform can change the rate: a purchase quoted at one
+  /// rate and credited at another would be charging for one thing and delivering another, and the
+  /// only way to prove which rate applied is to keep the one that was quoted.
+  tokens          Int
+  amountMinor     Int    @map("amount_minor")
+  currency        String @db.VarChar(3)
+  tokenMinorUnits Int    @map("token_minor_units")
+
+  /// From `TOKEN_PURCHASE_STATUSES`.
+  status String @db.VarChar(20)
+
+  /// Who bought it. A webhook has no actor of its own, and a credit grant with no actor is one
+  /// nobody asked for as far as the audit trail is concerned.
+  requestedByUserId String @map("requested_by_user_id") @db.Uuid
+
+  /// Set when the wallet was actually credited. See the note above.
+  creditGrantId String? @map("credit_grant_id") @db.Uuid
+
+  failureReason String? @map("failure_reason") @db.VarChar(500)
+
+  /// The provider's hosted page, so a company that closed the tab can be sent back to it.
+  checkoutUrl String? @map("checkout_url") @db.VarChar(1000)
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  paidAt    DateTime? @map("paid_at") @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@map("token_purchases")
 }
 
 /// A feature flag and its staged rollout.
@@ -3087,7 +3280,7 @@ model Department {
   objectiveVersions ObjectiveVersion[]
 
   /// The department Workshop, the one conversation this department itself owns.
-  workshops         ChatConversation[]
+  workshops ChatConversation[]
 
   /// A department name is unique within a company, so two "Quality Assurance" departments
   /// cannot exist and make every scope decision ambiguous.
@@ -3623,6 +3816,17 @@ model PerformancePolicy {
   missedPoints          Int @default(-15) @map("missed_points")
   qualityRejectedPoints Int @default(-10) @map("quality_rejected_points")
 
+  /// How long past its due date a task must sit, still undone, before it counts as missed.
+  ///
+  /// A deadline passing is not yet a missed deadline — somebody finishing an hour late has been
+  /// late, which `lateCompletionPoints` already covers. This is the point at which the work stops
+  /// being late and starts being undone, and it is a company's judgement rather than ours: a
+  /// support rota and a quarterly filing do not mean the same thing by "overdue".
+  ///
+  /// A day, by default, because a deadline that has survived a full working day without anybody
+  /// touching it is not a scheduling accident.
+  missedAfterHours Int @default(24) @map("missed_after_hours")
+
   /// Configurable thresholds, as the client requires. A score at or above each earns that level.
   bronzeThreshold   Int @default(0) @map("bronze_threshold")
   silverThreshold   Int @default(100) @map("silver_threshold")
@@ -3767,6 +3971,12 @@ enum NotificationKind {
   SecurityEvent
   /// A step this person owns has stopped waiting on other work and can now be started.
   WorkReady
+  /// This person's performance badge changed level.
+  Badge
+  /// The company's subscription went unpaid and the workspace is read-only, or it was paid and
+  /// the workspace is working again. **Never mutable** — muting it means discovering the fact by
+  /// failing to save.
+  SubscriptionLapsed
 
   @@map("notification_kind")
 }
@@ -5674,7 +5884,7 @@ model ApprovalRequest {
   ///
   /// A change request is an approval like any other, so it lives here rather than in a table of
   /// its own: asking for a change must not be the same act as making one.
-  changeKind         String? @map("change_kind") @db.VarChar(40)
+  changeKind String? @map("change_kind") @db.VarChar(40)
 
   requestedByUserId String @map("requested_by_user_id") @db.Uuid
 
@@ -6079,7 +6289,7 @@ model AgentRun {
   percent         Int?    @db.SmallInt
   progressMessage String? @map("progress_message") @db.VarChar(500)
 
-  output        Json?   @db.JsonB
+  output Json? @db.JsonB
 
   /// What the person starting this run answered, for this run only. Shape: RuntimeInputs.
   /// Null for a scheduler tick, which has nobody to ask.
@@ -6572,6 +6782,25 @@ model BudgetWallet {
   resetsAt    DateTime? @map("resets_at") @db.Timestamptz(6)
   /// Section 20's "expiry". Null when the allowance does not expire.
   expiresAt   DateTime? @map("expires_at") @db.Timestamptz(6)
+
+  /// How often the allowance comes back: `None`, `Daily`, `Weekly` or `Monthly`.
+  ///
+  /// `resetsAt` on its own is a single instant — it says when the *next* reset falls due and
+  /// nothing about what happens after it, so a wallet that reset once never reset again. A
+  /// per-person daily allowance is the case that makes the difference plain: it is not one reset
+  /// tomorrow, it is one every day.
+  ///
+  /// `None` for a wallet topped up deliberately rather than on a clock, which is what every
+  /// wallet was before this existed.
+  resetCadence String @default("None") @map("reset_cadence") @db.VarChar(20)
+
+  /// What a recurring allowance grants each period. Required when a cadence is set.
+  ///
+  /// `allowanceMinor` cannot answer this: it is cumulative — every grant adds to it, and
+  /// `usedMinor` is never zeroed because used is derived from an immutable ledger and zeroing it
+  /// would report drift against `reconcile` for as long as the company existed. So a wallet
+  /// granted 500 a day holds 1,000 after one reset, and nothing else on the row remembers 500.
+  recurringGrantMinor Int? @map("recurring_grant_minor")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)

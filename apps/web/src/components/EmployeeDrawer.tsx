@@ -24,6 +24,7 @@ import {
   organizationApi,
   performanceApi,
   type PerformanceView,
+  type PerformanceEventRow,
   todoApi,
   type EmployeeProfile,
   type EngineAgentView,
@@ -987,20 +988,29 @@ export function EmployeeDrawer({
                     <DataTable
                       caption="What their score is made of"
                       columns={[
+                        /*
+                         * One row type across all three columns, not a different one per column.
+                         *
+                         * Each column used to declare only the field it read, which made the table's
+                         * row type whichever column TypeScript inferred from first — so the other two
+                         * were checked against a shape that did not have their fields. It happened to
+                         * compile; it was never actually type-checked.
+                         */
                         {
                           key: 'kind',
                           header: 'Event',
-                          render: (row: { kind: string }) => row.kind,
+                          render: (row: PerformanceEventRow) => row.kind,
                         },
                         {
                           key: 'points',
                           header: 'Points',
-                          render: (row: { points: number }) => String(row.points),
+                          numeric: true,
+                          render: (row: PerformanceEventRow) => String(row.points),
                         },
                         {
                           key: 'at',
                           header: 'When',
-                          render: (row: { occurredAt: string }) =>
+                          render: (row: PerformanceEventRow) =>
                             new Date(row.occurredAt).toLocaleDateString(),
                         },
                       ]}

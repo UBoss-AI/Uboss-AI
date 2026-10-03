@@ -428,7 +428,15 @@ describe('the Master Console (e2e)', () => {
       assert.equal(company.aiUsageLabel, '44%');
 
       assert.equal(body.kpis['activeCompanies']?.['provenance'], 'measured');
-      assert.equal(body.kpis['aiSpend']?.['provenance'], 'demo');
+      /*
+       * AI spend is measured now, and was honestly marked demo before.
+       *
+       * It summed `ai_consumed_minor` across subscriptions — a column nothing has ever written —
+       * so the tile read zero against a real allowance for every company, and "demo" was the
+       * truthful label for that. It now adds up the company budget wallets, whose `used_minor`
+       * comes from an append-only ledger and is the figure the hard stop refuses calls against.
+       */
+      assert.equal(body.kpis['aiSpend']?.['provenance'], 'measured');
       assert.equal(body.provenanceNotes.length, 6);
     });
 
@@ -585,6 +593,106 @@ describe('the Master Console (e2e)', () => {
   });
 
   // =========================================================================
+  describe('what each company is worth', () => {
+    /*
+     * The console's own module status used to say it: "Revenue reporting across companies is not
+     * built". Every number was already stored — invoices carry what was billed and paid, the cost
+     * ledger carries what the provider charged — and nothing put them in one row. So the single
+     * commercial question about a customer, *are we making money on them*, had no answer in the
+     * product at all.
+     */
+    it('puts what a company paid next to what it cost to serve', async () => {
+      const response = await as(agent().get('/platform/console/economics'), adminUboss).expect(200);
+
+      const body = response.body as {
+        currency: string;
+        companies: {
+          name: string;
+          planCode: string | null;
+          invoicedMinor: number;
+          paidMinor: number;
+          aiChargedMinor: number;
+          providerCostMinor: number;
+          aiMarginMinor: number;
+          marginMinor: number | null;
+          uncostedCalls: number;
+          costIsComplete: boolean;
+        }[];
+        totals: {
+          paidMinor: number;
+          aiChargedMinor: number;
+          providerCostMinor: number;
+          aiMarginMinor: number;
+          marginMinor: number | null;
+        };
+      };
+
+      const company = body.companies.find((row) => row.name === 'Console Co');
+      assert.ok(company, 'the company under test is missing from the economics view');
+      assert.equal(typeof company.providerCostMinor, 'number');
+      assert.equal(typeof company.uncostedCalls, 'number');
+      assert.equal(company.costIsComplete, company.uncostedCalls === 0);
+
+      /*
+       * The AI margin is charged minus cost, and the two come from different tables.
+       *
+       * They used to be the same number, and reading the cost off the ledger — which now holds
+       * the sell price — would subtract a figure from itself and report zero margin for ever.
+       */
+      assert.equal(company.aiMarginMinor, company.aiChargedMinor - company.providerCostMinor);
+      assert.equal(
+        body.totals.aiMarginMinor,
+        body.totals.aiChargedMinor - body.totals.providerCostMinor,
+      );
+    });
+
+    it('reports no margin rather than a margin of zero when nobody has paid', async () => {
+      /*
+       * The distinction this exists to keep.
+       *
+       * Zero means "we broke even on them". Null means "nobody has paid us yet". Reporting the
+       * first when the second is true would show a break-even customer for every company that
+       * has never been invoiced, which is every company in a product whose billing has just been
+       * switched on.
+       */
+      const response = await as(agent().get('/platform/console/economics'), adminUboss).expect(200);
+      const body = response.body as {
+        companies: { paidMinor: number; marginMinor: number | null }[];
+        totals: { paidMinor: number; marginMinor: number | null };
+      };
+
+      for (const row of body.companies) {
+        if (row.paidMinor === 0) {
+          assert.equal(row.marginMinor, null, 'a company nobody has paid showed a margin');
+        }
+      }
+      if (body.totals.paidMinor === 0) {
+        assert.equal(body.totals.marginMinor, null);
+      }
+    });
+
+    it('is read by platform staff and by nobody else', async () => {
+      /*
+       * Every platform role reads every platform module — `readAcrossPlatform()` is deliberate,
+       * and what separates the roles is what they may *administer*. So this asserts the boundary
+       * that actually exists: platform staff read it, and somebody who is not platform staff
+       * does not reach the console at all.
+       *
+       * I first wrote this expecting Support to be refused, on the reasoning that a margin is
+       * commercial and a support engineer has no business in it. That is a policy the product
+       * does not hold, and asserting it here would have been me introducing one through a test.
+       */
+      await as(agent().get('/platform/console/economics'), commercialUboss).expect(200);
+      await as(agent().get('/platform/console/economics'), supportUboss).expect(200);
+      await as(agent().get('/platform/console/economics'), companyPersonUboss).expect(403);
+    });
+
+    it('refuses a window it cannot read rather than silently widening it', async () => {
+      // A request for a month that quietly returned a year would be a confident wrong answer.
+      await as(agent().get('/platform/console/economics?from=not-a-date'), adminUboss).expect(400);
+    });
+  });
+
   describe('plans', () => {
     it('lists the migration-seeded plans with their subscriber counts', async () => {
       const response = await as(agent().get('/platform/console/plans'), commercialUboss).expect(
@@ -608,6 +716,52 @@ describe('the Master Console (e2e)', () => {
         })
         .expect(400);
       assert.match(JSON.stringify(response.body), /company module/i);
+    });
+
+    /*
+     * A free plan's AI allowance is UBoss's own money, given away per company per month.
+     *
+     * The Pilot plan carried one: price 0, allowance $100, which at the sell multiplier is about
+     * ₹1,900 of real provider spend for every evaluation company anybody created. No code was
+     * wrong — the number had been chosen before there was a provider bill behind it.
+     *
+     * Both halves are checked, and the second is the one that matters: an update sends only the
+     * fields it changes, so a rule that looked at the request alone could be walked around in two
+     * steps — price to zero today, allowance tomorrow.
+     */
+    it('refuses an AI allowance on a plan nobody pays for', async () => {
+      const created = await as(agent().post('/platform/console/plans'), commercialUboss)
+        .send({
+          code: 'freebie',
+          tier: 'Pilot',
+          name: 'Freebie',
+          entitledModules: ['dashboard'],
+          priceMinor: 0,
+          aiAllowanceMinor: 10_000,
+        })
+        .expect(400);
+      assert.match(JSON.stringify(created.body), /no price cannot include an AI allowance/i);
+
+      // The same plan without the allowance is fine: a free trial of the software is not the
+      // problem, buying tokens for it is.
+      const trial = await as(agent().post('/platform/console/plans'), commercialUboss)
+        .send({
+          code: 'freebie',
+          tier: 'Pilot',
+          name: 'Freebie',
+          entitledModules: ['dashboard'],
+          priceMinor: 0,
+        })
+        .expect(201);
+
+      // And it cannot acquire one afterwards, which is the two-step way round.
+      const later = await as(
+        agent().put(`/platform/console/plans/${(trial.body as { id: string }).id}`),
+        commercialUboss,
+      )
+        .send({ aiAllowanceMinor: 10_000 })
+        .expect(400);
+      assert.match(JSON.stringify(later.body), /no price cannot include an AI allowance/i);
     });
 
     it('refuses a duplicate plan code', async () => {

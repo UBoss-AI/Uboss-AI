@@ -1,0 +1,30 @@
+# The backup runner.
+#
+# `infra/backup/` has held a dump script, a restore-verification script and a DR drill since
+# Prompt 41, and the production stack ran none of them — so a deployment had scripts for backups
+# and no backups. This image is what puts them on a clock.
+#
+# Debian rather than Alpine on purpose: the scripts are `#!/usr/bin/env bash`, and Alpine has no
+# bash. Rewriting three careful scripts for a smaller base would be trading a reviewed thing for
+# an unreviewed one to save a few megabytes on a container that runs once a day.
+FROM postgres:17
+
+# `pg_dump` and `psql` are already here — that is the whole reason the base is the server image.
+# The client version must be at least the server's, which pinning to the same tag guarantees.
+
+COPY infra/backup/pg-backup.sh /usr/local/bin/pg-backup.sh
+COPY infra/backup/pg-restore-verify.sh /usr/local/bin/pg-restore-verify.sh
+COPY infra/backup/dr-drill.sh /usr/local/bin/dr-drill.sh
+COPY deploy/backup-loop.sh /usr/local/bin/backup-loop.sh
+
+RUN chmod +x /usr/local/bin/pg-backup.sh \
+  /usr/local/bin/pg-restore-verify.sh \
+  /usr/local/bin/dr-drill.sh \
+  /usr/local/bin/backup-loop.sh
+
+# Not the `postgres` user: this container never runs a server, and the dumps it writes belong to
+# whoever the volume is owned by. Left as root so a fresh volume is writable without a chown step
+# that would itself need root.
+WORKDIR /backups
+
+ENTRYPOINT ["/usr/local/bin/backup-loop.sh"]

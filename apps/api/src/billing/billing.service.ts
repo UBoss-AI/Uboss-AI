@@ -8,6 +8,7 @@ import { PrismaService } from '../persistence/prisma.service.js';
 import type { TenantScope } from '../persistence/tenant-context.js';
 import { StripeClient } from './stripe.client.js';
 import { stripeUnavailableReason } from './stripe.config.js';
+import { priceInCurrency, type BillingCurrency } from '@uboss/types';
 
 /**
  * Taking money, and keeping the record of it.
@@ -114,7 +115,10 @@ export class BillingService {
     const client = this.stripe.require();
 
     const plan = await this.prisma.runAsPlatformOperation(() =>
-      this.prisma.client.plan.findUnique({ where: { id: input.planId } }),
+      this.prisma.client.plan.findUnique({
+        where: { id: input.planId },
+        include: { prices: true },
+      }),
     );
     if (plan === null) throw new NotFoundException('That plan does not exist.');
 
@@ -147,15 +151,56 @@ export class BillingService {
           });
 
     const currency = plan.currency.toLowerCase();
+
+    /*
+     * Every currency this plan is priced in, on one Price.
+     *
+     * The provider supports a Price carrying a per-currency amount, and Checkout then charges the
+     * one matching the customer. That is the only correct way to do this: a separate Price per
+     * currency would mean choosing between them here, and the choice would have to be made from
+     * the company's country — which is exactly the arithmetic that must not live in two places.
+     *
+     * Each amount is a figure somebody agreed, read from `plan_prices`. Nothing is converted, and
+     * there is no exchange rate anywhere in this file: a converted price is a number the invoice
+     * will not match.
+     *
+     * The base currency is excluded from the options because it IS the Price's own currency —
+     * naming it twice is refused by the provider.
+     */
+    const otherCurrencies = plan.prices.filter((row) => row.currency.toLowerCase() !== currency);
+    const monthlyOptions = Object.fromEntries(
+      otherCurrencies.map((row) => [row.currency.toLowerCase(), { unit_amount: row.priceMinor }]),
+    );
+    const annualOptions = Object.fromEntries(
+      otherCurrencies.map((row) => [
+        row.currency.toLowerCase(),
+        { unit_amount: row.priceMinor * 12 },
+      ]),
+    );
+
+    /** The currencies that went into this publication, for the idempotency key and the trail. */
+    const publishedIn = [plan.currency, ...otherCurrencies.map((row) => row.currency)].sort();
+    const fingerprint = publishedIn
+      .map((code) => {
+        const row = plan.prices.find((price) => price.currency === code);
+        return `${code}:${row?.priceMinor ?? plan.priceMinor}`;
+      })
+      .join(',');
+
     const monthly = await client.prices.create(
       {
         product: product.id,
         currency,
         unit_amount: plan.priceMinor,
+        ...(otherCurrencies.length === 0 ? {} : { currency_options: monthlyOptions }),
         recurring: { interval: 'month' },
-        metadata: { ubossPlanId: plan.id, ubossCycle: 'Monthly' },
+        metadata: {
+          ubossPlanId: plan.id,
+          ubossCycle: 'Monthly',
+          ubossCurrencies: publishedIn.join(' '),
+        },
       },
-      { idempotencyKey: `uboss-plan-price-month-${plan.id}-${plan.priceMinor}` },
+      { idempotencyKey: `uboss-plan-price-month-${plan.id}-${fingerprint}` },
     );
 
     const annual = await client.prices.create(
@@ -164,10 +209,15 @@ export class BillingService {
         currency,
         // Twelve months of the plan's own monthly price. See the note above.
         unit_amount: plan.priceMinor * 12,
+        ...(otherCurrencies.length === 0 ? {} : { currency_options: annualOptions }),
         recurring: { interval: 'year' },
-        metadata: { ubossPlanId: plan.id, ubossCycle: 'Annual' },
+        metadata: {
+          ubossPlanId: plan.id,
+          ubossCycle: 'Annual',
+          ubossCurrencies: publishedIn.join(' '),
+        },
       },
-      { idempotencyKey: `uboss-plan-price-year-${plan.id}-${plan.priceMinor}` },
+      { idempotencyKey: `uboss-plan-price-year-${plan.id}-${fingerprint}` },
     );
 
     await this.prisma.runAsPlatformOperation(() =>
@@ -195,6 +245,7 @@ export class BillingService {
         priceMinor: String(plan.priceMinor),
         currency: plan.currency,
         stripeProductId: product.id,
+        currencies: publishedIn.join(' '),
       },
     });
 
@@ -332,6 +383,217 @@ export class BillingService {
   }
 
   /**
+   * The plans this company could move to, in its own currency.
+   *
+   * ## Why a plan with no price in their currency is not offered
+   *
+   * It is not sold to them. Showing it with the dollar figure beside a rupee-billed company — or
+   * worse, converting it — would put a number on the screen that the invoice will not match. A
+   * plan this company cannot buy is left off the list, and the screen says to talk to us.
+   */
+  async upgradeOptionsFor(scope: TenantScope): Promise<unknown> {
+    const subscription = await this.prisma.runInTenantTransaction(scope, () =>
+      this.prisma.client.tenantSubscription.findUnique({
+        where: { tenantId: scope.tenantId },
+        select: { planId: true, currency: true },
+      }),
+    );
+    if (subscription === null) {
+      throw new NotFoundException('This company has no subscription.');
+    }
+
+    const plans = await this.prisma.runAsPlatformOperation(() =>
+      this.prisma.client.plan.findMany({
+        where: { active: true },
+        include: { prices: true },
+        orderBy: { sortOrder: 'asc' },
+      }),
+    );
+
+    return {
+      currency: subscription.currency,
+      plans: plans
+        .map((plan) => ({
+          code: plan.code,
+          name: plan.name,
+          description: plan.description,
+          seatLimit: plan.seatLimit,
+          entitledModules: plan.entitledModules,
+          current: plan.id === subscription.planId,
+          priceMinor: priceInCurrency(
+            plan.prices.map((row) => ({
+              currency: row.currency as BillingCurrency,
+              priceMinor: row.priceMinor,
+            })),
+            subscription.currency,
+          ),
+          /*
+           * Whether it can be bought right now, and why not when it cannot.
+           *
+           * Said rather than hidden: a plan missing from a list with no explanation reads as a
+           * product that does not offer it, and the commonest cause is that somebody has not
+           * pressed Publish yet — which is an operator's problem, not the customer's.
+           */
+          buyable: plan.stripeMonthlyPriceId !== null && plan.id !== subscription.planId,
+          unavailableReason:
+            plan.id === subscription.planId
+              ? 'This is the current plan.'
+              : plan.stripeMonthlyPriceId === null
+                ? 'Not yet available to buy online. Talk to us and we will set it up.'
+                : null,
+        }))
+        .filter((plan) => plan.current || plan.priceMinor !== null),
+    };
+  }
+
+  /**
+   * Begin a payment for a **different** plan — the self-serve upgrade.
+   *
+   * ## Why this is not `startCheckout`
+   *
+   * That one charges for the plan the company is already on, which is the first payment of a
+   * subscription somebody agreed. This one is a company choosing a different plan for itself, so
+   * the plan comes from the request — and because it comes from the request, every one of the
+   * checks below exists. The plan must be active, published, priced in this company's own
+   * currency, and not the one they are already on.
+   *
+   * ## Why the plan still cannot be forged
+   *
+   * It is a **code**, looked up in `plans`, and everything that follows — the price, the seats,
+   * the allowance — comes from that row. A caller can choose which published plan to buy, which
+   * is the point; they cannot describe one.
+   */
+  async startPlanUpgrade(input: {
+    scope: TenantScope;
+    userId: string;
+    planCode: string;
+    cycle: BillingCycle;
+  }): Promise<{ url: string }> {
+    const client = this.stripe.require();
+
+    const subscription = await this.prisma.runInTenantTransaction(input.scope, () =>
+      this.prisma.client.tenantSubscription.findUnique({
+        where: { tenantId: input.scope.tenantId },
+        include: { plan: true },
+      }),
+    );
+    if (subscription === null) {
+      throw new NotFoundException('This company has no subscription.');
+    }
+
+    const plan = await this.prisma.runAsPlatformOperation(() =>
+      this.prisma.client.plan.findUnique({
+        where: { code: input.planCode },
+        include: { prices: true },
+      }),
+    );
+
+    if (plan === null || !plan.active) {
+      throw new BadRequestException('That plan is not available.');
+    }
+    if (plan.id === subscription.planId) {
+      throw new BadRequestException(`This company is already on ${plan.name}.`);
+    }
+
+    const priceForThem = priceInCurrency(
+      plan.prices.map((row) => ({
+        currency: row.currency as BillingCurrency,
+        priceMinor: row.priceMinor,
+      })),
+      subscription.currency,
+    );
+    if (priceForThem === null) {
+      throw new BadRequestException(
+        `${plan.name} is not sold in ${subscription.currency} yet. Talk to us and we will set ` +
+          'it up — nothing is converted here, because a converted price is not the price you ' +
+          'would be charged.',
+      );
+    }
+
+    const priceId = input.cycle === 'Annual' ? plan.stripeAnnualPriceId : plan.stripeMonthlyPriceId;
+    if (priceId === null) {
+      throw new BadRequestException(
+        `${plan.name} has not been published to the payment provider for ` +
+          `${input.cycle.toLowerCase()} billing, so there is no price to charge.`,
+      );
+    }
+
+    const tenant = await this.prisma.runAsPlatformOperation(() =>
+      this.prisma.client.tenant.findUnique({ where: { id: input.scope.tenantId } }),
+    );
+
+    const customerId =
+      subscription.stripeCustomerId ??
+      (
+        await client.customers.create(
+          {
+            ...(tenant?.name == null ? {} : { name: tenant.name }),
+            metadata: { ubossTenantId: input.scope.tenantId },
+          },
+          { idempotencyKey: `uboss-customer-${input.scope.tenantId}` },
+        )
+      ).id;
+
+    if (subscription.stripeCustomerId === null) {
+      await this.prisma.runInTenantTransaction(input.scope, () =>
+        this.prisma.client.tenantSubscription.update({
+          where: { tenantId: input.scope.tenantId },
+          data: { stripeCustomerId: customerId },
+        }),
+      );
+    }
+
+    const web = this.authConfig.webBaseUrl;
+    const session = await client.checkout.sessions.create({
+      mode: 'subscription',
+      customer: customerId,
+      line_items: [{ price: priceId, quantity: 1 }],
+      client_reference_id: input.scope.tenantId,
+      subscription_data: {
+        /*
+         * The plan travels with the subscription.
+         *
+         * This is what the webhook reads to know which plan was bought. Not the price id: a plan
+         * republished at a new price has a new price id, and a subscription created against the
+         * old one would then resolve to no plan at all.
+         */
+        metadata: {
+          ubossTenantId: input.scope.tenantId,
+          ubossPlanId: plan.id,
+          ubossPlanCode: plan.code,
+          ubossCycle: input.cycle,
+        },
+      },
+      success_url: `${web}/settings/billing?upgrade=complete&session={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${web}/settings/billing?upgrade=cancelled`,
+    });
+
+    if (session.url === null) {
+      throw new BadRequestException(
+        'The payment provider did not return a page to send you to. Nothing has been charged.',
+      );
+    }
+
+    await this.auditEvents.recordForTenant(input.scope, {
+      action: 'billing.upgrade_started',
+      resourceType: 'tenant_subscription',
+      resourceId: subscription.id,
+      actorUserId: input.userId,
+      summary: `Started payment to move from ${subscription.plan.name} to ${plan.name}.`,
+      metadata: {
+        fromPlan: subscription.plan.code,
+        toPlan: plan.code,
+        cycle: input.cycle,
+        priceMinor: String(priceForThem),
+        currency: subscription.currency,
+        sessionId: session.id,
+      },
+    });
+
+    return { url: session.url };
+  }
+
+  /**
    * A link into the provider's own billing portal, for a company that already pays.
    *
    * Changing a card, downloading an invoice and cancelling all live there rather than being
@@ -411,7 +673,16 @@ export class BillingService {
     return this.prisma.runAsPlatformOperation(async () => {
       const subscriptions = await this.prisma.client.tenantSubscription.findMany({
         include: {
-          tenant: { select: { name: true } },
+          /*
+           * The lifecycle state, beside the subscription state.
+           *
+           * They answer different questions and this screen needs both. `state` is what the
+           * commercial arrangement is; `lifecycleState` is whether the company can actually open
+           * the product — and the second is the one the request guard enforces. A screen showing
+           * only the first could say Suspended beside a company that is working normally, which
+           * is exactly the condition that went unnoticed before the webhook moved lifecycle too.
+           */
+          tenant: { select: { name: true, lifecycleState: true, accessReasonCode: true } },
           plan: { select: { name: true, code: true } },
         },
         orderBy: { updatedAt: 'desc' },
@@ -435,6 +706,10 @@ export class BillingService {
             planCode: subscription.plan.code,
             state: subscription.state,
             billingState: subscription.billingState,
+            // What the company can actually do right now, and why. The two above are the
+            // commercial record; these two are the enforced truth.
+            lifecycleState: subscription.tenant.lifecycleState,
+            accessReasonCode: subscription.tenant.accessReasonCode,
             billingCycle: subscription.billingCycle,
             currency: subscription.currency,
             // Null where the company has never been connected, rather than a zero that would

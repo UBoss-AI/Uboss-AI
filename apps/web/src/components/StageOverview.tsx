@@ -5,7 +5,9 @@ import {
   type OrchestrationStageRow,
   type OrchestrationView,
 } from '@uboss/types';
-import { Card, CardBody } from '@uboss/ui';
+import { Button, Card, CardBody, Icon } from '@uboss/ui';
+
+import './tile-detail.css';
 
 /**
  * Where the company's work has actually got to.
@@ -28,12 +30,33 @@ import { Card, CardBody } from '@uboss/ui';
  * and a figure this person may not see arrives as null rather than as zero — so "—" here means
  * "not yours to see", and \`0\` always means zero.
  */
-export function StageOverview({ view }: { view: OrchestrationView }): React.JSX.Element {
+export function StageOverview({
+  view,
+  onClose,
+}: {
+  view: OrchestrationView;
+  /** Closes the card. Present because this now opens from a tile rather than being always-on. */
+  onClose?: (() => void) | undefined;
+}): React.JSX.Element {
   return (
-    <Card>
+    <Card className="tile-detail">
       <CardBody>
-        <div className="uboss-section-label" style={{ marginTop: 0 }}>
-          Where the work is
+        {/*
+          The heading row matches the other tile cards, so the one that opens from a tile does not
+          look like a different kind of thing from the ones beside it.
+        */}
+        <div className="tile-detail__head">
+          <div>
+            <span className="tile-detail__label">Where the work is</span>
+            <span className="tile-detail__measure">Stage, department and what is waiting</span>
+          </div>
+          {onClose === undefined ? null : (
+            <div className="tile-detail__actions">
+              <Button size="sm" onClick={onClose} aria-label="Close where the work is">
+                <Icon name="close" size={15} />
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className="uboss-stage-summary">

@@ -17,6 +17,15 @@ export default function SecurityPage() {
         accent="Grounded in trust."
         description="Understand the boundaries, responsibilities and records that keep people in control of the AI workforce."
         primary="Talk through your requirements"
+        secondary={{ label: 'How the work runs', href: '/how-it-works' }}
+        facts={[
+          {
+            value: 'Row-level',
+            label: 'The database refuses another company rows, not just the code',
+          },
+          { value: 'Append-only', label: 'The audit trail is hash-chained and cannot be edited' },
+          { value: 'Four eyes', label: 'Nobody approves their own request' },
+        ]}
       />
       <Governance />
       <AccessControl />

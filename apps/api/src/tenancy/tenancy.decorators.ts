@@ -39,3 +39,33 @@ export const AUTHENTICATED_KEY = 'uboss:authenticated';
  */
 export const Authenticated = (): MethodDecorator & ClassDecorator =>
   SetMetadata(AUTHENTICATED_KEY, true);
+
+export const ALLOWED_WHEN_READ_ONLY_KEY = 'uboss:allowed-when-read-only';
+
+/**
+ * Marks a write route as still reachable while the **company** is read-only.
+ *
+ * ## Why this exists
+ *
+ * A company that stops paying is put into `ReadOnly`, which refuses every non-GET request. That
+ * is the point of it — but paying is a `POST`, so without this the product would lock a customer
+ * out of the one screen that gets them back. A door that can only be opened from the inside is
+ * not a lock, it is a trap.
+ *
+ * ## How narrow it is
+ *
+ * It waives exactly one check and nothing else:
+ *
+ *   * **Only** the company-level read-only write block. `Suspended`, `Closed`, `Provisioning`
+ *     and `PendingActivation` all refuse *access*, not just writes, and are unaffected — a
+ *     suspended company still cannot reach this route at all.
+ *   * The person's own account state is still enforced. A suspended employee cannot pay.
+ *   * `@RequirePermission` still applies. Paying needs `settings:Administer`, as it always did.
+ *   * The route must still be `@TenantScoped`, so membership is still proved in the database.
+ *
+ * It belongs on the routes that take a payment, and on nothing else. A route that changes the
+ * company's own data does not get it, however convenient: the whole value of read-only is that
+ * the data stops moving.
+ */
+export const AllowedWhenReadOnly = (): MethodDecorator & ClassDecorator =>
+  SetMetadata(ALLOWED_WHEN_READ_ONLY_KEY, true);

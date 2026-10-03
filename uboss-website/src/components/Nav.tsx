@@ -14,15 +14,17 @@ import { usePathname } from 'next/navigation';
 import { Menu, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
+import { PRODUCT_START_URL } from '@/lib/product-login';
+
 import { Button, cn } from './ui';
 
 const LINKS: readonly { label: string; href: string }[] = [
   { label: 'Product', href: '/platform' },
-  { label: 'How It Works', href: '/how-it-works' },
-  { label: 'Skills', href: '/skills' },
   { label: 'Solutions', href: '/solutions' },
+  { label: 'Connect', href: '/connect' },
   { label: 'Pricing', href: '/pricing' },
   { label: 'Security', href: '/security' },
+  { label: 'Company', href: '/company' },
 ];
 
 export function Nav() {
@@ -99,12 +101,23 @@ export function Nav() {
           ))}
         </ul>
 
+        {/*
+          Sign in, and start.
+
+          The primary button was "Book a Demo", so the only two things this header offered were
+          signing in to a workspace you already had and asking somebody to call you. A visitor who
+          wanted to create one had nowhere to press: self-serve registration existed and nothing
+          in the site's chrome reached it, on any page.
+
+          Where the product's address is not configured, the demo form is the honest fallback —
+          it is the one route that always exists.
+        */}
         <div className="hidden items-center gap-3 lg:flex">
           <Button href="/sign-in" variant="ghost" size="sm">
             Sign In
           </Button>
-          <Button href="/demo" size="sm">
-            Book a Demo
+          <Button href={PRODUCT_START_URL === '' ? '/demo' : PRODUCT_START_URL} size="sm">
+            {PRODUCT_START_URL === '' ? 'Book a Demo' : 'Start a workspace'}
           </Button>
         </div>
 
@@ -148,8 +161,12 @@ export function Nav() {
                 <Button href="/sign-in" variant="ghost" size="sm" className="flex-1">
                   Sign In
                 </Button>
-                <Button href="/demo" size="sm" className="flex-1">
-                  Book a Demo
+                <Button
+                  href={PRODUCT_START_URL === '' ? '/demo' : PRODUCT_START_URL}
+                  size="sm"
+                  className="flex-1"
+                >
+                  {PRODUCT_START_URL === '' ? 'Book a Demo' : 'Start a workspace'}
                 </Button>
               </li>
             </ul>

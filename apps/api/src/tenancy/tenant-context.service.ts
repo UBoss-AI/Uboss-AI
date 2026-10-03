@@ -22,6 +22,8 @@ export interface VerifiedMembership {
   lifecycleState: TenantLifecycleState;
   /// State of this person inside that company. Both are enforced; they are different concepts.
   accountState: AccountState;
+  /// Why the company is in that state, as a code. Null when there is nothing to say.
+  accessReasonCode: string | null;
 }
 
 /**
@@ -90,7 +92,7 @@ export class TenantContextService {
           tenantId: true,
           userId: true,
           accountState: true,
-          tenant: { select: { lifecycleState: true } },
+          tenant: { select: { lifecycleState: true, accessReasonCode: true } },
         },
       });
 
@@ -110,6 +112,7 @@ export class TenantContextService {
         membershipId: membership.id,
         lifecycleState: membership.tenant.lifecycleState,
         accountState: membership.accountState,
+        accessReasonCode: membership.tenant.accessReasonCode,
       };
     });
   }

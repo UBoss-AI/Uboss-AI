@@ -14,6 +14,15 @@ import { notificationsApi, type NotificationCounts, type NotificationItem } from
  */
 const PANEL_ROWS = 18;
 
+/**
+ * How often the counts are re-read while somebody is actually looking at the screen.
+ *
+ * A minute, and only on a visible tab. The count is usually zero and a notification is not a
+ * trading price: a minute late is invisible to a person and costs one small request, where a
+ * five-second poll across a company's open tabs is real load for the same answer.
+ */
+const COUNT_REFRESH_MS = 60_000;
+
 export interface NotificationBell {
   counts: NotificationCounts | null;
   /** Spread onto `AppShell` — supplies the badge, the click behaviour and the panel. */
@@ -82,12 +91,73 @@ export function useNotificationBell(tenantId: string | null): NotificationBell {
     setLoading(true);
     void notificationsApi
       .center(tenantId, { take: PANEL_ROWS })
-      .then((center) => setItems(center.items))
+      .then((center) => {
+        setItems(center.items);
+        /*
+         * Opening the bell is reading them, so the badge goes.
+         *
+         * It used to stay. Somebody opened the panel, read what was there, closed it, and the
+         * same number was still sitting on the bell — so the number stopped meaning "there is
+         * something new" and started meaning "this company has had notifications", which nobody
+         * can act on. A count that never reaches zero is a count people stop looking at.
+         *
+         * Marked after the rows have arrived, never before: if the panel could not load, nothing
+         * was shown and nothing may be called read.
+         *
+         * `markAllRead` rather than only the rows on screen. The panel holds eighteen and a busy
+         * week can have more, and clearing to a remainder would leave a badge that the person
+         * cannot clear by any action the panel offers. Nothing is lost by it — the notifications
+         * themselves stay, on their own page, under All.
+         *
+         * What this does **not** touch is `awaitingAcknowledgement`. A critical alert that needs
+         * acknowledging still needs it after it has been read, and that decision belongs on the
+         * screen that states its consequence. Reading is not acknowledging, which is the entire
+         * reason the bell carries two numbers.
+         */
+        if (center.items.some((item) => !item.read)) {
+          void notificationsApi
+            .markAllRead(tenantId)
+            .then(refresh)
+            .catch(() => undefined);
+        }
+      })
       // A panel that could not load says "nothing new" rather than putting an error on a screen
       // the person was not asking about. The page is still there and will show the failure.
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
-  }, [open, tenantId]);
+  }, [open, refresh, tenantId]);
+
+  /*
+   * The count comes back when something new arrives, without needing a navigation.
+   *
+   * There is still no polling loop in the old sense: this re-reads when the tab becomes visible
+   * or the window regains focus, which is the moment somebody looks at the screen again, and
+   * otherwise once a minute while they are actually looking at it. A hidden tab asks for nothing.
+   *
+   * Without this, clearing the badge on open made the bell worse rather than better: it would
+   * read zero for the rest of the session no matter what happened, because the only thing that
+   * refreshed the count was changing screens.
+   */
+  useEffect(() => {
+    if (tenantId === null) return;
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', refresh);
+
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') refresh();
+    }, COUNT_REFRESH_MS);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', refresh);
+      clearInterval(timer);
+    };
+  }, [refresh, tenantId]);
 
   const openItem = useCallback(
     (item: NotificationItem) => {

@@ -110,9 +110,30 @@ export interface LogicalProfileView {
     enabled: boolean;
     /** True when this is what a call would currently be answered by. */
     wouldAnswer: boolean;
+    /**
+     * Whether this model has a published price.
+     *
+     * Surfaced because its absence is silent everywhere else. A model with no pricing version
+     * estimates at zero, reserves nothing, and settles with `cost_minor_units` null — so the
+     * calls happen, the tokens are spent, the allowance never depletes and the budget hard-stop
+     * never fires. Measured in the development database: 159 real model calls, 72,614 tokens,
+     * and not one costed row.
+     *
+     * Nothing invents a price to cover it — a guessed rate would be a fabricated invoice. What
+     * changes is that the screen that decides which model answers also says whether anything it
+     * costs will ever be charged.
+     */
+    hasPublishedPrice: boolean;
   }[];
   /** Why nothing would answer, when nothing would. */
   unroutableReason: string | null;
+  /**
+   * The model that would answer has no price, so calls on this profile cost nothing on paper.
+   *
+   * Null when nothing would answer at all — that is `unroutableReason`'s business, and reporting
+   * both would put two different problems under one heading.
+   */
+  answeringModelIsUnpriced: boolean | null;
 }
 
 /**
@@ -631,6 +652,19 @@ export class ProviderService {
       const outcome = routeLogicalProfile({ profile, candidates });
       const answering = outcome.routed ? outcome.candidate.providerModelId : null;
 
+      // One query for the whole screen rather than one per row.
+      const priced = new Set(
+        (
+          await this.prisma.client.pricingVersionRow.findMany({
+            where: {
+              providerModelId: { in: candidates.map((entry) => entry.providerModelId) },
+              supersededAt: null,
+            },
+            select: { providerModelId: true },
+          })
+        ).map((row) => row.providerModelId),
+      );
+
       return {
         profile,
         typicalUse: spec.typicalUse,
@@ -645,8 +679,10 @@ export class ProviderService {
           lifecycle: entry.lifecycle,
           enabled: entry.enabled,
           wouldAnswer: entry.providerModelId === answering,
+          hasPublishedPrice: priced.has(entry.providerModelId),
         })),
         unroutableReason: outcome.routed ? null : outcome.reason,
+        answeringModelIsUnpriced: answering === null ? null : !priced.has(answering),
       };
     });
   }

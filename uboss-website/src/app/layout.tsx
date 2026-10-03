@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 
 import { Footer } from '@/components/Footer';
 import { Nav } from '@/components/Nav';
+import { ScrollReveal } from '@/components/site/ScrollReveal';
 
 import '@fontsource-variable/manrope';
 import '@fontsource-variable/space-grotesk';
@@ -55,6 +56,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </a>
         <Nav />
         <main id="main">{children}</main>
+        {/* Brings each page's blocks in as they are scrolled to. Renders nothing itself. */}
+        <ScrollReveal />
         <Footer />
       </body>
     </html>

@@ -94,7 +94,20 @@ export function Sidebar({
       <div className="uboss-side-scroll">
         {groups.map((group) => (
           <div key={group.group}>
-            <div className="uboss-nav-group">{group.group}</div>
+            {/*
+              A group of one is not a group.
+
+              The sidebar is built from what each person may actually see, so a group often
+              collapses to a single item — and an Employee, who may see one thing under
+              Operations, was shown the heading "OPERATIONS" with "To-do List" underneath it: two
+              names, one on top of the other, for one place. It reads as a category that failed to
+              load the rest of itself.
+
+              Hidden by count rather than by naming the groups, because which groups collapse
+              depends entirely on the reader's grants. The heading comes back by itself the moment
+              a second item does.
+            */}
+            {group.items.length > 1 ? <div className="uboss-nav-group">{group.group}</div> : null}
             {group.items.map((item) => {
               const active = item.key === activeKey;
 

@@ -11,8 +11,16 @@ export interface DataTableColumn<Row> {
   /** Stable column key. */
   key: string;
   header: string;
-  /** Cell renderer. */
-  render: (row: Row) => ReactNode;
+  /**
+   * Cell renderer.
+   *
+   * `index` is the row's position in what is currently on screen, from zero — which is what a
+   * serial-number column needs and the only thing it is for. It is the position in the **rendered**
+   * list, so it follows a search or a filter rather than claiming to be an identity: row 3 of a
+   * filtered list is row 3 of what you are looking at, not record 3 of the table. A record's real
+   * identity is its own code, which every list that has one already shows.
+   */
+  render: (row: Row, index: number) => ReactNode;
   /** Right-align and tabular-align numeric columns. */
   numeric?: boolean;
   /** Column width, e.g. `'160px'` or `'20%'`. */
@@ -186,7 +194,7 @@ export function DataTable<Row>({
                       .join(' ') || undefined
                   }
                 >
-                  {column.render(row)}
+                  {column.render(row, index)}
                 </td>
               ))}
             </tr>

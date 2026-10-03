@@ -190,7 +190,13 @@ export default function NotificationCenterPage() {
         description="Everything waiting on you, and everything you have been told."
         breadcrumbs={[{ label: 'Notifications' }]}
         actions={
-          <Button onClick={markAllRead} disabled={(counts?.unread ?? 0) === 0}>
+          <Button
+            onClick={markAllRead}
+            disabled={(counts?.unread ?? 0) === 0}
+            // Disabled with the reason, as the rest of this product does. A dead control that
+            // says nothing leaves somebody clicking it to find out whether it is broken.
+            title={(counts?.unread ?? 0) === 0 ? 'Nothing is unread.' : undefined}
+          >
             Mark all read
           </Button>
         }
