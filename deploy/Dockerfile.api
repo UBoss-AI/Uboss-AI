@@ -31,6 +31,8 @@ COPY --from=build --chown=node:node /workspace/apps/api/prisma ./apps/api/prisma
 COPY --from=build --chown=node:node /workspace/apps/api/prisma.config.ts ./apps/api/prisma.config.ts
 COPY --from=build --chown=node:node /workspace/apps/api/scripts/bootstrap-platform-owner.mjs ./apps/api/scripts/bootstrap-platform-owner.mjs
 COPY --from=build --chown=node:node /workspace/packages/types ./packages/types
+COPY deploy/api-entrypoint.sh /usr/local/bin/api-entrypoint.sh
+RUN chmod 755 /usr/local/bin/api-entrypoint.sh
 USER node
 EXPOSE 4000
-CMD ["sh", "-ec", "cd apps/api && ../../node_modules/.bin/prisma migrate deploy && node scripts/bootstrap-platform-owner.mjs && node --enable-source-maps dist/main.js"]
+CMD ["/usr/local/bin/api-entrypoint.sh"]

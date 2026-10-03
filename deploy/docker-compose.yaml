@@ -70,8 +70,8 @@ services:
       API_HOST: 0.0.0.0
       API_PORT: 4000
       API_DOCS_ENABLED: 'false'
-      DATABASE_MIGRATION_URL: postgresql://uboss:${POSTGRES_PASSWORD:?Set a strong hex password}@postgres:5432/uboss_prod?schema=public
-      DATABASE_URL: postgresql://uboss_app:${APP_DB_PASSWORD:?Set a separate strong hex password}@postgres:5432/uboss_prod?schema=public
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a strong password}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Set a separate strong password}
       REDIS_URL: redis://redis:6379
       AUTH_ENCRYPTION_KEYS: ${AUTH_ENCRYPTION_KEYS:?Set an encryption key}
       AUTH_PUBLIC_API_BASE_URL: https://api.ubossai.com
@@ -203,7 +203,8 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_MIGRATION_URL: postgresql://uboss:${POSTGRES_PASSWORD:?Set a strong hex password}@postgres:5432/uboss_prod?schema=public
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set a strong password}
+      DATABASE_MIGRATION_URL: postgresql://uboss@postgres:5432/uboss_prod
       UBOSS_BACKUP_DIR: /backups
       UBOSS_BACKUP_INTERVAL_SECONDS: ${UBOSS_BACKUP_INTERVAL_SECONDS:-86400}
       UBOSS_BACKUP_KEEP_DAYS: ${UBOSS_BACKUP_KEEP_DAYS:-14}
