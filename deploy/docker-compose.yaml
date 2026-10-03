@@ -153,7 +153,9 @@ services:
       start_period: 60s
     volumes:
       - file-data:/var/lib/uboss/files
-    networks: [private]
+    # Provider calls (SMTP, Google OIDC, AI, billing) need outbound access. The API has no
+    # published port; Postgres and Redis remain isolated on the internal private network.
+    networks: [private, egress]
 
   web:
     build:
@@ -256,3 +258,4 @@ networks:
   private:
     internal: true
   public: {}
+  egress: {}
