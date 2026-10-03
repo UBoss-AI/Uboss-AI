@@ -171,6 +171,7 @@ services:
       PORT: 3000
       HOSTNAME: 0.0.0.0
       NEXT_PUBLIC_API_BASE_URL: /api
+      API_PROXY_TARGET: http://api:4000
     networks: [private]
 
   marketing:

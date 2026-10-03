@@ -104,6 +104,7 @@ jobs:
           for url in \
             https://api.ubossai.com/health \
             https://app.ubossai.com/login \
+            https://app.ubossai.com/api/auth/social-providers \
             https://chiefagent.ubossai.com/; do
             ready=false
             for attempt in $(seq 1 60); do
