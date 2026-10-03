@@ -1,4 +1,5 @@
 FROM node:24-bookworm-slim AS build
+RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
 COPY package.json package-lock.json ./
@@ -16,6 +17,7 @@ COPY packages/config packages/config
 RUN npm run build:packages && npm run build --workspace @uboss/api
 
 FROM node:24-bookworm-slim AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production API_HOST=0.0.0.0 API_PORT=4000
 WORKDIR /workspace
 COPY --from=build --chown=node:node /workspace/package.json ./package.json
