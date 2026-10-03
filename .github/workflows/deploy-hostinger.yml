@@ -41,6 +41,21 @@ jobs:
           # authority of the first push's green run.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
+      - name: Validate integration secrets
+        shell: bash
+        env:
+          SMTP_HOST: ${{ secrets.UBOSS_SMTP_HOST }}
+          SMTP_USERNAME: ${{ secrets.UBOSS_SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.UBOSS_SMTP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$SMTP_HOST" || -n "$SMTP_USERNAME" || -n "$SMTP_PASSWORD" ]]; then
+            if [[ -z "$SMTP_HOST" || -z "$SMTP_USERNAME" || -z "$SMTP_PASSWORD" ]]; then
+              echo 'SMTP secrets are incomplete; leaving the live VPS unchanged.' >&2
+              exit 1
+            fi
+          fi
+
       - name: Deploy to Hostinger VPS
         uses: hostinger/deploy-on-vps@b0868cec74bfa63af6bfa7bdb0dfee2f9bef13ea # v2
         with:
