@@ -1,6 +1,13 @@
-import { ProductStoryHero } from '@/components/ProductStoryHero';
-import { ProductTour, SkillsLibrary, DepartmentSolutions, GovernanceSummary, ClosingCTA } from '@/sections/WorkforceSections';
-import { Pricing } from '@/sections/Pricing';
+import { ChiefAgentHero } from '@/components/hero/ChiefAgentHero';
+import {
+  ProductTour,
+  SkillsLibrary,
+  DepartmentSolutions,
+  GovernanceSummary,
+  ClosingCTA,
+} from '@/sections/WorkforceSections';
+import { ApiSection } from '@/sections/ApiSection';
+import { Plans } from '@/sections/Plans';
 import { FAQ } from '@/sections/FAQ';
 
 /**
@@ -14,12 +21,13 @@ import { FAQ } from '@/sections/FAQ';
 export default function Home() {
   return (
     <>
-      <ProductStoryHero />
+      <ChiefAgentHero />
       <ProductTour />
       <SkillsLibrary />
       <DepartmentSolutions />
       <GovernanceSummary />
-      <Pricing />
+      <ApiSection />
+      <Plans />
       <FAQ />
       <ClosingCTA />
     </>

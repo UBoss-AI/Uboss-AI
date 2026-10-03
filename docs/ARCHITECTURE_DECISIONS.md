@@ -6254,20 +6254,20 @@ places, and the second copy taught nothing. The client asked for the duplicates 
 
 The orphan risk the original decision guarded against is gone, and the tests say so directly:
 they now assert `users` and `roles` are still present in `SETTINGS_SECTIONS`. That is what "not
-orphaned" always meant; asserting their presence in the *sidebar* was only ever a proxy for it.
+orphaned" always meant; asserting their presence in the _sidebar_ was only ever a proxy for it.
 
 ### Why UBoss Profile Search stayed
 
 It looks like the same case and is not. Settings does hold a section with a near-identical name,
-but that one is `uboss` — "UBoss Profile Search Policy", the cross-company lookup *policy*. The
+but that one is `uboss` — "UBoss Profile Search Policy", the cross-company lookup _policy_. The
 search screen itself lives at `/profile-search`, and a search of the whole web app found nothing
 that links to it except this sidebar item. Removing it would have created exactly the orphan
-Prompt 2 was fixing. Kept, with a test asserting `profile-search` is in the sidebar and *not* in
+Prompt 2 was fixing. Kept, with a test asserting `profile-search` is in the sidebar and _not_ in
 `SETTINGS_SECTIONS`, so the distinction cannot be flattened by accident later.
 
 ### The consequence worth knowing
 
-Those two items were the *only* thing that made the Company Admin, Manager and Approver sidebars
+Those two items were the _only_ thing that made the Company Admin, Manager and Approver sidebars
 differ from one another: 15 / 14 / 13 items became 13 / 13 / 13. Role still governs everything
 that matters — data scope, what each screen allows, and which Settings sections the server
 returns — but the sidebar no longer distinguishes the three senior roles at a glance. The Employee
@@ -6282,7 +6282,7 @@ is now gated on `can(myAccess, 'users', 'View')`, the grant `access.controller.t
 checks. Verified from all four roles: Company Admin (full grants) and Manager (exactly `["View"]`)
 keep it; Approver and Employee (`null`) do not.
 
-Note that the *section* remains visible to all four roles, because the server returns the `users`
+Note that the _section_ remains visible to all four roles, because the server returns the `users`
 category to them. That is left alone: the category is settings copy about how accounts are
 governed, which is legitimately readable, and the server's view model is the authority on it. Only
 the link into the admin screen was making a promise the product could not keep.
@@ -6337,7 +6337,7 @@ Three things are easy to get wrong:
 ### Gaps this confirmed, precisely
 
 - **The workflow editor cannot set a node owner**, yet Approve & Assign refuses without one
-  ("No owner. Publishing would put work in front of nobody."). The API *does* accept `ownerUserId`
+  ("No owner. Publishing would put work in front of nobody."). The API _does_ accept `ownerUserId`
   on `PUT .../workflow/nodes/:nodeId` — so this is a missing control, not a missing capability.
 - **Definition of Done fields are not all reachable either**: the goal's failure condition and the
   step's criteria both had to be set through the same endpoint.
@@ -6354,7 +6354,7 @@ approval on record. Everything except the five login accounts' employment rows w
 real endpoints, including the Aadhaar check — which correctly rejected six of eight invented
 numbers on the Verhoeff digit, so the valid ones were generated with the product's own
 `verhoeffCheckDigit`. The five login accounts had to be placed with SQL because `addEmployee`
-matches on Aadhaar and otherwise creates a *new* user, and `users.email` is unique.
+matches on Aadhaar and otherwise creates a _new_ user, and `users.email` is unique.
 
 ### Why the Dashboard looked broken and was not
 
@@ -6378,7 +6378,7 @@ named it.
 `activationReadiness` requires an internal employee to hold an employment record — a department,
 and a manager unless they are the first person. Provisioning creates the company, the admin and a
 bootstrap role assignment, and nothing else; `COMPANY_SETUP_TASKS` puts "Build departments and
-reporting hierarchy" *after* the admin has access, which is the right order. So at the moment the
+reporting hierarchy" _after_ the admin has access, which is the right order. So at the moment the
 admin clicked their activation link there was no department to belong to, and the only person who
 could create one was the admin being refused. The platform plane could not help either:
 
@@ -6411,15 +6411,15 @@ runs off a live session.
 ### 3. The reporting root disqualified themselves
 
 `companyHasReportingRoot` counted employment records with no manager — including the subject. The
-root *is* such a record, so the answer was always "yes" the moment they existed, and the person the
+root _is_ such a record, so the answer was always "yes" the moment they existed, and the person the
 manager-waiver exists for was the only person it never reached. Aarohan's Head of Operations was
 placed at the top of the chart and then refused activation for lacking a manager, which being the
 root means not having. `hasReportingRoot` now takes `exceptUserId` and asks the question the rule
-means: is somebody *else* already up there.
+means: is somebody _else_ already up there.
 
 ### 4. Approve & Assign required an agent that only Approve & Assign could create
 
-The pre-publish readiness check asked whether a live *tool grant* existed for each category the plan
+The pre-publish readiness check asked whether a live _tool grant_ existed for each category the plan
 needs. `connection_tool_grants.agent_id` is `NOT NULL`, and an Engine Agent does not exist until
 Approve & Assign has run:
 
@@ -6455,20 +6455,20 @@ Objective Form 2's "Approval" column offers `NotRequired | Manager | Head | Four
 **Manager** makes the analysis emit approval nodes addressed to the Manager role, and Approve &
 Assign raises real `approval_requests` routed there. Those requests cannot be decided by anybody:
 
-| Role | `approvals` grant |
-|---|---|
-| Employee | `View` |
-| **Manager** | **`View`, `Comment`** |
-| Head | `View`, `Comment`, `Approve` |
-| CompanyAdmin | `View` |
-| Approver | `View`, `Comment`, `Approve` |
+| Role         | `approvals` grant            |
+| ------------ | ---------------------------- |
+| Employee     | `View`                       |
+| **Manager**  | **`View`, `Comment`**        |
+| Head         | `View`, `Comment`, `Approve` |
+| CompanyAdmin | `View`                       |
+| Approver     | `View`, `Comment`, `Approve` |
 
 Observed on Aarohan's live workflow, from both directions:
 
-* as the Head (who holds `approvals:Approve` but not the Manager role) —
-  *"This request is addressed to a Manager, which you do not hold."*
-* as the Manager (who holds the role but not the grant) —
-  *"Your role does not include \"Approve\" on this."*
+- as the Head (who holds `approvals:Approve` but not the Manager role) —
+  _"This request is addressed to a Manager, which you do not hold."_
+- as the Manager (who holds the role but not the grant) —
+  _"Your role does not include \"Approve\" on this."_
 
 Both refusals are correct for their own rule. Together they leave four of Aarohan's five pending
 approvals undecidable, and the objective's human step sits at `WaitingApproval` with nobody able to
@@ -6498,17 +6498,17 @@ The change is one line in `role-templates.ts`. **Every bound the decision named 
 enforced elsewhere, and none of it was touched** — which is the reason the grant is safe, and the
 reason the old absence of the grant was not buying the separation it appeared to:
 
-| Bound | Enforced by | Proved by |
-|---|---|---|
-| Only requests addressed to Manager | `isAddressedTo` / `routingFor` | *"does not let a Manager decide a request addressed to another role"* |
-| Only inside the effective TeamSubtree | `maxScope` + the authorization engine's scope check against the resource owner | *"does not let a Manager approve work outside their TeamSubtree"* — refused with *"That is outside what your role covers."* |
-| Never their own work | the platform-wide `NoSelfApproval` control, on `createdByUserId` | two tests; refused with *"You cannot approve something you created. UBoss requires a different person to approve it."* |
-| Never four eyes alone | `requiredSodRule` + `priorActorUserIds` | *"does not let one Manager satisfy a four-eyes gate alone"* — refused with *"This needs a second person: nobody else has acted on it yet."* |
-| Cross-tenant | row-level security, before authorization is consulted | *"does not let a Manager decide a request in another company"* |
-| Employee unchanged | `Employee.approvals` is still `View` | *"still refuses an Employee, who holds no Approve at all"* |
-| Head / Approver / Company Admin unchanged | untouched templates | *"leaves Head and Approver able to decide exactly what they always could"*; Company Admin remains `View` only |
+| Bound                                     | Enforced by                                                                    | Proved by                                                                                                                                   |
+| ----------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Only requests addressed to Manager        | `isAddressedTo` / `routingFor`                                                 | _"does not let a Manager decide a request addressed to another role"_                                                                       |
+| Only inside the effective TeamSubtree     | `maxScope` + the authorization engine's scope check against the resource owner | _"does not let a Manager approve work outside their TeamSubtree"_ — refused with _"That is outside what your role covers."_                 |
+| Never their own work                      | the platform-wide `NoSelfApproval` control, on `createdByUserId`               | two tests; refused with _"You cannot approve something you created. UBoss requires a different person to approve it."_                      |
+| Never four eyes alone                     | `requiredSodRule` + `priorActorUserIds`                                        | _"does not let one Manager satisfy a four-eyes gate alone"_ — refused with _"This needs a second person: nobody else has acted on it yet."_ |
+| Cross-tenant                              | row-level security, before authorization is consulted                          | _"does not let a Manager decide a request in another company"_                                                                              |
+| Employee unchanged                        | `Employee.approvals` is still `View`                                           | _"still refuses an Employee, who holds no Approve at all"_                                                                                  |
+| Head / Approver / Company Admin unchanged | untouched templates                                                            | _"leaves Head and Approver able to decide exactly what they always could"_; Company Admin remains `View` only                               |
 
-Eight tests in `approvals.e2e.spec.ts` under *"the Manager approval grant (ADR-293)"*. Each was
+Eight tests in `approvals.e2e.spec.ts` under _"the Manager approval grant (ADR-293)"_. Each was
 written so it would fail if its bound were dropped — the scope test was re-run with a deliberately
 impossible pattern to confirm it refuses for scope rather than for addressing or self-approval.
 
@@ -6529,10 +6529,10 @@ Submitting a human task that needs approval sets it to `WaitingApproval` and rai
 `OutputApproval` carrying `subjectType: 'HumanTask'` and `subjectId`, so the approval knows exactly
 which task it governs (`human-task.service.ts`). Nothing ever reads that back:
 
-* `WaitingApproval` is **written in one place and read nowhere** in `apps/api/src`.
-* The approvals module contains no reference to `humanTask` at all, so deciding an approval does
+- `WaitingApproval` is **written in one place and read nowhere** in `apps/api/src`.
+- The approvals module contains no reference to `humanTask` at all, so deciding an approval does
   not touch the task.
-* The Executor does not sweep for it either.
+- The Executor does not sweep for it either.
 
 Observed on Aarohan: Aman submitted with evidence, Neha approved the output approval (`201`, and
 the approval row reads `Approved`, decided by Neha, still pointing at the task) — and the task is
@@ -6568,15 +6568,15 @@ any `FourEyes` policy applied. A four-eyes gate whose first decision was refused
 `Pending`, so the reconciliation sees an unsatisfied requirement and does nothing — the behaviour
 arrived at by not duplicating the rule.
 
-* **Transactional** — no transaction is opened; `runInTenantTransaction` is re-entrant for the same
+- **Transactional** — no transaction is opened; `runInTenantTransaction` is re-entrant for the same
   tenant, so this joins the decision's write transaction. The decision and the task state commit
   together.
-* **Tenant-scoped** — the same helper *refuses* to nest under a different tenant, which is what
+- **Tenant-scoped** — the same helper _refuses_ to nest under a different tenant, which is what
   makes a cross-tenant reconciliation impossible rather than unlikely.
-* **Idempotent and retry-safe** — the first check is that the task is still `WaitingApproval`. A
+- **Idempotent and retry-safe** — the first check is that the task is still `WaitingApproval`. A
   second call finds `Completed`, changes nothing, and writes no second audit event.
-* **Audited** — one `todo.task_completed` event naming the approvals that satisfied it.
-* **Evidence preserved** — `submittedAt` and the evidence rows are kept, never rewritten.
+- **Audited** — one `todo.task_completed` event naming the approvals that satisfied it.
+- **Evidence preserved** — `submittedAt` and the evidence rows are kept, never rewritten.
 
 Eleven tests in `approvals.e2e.spec.ts` under "the human task approval loop (ADR-294)". The only
 Prisma writes in them stand a task up; no status is ever nudged to make an assertion pass.
@@ -6588,10 +6588,10 @@ Prisma writes in them stand a task up; no status is ever nudged to make an asser
 ADR-294A completes a task when its approvals are all `Approved`. It does **nothing** for `Rejected`
 or `SentBack`, because the product does not say what should happen:
 
-* `HumanTaskStatus` has no `Rejected`. The approval's `Rejected` is a state of the *request*.
-* From `WaitingApproval` the lifecycle permits `InProgress`, `Submitted` and `Cancelled` only.
+- `HumanTaskStatus` has no `Rejected`. The approval's `Rejected` is a state of the _request_.
+- From `WaitingApproval` the lifecycle permits `InProgress`, `Submitted` and `Cancelled` only.
   `SendBack → InProgress` is plausible and `Reject → Cancelled` is a guess; neither is written down.
-* Nothing in `apps/api/src/tasks` references either decision.
+- Nothing in `apps/api/src/tasks` references either decision.
 
 Guessing here would give the lifecycle semantics nobody approved, on the one path where being wrong
 means work is silently cancelled or silently reopened. Both decisions are recorded on the approval
@@ -6607,7 +6607,7 @@ which **excludes `Comment` deliberately** — commenting is not deciding. Every 
 comment settles the request.
 
 So a `Pending` four-eyes request can never have a prior actor, and the refusal is always
-*"This needs a second person: nobody else has acted on it yet."* Observed from both directions: the
+_"This needs a second person: nobody else has acted on it yet."_ Observed from both directions: the
 requester is refused for having created it, and a second, distinct person is refused for being
 first.
 
@@ -6625,7 +6625,7 @@ answering two questions at once. They are now separated.
 
 ### Permission to be an eye — `checkSeparationOfDuties`
 
-Answers *may this person be one of the two*, and nothing about whether the requirement is finished.
+Answers _may this person be one of the two_, and nothing about whether the requirement is finished.
 It refuses an automated actor, the creator, and anybody who has already acted on the request. It no
 longer refuses somebody for being first — that was the bug: every decision that would have made a
 prior actor also settled the request, so the first eye was always refused and there was never a
@@ -6635,14 +6635,14 @@ second.
 
 Counts the eyes. On a four-eyes request an `Approve`:
 
-* appends its decision record — **always**, so both eyes are kept and the first approver is never
+- appends its decision record — **always**, so both eyes are kept and the first approver is never
   overwritten by the second. `approval_decision_records` is a child table with one row per
   decision, which is the existing immutable model; no new table was needed;
-* counts **distinct** actors whose decision is `Approve` — a comment is not an eye, and one person
+- counts **distinct** actors whose decision is `Approve` — a comment is not an eye, and one person
   pressing the button twice is one eye however many rows they leave;
-* below `FOUR_EYES_REQUIRED`, leaves the request `Pending` and writes an audit line saying
-  *"1 of 2 approvals"*;
-* on reaching it, settles to `Approved` — and only then does the ADR-294 task reconciliation run,
+- below `FOUR_EYES_REQUIRED`, leaves the request `Pending` and writes an audit line saying
+  _"1 of 2 approvals"_;
+- on reaching it, settles to `Approved` — and only then does the ADR-294 task reconciliation run,
   so downstream work never starts on one signature.
 
 `Reject` and `SendBack` still settle on the first decision. Four eyes is a bar on letting something
@@ -6719,14 +6719,14 @@ Three existing tests failed, which is what they were for.
 
 **Decision.** The DOM always carries the real numbers. The arc's `stroke-dasharray` **attribute**
 is its true length from the first frame and the centre figure is the true total. The draw-on is a
-CSS animation of the *style*, which outranks a presentation attribute while it runs and lands
+CSS animation of the _style_, which outranks a presentation attribute while it runs and lands
 exactly on the value the attribute already holds. A transition on the same property means a
 refresh moves the arc from where it was rather than redrawing from empty — a dashboard that
 re-animated from zero on every poll would flash at somebody trying to read it.
 
 **Consequences.** The animation became a strict enhancement: remove it and the chart is still
 correct. `--uboss-arc` is set inline on each arc's group and the keyframes end on it, so a group
-that failed to publish it would animate the arc to nothing *in the browser only*; a test pins that
+that failed to publish it would animate the arc to nothing _in the browser only_; a test pins that
 link because the two halves live in different files.
 
 ## ADR-299 — `animation-fill-mode: backwards`, and why not `both`
@@ -6744,7 +6744,7 @@ holding — it is the element at rest.
 
 **Consequences.** Under `prefers-reduced-motion` these animations are removed outright rather than
 shortened. A backwards fill paints the opening frame from the moment the element exists until the
-animation's *first tick*, so a zero-length animation that has not ticked yet still shows
+animation's _first tick_, so a zero-length animation that has not ticked yet still shows
 `opacity: 0` — the sign-in card measured blank for 570ms under load. Someone who has asked for
 less motion is the last person who should wait on an animation frame to see the form.
 
@@ -6819,7 +6819,7 @@ Team/Department Performance screen must be a separate permission-aware route wit
 
 `performance.service.ts` `viewFor` carries the comment "A person may always read their own", and
 for a department-scoped role that is not what happens. The resource it hands the engine omits the
-subject's department, so the department branch fails closed — and the effect is that the *wider*
+subject's department, so the department branch fails closed — and the effect is that the _wider_
 role sees less of itself than the narrower one. An Employee on `OwnWork` reads their own record; a
 Head on `MultipleDepartments` does not.
 

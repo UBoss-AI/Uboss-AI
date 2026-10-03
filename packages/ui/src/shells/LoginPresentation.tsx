@@ -19,6 +19,14 @@ export interface LoginPresentationProps {
    * offers a company workspace.
    */
   variant?: 'customer' | 'platform';
+  /**
+   * What the right-hand column is for, for a screen reader.
+   *
+   * It was the literal string "Sign in", which stopped being true when registration started using
+   * this same panel: somebody arriving at `/start` with a screen reader was told they had reached
+   * a sign-in. The default keeps every existing caller unchanged.
+   */
+  formLabel?: string;
 }
 
 /**
@@ -34,16 +42,25 @@ export interface LoginPresentationProps {
  * Task. All six remain until the client approves a different grouping. They are presentation
  * only and grant no application access.
  *
- * There is NO public company signup anywhere in UBoss: the Master Console provisions customer
- * companies, and "Activate" only enables an already-invited identity. This component therefore
- * offers no sign-up affordance, by design.
+ * This panel offers no sign-up affordance of its own, and that is still deliberate: a person who
+ * arrives at `/login` is somebody their company already invited, and a "create an account" link
+ * on a sign-in screen for an enterprise product invites people to try to make one who cannot.
+ *
+ * Self-serve registration does exist — `/start`, where a company proves its work address and its
+ * domain — and it **renders inside this same panel**, so the two front doors are one composition
+ * seen twice rather than two designs that drift apart. That is why `formLabel` exists: the right
+ * column is not always a sign-in, and saying so to a screen reader costs one prop.
  */
-export function LoginPresentation({ children, variant = 'customer' }: LoginPresentationProps) {
+export function LoginPresentation({
+  children,
+  variant = 'customer',
+  formLabel = 'Sign in',
+}: LoginPresentationProps) {
   const left = LOGIN_CAPABILITIES.filter((capability) => capability.side === 'left');
   const right = LOGIN_CAPABILITIES.filter((capability) => capability.side === 'right');
 
   if (variant === 'platform') {
-    return <PlatformLoginPresentation>{children}</PlatformLoginPresentation>;
+    return <PlatformLoginPresentation formLabel={formLabel}>{children}</PlatformLoginPresentation>;
   }
 
   return (
@@ -58,10 +75,31 @@ export function LoginPresentation({ children, variant = 'customer' }: LoginPrese
           are atmosphere. The viewBox is stretched to the panel deliberately: the curves are
           composed for the shape they end up in, not for a square.
         */}
-        <svg className="uboss-lg-sig" viewBox="0 0 600 900" preserveAspectRatio="none" aria-hidden="true" focusable="false">
-          <path d="M-20,260 C140,180 220,420 380,330 C520,250 560,430 640,380" stroke="#C084FC" strokeWidth={1.6} opacity={0.9} />
-          <path d="M-20,470 C120,400 240,640 400,540 C540,450 580,600 640,560" stroke="#A78BFA" strokeWidth={1.8} opacity={0.75} />
-          <path d="M-20,700 C160,630 250,830 420,740 C540,680 580,790 640,760" stroke="#7C3AED" strokeWidth={1.2} opacity={0.6} />
+        <svg
+          className="uboss-lg-sig"
+          viewBox="0 0 600 900"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path
+            d="M-20,260 C140,180 220,420 380,330 C520,250 560,430 640,380"
+            stroke="#C084FC"
+            strokeWidth={1.6}
+            opacity={0.9}
+          />
+          <path
+            d="M-20,470 C120,400 240,640 400,540 C540,450 580,600 640,560"
+            stroke="#A78BFA"
+            strokeWidth={1.8}
+            opacity={0.75}
+          />
+          <path
+            d="M-20,700 C160,630 250,830 420,740 C540,680 580,790 640,760"
+            stroke="#7C3AED"
+            strokeWidth={1.2}
+            opacity={0.6}
+          />
         </svg>
 
         <div className="uboss-login-brand">
@@ -203,7 +241,7 @@ export function LoginPresentation({ children, variant = 'customer' }: LoginPrese
         </div>
       </section>
 
-      <section className="uboss-login-right" aria-label="Sign in">
+      <section className="uboss-login-right" aria-label={formLabel}>
         <div className="uboss-login-card">{children}</div>
       </section>
     </div>
@@ -230,7 +268,13 @@ export function LoginPresentation({ children, variant = 'customer' }: LoginPrese
  *
  * The grid behind them is a motif and nothing more. It is drawn, not measured.
  */
-function PlatformLoginPresentation({ children }: { children?: ReactNode }) {
+function PlatformLoginPresentation({
+  children,
+  formLabel,
+}: {
+  children?: ReactNode;
+  formLabel: string;
+}) {
   return (
     <div className="uboss-login uboss-login--platform">
       <section className="uboss-login-left" aria-label="About the UBoss platform console">
@@ -263,10 +307,26 @@ function PlatformLoginPresentation({ children }: { children?: ReactNode }) {
               </linearGradient>
             </defs>
             {[40, 90, 140, 190, 240].map((y) => (
-              <line key={`h${y}`} x1="0" y1={y} x2="400" y2={y} stroke="url(#uboss-plat-line)" strokeWidth="1" />
+              <line
+                key={`h${y}`}
+                x1="0"
+                y1={y}
+                x2="400"
+                y2={y}
+                stroke="url(#uboss-plat-line)"
+                strokeWidth="1"
+              />
             ))}
             {[60, 140, 220, 300, 360].map((x) => (
-              <line key={`v${x}`} x1={x} y1="0" x2={x} y2="260" stroke="url(#uboss-plat-line)" strokeWidth="1" />
+              <line
+                key={`v${x}`}
+                x1={x}
+                y1="0"
+                x2={x}
+                y2="260"
+                stroke="url(#uboss-plat-line)"
+                strokeWidth="1"
+              />
             ))}
             {[
               [60, 90],
@@ -305,7 +365,7 @@ function PlatformLoginPresentation({ children }: { children?: ReactNode }) {
         </div>
       </section>
 
-      <section className="uboss-login-right" aria-label="Sign in">
+      <section className="uboss-login-right" aria-label={formLabel}>
         <div className="uboss-login-card">{children}</div>
       </section>
     </div>
@@ -316,23 +376,38 @@ function PlatformLoginPresentation({ children }: { children?: ReactNode }) {
 const PLATFORM_CONSOLE_WORDS = ['Platform', 'Governance', 'Operations', 'Security'] as const;
 
 /**
- * There is no public signup, said plainly on every screen that could be mistaken for one.
+ * Who can let you in, said plainly on every screen that could be mistaken for a signup.
  *
  * Kept as a component so it cannot drift between the login, activation and access-help screens.
+ *
+ * ## It used to say something that stopped being true
+ *
+ * The wording was "No public signup. A UBoss company account is set up for you." That was a fact
+ * about the product for most of its life and stopped being one when self-serve registration
+ * shipped: a company *can* now set itself up, by proving a work address and control of a domain.
+ *
+ * The two sentences never appeared on one screen — this notice renders on `/activate` and on the
+ * sign-in flow's workspace step, neither of which offers `/start`. So nobody was reading a denial
+ * directly above an invitation. It was simply a claim the product had outgrown, on a screen a
+ * stranger reads.
+ *
+ * What is still true — and is the part worth saying — is the half about *people*. Nobody joins a
+ * company that already exists by signing up; they are invited, and "Activate" only enables an
+ * identity somebody already created. A company starting its own workspace is a different door
+ * and lets nobody into somebody else's company.
  *
  * The wording avoids UBoss's own vocabulary on purpose. It used to read "Tenants are provisioned
  * from the UBoss Master Console", which is true and is written for us: a customer does not have a
  * word for a tenant, has never seen the Master Console, and does not need to learn that UBoss has
- * an inside in order to understand that they cannot sign themselves up. The fact is the same; only
- * the audience changed.
+ * an inside in order to understand how they get in.
  */
 export function NoPublicSignupNotice() {
   return (
     <p className="uboss-auth-note">
       <Icon name="shield" size={16} />
       <span>
-        No public signup. A UBoss company account is set up for you, and &ldquo;Activate&rdquo; only
-        enables an identity that has already been invited.
+        You cannot add yourself to a company. Someone there invites you, and &ldquo;Activate&rdquo;
+        enables the identity they created.
       </span>
     </p>
   );

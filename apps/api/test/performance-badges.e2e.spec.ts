@@ -23,7 +23,10 @@ import { PerformanceService } from '../src/performance/performance.service.js';
 import { AuditEventRepository } from '../src/persistence/audit-event.repository.js';
 import { AuditTrailRepository } from '../src/persistence/audit-trail.repository.js';
 import { AuthorizationRepository } from '../src/persistence/authorization.repository.js';
+import { NotificationService } from '../src/notifications/notification.service.js';
 import { OrganizationRepository } from '../src/persistence/organization.repository.js';
+import { NotificationRepository } from '../src/persistence/notification.repository.js';
+import { OutboxRepository } from '../src/persistence/outbox.repository.js';
 import { PlatformRepository } from '../src/persistence/platform.repository.js';
 import { PrismaService } from '../src/persistence/prisma.service.js';
 import { tenantScopeForPlatformOperation } from '../src/persistence/tenant-context.js';
@@ -117,6 +120,10 @@ describe('performance score and badges (e2e)', () => {
         AuthorizationService,
         ReportingHierarchyResolver,
         { provide: HIERARCHY_RESOLVER, useExisting: ReportingHierarchyResolver },
+        // PerformanceService announces a badge change, so the person is told they climbed the ladder.
+        NotificationService,
+        NotificationRepository,
+        OutboxRepository,
         PerformanceService,
         TenantContextService,
         Reflector,
@@ -1292,7 +1299,7 @@ describe('performance score and badges (e2e)', () => {
       assert.equal(event?.actorUserId, adminId);
     });
   });
-/*
+  /*
    * ---------------------------------------------------------------------------
    * A malformed id is the caller's mistake, and must say so
    * ---------------------------------------------------------------------------
@@ -1319,7 +1326,9 @@ describe('performance score and badges (e2e)', () => {
 
         assert.equal(response.status, 400, `"${bad}" answered ${response.status}`);
         assert.ok(
-          !/prisma|postgres|invalid input syntax|driverAdapter/i.test(JSON.stringify(response.body)),
+          !/prisma|postgres|invalid input syntax|driverAdapter/i.test(
+            JSON.stringify(response.body),
+          ),
           `the answer names the database: ${JSON.stringify(response.body)}`,
         );
       }

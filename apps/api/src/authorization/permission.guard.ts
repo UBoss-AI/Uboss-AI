@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
@@ -13,6 +14,8 @@ import type { Request } from 'express';
 
 import { tenantScopeForPlatformOperation } from '../persistence/tenant-context.js';
 import { isTenantActor, type AuthenticatedActor } from '../request-context/authenticated-actor.js';
+import { ModuleEntitlementService } from '../commercial/module-entitlement.service.js';
+
 import { AuthorizationService } from './authorization.service.js';
 import {
   ALLOW_ANY_PERMISSION_KEY,
@@ -50,7 +53,58 @@ export class PermissionGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly authorization: AuthorizationService,
+    /*
+     * Optional for the same reason as in `AuthorizationService`: this guard is registered
+     * globally, so every test module that builds a Nest application would otherwise have to
+     * provide the commercial plane. Absent means no plan gate, and `global-guard-order.spec.ts`
+     * proves the gate is wired in the real application so the fail-open cannot go unnoticed.
+     */
+    @Optional() private readonly entitlement?: ModuleEntitlementService,
   ) {}
+
+  /**
+   * Refuse a module the company is not paying for, before asking whether the person may use it.
+   *
+   * Two different questions, and they were collapsed into one. **May this person do this** is the
+   * role engine's; **has this company bought this** is the plan's. Only the first was ever asked,
+   * so `entitled_modules` decided what the sidebar drew and nothing else — and a Pilot company,
+   * entitled to five modules, held role grants for all fourteen and the API answered all
+   * fourteen. A URL was the whole bypass.
+   *
+   * Asked first, because the plan is the blunter fact: telling somebody their role is
+   * insufficient, when the truth is that their company never bought the feature, sends them to
+   * an administrator who cannot help them.
+   *
+   * Platform actors are exempt — UBoss's own staff are not on a plan, and `@PlatformOnly` routes
+   * name platform modules that no company subscription lists.
+   */
+  private async assertCompanyPaysFor(
+    tenantId: string,
+    permissions: readonly RequiredPermission[],
+    mode: 'all' | 'any',
+  ): Promise<void> {
+    if (permissions.length === 0 || this.entitlement === undefined) return;
+
+    const entitled = await this.entitlement.modulesFor(tenantId);
+    // No subscription at all: not on a plan, so there is nothing to withhold. Distinct from an
+    // empty set, which would mean "entitled to nothing" and lock the company out of itself.
+    if (entitled === null) return;
+
+    const withheld = permissions
+      .map((permission) => permission.module)
+      .filter((module) => !entitled.has(module));
+
+    if (withheld.length === 0) return;
+
+    // `all` needs every module, so one withheld module refuses the route. `any` needs only one of
+    // them, so it is refused only when every candidate is withheld.
+    const refuses = mode === 'all' || withheld.length === permissions.length;
+    if (!refuses) return;
+
+    const module = withheld[0] as string;
+    this.logger.warn(`Refused ${module} for tenant ${tenantId}: not on the company's plan`);
+    throw new ForbiddenException(ModuleEntitlementService.refusalFor(module));
+  }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const required = this.metadata<readonly RequiredPermission[]>(context, REQUIRE_PERMISSION_KEY);
@@ -98,6 +152,13 @@ export class PermissionGuard implements CanActivate {
       throw new ForbiddenException(
         'This is not available to your kind of account in this company.',
       );
+    }
+
+    // What the company bought, before what the person may do. Tenant actors only: see
+    // `assertCompanyPaysFor`.
+    if (isTenantActor(actor)) {
+      if (required) await this.assertCompanyPaysFor(actor.tenantId, required, 'all');
+      if (anyOf && anyOf.length > 0) await this.assertCompanyPaysFor(actor.tenantId, anyOf, 'any');
     }
 
     if (required) {

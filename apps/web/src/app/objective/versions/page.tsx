@@ -17,6 +17,7 @@ import {
   Button,
   Card,
   CardBody,
+  ConfirmDialog,
   Icon,
   PageHeader,
   ProgressStep,
@@ -174,8 +175,19 @@ function ObjectiveVersionsInner() {
       });
   }, [fromId, objectiveId, tenantId, toId]);
 
+  /*
+   * Publishing is asked about before it happens.
+   *
+   * There is no separate approver on this objective any more — the administrator who wrote it is
+   * the one who releases it — so this dialog is the only thing between a stray click and work
+   * appearing in people's lists. Once it is live the version is archived to change it, so the
+   * click is not one anybody wants to make by accident.
+   */
+  const [confirming, setConfirming] = useState(false);
+
   const publish = useCallback(() => {
     if (!tenantId || objectiveId === null) return;
+    setConfirming(false);
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -234,12 +246,30 @@ function ObjectiveVersionsInner() {
               Compare
             </Button>
             {approvedAwaitingPublish === undefined ? null : (
-              <Button variant="primary" size="sm" onClick={publish} disabled={busy}>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setConfirming(true)}
+                disabled={busy}
+              >
                 Publish V{approvedAwaitingPublish.versionNumber}
               </Button>
             )}
           </>
         }
+      />
+
+      <ConfirmDialog
+        open={confirming}
+        onCancel={() => setConfirming(false)}
+        onConfirm={publish}
+        title={`Publish V${approvedAwaitingPublish?.versionNumber ?? ''}?`}
+        description={
+          'This version becomes the live one. Its work is created and appears in people’s lists, ' +
+          'and the version it replaces is archived. Changing it afterwards means opening a new draft.'
+        }
+        confirmLabel="Publish"
+        cancelLabel="Not yet"
       />
 
       {error === null ? null : <Banner tone="danger">{error}</Banner>}

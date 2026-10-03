@@ -404,7 +404,10 @@ describe('asking for a change', () => {
      * A closed list with nowhere to put an odd request teaches people to file everything under
      * whichever option is nearest, and then none of the categories describes anything.
      */
-    assert.deepEqual(changeRequestProblems({ kind: 'Other', reason: 'The rota is wrong again.' }), []);
+    assert.deepEqual(
+      changeRequestProblems({ kind: 'Other', reason: 'The rota is wrong again.' }),
+      [],
+    );
   });
 
   it('refuses a kind nobody asked about', () => {

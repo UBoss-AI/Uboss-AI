@@ -6,8 +6,8 @@ Production deployment for Chief Agent, powered by UBoss AI.
 
 The production target is the Hostinger VPS reserved for `ubossai.com`; project name `ubossai`.
 The Docker stack and GitHub Actions deploy workflow are prepared. They are **not live until the
-first deploy completes and DNS is pointed to the VPS**. The website is served at `ubossai.com`,
-the product at `app.ubossai.com`, and the API at `api.ubossai.com`.
+first deploy completes and DNS is pointed to the VPS**. The marketing website is served at
+`chiefagent.ubossai.com`, the product at `app.ubossai.com`, and the API at `api.ubossai.com`.
 
 The legacy release-promotion workflow below remains a separate, gated process. Automatic pushes to
 `main` use `.github/workflows/deploy-hostinger.yml`; that workflow calls Hostinger's deploy action
@@ -153,25 +153,52 @@ release cannot go out without one.
 **Never in the repository.** Injected per environment by GitHub Environments, so a staging secret is
 not visible to a production job and neither is visible to a pull request from a fork.
 
-| Variable                 | Kind     | Purpose                                                                                    |
-| ------------------------ | -------- | ------------------------------------------------------------------------------------------ |
-| `DATABASE_MIGRATION_URL` | secret   | Owner role. Applies migrations.                                                            |
-| `DATABASE_URL`           | secret   | `uboss_app`, `NOBYPASSRLS`. What the application connects as.                              |
-| `AUTH_ENCRYPTION_KEYS`   | secret   | Encrypts stored credentials. **Lose these and a restored database is unreadable** (S-335). |
-| `HOSTINGER_API_KEY` | Actions secret | Deploy permission for the Hostinger account. Use a rotated key; never reuse one pasted in chat. |
-| `UBOSS_POSTGRES_PASSWORD` | Actions secret | PostgreSQL owner password used for migrations. |
-| `UBOSS_APP_DB_PASSWORD` | Actions secret | Separate restricted `uboss_app` database password. |
-| `UBOSS_AUTH_ENCRYPTION_KEYS` | Actions secret | Application encryption keyring; back it up outside GitHub too. |
-| `UBOSS_INITIAL_ADMIN_PASSWORD` | Actions secret | One-time account bootstrap password for `dev@ubossai.com`. |
-| `HOSTINGER_VM_ID` | Actions variable | The intended VPS ID. |
-| `UBOSS_DEPLOY_COMMAND`   | variable | The host's own deploy command. Absent ⇒ nothing is released and the log says so.           |
-| `UBOSS_ROLLBACK_COMMAND` | variable | The host's own rollback. Absent ⇒ manual rollback, loudly.                                 |
-| `UBOSS_HEALTH_URL`       | variable | Checked after release. Absent ⇒ release unverified, and the log says so.                   |
-| `UBOSS_ENVIRONMENT_URL`  | variable | Shown on the GitHub deployment.                                                            |
+| Variable                       | Kind             | Purpose                                                                                         |
+| ------------------------------ | ---------------- | ----------------------------------------------------------------------------------------------- |
+| `DATABASE_MIGRATION_URL`       | secret           | Owner role. Applies migrations.                                                                 |
+| `DATABASE_URL`                 | secret           | `uboss_app`, `NOBYPASSRLS`. What the application connects as.                                   |
+| `AUTH_ENCRYPTION_KEYS`         | secret           | Encrypts stored credentials. **Lose these and a restored database is unreadable** (S-335).      |
+| `HOSTINGER_API_KEY`            | Actions secret   | Deploy permission for the Hostinger account. Use a rotated key; never reuse one pasted in chat. |
+| `UBOSS_POSTGRES_PASSWORD`      | Actions secret   | PostgreSQL owner password used for migrations.                                                  |
+| `UBOSS_APP_DB_PASSWORD`        | Actions secret   | Separate restricted `uboss_app` database password.                                              |
+| `UBOSS_AUTH_ENCRYPTION_KEYS`   | Actions secret   | Application encryption keyring; back it up outside GitHub too.                                  |
+| `UBOSS_INITIAL_ADMIN_PASSWORD` | Actions secret   | One-time account bootstrap password for `dev@uboss.com`.                                        |
+| `STRIPE_SECRET_KEY`            | Actions secret   | Payments. Absent ⇒ a company can see a plan and cannot buy one.                                 |
+| `STRIPE_PUBLISHABLE_KEY`       | Actions secret   | Payments. Required with the other two; a partial set is refused at boot.                        |
+| `STRIPE_WEBHOOK_SECRET`        | Actions secret   | Verifies Stripe's callback. Absent ⇒ a company pays and is never upgraded.                      |
+| `GOOGLE_CLIENT_ID`             | Actions secret   | Sign in with Google. Absent ⇒ the button is not offered at all, which is the intended default.  |
+| `GOOGLE_CLIENT_SECRET`         | Actions secret   | Required with the id. **An id without a secret counts as absent**, never as a broken button.    |
+| `MICROSOFT_CLIENT_ID`          | Actions secret   | Same arrangement for Microsoft. Unset today.                                                    |
+| `MICROSOFT_CLIENT_SECRET`      | Actions secret   | Required with the id.                                                                           |
+| `MICROSOFT_TENANT_ID`          | Actions variable | `common` accepts work and personal accounts; a directory id restricts it to one organisation.   |
+| `APPLE_CLIENT_ID`              | Actions secret   | Same arrangement for Apple. Unset today.                                                        |
+| `APPLE_CLIENT_SECRET`          | Actions secret   | Apple's is a signed JWT that **expires at most six months out** and has to be regenerated.      |
+| `HOSTINGER_VM_ID`              | Actions variable | The intended VPS ID.                                                                            |
+| `UBOSS_DEPLOY_COMMAND`         | variable         | The host's own deploy command. Absent ⇒ nothing is released and the log says so.                |
+| `UBOSS_ROLLBACK_COMMAND`       | variable         | The host's own rollback. Absent ⇒ manual rollback, loudly.                                      |
+| `UBOSS_HEALTH_URL`             | variable         | Checked after release. Absent ⇒ release unverified, and the log says so.                        |
+| `UBOSS_ENVIRONMENT_URL`        | variable         | Shown on the GitHub deployment.                                                                 |
 
 Environment files are not tracked. The deploy workflow injects these values into the Hostinger Docker
 project; it does not commit an `.env` file. The secret scan examines Git history as well as current
 files, because a deleted secret remains in old commits.
+
+### The one redirect URI
+
+Every social provider sends the person back to **one** address, which must be registered with the
+provider before the first sign-in or the provider refuses the request outright:
+
+```
+https://api.ubossai.com/auth/sso/callback
+```
+
+The API's own origin, not the website's and not the application's — the code arrives at the API,
+is exchanged there for tokens, and only then is the browser sent on to the application. It is the
+same callback the per-company `sso_connections` use; a social request is told apart from a company
+one by `SsoAuthRequest.flowKind`, so there is nothing further to register per provider.
+
+Locally the same path on port 4000 is used, which is why a Google client meant for development
+needs `http://localhost:4000/auth/sso/callback` registered alongside the production one.
 
 ---
 
@@ -219,6 +246,8 @@ Run top to bottom. Anything unchecked stops the promotion.
       the change.
 - [ ] A verified backup exists and `GET /platform/recovery` does not report `neverVerified`.
 - [ ] The DR drill is not overdue (`drillIsOverdue` is false).
+- [ ] **Know what the backup does not cover.** See below — it is on the same machine as the
+      database it protects.
 - [ ] Release flags for this change are in their intended state — check, do not assume.
 - [ ] Staged rollout: first slice, then watch.
 - [ ] Health check green **and** the alert rules quiet for fifteen minutes before completing.
@@ -242,13 +271,43 @@ Run top to bottom. Anything unchecked stops the promotion.
 - **The local machine cannot run Docker.** Docker configuration parses, but image builds must be
   verified by the VPS on first deployment.
 - **First deploy requires GitHub Actions secrets and the Hostinger VM ID variable** from the table.
-- **DNS still needs to be changed** to point the root website and `www` to the VPS after the stack
-  is ready; preserve all Google Workspace and Hostinger mail records.
+- **DNS still needs to be changed** for `chiefagent`, `app`, and `api` to point to the VPS after
+  the stack is ready; preserve the root website, `www`, and all mail records.
 - **A working journey has not yet been smoke-tested on the live host.** The health check proves the
   process answers; it does not prove login and product flows work.
 - **No smoke-test suite against a deployed environment.** The health check proves the process
   answers; it does not prove a journey works. The staging checklist asks for that by hand until
   there is an environment to automate it against.
 - **Do not treat a successful workflow dispatch as proof the site is healthy.** Check the Hostinger
-  project containers and verify `https://ubossai.com`, `https://app.ubossai.com/login`, and
+  project containers and verify `https://chiefagent.ubossai.com`, `https://app.ubossai.com/login`, and
   `https://api.ubossai.com/health` after each first deploy.
+
+---
+
+## Backups are on the same machine as the database
+
+The `backup` service dumps `uboss_prod` daily, keeps fourteen days, and restores every seventh
+dump into a scratch database to prove the dump is readable. That is a real control and it is more
+than most deployments have.
+
+**It is written to `backup-data`, a Docker volume on the same VPS as `postgres`.** There is no
+copy anywhere else: nothing in `Dockerfile.backup` or `backup-loop.sh` uploads, syncs or ships a
+dump off the host.
+
+So the honest statement of what is protected:
+
+| Failure                                               | Covered |
+| ----------------------------------------------------- | ------- |
+| A table dropped, a bad migration, data deleted        | **Yes** |
+| The database corrupts and Postgres will not start     | **Yes** |
+| The VPS is lost, deleted, or the account is suspended | **No**  |
+| The disk fails                                        | **No**  |
+
+The last two take the database and every backup of it together. "A verified backup exists" on the
+promotion checklist is true and does not mean disaster recovery is covered, which is why this
+section exists rather than a reassuring sentence.
+
+Closing it needs an external destination and a credential for it — object storage, another host,
+anything not on this VPS — and that is an owner's decision about where a customer's data may be
+copied to, not a configuration default anybody should pick unilaterally. Until it is made, the
+real recovery point for a lost host is **nothing**.

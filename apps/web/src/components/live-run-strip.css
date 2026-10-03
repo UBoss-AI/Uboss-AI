@@ -1,0 +1,226 @@
+/*
+ * Everything running right now.
+ *
+ * The same vocabulary as the workflow canvas — a travelling light for work in motion, a quiet
+ * colour for a state — so the two screens read as one product. The difference is the shape: the
+ * canvas draws a graph because a plan is one, and this draws lanes because several unrelated runs
+ * are not.
+ *
+ * Nothing in this file animates unless a lane carries `lrs__lane--moving`, which the component
+ * sets only from a run state the engine is actually carrying forward.
+ */
+
+.lrs {
+  border: 1px solid var(--uboss-border);
+  border-radius: 12px;
+  background: var(--uboss-surface);
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+
+.lrs__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.lrs__title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--uboss-text-3);
+}
+
+/* Said rather than hidden — a lost stream must not look like a quiet one. */
+.lrs__live {
+  font-size: 12px;
+  color: var(--uboss-text-3);
+}
+
+.lrs__live--on::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 999px;
+  background: var(--uboss-success);
+}
+
+.lrs__lanes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.lrs__lane {
+  display: grid;
+  gap: 5px;
+}
+
+.lrs__who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.lrs__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--uboss-border-control);
+  flex: none;
+}
+
+/*
+ * The breathing dot, and only on a run that is moving.
+ *
+ * Violet because that is the colour an agent's work already carries on the canvas, so the same
+ * kind of work is the same colour wherever somebody meets it.
+ */
+.lrs__lane--moving .lrs__dot {
+  background: #7c3aed;
+  animation: lrs-breathe 2s ease-in-out infinite;
+}
+
+@keyframes lrs-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.lrs__name {
+  font-weight: 600;
+  color: var(--uboss-text);
+}
+
+.lrs__state {
+  font-size: 11.5px;
+  color: var(--uboss-text-3);
+}
+
+.lrs__attempt {
+  font-size: 11px;
+  color: var(--uboss-warn, #d97706);
+}
+
+/* ---------- the track ---------- */
+
+.lrs__track {
+  position: relative;
+  display: block;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--uboss-surface-raised);
+  overflow: hidden;
+}
+
+/*
+ * The fill, drawn only when the engine reported a fraction.
+ *
+ * No transition on the width: a run reports a handful of percentages over its life, and easing
+ * between two of them would draw a smooth climb through numbers nobody measured.
+ */
+.lrs__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: #7c3aed;
+  opacity: 0.55;
+}
+
+/*
+ * The light, and only on a moving lane.
+ *
+ * Three a beat apart so the track is never empty — one dot crawling across reads as a loading
+ * bar, which is the thing this is not.
+ */
+.lrs__spark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 34%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, #7c3aed, transparent);
+  animation: lrs-run 1.8s linear infinite;
+}
+
+.lrs__spark--b {
+  animation-delay: 0.6s;
+}
+
+.lrs__spark--c {
+  animation-delay: 1.2s;
+}
+
+@keyframes lrs-run {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+.lrs__said {
+  font-size: 11.5px;
+  color: var(--uboss-text-3);
+}
+
+/* ---------- what each outcome looks like ---------- */
+
+.lrs__lane--completed .lrs__dot {
+  background: var(--uboss-success, #16a34a);
+}
+
+.lrs__lane--completed .lrs__fill {
+  background: var(--uboss-success, #16a34a);
+}
+
+.lrs__lane--failed .lrs__dot,
+.lrs__lane--cancelled .lrs__dot {
+  background: var(--uboss-danger, #dc2626);
+}
+
+/*
+ * Blocked is amber, not red, and it does not move.
+ *
+ * A block is somebody's to clear rather than something that went wrong, which is why the state
+ * names who — and why the lane stands still until they do.
+ */
+.lrs__lane--blockedbybudget .lrs__dot,
+.lrs__lane--blockedbyconnection .lrs__dot,
+.lrs__lane--blockedbypermission .lrs__dot,
+.lrs__lane--blockedbyprovider .lrs__dot,
+.lrs__lane--waitingforhumaninput .lrs__dot,
+.lrs__lane--waitingforapproval .lrs__dot {
+  background: var(--uboss-warn, #d97706);
+}
+
+/*
+ * At rest, resolved.
+ *
+ * Somebody who has asked for less motion is not asking to be told less: the states still read
+ * through colour and through the sentence beside them, and only the movement stops.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .lrs__spark {
+    animation: none;
+    display: none;
+  }
+
+  .lrs__lane--moving .lrs__dot {
+    animation: none;
+    opacity: 1;
+  }
+}

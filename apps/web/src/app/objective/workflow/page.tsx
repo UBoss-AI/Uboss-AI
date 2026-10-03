@@ -2,17 +2,13 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import {
-  STEP_APPROVAL_KINDS,
-  STEP_APPROVAL_LABELS,
-  WORKFLOW_EDGE_KIND_LABELS,
-  WORKFLOW_EDGE_KINDS,
-  type AnalysisNode,
-  type StepApprovalKind,
-} from '@uboss/types';
+import { WORKFLOW_EDGE_KIND_LABELS, WORKFLOW_EDGE_KINDS, type AnalysisNode } from '@uboss/types';
 import { Banner, Button, Card, CardBody, Drawer, Icon, PageHeader, StatusBadge } from '@uboss/ui';
+
+import { WorkflowCanvas, type NodeActivity } from '../../../components/WorkflowCanvas';
+import { useRunStream } from '../../../lib/use-run-stream';
 
 import { useAccountMenu } from '../../../lib/use-account-menu';
 import { useSignedInUser } from '../../../lib/use-signed-in-user';
@@ -22,7 +18,6 @@ import {
   readRememberedWorkspace,
   resolveActiveWorkspace,
 } from '../../../lib/active-workspace';
-import { WorkflowCanvasNode } from '../../../components/WorkflowCanvasNode';
 import {
   ApiError,
   authApi,
@@ -111,6 +106,65 @@ function WorkflowEditorInner() {
         setError(caught instanceof ApiError ? caught.message : 'Could not open the workflow.'),
       );
   }, [objectiveId, tenantId]);
+
+  /*
+   * The live channel, used as a signal rather than as a source.
+   *
+   * Every event here was written to the run's own history before it was published, and the server
+   * already resolves what each node is doing from that record. So an event means "something
+   * changed, read it again" — not "here is the new truth". Joining assignments to nodes in the
+   * browser would be a second translation of the same thing, free to drift from the first.
+   *
+   * The cost is one request per state change, and a run reports a handful of those. The benefit is
+   * that the canvas can never show a state the server would not agree with.
+   */
+  const runStream = useRunStream(tenantId);
+  const lastSeen = useRef<string | null>(null);
+
+  useEffect(() => {
+    const newest = [...runStream.byRun.values()].sort((a, b) => b.at.localeCompare(a.at))[0];
+    if (newest === undefined || newest.at === lastSeen.current) return;
+    lastSeen.current = newest.at;
+    load();
+  }, [runStream, load]);
+
+  /**
+   * The plan's nodes in the canvas's own vocabulary.
+   *
+   * One field differs, and the rename is the point: the canvas asks for a `subtitle`, and on an
+   * objective's plan the honest answer is whose job the step is. On the agent builder's canvas the
+   * answer to the same question is something else entirely, which is why the renderer does not
+   * know the word "designation".
+   */
+  const canvasNodes = useMemo(
+    () =>
+      (draft?.graph.nodes ?? []).map((node) => ({
+        id: node.id,
+        kind: node.kind,
+        label: node.label,
+        shape: node.shape,
+        subtitle: node.ownerDesignation,
+      })),
+    [draft],
+  );
+
+  /** The server's own answer, in the shape the canvas draws. */
+  const activity = useMemo(() => {
+    const map = new Map<string, NodeActivity>();
+    for (const row of draft?.activity ?? []) {
+      map.set(
+        row.nodeId,
+        row.state === 'working'
+          ? { state: 'working', percent: row.percent, message: row.message }
+          : row.state === 'waiting'
+            ? { state: 'waiting', message: row.message }
+            : row.state === 'failed'
+              ? { state: 'failed', message: row.message }
+              : { state: 'done' },
+      );
+    }
+    return map;
+  }, [draft]);
 
   useEffect(() => {
     if (tenantId === null) return;
@@ -320,24 +374,25 @@ function WorkflowEditorInner() {
                 <b>Analyze &amp; Generate Workflow</b> first.
               </p>
             ) : (
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  padding: '26px 10px',
-                }}
-              >
-                {draft.graph.nodes.map((candidate, index) => (
-                  <div key={candidate.id} style={{ textAlign: 'center' }}>
-                    {index === 0 ? null : <div className="uboss-wf-connector" />}
-                    <WorkflowCanvasNode
-                      node={candidate}
-                      editable={draft.editable}
-                      onOpen={() => setSelected(candidate.id)}
-                    />
-                  </div>
-                ))}
+              /*
+                The plan, drawn from its edges.
+
+                This was a single vertical column of nodes in array order, with a plain connector
+                between each — so two steps that run **at the same time** were drawn one after the
+                other, and the edges that said so were listed in a separate card below. The picture
+                did not merely omit the shape of the plan; it contradicted it.
+
+                The canvas lays nodes out by depth, which puts concurrent steps on the same row,
+                draws each edge as what it is, and shows what every node is doing.
+              */
+              <div style={{ padding: '18px 10px' }}>
+                <WorkflowCanvas
+                  nodes={canvasNodes}
+                  edges={draft.graph.edges}
+                  activity={activity}
+                  live={runStream.live}
+                  {...(draft.editable ? { onOpenNode: setSelected } : {})}
+                />
               </div>
             )}
           </div>
@@ -528,29 +583,17 @@ function WorkflowEditorInner() {
               </div>
             ))}
 
-            <div className="uboss-field">
-              <label htmlFor="dodApproval">Approval</label>
-              <select
-                id="dodApproval"
-                defaultValue={node.dod.approval ?? 'NotRequired'}
-                disabled={!draft?.editable}
-                onChange={(event) =>
-                  patchDod({
-                    approval:
-                      event.target.value === 'NotRequired'
-                        ? null
-                        : (event.target.value as StepApprovalKind),
-                  })
-                }
-              >
-                {STEP_APPROVAL_KINDS.map((kind) => (
-                  <option key={kind} value={kind}>
-                    {STEP_APPROVAL_LABELS[kind]}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {/*
+              The approval gate is not offered here either.
 
+              It was a dropdown on every step, and setting it put a decision between two people
+              that nobody in this company can make: there is an administrator who defines the work
+              and an employee who does it, and no third role to stop it for. A gate set here would
+              be work parked for ever.
+
+              An approval already on a step keeps its value and still shows in the diagram; this
+              only stops a new one being chosen.
+            */}
             <div className="uboss-kv">
               <span className="uboss-kv-key">Tools</span>
               <span className="uboss-kv-value">

@@ -152,7 +152,6 @@ function ObjectiveFormInner() {
    */
   const [sendToOptions, setSendToOptions] = useState<{ userId: string; label: string }[]>([]);
 
-
   const [reward, setReward] = useState<ObjectiveRewardPanel>(emptyReward());
   const [rewardOpen, setRewardOpen] = useState(false);
   const [rewardNote, setRewardNote] = useState<string | null>(null);
@@ -162,7 +161,9 @@ function ObjectiveFormInner() {
    * drift from the message it came from.
    */
   const problems = error === null ? [] : parseValidationProblems(error);
-  const problemFields = new Set(problems.map((problem) => problem.field).filter((field): field is string => field !== null));
+  const problemFields = new Set(
+    problems.map((problem) => problem.field).filter((field): field is string => field !== null),
+  );
   const [notice, setNotice] = useState<string | null>(null);
   /* Whether the grid's free-text cells are showing their full content. See WorkflowGrid. */
   const [expanded, setExpanded] = useState(false);
@@ -198,7 +199,8 @@ function ObjectiveFormInner() {
         setPeople(
           view.list.map((row) => ({
             userId: row.userId,
-            label: row.designation === '' ? row.displayName : `${row.displayName} — ${row.designation}`,
+            label:
+              row.designation === '' ? row.displayName : `${row.displayName} — ${row.designation}`,
           })),
         ),
       )
@@ -258,9 +260,7 @@ function ObjectiveFormInner() {
           // Through toEditableStep: the view carries an `id` per step that the save refuses, so
           // feeding the view straight back made a second save of any existing draft impossible.
           setSteps(
-            shown.steps.length === 0
-              ? [blankWorkflowStep(1)]
-              : shown.steps.map(toEditableStep),
+            shown.steps.length === 0 ? [blankWorkflowStep(1)] : shown.steps.map(toEditableStep),
           );
         }
         if (loaded.reward) {
@@ -291,9 +291,11 @@ function ObjectiveFormInner() {
      * one downloads its current values. Refusing the first half until somebody saves a draft
      * asks them to do the work they were taking the form away to do.
      */
-    void (objective === null
-      ? objectivesApi.downloadWorkbookTemplate(tenantId)
-      : objectivesApi.downloadWorkbook(tenantId, objective.id, objective.code))
+    void (
+      objective === null
+        ? objectivesApi.downloadWorkbookTemplate(tenantId)
+        : objectivesApi.downloadWorkbook(tenantId, objective.id, objective.code)
+    )
       .catch((caught: unknown) =>
         setError(
           caught instanceof ApiError ? caught.message : 'That Objective could not be downloaded.',
@@ -321,9 +323,7 @@ function ObjectiveFormInner() {
           .parseWorkbook(tenantId, objective.id, encoded)
           .then(setUpload)
           .catch((caught: unknown) =>
-            setError(
-              caught instanceof ApiError ? caught.message : 'That file could not be read.',
-            ),
+            setError(caught instanceof ApiError ? caught.message : 'That file could not be read.'),
           )
           .finally(() => setBusy(false));
       };
@@ -353,7 +353,11 @@ function ObjectiveFormInner() {
          * guessing it here would silently point the objective at the wrong department. They stay
          * as they are and the review says so.
          */
-        if (key === 'departmentId' || key === 'objectiveOwnerUserId' || key === 'responsibleOwnerUserId') {
+        if (
+          key === 'departmentId' ||
+          key === 'objectiveOwnerUserId' ||
+          key === 'responsibleOwnerUserId'
+        ) {
           continue;
         }
         const numeric = key === 'currentWorkload' || key === 'targetCompletionTime';
@@ -373,9 +377,7 @@ function ObjectiveFormInner() {
     }
 
     setUpload(null);
-    setNotice(
-      'The file has been put into the form. Nothing is stored until you press Save Draft.',
-    );
+    setNotice('The file has been put into the form. Nothing is stored until you press Save Draft.');
   }, [upload]);
 
   const save = useCallback(() => {
@@ -533,11 +535,7 @@ function ObjectiveFormInner() {
               size="sm"
               onClick={downloadWorkbook}
               disabled={busy}
-              title={
-                objective === null
-                  ? 'Downloads the blank form, ready to fill in'
-                  : undefined
-              }
+              title={objective === null ? 'Downloads the blank form, ready to fill in' : undefined}
             >
               <Icon name="arrow-down" size={16} />
               Download Excel
@@ -1122,7 +1120,9 @@ function ObjectiveFormInner() {
                   {
                     key: 'detail',
                     header: 'Detail',
-                    render: (row: WorkbookProblem) => <small className="uboss-muted-3">{row.detail}</small>,
+                    render: (row: WorkbookProblem) => (
+                      <small className="uboss-muted-3">{row.detail}</small>
+                    ),
                   },
                 ]}
                 rows={upload.problems}
@@ -1133,10 +1133,9 @@ function ObjectiveFormInner() {
             )}
 
             <p className="uboss-muted-3">
-              Department, Objective Owner and Responsible Owner are carried in the file as names
-              and are <b>not</b> applied: matching a name to a person is a question about this
-              company, and guessing it would point the Objective at the wrong one. Set those on the
-              form.
+              Department, Objective Owner and Responsible Owner are carried in the file as names and
+              are <b>not</b> applied: matching a name to a person is a question about this company,
+              and guessing it would point the Objective at the wrong one. Set those on the form.
             </p>
           </>
         )}

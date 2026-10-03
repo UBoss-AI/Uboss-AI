@@ -19,6 +19,7 @@ import {
   tenantScopeForPlatformOperation,
   type TenantScope,
 } from '../persistence/tenant-context.js';
+import { PlatformAlertService } from '../platform/platform-alert.service.js';
 import { CostEngineService } from '../cost/cost-engine.service.js';
 import {
   BudgetRefusedError,
@@ -120,6 +121,14 @@ export class RoutingModelGateway extends ModelGateway {
      * fallback — an absent throttle means no throttling, never a refusal.
      */
     private readonly throttle?: ProviderThrottleService | undefined,
+    /**
+     * Raising a service alert when no model can answer a profile.
+     *
+     * Optional for the same reason the two above are — routing tests construct this gateway
+     * alone — and absent means the gap is recorded on the call row and nobody is paged, which is
+     * exactly how it behaved before.
+     */
+    private readonly alerts?: PlatformAlertService | undefined,
   ) {
     super();
   }
@@ -195,7 +204,29 @@ export class RoutingModelGateway extends ModelGateway {
             reservationId: reservation.reservationId,
             // What the provider actually cost. Zero when nothing priced it, which is honest —
             // the usage is still recorded on the gateway call.
-            actualMinor: response.costMinorUnits ?? 0,
+            /*
+             * What the **company** pays, not what the call cost UBoss.
+             *
+             * `response.costMinorUnits` is the provider's price — the buy side, recorded on the
+             * gateway call, which is platform-plane and never reaches a company. The ledger is
+             * the company's own record and the wallet debit, so it carries the sell price.
+             *
+             * Before this they were the same number, which meant every call was sold at cost and
+             * the product earned nothing on AI at all.
+             */
+            actualMinor: await this.cost.sellPriceFor(response.costMinorUnits ?? 0),
+            /*
+             * The version that priced it, carried onto the ledger entry.
+             *
+             * `settle` has accepted this since it was written and nothing passed it, so every
+             * charge in the ledger read as unpriced — including the ones that were priced. The
+             * gateway call carried the citation and the money did not, which meant "how much of
+             * this spend was actually costed" could not be answered from the ledger, and a
+             * company reading a ₹0 line could not tell a free call from an uncosted one.
+             *
+             * Absent rather than null when nothing priced the call: that absence is the signal.
+             */
+            ...(resolution.pricing === null ? {} : { pricingVersionId: resolution.pricing.id }),
             ...(response.callId === null ? {} : { modelGatewayCallId: response.callId }),
             tokens: {
               inputTokens: response.promptTokens,
@@ -269,6 +300,7 @@ export class RoutingModelGateway extends ModelGateway {
       ...(request.objectiveId === undefined ? {} : { objectiveId: request.objectiveId }),
       ...(request.engineAgentId === undefined ? {} : { engineAgentId: request.engineAgentId }),
       ...(request.agentRunId === undefined ? {} : { agentRunId: request.agentRunId }),
+      ...(request.actorUserId === undefined ? {} : { actorUserId: request.actorUserId }),
     };
 
     const outcome = await this.cost.reserve(context, {
@@ -612,6 +644,28 @@ export class RoutingModelGateway extends ModelGateway {
         },
       }),
     );
+
+    /*
+     * And an alert, because the row alone waits for somebody to look.
+     *
+     * Every AI feature in the product runs through this seam, so a profile that cannot route is
+     * a whole class of work quietly failing — an objective that will not analyse, an agent that
+     * will not run — and each of those surfaces to its own user as one broken thing rather than
+     * as an outage.
+     *
+     * The summary names the profile, so a single unroutable profile does not deduplicate away an
+     * alert about a different one. It never throws: this method's job is to raise the caller's
+     * error, and an alerting failure must not replace it.
+     */
+    await this.alerts?.raise({
+      service: 'model-gateway',
+      // Warning rather than Critical: one profile may be unroutable while the rest answer, and
+      // calling every routing gap an outage is how an on-call channel gets muted.
+      severity: 'Warning',
+      summary: `No model can answer ${request.profile}`,
+      detail: `${detail} Tried: ${tried.length === 0 ? 'nothing was configured' : tried.join(', ')}.`,
+      affectedTenantId: request.tenantId,
+    });
 
     throw new ProviderNotConfiguredError(
       'Custom',

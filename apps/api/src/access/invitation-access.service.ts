@@ -11,6 +11,7 @@ import { notificationDedupeKey } from '@uboss/types';
 import { AuditEventService } from '../audit/audit-event.service.js';
 import { NotificationService } from '../notifications/notification.service.js';
 import { SECURITY_ACTIONS, SecurityEventPublisher } from '../auth/security-event.publisher.js';
+import { IdentityMailService } from '../auth/identity-mail.service.js';
 import { InvitationService } from '../auth/invitation.service.js';
 import { AuthorizationService } from '../authorization/authorization.service.js';
 import { SeatService } from '../commercial/seat.service.js';
@@ -77,6 +78,11 @@ export class InvitationAccessService {
     private readonly auditEvents: AuditEventService,
     private readonly securityEvents: SecurityEventPublisher,
     private readonly notifications: NotificationService,
+    /*
+     * The activation link. Identity mail rather than a workspace notification: the person being
+     * invited has no session, no preferences and — until they open it — no account to speak of.
+     */
+    private readonly identityMail: IdentityMailService,
   ) {}
 
   /**
@@ -195,6 +201,34 @@ export class InvitationAccessService {
     );
 
     /*
+     * The activation link itself, which is the only part they can act on.
+     *
+     * Before this the notification below was the whole of it, and it was written for the in-app
+     * bell: "the activation link was emailed to you", in the email that was supposed to be that
+     * link, followed by a workspace-relative `/login` that no mail client can open. Proven by
+     * sending one to a real inbox — the invitation arrived and could not be used.
+     *
+     * Sent before the notification and awaited: the link is the deliverable, and the bell is an
+     * announcement about it. Never throws.
+     */
+    // Named, so the recipient knows which company invited them: a person may be invited by more
+    // than one, and "you have been invited to UBoss" does not say by whom.
+    const company = await this.prisma.runAsPlatformOperation(() =>
+      this.prisma.client.tenant.findUnique({
+        where: { id: input.scope.tenantId },
+        select: { name: true },
+      }),
+    );
+
+    await this.identityMail.sendInvitation({
+      to: email === '' ? person.email : email,
+      token: issued.token,
+      displayName: person.displayName,
+      companyName: company?.name ?? 'your workspace',
+      resent: issued.resent,
+    });
+
+    /*
      * Tell the person they were invited.
      *
      * Its own transaction, deliberately **after** the invitation has committed, and its failure
@@ -274,13 +308,20 @@ export class InvitationAccessService {
     resourceIds: readonly string[];
     /** Days until their access ends. Mandatory, and capped. */
     accessDays: number;
-    reason: string;
+    /**
+     * Why, in the inviter's own words — optional.
+     *
+     * It was required, and it was the fifth mandatory field on a form for inviting one person to
+     * read two documents. Nobody is approving this: an administrator has already decided, and what
+     * the grant *is* — this person, these resources, until this date — is recorded whether they
+     * type anything or not. A required box on a decision already taken collects the word "guest",
+     * and an audit trail full of "guest" is worse than one with no free text, because it reads
+     * like a reason somebody gave.
+     */
+    reason?: string | undefined;
   }): Promise<{ userId: string; ubossUniqueId: string; expiresAt: string }> {
     await this.assertMayManageAccess(input.scope, input.actorUserId);
 
-    if (!input.reason.trim()) {
-      throw new BadRequestException('Inviting a guest requires a reason.');
-    }
     if (input.resourceIds.length === 0) {
       throw new BadRequestException(
         'A guest invitation has to name the resources they may reach. An empty list would mean ' +
@@ -360,7 +401,18 @@ export class InvitationAccessService {
           selectedResourceIds: [...input.resourceIds],
           expiresAt,
           grantedByUserId: input.actorUserId,
-          justification: `Guest access: ${input.reason.trim()}`,
+          /*
+           * The justification, written from the grant itself when nobody typed one.
+           *
+           * The audit row keeps a sentence that is true and checkable either way — what was
+           * granted, over what, until when — rather than an empty string where a required box
+           * used to be. An inviter who does have something to say still has it recorded verbatim.
+           */
+          justification: input.reason?.trim()
+            ? `Guest access: ${input.reason.trim()}`
+            : `Guest access to ${input.resourceIds.length} ` +
+              `${input.resourceIds.length === 1 ? 'resource' : 'resources'}, ` +
+              `expiring ${expiresAt.toISOString().slice(0, 10)}.`,
         },
       });
 
@@ -371,7 +423,9 @@ export class InvitationAccessService {
         resourceRef: user.ubossUniqueId,
         actorUserId: input.actorUserId,
         summary: `Invited ${input.displayName.trim()} as an External Guest.`,
-        reason: input.reason.trim(),
+        // Absent rather than an empty string: the trail should say nobody gave a reason, not that
+        // somebody gave one and it was blank. The metadata below records what was actually granted.
+        reason: input.reason?.trim() || undefined,
         metadata: {
           subjectUserId: user.id,
           resourceCount: input.resourceIds.length,

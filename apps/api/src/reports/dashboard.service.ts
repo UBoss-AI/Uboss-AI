@@ -84,7 +84,10 @@ export class DashboardService {
       const tiles: DashboardTileCount[] = [];
 
       for (const tile of permitted) {
-        tiles.push({ tile, count: noOne ? zeroFor(tile) : await this.countFor(tile, input, userFilter) });
+        tiles.push({
+          tile,
+          count: noOne ? zeroFor(tile) : await this.countFor(tile, input, userFilter),
+        });
       }
 
       return { tiles };
@@ -99,9 +102,55 @@ export class DashboardService {
    * screens, not a quantity — so the tile is a way in rather than a count. Inventing something to
    * put there is exactly what this screen is not allowed to do.
    */
+  /**
+   * How many conversations have something in them this person has not read.
+   *
+   * ## Why this is two queries and not one `where`
+   *
+   * Because the comparison is between each message and **that participant row's own**
+   * `lastReadAt`, and a nested filter cannot reach back to a column on the row it is nested
+   * under. Expressed as one query it would have to compare every conversation against a single
+   * timestamp, which is a different and wrong question.
+   *
+   * So: the person's live participations with their markers, then one count of conversations
+   * holding a newer message from somebody else. Two round trips for a number on a tile, against
+   * a list that is the conversations one person is in.
+   *
+   * A participation with no marker at all has never been opened, so everything in it is unread.
+   */
+  private async unreadConversations(tenantId: string, userId: string): Promise<number> {
+    const participations = await this.prisma.client.chatParticipant.findMany({
+      where: { tenantId, userId, leftAt: null },
+      select: { conversationId: true, lastReadAt: true },
+      take: 500,
+    });
+
+    if (participations.length === 0) return 0;
+
+    const unread = await Promise.all(
+      participations.map((participation) =>
+        this.prisma.client.chatMessage.count({
+          where: {
+            tenantId,
+            conversationId: participation.conversationId,
+            // Never your own. Sending something and being told you have one unread is the oldest
+            // bug in every chat application ever written.
+            authorUserId: { not: userId },
+            ...(participation.lastReadAt === null
+              ? {}
+              : { sentAt: { gt: participation.lastReadAt } }),
+          },
+          take: 1,
+        }),
+      ),
+    );
+
+    return unread.filter((count) => count > 0).length;
+  }
+
   private async countFor(
     tile: DashboardTile,
-    input: { scope: TenantScope },
+    input: { scope: TenantScope; context: AuthorizationContext },
     userFilter: { in: string[] } | undefined,
   ): Promise<number | null> {
     const tenantId = input.scope.tenantId;
@@ -170,8 +219,94 @@ export class DashboardService {
           },
         });
 
+      /*
+       * How much AI work is waiting to be turned into an agent.
+       *
+       * A real queue, and the one number that makes this tile worth a place: an administrator
+       * wants to know there are three assignments still unbuilt without opening the builder to
+       * find out. Counted the same way every other tile is — in this person's own scope.
+       */
+      case 'agent-builder':
+        return this.prisma.client.aiWorkAssignment.count({
+          where: {
+            tenantId,
+            status: 'AwaitingAgentSetup',
+            /*
+             * Scoped by who assigned the work, because that is the only person this row names.
+             *
+             * An `AiWorkAssignment` has no owner column — it is a node of an objective's workflow
+             * that was given to AI, and the person on it is whoever assigned it. Scoping by that
+             * keeps the tile answering "what is waiting on me and mine" for a manager, the same
+             * way every other tile does, instead of showing a company-wide figure to somebody
+             * whose other tiles are all narrowed.
+             */
+            ...(userFilter === undefined ? {} : { assignedByUserId: userFilter }),
+          },
+        });
+
+      /*
+       * How many people the company has in this person's scope.
+       *
+       * The measure line says "people" rather than the three things the screen lists, so the
+       * figure cannot be read as a count of departments. Active only: somebody who has left is
+       * still in the hierarchy's history and is not one of the people you have.
+       */
+      case 'hierarchy':
+        return this.prisma.client.tenantMembership.count({
+          where: {
+            tenantId,
+            accountState: 'Active',
+            ...(userFilter === undefined ? {} : { userId: userFilter }),
+          },
+        });
+
+      /*
+       * Conversations with something in them this person has not read.
+       *
+       * Counted against their own `lastReadAt` marker, so it is their unread and nobody else's.
+       * A conversation they do not belong to cannot be counted at all, because the query starts
+       * from their participation rather than from the conversation list — which is the same
+       * reason there is no `chat` permission module in this product.
+       *
+       * Their own messages never count. Sending something and then being told you have one
+       * unread is the oldest bug in every chat application ever written.
+       *
+       * This tile is never narrowed by `userFilter`: a manager's scope widens what they may see
+       * of *other people's* work, and nobody's scope includes somebody else's unread messages.
+       */
+      case 'chat':
+        return this.unreadConversations(tenantId, input.context.userId);
+
+      /*
+       * Invitations an administrator has not yet got an answer to.
+       *
+       * The one thing on the Settings screen that is genuinely a queue: somebody was invited and
+       * has not activated, and that waits on a person. The rest of Settings is configuration,
+       * which does not pile up.
+       */
+      case 'settings':
+        return this.prisma.client.invitation.count({
+          where: { tenantId, acceptedAt: null, cancelledAt: null, expiresAt: { gt: new Date() } },
+        });
+
+      /*
+       * No number, and that is the honest answer for these two.
+       *
+       * Performance and Reports are places you go, not things that pile up — a figure beside
+       * either would have to be invented to exist. They show an arrow instead, which is what
+       * `null` means to the screen.
+       */
       case 'performance':
       case 'reports':
+        return null;
+
+      /*
+       * The stage overview carries no count of its own.
+       *
+       * Its card is a table of where every piece of work has got to, and no single number
+       * summarises it — "45" would be objectives, which the Objectives tile already says.
+       */
+      case 'stage':
         return null;
     }
   }
@@ -179,5 +314,14 @@ export class DashboardService {
 
 /** Zero, or nothing, depending on whether the tile carries a number at all. */
 function zeroFor(tile: DashboardTile): number | null {
-  return tile === 'performance' || tile === 'reports' ? null : 0;
+  return COUNTLESS_TILES.includes(tile) ? null : 0;
 }
+
+/**
+ * The tiles that never carry a number.
+ *
+ * Kept beside `zeroFor` rather than repeated in the switch above, because the two have to agree:
+ * a tile that counts null when it loads and zero when it is empty would flicker between an arrow
+ * and a `0` depending on which path produced it.
+ */
+const COUNTLESS_TILES: readonly DashboardTile[] = ['performance', 'reports', 'stage'];

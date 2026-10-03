@@ -1,17 +1,18 @@
 name: Deploy Chief Agent to Hostinger VPS
 
 on:
+  # Deliberately not `push`.
+  #
+  # It was, and that meant any commit to `main` touching `apps/**` went to the client's server
+  # without anything having run first: CI started at the same moment as the deployment, not before
+  # it, so a commit that broke the suite was released anyway and the first person to find out was
+  # the client. `workflow_run` waits for CI to finish and the job below refuses to act unless it
+  # finished green.
   workflow_dispatch:
-  push:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
     branches: [main]
-    paths:
-      - 'apps/**'
-      - 'packages/**'
-      - 'uboss-website/**'
-      - 'deploy/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.github/workflows/deploy-hostinger.yml'
 
 permissions:
   contents: read
@@ -23,11 +24,22 @@ concurrency:
 jobs:
   deploy:
     name: Deploy ubossai.com
-    if: ${{ vars.HOSTINGER_VM_ID != '' }}
+    # Green CI, or nothing. `workflow_run` fires whatever CI concluded — including `failure` and
+    # `cancelled` — so the conclusion has to be checked here or the gate is decorative. A manual
+    # `workflow_dispatch` is still allowed, so a release can be forced when somebody means to.
+    if: >-
+      ${{ vars.HOSTINGER_VM_ID != '' &&
+          (github.event_name == 'workflow_dispatch' ||
+           github.event.workflow_run.conclusion == 'success') }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
         uses: actions/checkout@v5
+        with:
+          # The commit CI actually tested, not whatever `main` points at by the time this runs.
+          # Without this a second push during a deployment would release untested code under the
+          # authority of the first push's green run.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Deploy to Hostinger VPS
         uses: hostinger/deploy-on-vps@b0868cec74bfa63af6bfa7bdb0dfee2f9bef13ea # v2
@@ -40,6 +52,23 @@ jobs:
             POSTGRES_PASSWORD=${{ secrets.UBOSS_POSTGRES_PASSWORD }}
             APP_DB_PASSWORD=${{ secrets.UBOSS_APP_DB_PASSWORD }}
             AUTH_ENCRYPTION_KEYS=${{ secrets.UBOSS_AUTH_ENCRYPTION_KEYS }}
-            UBOSS_INITIAL_ADMIN_EMAIL=dev@ubossai.com
+            UBOSS_INITIAL_ADMIN_EMAIL=dev@uboss.com
             UBOSS_INITIAL_ADMIN_NAME=Chief Agent Admin
             UBOSS_INITIAL_ADMIN_PASSWORD=${{ secrets.UBOSS_INITIAL_ADMIN_PASSWORD }}
+            UBOSS_SMTP_HOST=${{ secrets.UBOSS_SMTP_HOST }}
+            UBOSS_SMTP_PORT=${{ vars.UBOSS_SMTP_PORT || '587' }}
+            UBOSS_SMTP_USERNAME=${{ secrets.UBOSS_SMTP_USERNAME }}
+            UBOSS_SMTP_PASSWORD=${{ secrets.UBOSS_SMTP_PASSWORD }}
+            UBOSS_SMTP_FROM_EMAIL=${{ secrets.UBOSS_SMTP_USERNAME }}
+            UBOSS_SMTP_FROM_NAME=UBoss AI
+            ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+            STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}
+            STRIPE_PUBLISHABLE_KEY=${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+            STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}
+            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+            MICROSOFT_CLIENT_ID=${{ secrets.MICROSOFT_CLIENT_ID }}
+            MICROSOFT_CLIENT_SECRET=${{ secrets.MICROSOFT_CLIENT_SECRET }}
+            MICROSOFT_TENANT_ID=${{ vars.MICROSOFT_TENANT_ID || 'common' }}
+            APPLE_CLIENT_ID=${{ secrets.APPLE_CLIENT_ID }}
+            APPLE_CLIENT_SECRET=${{ secrets.APPLE_CLIENT_SECRET }}

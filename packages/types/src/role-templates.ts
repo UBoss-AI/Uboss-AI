@@ -61,6 +61,39 @@ function acrossPlatform(actions: readonly Action[]): PermissionSet {
   return Object.fromEntries(PLATFORM_MODULES.map((module) => [module, actions])) as PermissionSet;
 }
 
+/**
+ * The roles a company may hand out.
+ *
+ * Two, by the client's decision: an administrator who defines the work and an employee who does
+ * it. `Manager`, `Head`, `Approver` and `Auditor` are not offered any more — they existed to
+ * carry approvals between those two, and approvals no longer sit between them.
+ *
+ * The templates themselves stay. People already hold those roles, their permissions still have to
+ * be read to answer "what may this person do", and their history has to keep meaning what it
+ * said. What changes is that a new one cannot be granted. The platform console still sees the
+ * whole catalogue, because it administers companies provisioned before this.
+ *
+ * A company needing something in between writes a custom role, which is the mechanism that
+ * already exists and leaves an audit row behind it.
+ */
+export const COMPANY_GRANTABLE_ROLES = ['CompanyAdmin', 'Employee'] as const;
+
+/**
+ * What a company's grant route accepts — the two roles above, plus `Custom`.
+ *
+ * Separate from `COMPANY_GRANTABLE_ROLES` because that one filters the *catalogue*, and the
+ * catalogue is built from `ROLE_TEMPLATES`, which has no `Custom` entry: a company's own roles
+ * are listed by a different route and named by `customRoleId`. Folding `Custom` into the
+ * catalogue set would advertise a built-in role that does not exist.
+ *
+ * It exists at all because filtering the list is not a control. Until this, the list offered two
+ * roles and the route behind it still accepted all seven, so `roleKind: "Manager"` posted
+ * directly succeeded — the screen had been tidied and the decision had not been enforced. That is
+ * not an escalation, since every retired role is narrower than `CompanyAdmin`, but it is how a
+ * company ends up holding roles its own administrator was never shown.
+ */
+export const COMPANY_ASSIGNABLE_ROLE_KINDS = [...COMPANY_GRANTABLE_ROLES, 'Custom'] as const;
+
 export const ROLE_TEMPLATES: Record<Exclude<RoleKind, 'Custom'>, RoleTemplate> = {
   /**
    * Employee — does the work.
@@ -296,16 +329,53 @@ export const ROLE_TEMPLATES: Record<Exclude<RoleKind, 'Custom'>, RoleTemplate> =
     permissions: {
       dashboard: READ_ONLY,
       hierarchy: ['View', 'Comment', 'Create', 'EditDraft', 'Administer'],
-      // Authoring, publishing and closing an objective — everything except deciding its approval.
-      objective: ['View', 'Comment', 'Create', 'EditDraft', 'Assign', 'Publish', 'Export'],
+      /*
+       * Authoring, deciding and publishing an objective — all of it, on purpose.
+       *
+       * `Approve` used to be withheld here, and the comment read "everything except deciding its
+       * approval". That was a separation of duties borrowed from regulated industries: one person
+       * writes the plan, another releases it.
+       *
+       * The client's decision is that this company has two kinds of person — an administrator who
+       * defines the work and an employee who does it — and no third role in between. With nobody
+       * else holding `Approve`, withholding it here meant an objective could be written and never
+       * released by anybody. That deadlock was real and was measured.
+       *
+       * What replaces the second pair of eyes is a confirmation on the way out: publishing asks
+       * "publish this objective?" first, so a release is a deliberate act rather than a stray
+       * click. A smaller control, and the one the client asked for.
+       */
+      objective: [
+        'View',
+        'Comment',
+        'Create',
+        'EditDraft',
+        'Assign',
+        'Approve',
+        'Publish',
+        'Export',
+      ],
       // Building, running and releasing an agent: the client's "Agent Builder, agent testing and
       // publishing", which is one person's job in a company whose only privileged person is this.
       'agent-builder': ['View', 'Comment', 'Create', 'EditDraft', 'Run', 'Publish'],
       // The Admin has operational work of their own — the client's rule says so explicitly.
       todo: ['View', 'Comment', 'Create', 'EditDraft', 'Assign'],
-      agents: ['View', 'Comment', 'Run', 'Schedule', 'Pause', 'Publish'],
+      // `Approve` for the same reason as `objective`: an agent nobody can approve is an agent
+      // that never reaches the work it was built for.
+      agents: ['View', 'Comment', 'Run', 'Schedule', 'Pause', 'Approve', 'Publish'],
       executor: ['View', 'Comment', 'Pause', 'Administer'],
-      approvals: READ_ONLY,
+      /*
+       * Deciding the requests that reach this company.
+       *
+       * Held now for the same reason: `Manager`, `Head` and `Approver` are no longer roles this
+       * product hands out, so a request addressed to one would wait for somebody who does not
+       * exist.
+       *
+       * Separation of duties is not switched off by this. `NoSelfApproval` and `FourEyes` are
+       * platform controls on the decision itself, and holding the permission satisfies neither —
+       * an administrator still cannot decide a request they raised.
+       */
+      approvals: ['View', 'Comment', 'Approve'],
       // `Administer` is new at Prompt 12B: the performance policy — the points per outcome and
       // the badge thresholds — is company configuration, and this is the role that holds every
       // other `Administer`. It also gates the two performance events a *person* may record (a

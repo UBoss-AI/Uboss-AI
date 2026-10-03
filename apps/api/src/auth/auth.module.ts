@@ -14,6 +14,7 @@ import { InvitationService } from './invitation.service.js';
 import { LoginService } from './login.service.js';
 import { MfaLoginService } from './mfa-login.service.js';
 import { MfaService } from './mfa.service.js';
+import { IdentityMailService } from './identity-mail.service.js';
 import { PasswordResetService } from './password-reset.service.js';
 import { CaptchaService } from './captcha.service.js';
 import { PasswordService } from './password.service.js';
@@ -66,6 +67,8 @@ import { SsoService } from './sso/sso.service.js';
     LoginService,
     InvitationService,
     PasswordResetService,
+    // The reset link itself. Identity mail rather than a workspace notification.
+    IdentityMailService,
     MfaService,
     MfaLoginService,
     AuthenticationPolicyService,
@@ -86,6 +89,9 @@ import { SsoService } from './sso/sso.service.js';
     LoginService,
     InvitationService,
     PasswordResetService,
+    // Exported because `AccessModule` sends the activation link when it invites somebody, and
+    // that link is the only part of an invitation the person can act on.
+    IdentityMailService,
     MfaService,
     MfaLoginService,
     AuthenticationPolicyService,

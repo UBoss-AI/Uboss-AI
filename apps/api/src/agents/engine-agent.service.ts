@@ -7,6 +7,11 @@ import {
 
 import {
   AGENT_MEMORY_MODES,
+  TERMINAL_EXCEPTION_STATES,
+  agentScheduleProblems,
+  agentScheduleToBusinessCron,
+  scheduleFromBusinessCron,
+  describeAgentSchedule,
   emptyEngineAgentHealth,
   engineAgentActionsFor,
   mayMoveEngineAgent,
@@ -17,6 +22,7 @@ import {
   type AgentVersionImpact,
   type EngineAgentAction,
   type EngineAgentHealth,
+  type AgentSchedule,
   type EngineAgentStatus,
 } from '@uboss/types';
 
@@ -67,7 +73,14 @@ export interface EngineAgentView {
   versions: EngineAgentVersionView[];
 
   /** From the version in force, so the registry and the configuration cannot disagree. */
+  /** One line for a table cell: the live schedule where there is one, the design intent otherwise. */
   scheduleOrTrigger: string | null;
+  /** The live schedule as a structure, so an editor can open on what is set. Null for none. */
+  schedule: AgentSchedule | null;
+  /** A stored expression this product's editor cannot represent. Null in every ordinary case. */
+  scheduleExpression: string | null;
+  /** The scheduler's own checkpoint, so a screen can say when it last considered this agent. */
+  nextRunAt: string | null;
   skillVersionIds: string[];
 
   /** Tool categories the work needs, and the connection chosen for them. */
@@ -77,15 +90,35 @@ export interface EngineAgentView {
   health: EngineAgentHealth;
 
   /**
-   * Permitted token and cost view.
+   * How much AI this agent has consumed, counted in tokens.
    *
-   * Null throughout until the cost ledger exists. A zero would read as "this agent has cost
-   * nothing", which is a claim, not an absence of data.
+   * ## Tokens, and deliberately not money
+   *
+   * These two fields existed and were permanently null, so the column read `—` on every agent for
+   * as long as the screen has existed. They were briefly replaced with settled spend before the
+   * owner settled the question the other way: **a company is quoted a plan price in money and
+   * everything it consumes is counted in tokens.** That is the arrangement, so this reports
+   * tokens.
+   *
+   * It is also the safer half of the pair. The leak worth avoiding is money *and* tokens on the
+   * same screen — divide one by the other and a reader has a per-million rate to match against a
+   * published price list, which names the provider and exposes the margin. One without the other
+   * divides into nothing. Per-run money therefore does not appear in a company's plane at all; it
+   * stays on the platform plane, where UBoss reads its own economics.
+   *
+   * ## Why null and not zero
+   *
+   * A zero would read as "this agent has consumed nothing", which is a claim. An agent that has
+   * never run has nothing to report, and that is an absence.
    */
   usage: {
     hasData: boolean;
     promptTokens: number | null;
     completionTokens: number | null;
+    /** Both directions added up, which is the figure a person actually compares agents on. */
+    totalTokens: number | null;
+    /** How many charged calls those tokens cover. */
+    calls: number;
     note: string;
   };
 
@@ -251,6 +284,170 @@ export class EngineAgentService {
       archivedByUserId: input.actorUserId,
       summary: `Archived: ${input.reason.trim() || 'no reason given'}`,
       action: 'agent.archived',
+    });
+  }
+
+  /**
+   * Change what an agent is called, and nothing else.
+   *
+   * ## Why this is its own operation
+   *
+   * Because a name is not configuration. Every other change to an agent goes through a version —
+   * the setup an agent ran with has to stay answerable, so altering it in place is forbidden. A
+   * name is a label on the thing, not part of how it works: renaming *Ledger agent* to *Ledger
+   * reconciliation agent* changes nothing a past run did, and forcing it through the version
+   * machinery would create a draft, an impact analysis and possibly an approval for a typo.
+   *
+   * So this writes the one column and leaves the versions alone, and the audit entry says exactly
+   * what moved — which is the whole reason it is permitted to be this easy.
+   *
+   * ## Why `agent-builder: EditDraft` and not `agents: View`
+   *
+   * A rename is visible to everybody in the company and permanent in the record. Whoever may
+   * decide what an agent *is* may decide what it is called; somebody who may only run one may not
+   * rename it out from under the person who built it.
+   */
+  async rename(input: {
+    scope: TenantScope;
+    actorUserId: string;
+    agentId: string;
+    name: string;
+  }): Promise<EngineAgentView> {
+    const context = await this.authorization.contextFor(input.scope, input.actorUserId);
+    await this.authorization.assertCan(context, { module: 'agent-builder', action: 'EditDraft' });
+
+    const name = input.name.trim();
+    if (name.length < 3) {
+      throw new BadRequestException('An agent needs a name of at least three characters.');
+    }
+    if (name.length > 200) {
+      throw new BadRequestException(`That name is ${name.length} characters. Keep it under 200.`);
+    }
+
+    return this.prisma.runInTenantTransaction(input.scope, async () => {
+      const agent = await this.load(input.scope, input.agentId);
+      await this.assertMayTouch(context, agent, 'Publish');
+
+      if (agent.name === name) return this.viewOf(input.scope, agent);
+
+      /*
+       * Checked here so the refusal is a sentence rather than a unique-constraint error.
+       *
+       * `@@unique([tenantId, name])` is what actually guarantees it, and this does not replace
+       * that — two renames racing to the same name still end with one of them refused by the
+       * database. This is so the ordinary case explains itself.
+       */
+      const taken = await this.prisma.client.engineAgent.findFirst({
+        where: { tenantId: input.scope.tenantId, name, id: { not: agent.id } },
+        select: { id: true },
+      });
+      if (taken !== null) {
+        throw new ConflictException(
+          `Another agent in this company is already called "${name}". Agent names are unique so ` +
+            'a run can be traced to one of them.',
+        );
+      }
+
+      const updated = await this.prisma.client.engineAgent.update({
+        where: { id: agent.id },
+        data: { name, updatedByUserId: input.actorUserId, version: { increment: 1 } },
+      });
+
+      await this.auditEvents.appendWithinCurrentScope(input.scope.tenantId, {
+        action: 'agent.renamed',
+        resourceType: 'engine-agent',
+        resourceId: agent.id,
+        actorUserId: input.actorUserId,
+        resourceRef: name,
+        resourceVersion: updated.version,
+        // Both names in the sentence: a trail that records only the new one cannot answer "what
+        // was this called when that run happened", which is the question a rename creates.
+        summary: `Renamed "${agent.name}" to "${name}".`,
+        metadata: { from: agent.name, to: name },
+      });
+
+      return this.viewOf(input.scope, updated);
+    });
+  }
+
+  /**
+   * Put an agent on a schedule, or take it off one.
+   *
+   * ## Why this had to exist
+   *
+   * The scheduler has always read `EngineAgent.scheduleCron` and **nothing has ever written it.**
+   * A company set Run Type to Scheduled, typed a frequency into the builder, saw it on the Engine
+   * Agents table, and the agent never ran — the engine was asking for agents with a cron, finding
+   * none, and going back to sleep. The schedule was a sentence nobody machine-read.
+   *
+   * ## Why a structure rather than a cron string from the browser
+   *
+   * Because a browser that can post a raw expression can post one the parser rejects, and the
+   * refusal would arrive hours later as *an agent that never ran* rather than as a validation
+   * error. The screen sends days and a time; this turns them into the expression the engine reads,
+   * so there is exactly one place where the translation happens and it is this one.
+   *
+   * ## Why `nextRunAt` is cleared
+   *
+   * It is the scheduler's checkpoint — the last moment it considered — not the next firing. A
+   * schedule changed at noon with a checkpoint from this morning would otherwise have the engine
+   * replay the morning's occurrences against the new times. Cleared, the next tick starts from
+   * now, which is what somebody who just changed a schedule expects.
+   */
+  async setSchedule(input: {
+    scope: TenantScope;
+    actorUserId: string;
+    agentId: string;
+    schedule: AgentSchedule | null;
+  }): Promise<EngineAgentView> {
+    const context = await this.authorization.contextFor(input.scope, input.actorUserId);
+    // Scheduling is deciding that an agent runs unattended, which is the `Schedule` action's
+    // whole meaning — a standard Employee holds `Run` and not this, and that distinction is the
+    // point of the two existing separately.
+    await this.authorization.assertCan(context, { module: 'agents', action: 'Schedule' });
+
+    if (input.schedule !== null) {
+      const problems = agentScheduleProblems(input.schedule);
+      if (problems.length > 0) throw new BadRequestException(problems.join(' '));
+    }
+
+    const cron = input.schedule === null ? null : agentScheduleToBusinessCron(input.schedule);
+
+    return this.prisma.runInTenantTransaction(input.scope, async () => {
+      const agent = await this.load(input.scope, input.agentId);
+      await this.assertMayTouch(context, agent, 'Schedule');
+
+      if (agent.status === 'Archived') {
+        throw new ConflictException('An archived agent cannot be scheduled.');
+      }
+
+      const updated = await this.prisma.client.engineAgent.update({
+        where: { id: agent.id },
+        data: {
+          scheduleCron: cron,
+          nextRunAt: null,
+          updatedByUserId: input.actorUserId,
+          version: { increment: 1 },
+        },
+      });
+
+      await this.auditEvents.appendWithinCurrentScope(input.scope.tenantId, {
+        action: cron === null ? 'agent.schedule_cleared' : 'agent.scheduled',
+        resourceType: 'engine-agent',
+        resourceId: agent.id,
+        actorUserId: input.actorUserId,
+        resourceRef: agent.name,
+        resourceVersion: updated.version,
+        summary:
+          cron === null
+            ? `"${agent.name}" will no longer run on a schedule.`
+            : `"${agent.name}" will run: ${describeAgentSchedule(input.schedule!)}.`,
+        // The expression as well as the sentence: the sentence is for a person reading the trail,
+        // the expression is what the engine will actually act on.
+        metadata: { cron, from: agent.scheduleCron },
+      });
+
+      return this.viewOf(input.scope, updated);
     });
   }
 
@@ -871,6 +1068,129 @@ export class EngineAgentService {
     });
   }
 
+  /**
+   * What this agent has actually done.
+   *
+   * ## Counted, never estimated
+   *
+   * Every figure is a row. `successRate` is null until something has finished, because a 0% on an
+   * agent that has only ever been queued reads as failure rather than as silence — which is the
+   * distinction `hasRunData` exists to carry, and the reason the empty shape is a named helper
+   * rather than a literal somebody retypes.
+   *
+   * ## Why the open exceptions are here
+   *
+   * Because "is this agent healthy" is not answered by its own runs alone. A run that completed
+   * and left the Executor an exception is not a success from the company's side, and an operations
+   * person looking at this column wants the one number that says *go and look*.
+   */
+  private async healthOf(scope: TenantScope, engineAgentId: string): Promise<EngineAgentHealth> {
+    const [total, succeeded, failed, openExceptions, newest, agent] = await Promise.all([
+      this.prisma.client.agentRun.count({ where: { tenantId: scope.tenantId, engineAgentId } }),
+      this.prisma.client.agentRun.count({
+        where: { tenantId: scope.tenantId, engineAgentId, state: 'Completed' },
+      }),
+      this.prisma.client.agentRun.count({
+        where: { tenantId: scope.tenantId, engineAgentId, state: { in: ['Failed', 'Cancelled'] } },
+      }),
+      this.prisma.client.executorException.count({
+        where: {
+          tenantId: scope.tenantId,
+          engineAgentId,
+          state: { notIn: [...TERMINAL_EXCEPTION_STATES] },
+        },
+      }),
+      this.prisma.client.agentRun.findFirst({
+        where: { tenantId: scope.tenantId, engineAgentId, finishedAt: { not: null } },
+        orderBy: { finishedAt: 'desc' },
+        select: { finishedAt: true },
+      }),
+      this.prisma.client.engineAgent.findFirst({
+        where: { tenantId: scope.tenantId, id: engineAgentId },
+        select: { nextRunAt: true },
+      }),
+    ]);
+
+    if (total === 0) {
+      return emptyEngineAgentHealth(
+        'No runs yet. This agent has never been started, by a person, a schedule or a workflow ' +
+          'step — the figure is an absence, not a zero, because this summary counts real runs ' +
+          'and never estimates.',
+      );
+    }
+
+    // Only over runs that are over. A queued run is not a failure and must not drag the rate down.
+    const finished = succeeded + failed;
+
+    return {
+      hasRunData: true,
+      totalRuns: total,
+      succeeded,
+      failed,
+      openExceptions,
+      successRate: finished === 0 ? null : Math.round((succeeded / finished) * 100),
+      lastRunAt: newest?.finishedAt?.toISOString() ?? null,
+      nextRunAt: agent?.nextRunAt?.toISOString() ?? null,
+      note:
+        `${total} run${total === 1 ? '' : 's'} recorded. The rate covers runs that have ` +
+        'finished; anything still queued or running is counted in the total and nowhere else.',
+    };
+  }
+
+  /**
+   * How many tokens this agent has used, read from the ledger rather than estimated.
+   *
+   * Only settled work. A `Reserve` is capacity set aside for a run that has not happened, and
+   * counting it would report consumption that never occurred; a `Refund` reverses a charge, and
+   * its token columns are null rather than negative, so it contributes nothing here and the sum
+   * stays a count of tokens actually spent.
+   *
+   * No money column is selected at all. Not an oversight — a company's plane reports tokens, and
+   * the one shape worth refusing is money and tokens together, which divide into a per-million
+   * rate.
+   */
+  private async tokensOf(
+    scope: TenantScope,
+    engineAgentId: string,
+  ): Promise<EngineAgentView['usage']> {
+    const entries = await this.prisma.client.costLedgerEntry.findMany({
+      where: {
+        tenantId: scope.tenantId,
+        engineAgentId,
+        kind: 'Settle',
+      },
+      select: { inputTokens: true, outputTokens: true },
+    });
+
+    if (entries.length === 0) {
+      return {
+        hasData: false,
+        promptTokens: null,
+        completionTokens: null,
+        totalTokens: null,
+        calls: 0,
+        note:
+          'No usage recorded. Null rather than zero: a zero would read as "this agent has used ' +
+          'nothing", which is a claim rather than an absence of data.',
+      };
+    }
+
+    const promptTokens = entries.reduce((sum, entry) => sum + (entry.inputTokens ?? 0), 0);
+    const completionTokens = entries.reduce((sum, entry) => sum + (entry.outputTokens ?? 0), 0);
+
+    return {
+      hasData: true,
+      promptTokens,
+      completionTokens,
+      totalTokens: promptTokens + completionTokens,
+      calls: entries.length,
+      note:
+        `${(promptTokens + completionTokens).toLocaleString()} tokens across ` +
+        `${entries.length} call${entries.length === 1 ? '' : 's'}. Work that is reserved but ` +
+        'unfinished is not counted, because it may still be released.',
+    };
+  }
+
   private async viewOf(
     scope: TenantScope,
     agent: Awaited<ReturnType<EngineAgentService['load']>>,
@@ -885,6 +1205,17 @@ export class EngineAgentService {
     const openDraft = views.find((version) => version.status === 'Draft') ?? null;
     const objectiveIds = await this.objectiveIdsFor(scope, agent.id);
 
+    /*
+     * The stored expression, read back into the shape the editor works in.
+     *
+     * Null for an expression this product did not write — a hand-edited cron with a list of hours
+     * is a schedule the engine honours and the picker cannot draw. That case is reported as a raw
+     * expression below rather than silently simplified, because a simplified copy would overwrite
+     * the real one the moment somebody pressed Save on a screen they had not meant to change.
+     */
+    const schedule =
+      agent.scheduleCron === null ? null : scheduleFromBusinessCron(agent.scheduleCron);
+
     return {
       id: agent.id,
       name: agent.name,
@@ -896,24 +1227,47 @@ export class EngineAgentService {
       currentVersion: current,
       openDraft,
       versions: views,
-      scheduleOrTrigger: current?.setup?.triggerOrFrequency ?? current?.setup?.runType ?? null,
+      /*
+       * What the table shows under "Schedule / trigger".
+       *
+       * The live schedule leads, because it is the one the engine will act on. The builder's
+       * `triggerOrFrequency` is what somebody wrote down when the agent was designed — useful, and
+       * not a promise that anything fires. Showing the intent over the reality is exactly how a
+       * company came to believe an agent was scheduled when it was not.
+       */
+      scheduleOrTrigger:
+        schedule === null
+          ? (current?.setup?.triggerOrFrequency ?? current?.setup?.runType ?? null)
+          : describeAgentSchedule(schedule),
+      /** The schedule as a structure, so the editor can open on what is actually set. */
+      schedule,
+      /**
+       * The raw expression, only when this product's own editor cannot represent it.
+       *
+       * A hand-written cron with a list of hours is a legitimate schedule the engine honours and
+       * the picker cannot draw. Saying so is better than refusing to display it, or than drawing
+       * a simplified version that would overwrite the real one the moment somebody pressed Save.
+       */
+      scheduleExpression:
+        schedule === null && agent.scheduleCron !== null ? agent.scheduleCron : null,
+      nextRunAt: agent.nextRunAt?.toISOString() ?? null,
       skillVersionIds: current?.skillVersionIds ?? [],
       toolCategories: current?.toolCategories ?? [],
       connectionId: current?.setup?.inputConnectionId ?? null,
-      // No runs exist until the run engine arrives, and an empty summary says so rather than
-      // rendering a 0% success rate that reads as failure.
-      health: emptyEngineAgentHealth(
-        'No runs yet. The run engine and its history arrive with the next prompt, and this ' +
-          'summary reports real runs only — it never estimates.',
-      ),
-      usage: {
-        hasData: false,
-        promptTokens: null,
-        completionTokens: null,
-        note:
-          'No usage recorded. Null rather than zero: a zero would read as "this agent has cost ' +
-          'nothing", which is a claim rather than an absence of data.',
-      },
+      /*
+       * The agent's real run history.
+       *
+       * This was a hardcoded empty summary whose note read "the run engine and its history arrive
+       * with the next prompt". The run engine arrived. The note did not change, so the Engine
+       * Agents screen told a company **"No runs yet"** about an agent with six completed runs
+       * sitting in `agent_runs` — while the dashboard counted them and the live strip showed them
+       * happening. Three screens, two answers.
+       *
+       * It still never estimates: `successRate` stays null until something has finished, and a
+       * figure only appears where a row exists to support it.
+       */
+      health: await this.healthOf(scope, agent.id),
+      usage: await this.tokensOf(scope, agent.id),
       actions: engineAgentActionsFor(agent.status as EngineAgentStatus),
       activatedAt: agent.activatedAt?.toISOString() ?? null,
       archivedAt: agent.archivedAt?.toISOString() ?? null,

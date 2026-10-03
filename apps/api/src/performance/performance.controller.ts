@@ -182,9 +182,7 @@ export class PerformanceController {
    */
   @Get(':subjectUserId')
   @RequirePermission({ module: 'performance', action: 'View' })
-  async view(
-    @Param('subjectUserId', new ParseUUIDPipe()) subjectUserId: string,
-  ): Promise<unknown> {
+  async view(@Param('subjectUserId', new ParseUUIDPipe()) subjectUserId: string): Promise<unknown> {
     return this.performance.viewFor({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),

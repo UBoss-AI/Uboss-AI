@@ -701,7 +701,11 @@ export class ApprovalService {
     type?: ApprovalRequestType | undefined;
     /** Only the ones this actor is the named approver for, or a delegate of. */
     mineOnly?: boolean | undefined;
-  }): Promise<{ requests: ApprovalSummary[]; counts: Record<string, number>; people: Record<string, string> }> {
+  }): Promise<{
+    requests: ApprovalSummary[];
+    counts: Record<string, number>;
+    people: Record<string, string>;
+  }> {
     const context = await this.authorization.contextFor(input.scope, input.actorUserId);
     await this.authorization.assertCan(context, { module: 'approvals', action: 'View' });
 
@@ -1588,7 +1592,8 @@ export class ApprovalService {
       ...this.toSummary(
         row,
         now,
-        history.filter((entry) => entry.decision === 'Approve')
+        history
+          .filter((entry) => entry.decision === 'Approve')
           .map((entry) => entry.actorUserId)
           .filter((id, index, all) => all.indexOf(id) === index).length,
       ),
@@ -1669,13 +1674,72 @@ export class ApprovalService {
       type: string;
       title: string;
       namedApproverUserId: string | null;
+      /** Which role is expected to decide, when no one person is. */
+      approverRoleKind: string | null;
       dueAt: Date | null;
     },
   ): Promise<void> {
     if (row.namedApproverUserId === null) {
-      // A role-addressed or four-eyes request has no single recipient. It appears in the queue
-      // for everybody who may decide it; inventing a recipient here would tell one person it is
-      // theirs when it is not.
+      /*
+       * Addressed to a role, so tell everybody who holds it.
+       *
+       * This used to return here and tell nobody. The reasoning was sound as far as it went — a
+       * role-addressed request has no single owner, and naming one would say it was theirs — but
+       * the conclusion was wrong: an employee filed a change request, it landed in the queue, and
+       * **no administrator was told anything at all**. It waited until somebody happened to open
+       * the screen. The client's question was "where does an admin see this", and the honest
+       * answer was "nowhere, unless they go looking".
+       *
+       * So every holder of the role is told, and the wording says it is addressed to the role
+       * rather than to them — which is the distinction the original note was protecting.
+       */
+      if (row.approverRoleKind !== 'CompanyAdmin') return;
+
+      /*
+       * Read inside the tenant scope, not through `companyAdminUserIds`.
+       *
+       * That helper exists for the budget and subscription notices, which run from a scheduler
+       * with no tenant scope at all, so it escalates to a platform operation to do its lookup.
+       * This runs inside `raise`'s tenant transaction, and escalating from there is refused
+       * outright — *"Refusing to escalate a tenant-scoped transaction to a platform operation"*.
+       *
+       * Reading it here is not a workaround for that refusal, it is the correct read: role
+       * assignments are tenant rows, this transaction is already scoped to the right tenant, and
+       * row-level security is doing the filtering rather than a `where` clause that could be
+       * forgotten.
+       */
+      const assignments = await this.prisma.client.roleAssignment.findMany({
+        where: { tenantId: scope.tenantId, roleKind: 'CompanyAdmin' },
+        select: { userId: true },
+      });
+      const admins = [...new Set(assignments.map((entry) => entry.userId))];
+
+      await Promise.all(
+        admins.map((recipientUserId) =>
+          this.notifications.raise({
+            tenantId: scope.tenantId,
+            recipientUserId,
+            kind: 'ApprovalWaiting',
+            title: `Waiting on an administrator: ${row.title}`,
+            body:
+              `A ${APPROVAL_REQUEST_TYPE_LABELS[row.type as ApprovalRequestType] ?? row.type} ` +
+              'request is addressed to the Company Admin role. Any administrator can decide it.',
+            deepLink: `/approvals/${row.id}`,
+            resourceType: 'approval-request',
+            resourceId: row.id,
+            /*
+             * False, deliberately. It is not assigned to this person — it is addressed to a role
+             * they happen to hold, and `assignedToMeUnread` is the count of work that is theirs
+             * alone. Marking it true would put a role's queue into every admin's personal one.
+             */
+            isAssignedToRecipient: false,
+            // Per recipient, so two administrators each get told once and neither suppresses the
+            // other. Re-raising for the same request and person is still deduplicated.
+            dedupeKey: `approval-waiting:${row.id}:${recipientUserId}`,
+            ...(row.dueAt === null ? {} : { escalatesAt: row.dueAt }),
+          }),
+        ),
+      );
       return;
     }
 

@@ -76,39 +76,74 @@ describe('auth routes — a person is never stranded', () => {
    * Both doors, not just the customer one. A member of UBoss staff who cannot get in needs the
    * same way forward as a customer, and the shared flow is what guarantees they get it.
    */
-  it.each(['login/page.tsx', 'internal/login/page.tsx'])('%s renders the shared sign-in flow', (file) => {
-    expect(read(file)).toContain('SignInFlow');
-  });
+  it.each(['login/page.tsx', 'internal/login/page.tsx'])(
+    '%s renders the shared sign-in flow',
+    (file) => {
+      expect(read(file)).toContain('SignInFlow');
+    },
+  );
 });
 
-describe('auth routes — no public company signup', () => {
+describe('auth routes — nobody adds themselves to an existing company', () => {
   /**
-   * The locked rule: UBoss companies are provisioned, never self-served. The only permitted mention
-   * is the disclaimer that says so.
+   * The rule this once held was "UBoss companies are provisioned, never self-served", and it was
+   * right until self-serve registration shipped. Loosening a test to match new behaviour is
+   * usually how a guarantee dies quietly, so what replaces it is the half that did **not**
+   * change, and it is the half that matters:
+   *
+   *   * a person cannot create an identity inside a company that already exists — they are
+   *     invited, and `/activate` enables what somebody else created;
+   *   * a **company** may start its own workspace at `/start`, having proved a work address and
+   *     control of a domain, which admits nobody to anybody else's company.
+   *
+   * The first is an access-control claim. The second is a commercial decision the owner made.
+   * Only the first belongs in a test, and it is the one asserted here.
    */
-  it.each(AUTH_ROUTES)('has no link to a signup route from $route', ({ file }) => {
+  it.each(AUTH_ROUTES)('has no route that creates an account from $route', ({ file }) => {
     const source = read(file);
 
     const links = [...source.matchAll(/href=["'`]([^"'`]+)["'`]/g)].map((match) => match[1] ?? '');
+    // `/start` is deliberately absent from this list: it creates a company, not a membership.
     const offenders = links.filter((href) => /sign-?up|register|create-account|join/i.test(href));
 
     expect(offenders).toEqual([]);
   });
 
-  it('mentions signup only to deny it', () => {
-    const source = readSignInFlow();
-    const mentions = [...source.matchAll(/[^\n]*sign-?up[^\n]*/gi)].map((match) => match[0].trim());
-
-    expect(mentions.length).toBeGreaterThan(0);
-
+  it('tells a visitor they are invited rather than inviting them to join', () => {
     /*
-     * Compared with the punctuation and casing removed, because the disclaimer reaches this
-     * file as the identifier `noPublicSignupNotice` rather than as a sentence. Matching on
-     * prose would have reported the one correct mention in the codebase as a violation.
+     * Read from the component rather than the page, because that is where the sentence lives and
+     * three screens share it. The claim is about what a person is *told*: the one notice on these
+     * screens must say somebody invites you, and must not promise a way in that does not exist.
      */
-    for (const mention of mentions) {
-      const flattened = mention.toLowerCase().replace(/[^a-z]/g, '');
-      expect(flattened).toMatch(/nopublic|notavailable|provisioned|contact/);
-    }
+    const notice = readFileSync(
+      path.join(
+        process.cwd(),
+        '..',
+        '..',
+        'packages',
+        'ui',
+        'src',
+        'shells',
+        'LoginPresentation.tsx',
+      ),
+      'utf8',
+    );
+
+    // A window after the declaration rather than up to the first `}`, which lands inside the JSX
+    // long before the sentence does.
+    const start = notice.indexOf('export function NoPublicSignupNotice');
+    expect(start).toBeGreaterThan(-1);
+    const sentence = notice.slice(start, start + 700);
+
+    expect(sentence).toMatch(/cannot add yourself|invites you/i);
+    // What this exists to prevent: the notice going back to flatly denying a signup the product
+    // now has. It renders on `/activate`, where a stranger reads it.
+    expect(sentence).not.toMatch(/no public signup/i);
+  });
+
+  it('offers starting a workspace, which is the door that does exist', () => {
+    // The other half of the same screen, so the two cannot drift apart again: if the link goes,
+    // the notice above should be revisited, and this failing is how somebody finds out.
+    expect(readSignInFlow()).toContain('href="/start"');
   });
 });

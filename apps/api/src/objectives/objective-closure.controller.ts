@@ -103,7 +103,9 @@ export class ObjectiveClosureController {
   /** The comparison and what is outstanding, before anybody signs anything. */
   @Get('readiness')
   @RequirePermission({ module: 'objective', action: 'View' })
-  async readiness(@Param('objectiveId', new ParseUUIDPipe()) objectiveId: string): Promise<unknown> {
+  async readiness(
+    @Param('objectiveId', new ParseUUIDPipe()) objectiveId: string,
+  ): Promise<unknown> {
     return this.closure.readiness({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -137,7 +139,10 @@ export class ObjectiveClosureController {
 
   @Post('pause')
   @RequirePermission({ module: 'objective', action: 'Publish' })
-  async pause(@Param('objectiveId', new ParseUUIDPipe()) objectiveId: string, @Body() body: PauseDto): Promise<unknown> {
+  async pause(
+    @Param('objectiveId', new ParseUUIDPipe()) objectiveId: string,
+    @Body() body: PauseDto,
+  ): Promise<unknown> {
     return this.closure.pause({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -206,7 +211,10 @@ export class ObjectiveClosureController {
 
   @Post('close')
   @RequirePermission({ module: 'objective', action: 'Publish' })
-  async close(@Param('objectiveId', new ParseUUIDPipe()) objectiveId: string, @Body() body: CloseDto): Promise<unknown> {
+  async close(
+    @Param('objectiveId', new ParseUUIDPipe()) objectiveId: string,
+    @Body() body: CloseDto,
+  ): Promise<unknown> {
     return this.closure.close({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),

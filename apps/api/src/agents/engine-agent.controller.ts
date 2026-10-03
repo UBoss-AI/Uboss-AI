@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -15,9 +16,12 @@ import {
   IsBoolean,
   IsIn,
   IsOptional,
+  IsInt,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
+  Min,
   MinLength,
   ValidateNested,
 } from 'class-validator';
@@ -34,7 +38,9 @@ import {
   ENGINE_AGENT_STATUSES,
   MISSING_DATA_BEHAVIOURS,
   TOOL_ACTION_CATEGORIES,
+  WEEKDAYS,
   type AgentMemoryMode,
+  type Weekday,
 } from '@uboss/types';
 
 import { RequirePermission } from '../authorization/authorization.decorators.js';
@@ -52,6 +58,26 @@ export class PauseAgentDto {
 export class ArchiveAgentDto {
   @IsOptional() @IsString() @MaxLength(500) reason?: string;
   @Allow() _?: unknown;
+}
+
+/** A new name for an agent. The only field, because a rename changes nothing else. */
+export class RenameAgentDto {
+  @IsString() @MaxLength(200) name!: string;
+}
+
+/**
+ * When an agent runs, as a person sets it.
+ *
+ * Days and a time, never a cron expression. A browser that could post a raw expression could post
+ * one the engine's parser rejects, and the refusal would arrive hours later as *an agent that
+ * never ran* instead of as a validation error here. The service does the translation, once.
+ *
+ * All three absent means "take it off its schedule", which is how a screen clears one.
+ */
+export class SetAgentScheduleDto {
+  @IsOptional() @IsArray() @IsIn(WEEKDAYS, { each: true }) weekdays?: Weekday[];
+  @IsOptional() @IsInt() @Min(0) @Max(23) hour?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(59) minute?: number;
 }
 
 export class CreateAgentVersionDto {
@@ -200,6 +226,60 @@ export class EngineAgentController {
       actorUserId: this.currentUserId(),
       agentId,
       reason: body.reason ?? '',
+    });
+  }
+
+  /**
+   * Rename an agent.
+   *
+   * Gated on `agent-builder: EditDraft`, not on an `agents` action: deciding what an agent is
+   * called belongs with deciding what it is. The service checks the same thing again — this
+   * decorator is the route's declaration, not its enforcement.
+   */
+  @Post(':agentId/name')
+  @RequirePermission({ module: 'agent-builder', action: 'EditDraft' })
+  async rename(
+    @Param('agentId', ParseUUIDPipe) agentId: string,
+    @Body() body: RenameAgentDto,
+  ): Promise<unknown> {
+    return this.agents.rename({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
+      agentId,
+      name: body.name,
+    });
+  }
+
+  /**
+   * Set or clear an agent's schedule.
+   *
+   * `agents: Schedule`, not `Run`. Deciding that an agent runs unattended is a different authority
+   * from running one yourself — a standard Employee holds the second and not the first, and that
+   * is the whole reason the two actions exist separately.
+   */
+  @Post(':agentId/schedule')
+  @RequirePermission({ module: 'agents', action: 'Schedule' })
+  async setSchedule(
+    @Param('agentId', ParseUUIDPipe) agentId: string,
+    @Body() body: SetAgentScheduleDto,
+  ): Promise<unknown> {
+    /*
+     * Nothing supplied means "no schedule". An hour without a minute does not: a half-given
+     * schedule is a mistake, and guessing the missing half would put an agent on a time nobody
+     * chose.
+     */
+    const clearing = body.hour === undefined && body.minute === undefined;
+    if (!clearing && (body.hour === undefined || body.minute === undefined)) {
+      throw new BadRequestException('A schedule needs both an hour and a minute.');
+    }
+
+    return this.agents.setSchedule({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
+      agentId,
+      schedule: clearing
+        ? null
+        : { weekdays: body.weekdays ?? [], hour: body.hour!, minute: body.minute! },
     });
   }
 

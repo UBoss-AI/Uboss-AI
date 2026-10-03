@@ -269,7 +269,9 @@ export function Agents() {
                     {i + 1}
                   </span>
                   <span className="flex-1 text-[13.5px] text-[#d4d4d8]">{step.label}</span>
-                  <span className="hidden text-[11.5px] text-[#8b8b93] sm:block">{step.detail}</span>
+                  <span className="hidden text-[11.5px] text-[#8b8b93] sm:block">
+                    {step.detail}
+                  </span>
                 </motion.li>
               ))}
             </ol>

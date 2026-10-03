@@ -1,13 +1,15 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { notificationKind } from '@uboss/types';
 
 import { AuditEventService } from '../audit/audit-event.service.js';
+import { AUTH_CONFIG, type AuthConfig } from '../auth/auth.config.js';
 import type { OutboxMessage } from '../generated/prisma/client.js';
 import { OUTBOX_TOPICS, OutboxRepository } from '../persistence/outbox.repository.js';
 import { PrismaService } from '../persistence/prisma.service.js';
 import type { TenantScope } from '../persistence/tenant-context.js';
 import { UserRepository } from '../persistence/user.repository.js';
+import { PlatformAlertService } from '../platform/platform-alert.service.js';
 import { EmailAdapter, maskEmail } from './email-adapter.js';
 
 export interface DispatchOutcome {
@@ -59,6 +61,16 @@ export class NotificationDispatcherService {
     private readonly users: UserRepository,
     private readonly email: EmailAdapter,
     private readonly auditEvents: AuditEventService,
+    /*
+     * So mail failing reaches somebody by a route that is not mail.
+     *
+     * This is the one failure whose own symptom is that nobody is told about anything, and the
+     * alert webhook is the only channel here that does not depend on the thing that broke.
+     */
+    private readonly alerts: PlatformAlertService,
+    // For the workspace origin. A deep link is stored relative and has to be made openable
+    // before it reaches a mail client, which has nothing to resolve it against.
+    @Inject(AUTH_CONFIG) private readonly config: AuthConfig,
   ) {}
 
   /** Claim what is due and try to deliver it. Safe to call concurrently — `SKIP LOCKED`. */
@@ -94,11 +106,50 @@ export class NotificationDispatcherService {
           this.logger.error(
             `Notification email dead-lettered after ${after.attempts} attempts: ${reason}`,
           );
+
+          /*
+           * And a service alert, because a log line is not a person.
+           *
+           * Mail failing is the one failure whose own symptom is that nobody is told about
+           * anything: invitations, password resets and security alerts all stop, and every
+           * channel that would have reported it is the channel that has stopped. So it goes to
+           * the alert webhook, which does not depend on mail.
+           *
+           * The summary is deliberately the *class* of failure rather than this message, because
+           * alerts deduplicate on it — a provider outage dead-letters everything queued, and a
+           * thousand identical incidents would bury the one somebody needs to read.
+           */
+          await this.alerts.raise({
+            service: 'notifications',
+            severity: 'Critical',
+            summary: 'Notification email is being dead-lettered',
+            detail:
+              `A queued email was abandoned after ${after.attempts} attempts. Last error: ` +
+              `${reason}. Invitations, password resets and security alerts are not reaching ` +
+              `anybody while this persists. Adapter: ${adapter.name}.`,
+            affectedTenantId: message.tenantId,
+          });
         }
       }
     }
 
     return { claimed: claimed.length, delivered, failed, skipped, adapter };
+  }
+
+  /**
+   * A workspace-relative deep link, made openable.
+   *
+   * The link is stored relative on purpose — a database CHECK requires it, so nothing can point
+   * an in-app notification off-site. Email is the one place that cannot use it: a mail client has
+   * no origin to resolve `/login` against, and it renders as text nobody can click.
+   *
+   * Left alone if it is already absolute, so a future caller that stores a full URL is not
+   * mangled into a double origin.
+   */
+  private absolute(deepLink: string): string {
+    if (/^https?:\/\//i.test(deepLink)) return deepLink;
+    const base = (this.config.webBaseUrl ?? '').replace(/\/+$/, '');
+    return `${base}${deepLink.startsWith('/') ? '' : '/'}${deepLink}`;
   }
 
   private async deliver(message: OutboxMessage): Promise<void> {
@@ -145,7 +196,15 @@ export class NotificationDispatcherService {
           : notification.title,
       text:
         `${notification.body}\n\n` +
-        `Open it: ${notification.deepLink}\n\n` +
+        /*
+         * An address a mail client can open.
+         *
+         * `deepLink` is workspace-relative by design — the database refuses anything else, so an
+         * in-app notification cannot be made to point off-site. In an email that same value
+         * rendered as `Open it: /login`, which is not a link and cannot be clicked. Seen in a
+         * real inbox, which is the only place it shows.
+         */
+        `Open it: ${this.absolute(notification.deepLink)}\n\n` +
         (notification.requiresAcknowledgement
           ? 'This alert needs your acknowledgement. Opening it is not enough.\n'
           : '') +

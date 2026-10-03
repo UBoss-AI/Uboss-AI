@@ -17,7 +17,12 @@ import { getActor, getCorrelationId } from '../src/request-context/request-conte
 import { RequestActorInterceptor } from '../src/tenancy/request-actor.interceptor.js';
 import { TenantContextService } from '../src/tenancy/tenant-context.service.js';
 import { TenantGuard, WORKSPACE_HEADER } from '../src/tenancy/tenant.guard.js';
-import { AllowAnonymous, PlatformOnly, TenantScoped } from '../src/tenancy/tenancy.decorators.js';
+import {
+  AllowAnonymous,
+  AllowedWhenReadOnly,
+  PlatformOnly,
+  TenantScoped,
+} from '../src/tenancy/tenancy.decorators.js';
 import {
   activateMembership,
   activateTenant,
@@ -82,6 +87,20 @@ class ProbeController {
   @PlatformOnly()
   masterRoute() {
     return { actor: getActor() };
+  }
+
+  /**
+   * A write that stays open while the company is read-only — the shape of the payment routes.
+   *
+   * Stands in for `POST /tenants/:id/billing/checkout`, which carries the same decorator for the
+   * same reason: a company that stopped paying is in read-only, and paying is a write. Without
+   * the waiver the product would show a customer a Pay button they are forbidden to press.
+   */
+  @Post('workspace/pay')
+  @TenantScoped()
+  @AllowedWhenReadOnly()
+  workspacePay() {
+    return { paid: true, actor: getActor() };
   }
 
   /** Deliberately undecorated, to prove the guard denies by default. */
@@ -380,6 +399,38 @@ describe('tenancy at the request layer (e2e)', () => {
         .expect(403);
 
       assert.match(write.body.message, /read-only/i);
+    });
+
+    it('still lets a read-only company pay, because that is the way out', async () => {
+      await setTenantLifecycle(ctx, tenantA.id, 'ReadOnly');
+
+      // The same company, the same person, the same HTTP method as the refused write above. The
+      // only difference is the decorator on the route — which is the entire point: read-only
+      // stops the data moving, it does not stop the customer settling up.
+      await request(app.getHttpServer())
+        .post('/probe/workspace/pay')
+        .set(DEV_ACTOR_HEADER, personA)
+        .set(WORKSPACE_HEADER, tenantA.id)
+        .expect(201);
+    });
+
+    it('does not let a suspended company pay, because it cannot be opened at all', async () => {
+      await setTenantLifecycle(ctx, tenantA.id, 'Suspended');
+
+      /*
+       * The waiver is narrow on purpose.
+       *
+       * `Suspended` refuses *access*, not merely writes, so the guard stops before it ever
+       * reaches the read-only question. A suspension is a deliberate act by somebody at UBoss and
+       * is not something a customer can pay their way out of.
+       */
+      const response = await request(app.getHttpServer())
+        .post('/probe/workspace/pay')
+        .set(DEV_ACTOR_HEADER, personA)
+        .set(WORKSPACE_HEADER, tenantA.id)
+        .expect(403);
+
+      assert.match(response.body.message, /suspended/i);
     });
 
     it('allows both when the company is Active', async () => {

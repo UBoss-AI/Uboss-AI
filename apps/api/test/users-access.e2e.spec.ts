@@ -19,6 +19,7 @@ import { UserAccessService } from '../src/access/user-access.service.js';
 import { AuditEventService } from '../src/audit/audit-event.service.js';
 import { SecurityEventService } from '../src/audit/security-event.service.js';
 import { AUTH_CONFIG, loadAuthConfig } from '../src/auth/auth.config.js';
+import { IdentityMailService } from '../src/auth/identity-mail.service.js';
 import { InvitationService } from '../src/auth/invitation.service.js';
 import { PasswordService } from '../src/auth/password.service.js';
 import { SecurityEventPublisher } from '../src/auth/security-event.publisher.js';
@@ -173,6 +174,8 @@ describe('users & access (e2e)', () => {
         { provide: SecretsVault, useClass: LocalSealedSecretsVault },
         { provide: ConnectorAdapter, useClass: MockConnectorAdapter },
         { provide: EmailAdapter, useClass: LoggingEmailAdapter },
+        // The activation link, which is the only part of an invitation a person can act on.
+        IdentityMailService,
         PerformanceService,
         MemoryService,
         OffboardingService,
@@ -490,6 +493,47 @@ describe('users & access (e2e)', () => {
       assert.match(readiness.summary, /employment record/);
     });
 
+    /*
+     * The same administrator, once they are in, is not still "missing" it.
+     *
+     * The rule above is a gate and is right to be narrow. What it produced afterwards was a
+     * warning on Users & Access against the company's own administrator — Active, working, and
+     * flagged "needs an employment record" — because they had built the hierarchy underneath
+     * themselves and so closed their own exemption. Nothing could clear it: the action it implied
+     * was filing the owner of the company under one of their own departments.
+     *
+     * The pair below is the point. Before activation the gate is unchanged; after activation the
+     * founding administrator is not described as unready.
+     */
+    it('stops asking the founding administrator for one once they are active', () => {
+      const gate = {
+        userType: 'InternalUser',
+        accountState: 'InvitePending',
+        employment: null,
+        roleCount: 1,
+        companyHasReportingRoot: true,
+        hasBootstrapRole: true,
+      } as const;
+
+      assert.equal(activationReadiness(gate).ready, false);
+      assert.equal(activationReadiness({ ...gate, accountState: 'Active' }).ready, true);
+    });
+
+    it('still flags an ordinary active employee who has no employment record', () => {
+      // The exemption is the bootstrap grant, not being active. Somebody who activated without a
+      // record is a real gap and keeps its warning.
+      const readiness = activationReadiness({
+        userType: 'InternalUser',
+        accountState: 'Active',
+        employment: null,
+        roleCount: 1,
+        companyHasReportingRoot: true,
+        hasBootstrapRole: false,
+      });
+      assert.equal(readiness.ready, false);
+      assert.match(readiness.summary, /employment record/);
+    });
+
     it('still requires employment for an ordinary invitee into an empty company', () => {
       const readiness = activationReadiness({
         userType: 'InternalUser',
@@ -560,6 +604,48 @@ describe('users & access (e2e)', () => {
       assert.equal(invited.userId, person.userId);
       assert.equal(invited.ubossUniqueId, person.ubossUniqueId);
       assert.equal(usersAfter, usersBefore);
+    });
+
+    it('emails an activation link the person can actually open', async () => {
+      /*
+       * The invitation used to arrive and be unusable.
+       *
+       * The only email was the in-app notification, rendered for a bell: *"Activate your account
+       * to reach this workspace. The activation link was emailed to you"* — in the email that was
+       * supposed to *be* that link — followed by `Open it: /login`, a workspace-relative path no
+       * mail client can open. The token was minted, hashed, stored, and discarded by everything
+       * downstream: exactly the shape the password reset had.
+       *
+       * Found by sending one to a real inbox, which is the only place it shows.
+       */
+      const person = await addHierarchyPerson('Linked Person', 'E-260', '40218837557', adminId);
+      const adapter = app.get(EmailAdapter) as LoggingEmailAdapter;
+      adapter.sent.length = 0;
+
+      await invitations().inviteExistingPerson({
+        scope: scope(),
+        actorUserId: adminId,
+        subjectUserId: person.userId,
+        workEmail: 'linked@access.example',
+      });
+
+      const activation = adapter.sent.find((mail) => /invited/i.test(mail.subject));
+      assert.ok(activation, 'no invitation email was sent');
+      assert.equal(activation.to, 'linked@access.example');
+
+      // An absolute link carrying the token, which is the whole point of the message.
+      assert.match(
+        activation.text,
+        /https?:\/\/[^\s]+\/activate\?token=[^\s]+/,
+        'the invitation carries no activation link',
+      );
+
+      // And it no longer refers the reader to an email they are already reading.
+      assert.doesNotMatch(
+        activation.text,
+        /was emailed to you/i,
+        'the invitation still points at some other email for the link',
+      );
     });
 
     it('notifies the person that they were invited, and again when it is resent', async () => {
@@ -1122,7 +1208,12 @@ describe('users & access (e2e)', () => {
        * person keeps their access. On their last day: the access ends and the employment closes.
        */
       const leaver = await addHierarchyPerson('Leaver', 'E-901', '40218837551', adminId);
-      const report = await addHierarchyPerson('Their Report', 'E-902', '29876543210', leaver.userId);
+      const report = await addHierarchyPerson(
+        'Their Report',
+        'E-902',
+        '29876543210',
+        leaver.userId,
+      );
 
       const outcome = await offboardings().offboard({
         scope: scope(),
@@ -1182,10 +1273,7 @@ describe('users & access (e2e)', () => {
       assert.ok(after.roles.length > 0, 'the fixture lost its premise');
       for (const role of after.roles) {
         assert.ok(role.expiresAt !== null, 'a role outlived the notice period');
-        assert.ok(
-          role.expiresAt.getTime() > Date.now(),
-          'the notice ended before it began',
-        );
+        assert.ok(role.expiresAt.getTime() > Date.now(), 'the notice ended before it began');
         assert.ok(
           role.expiresAt.getTime() < Date.now() + 31 * 24 * 60 * 60 * 1000,
           'the end date is further away than the notice given',
@@ -1812,30 +1900,44 @@ describe('users & access (e2e)', () => {
     const grant = (userId: string, body: Record<string, unknown>, uboss = adminUboss) =>
       as(agent().post(`/tenants/${tenantId}/access/people/${userId}/roles`), uboss).send(body);
 
+    /*
+     * These used to grant `Manager` and `Approver`.
+     *
+     * A company cannot grant either any more — not merely because the screen stopped offering
+     * them, but because the route refuses them, which is what the test below this group asserts.
+     * So they grant what a company does hand out.
+     *
+     * Each one takes a person of its own rather than reusing `employeeId`. Making that particular
+     * employee a company administrator would hand them `users:ManageAccess`, and the test further
+     * down that asserts an employee is refused outright would then be asserting nothing.
+     */
     it('lets a company administrator grant a role and a scope', async () => {
-      const response = await grant(employeeId, {
-        roleKind: 'Manager',
-        scopeKind: 'TeamSubtree',
-        justification: 'Stepping up to run the team.',
+      const subject = await addHierarchyPerson('Granted Admin', 'E-910', '29876543211', adminId);
+
+      const response = await grant(subject.userId, {
+        roleKind: 'CompanyAdmin',
+        scopeKind: 'WholeCompany',
+        justification: 'Taking over administration of the company.',
       }).expect(201);
 
       const body = response.body as { id: string };
       assert.ok(body.id, 'no assignment was returned');
 
       const listed = await as(
-        agent().get(`/tenants/${tenantId}/access/people/${employeeId}/roles`),
+        agent().get(`/tenants/${tenantId}/access/people/${subject.userId}/roles`),
         adminUboss,
       ).expect(200);
       const assignments = (listed.body as { assignments: { roleKind: string }[] }).assignments;
-      assert.ok(assignments.some((row) => row.roleKind === 'Manager'));
+      assert.ok(assignments.some((row) => row.roleKind === 'CompanyAdmin'));
     });
 
     it('records the grant as security activity, with who and why', async () => {
-      await grant(employeeId, {
-        roleKind: 'Approver',
-        scopeKind: 'SelectedResource',
-        selectedResourceIds: ['obj-1'],
-        justification: 'Covering approvals while the head is away.',
+      const subject = await addHierarchyPerson('Recorded Grant', 'E-911', '29876543212', adminId);
+
+      await grant(subject.userId, {
+        roleKind: 'CompanyAdmin',
+        scopeKind: 'WholeCompany',
+        justification: 'Covering administration while the founder is away.',
       }).expect(201);
 
       const events = await ctx.prisma.runAsPlatformOperation(() =>
@@ -1857,7 +1959,12 @@ describe('users & access (e2e)', () => {
     });
 
     it('refuses a grant to a suspended account, and to an offboarded one', async () => {
-      const subject = await addHierarchyPerson('Suspended Subject', 'E-901', '29876543210', adminId);
+      const subject = await addHierarchyPerson(
+        'Suspended Subject',
+        'E-901',
+        '29876543210',
+        adminId,
+      );
       for (const state of ['Suspended', 'Offboarded'] as const) {
         await ctx.prisma.runAsPlatformOperation(() =>
           ctx.prisma.client.tenantMembership.updateMany({
@@ -1867,8 +1974,8 @@ describe('users & access (e2e)', () => {
         );
 
         const response = await grant(subject.userId, {
-          roleKind: 'Manager',
-          scopeKind: 'TeamSubtree',
+          roleKind: 'CompanyAdmin',
+          scopeKind: 'WholeCompany',
         }).expect(400);
         assert.match(
           (response.body as { message: string }).message,
@@ -1883,13 +1990,17 @@ describe('users & access (e2e)', () => {
         scopeKind: 'WholeCompany',
       }).expect(400);
 
-      assert.match((response.body as { message: string }).message, /cannot assign a role to yourself/i);
+      assert.match(
+        (response.body as { message: string }).message,
+        /cannot assign a role to yourself/i,
+      );
     });
 
     it('revokes a role, and refuses an assignment id from another company', async () => {
-      const created = await grant(employeeId, {
-        roleKind: 'Manager',
-        scopeKind: 'TeamSubtree',
+      const subject = await addHierarchyPerson('Revoked Admin', 'E-912', '29876543213', adminId);
+      const created = await grant(subject.userId, {
+        roleKind: 'CompanyAdmin',
+        scopeKind: 'WholeCompany',
       }).expect(201);
       const assignmentId = (created.body as { id: string }).id;
 
@@ -1928,12 +2039,48 @@ describe('users & access (e2e)', () => {
     });
 
     it('refuses somebody without ManageAccess outright', async () => {
+      // A grantable role on purpose: a body that the validator would reject anyway would leave
+      // this passing on ordering — guards run before pipes — rather than on the permission.
       await as(
         agent().post(`/tenants/${tenantId}/access/people/${employeeId}/roles`),
         employeeUboss,
       )
-        .send({ roleKind: 'Manager', scopeKind: 'TeamSubtree' })
+        .send({ roleKind: 'Employee', scopeKind: 'OwnWork' })
         .expect(403);
+    });
+
+    it('refuses a role a company no longer hands out, at the route and not only in the list', async () => {
+      /*
+       * The list had already narrowed to two roles; this route had not, so `roleKind: "Manager"`
+       * posted straight at it still created an assignment. Nothing escalated — every retired role
+       * is narrower than `CompanyAdmin`, which the caller already holds — but a company could end
+       * up holding roles its own administrator was never shown, and no screen would explain them.
+       *
+       * All four retired roles, because it would be easy to fix one and leave the rest.
+       */
+      for (const roleKind of ['Manager', 'Head', 'Approver', 'Auditor'] as const) {
+        const response = await grant(employeeId, {
+          roleKind,
+          scopeKind: 'TeamSubtree',
+        }).expect(400);
+
+        assert.match(
+          JSON.stringify((response.body as { message: unknown }).message),
+          /roleKind must be one of/i,
+          `${roleKind} was not refused with a message naming the roles a company may grant`,
+        );
+      }
+
+      const held = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.roleAssignment.count({
+          where: {
+            tenantId,
+            userId: employeeId,
+            roleKind: { in: ['Manager', 'Head', 'Approver', 'Auditor'] },
+          },
+        }),
+      );
+      assert.equal(held, 0, 'a retired role reached the database');
     });
 
     /*
@@ -1976,14 +2123,29 @@ describe('users & access (e2e)', () => {
       );
     });
 
-    it('says which roles this administrator may hand out', async () => {
+    it('offers a company the two roles it hands out, and no others', async () => {
+      /*
+       * This asserted six or more, back when a company could grant `Manager`, `Head`,
+       * `Approver` and `Auditor` as well.
+       *
+       * Those four existed to carry approvals between the administrator who defines work and the
+       * employee who does it, and by the client's decision nothing sits between those two any
+       * more. Offering a role whose whole purpose has gone would be offering somewhere for work
+       * to stop for ever.
+       *
+       * The templates are not deleted — people already hold them, and their permissions still
+       * have to be read — and the platform console still sees the whole catalogue for companies
+       * provisioned before this. Only what a company may newly grant has narrowed.
+       */
       const response = await as(
         agent().get(`/tenants/${tenantId}/access/roles`),
         adminUboss,
       ).expect(200);
 
       const body = response.body as { roles: { kind: string; youMayGrant: boolean }[] };
-      assert.ok(body.roles.length >= 6, 'the catalogue is empty');
+      const kinds = body.roles.map((role) => role.kind).sort();
+
+      assert.deepEqual(kinds, ['CompanyAdmin', 'Employee']);
       assert.ok(
         body.roles.every((role) => role.youMayGrant),
         'a company administrator was told they may not grant something in their own company',

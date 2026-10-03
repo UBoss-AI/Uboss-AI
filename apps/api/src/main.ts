@@ -2,6 +2,7 @@ import 'reflect-metadata';
 
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 import type { NextFunction, Request, Response } from 'express';
@@ -41,8 +42,37 @@ function parseCorsOrigins(raw: string | undefined): string[] {
 async function bootstrap(): Promise<void> {
   // `bodyParser: false` so the JSON limit can differ by route — see below. Nest's default parser
   // is replaced rather than supplemented, because two parsers would both consume the stream.
-  const app = await NestFactory.create(AppModule, { bufferLogs: true, bodyParser: false });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true,
+    bodyParser: false,
+  });
   const logger = new Logger('Bootstrap');
+
+  /**
+   * Who the caller is, when something else accepted the connection.
+   *
+   * In production this process never talks to a browser. Caddy terminates TLS and proxies to it
+   * over a Docker network, so `request.ip` is the gateway container's address — the same address
+   * for every person in every company, on every request. Three things quietly depend on it being
+   * the real one:
+   *
+   * - **New-device sign-in alerts.** `SessionService.establish` decides "new" by whether this
+   *   person has been seen from this coarse location before. One shared address means every
+   *   location looks familiar, so the alert never fires again after the first sign-in — a
+   *   security feature that is present, tested, and dead.
+   * - **The security trail.** Every event records where it came from. A trail that names the
+   *   proxy on all of them answers "who did this from where" with the same wrong answer each
+   *   time, which is worse than recording nothing because it reads as evidence.
+   * - **Password-reset throttling**, which is per-origin and would become one bucket shared by
+   *   everybody — too loose for an attacker and too tight for a real company.
+   *
+   * `1`, not `true`. One hop, because there is exactly one proxy in front of this. `true` trusts
+   * the whole `X-Forwarded-For` chain, which means anybody who can reach the process can claim
+   * any address they like by sending the header themselves — and on a stack where the API is on
+   * an `internal: true` network, trusting one hop is both sufficient and the furthest it is safe
+   * to go.
+   */
+  app.set('trust proxy', 1);
 
   // Security headers by default rather than as a later retrofit.
   app.use(helmet());
@@ -137,49 +167,49 @@ async function bootstrap(): Promise<void> {
     const document = annotateGuards(
       app,
       SwaggerModule.createDocument(
-      app,
-      new DocumentBuilder()
-        .setTitle('UBoss AI AMS API')
-        .setDescription(
-          'The company plane lives under `/tenants/{tenantId}`; the platform plane under ' +
-            '`/platform`. Every route states the permission it requires as `module:Action`, ' +
-            'which is the same vocabulary the product enforces — a role that does not hold it ' +
-            'is refused with 403 and a reason. Request body schemas are not derived: this ' +
-            'workspace builds with plain tsc, so the Swagger CLI plugin does not run.',
-        )
-        .setVersion('0.1.0')
-        .addCookieAuth('uboss_session', {
-          type: 'apiKey',
-          in: 'cookie',
-          name: 'uboss_session',
-          description:
-            'Set by POST /auth/login. Opaque and high-entropy; only its hash is stored, so a ' +
-            'tampered value matches no session.',
-        })
-        .addApiKey(
-          {
+        app,
+        new DocumentBuilder()
+          .setTitle('UBoss AI AMS API')
+          .setDescription(
+            'The company plane lives under `/tenants/{tenantId}`; the platform plane under ' +
+              '`/platform`. Every route states the permission it requires as `module:Action`, ' +
+              'which is the same vocabulary the product enforces — a role that does not hold it ' +
+              'is refused with 403 and a reason. Request body schemas are not derived: this ' +
+              'workspace builds with plain tsc, so the Swagger CLI plugin does not run.',
+          )
+          .setVersion('0.1.0')
+          .addCookieAuth('uboss_session', {
             type: 'apiKey',
-            in: 'header',
-            name: WORKSPACE_HEADER,
+            in: 'cookie',
+            name: 'uboss_session',
             description:
-              'The workspace this request is for. Required by every `/tenants/{tenantId}` ' +
-              'route: the tenant guard refuses when it is missing or disagrees with the path.',
-          },
-          WORKSPACE_HEADER,
-        )
-        .addApiKey(
-          {
-            type: 'apiKey',
-            in: 'header',
-            name: DEV_ACTOR_HEADER,
-            description:
-              'Development only, and only when AUTH_DEV_HEADERS_ENABLED=true. Names the acting ' +
-              'person by UBoss unique id, so a suite can act as somebody without a session. It ' +
-              'is refused outright when the flag is off.',
-          },
-          DEV_ACTOR_HEADER,
-        )
-        .build(),
+              'Set by POST /auth/login. Opaque and high-entropy; only its hash is stored, so a ' +
+              'tampered value matches no session.',
+          })
+          .addApiKey(
+            {
+              type: 'apiKey',
+              in: 'header',
+              name: WORKSPACE_HEADER,
+              description:
+                'The workspace this request is for. Required by every `/tenants/{tenantId}` ' +
+                'route: the tenant guard refuses when it is missing or disagrees with the path.',
+            },
+            WORKSPACE_HEADER,
+          )
+          .addApiKey(
+            {
+              type: 'apiKey',
+              in: 'header',
+              name: DEV_ACTOR_HEADER,
+              description:
+                'Development only, and only when AUTH_DEV_HEADERS_ENABLED=true. Names the acting ' +
+                'person by UBoss unique id, so a suite can act as somebody without a session. It ' +
+                'is refused outright when the flag is off.',
+            },
+            DEV_ACTOR_HEADER,
+          )
+          .build(),
       ),
     );
 

@@ -31,6 +31,7 @@ import { LocalSealedSecretsVault, SecretsVault } from '../src/connections/secret
 
 import { EmailAdapter, LoggingEmailAdapter } from '../src/notifications/email-adapter.js';
 import { NotificationDispatcherService } from '../src/notifications/notification-dispatcher.service.js';
+import { PlatformAlertService } from '../src/platform/platform-alert.service.js';
 import { NotificationOperationsController } from '../src/notifications/notification-operations.controller.js';
 import { NotificationController } from '../src/notifications/notification.controller.js';
 import { NotificationService } from '../src/notifications/notification.service.js';
@@ -144,6 +145,9 @@ describe('notifications and escalation (e2e)', () => {
         AuthorizationService,
         NotificationService,
         NotificationDispatcherService,
+        // The dispatcher raises a service alert when mail starts dead-lettering — the one failure
+        // whose own symptom is that nobody is told about anything.
+        PlatformAlertService,
         // The real adapter, not a stub: it records what it was asked to send, which is exactly
         // what these tests need to assert, and it is what a deployment without a mail provider
         // actually runs.
@@ -327,8 +331,17 @@ describe('notifications and escalation (e2e)', () => {
 
   // =========================================================================
   describe('the catalogue', () => {
-    it('declares the client’s six initial sources plus the dependency release', () => {
-      assert.equal(NOTIFICATION_KINDS.length, 7);
+    it('declares the client’s six initial sources, the dependency release and the badge', () => {
+      /*
+       * `Badge` is the eighth.
+       *
+       * Crossing a performance threshold changed a row and wrote an audit event, and the person
+       * whose badge it was found out by opening the screen. It is its own kind rather than
+       * borrowing one: a badge is somebody's standing, not work waiting on them, and folding it
+       * into an existing kind would either silence something else along with it or make it
+       * unmutable for no reason.
+       */
+      assert.equal(NOTIFICATION_KINDS.length, 9);
       for (const kind of [
         'Invitation',
         'ApprovalWaiting',
@@ -337,6 +350,8 @@ describe('notifications and escalation (e2e)', () => {
         'BudgetThreshold',
         'SecurityEvent',
         'WorkReady',
+        'Badge',
+        'SubscriptionLapsed',
       ]) {
         assert.ok((NOTIFICATION_KINDS as readonly string[]).includes(kind), kind);
       }
@@ -353,7 +368,10 @@ describe('notifications and escalation (e2e)', () => {
     });
 
     it('makes security alerts mandatory at every severity, and criticals mandatory of any kind', () => {
-      assert.deepEqual([...ALWAYS_MANDATORY_KINDS], ['SecurityEvent']);
+      // `SubscriptionLapsed` is the second unmutable kind: muting it means discovering that the
+      // workspace has gone read-only by failing to save, which is what read-only exists to avoid.
+      // Definition order, which puts the commercial kind before the security one.
+      assert.deepEqual([...ALWAYS_MANDATORY_KINDS], ['SubscriptionLapsed', 'SecurityEvent']);
 
       assert.equal(isMandatoryNotification({ kind: 'SecurityEvent', severity: 'Info' }), true);
       assert.equal(isMandatoryNotification({ kind: 'SecurityEvent', severity: 'Warning' }), true);
@@ -526,7 +544,9 @@ describe('notifications and escalation (e2e)', () => {
     it('reports the documented default for a kind nobody has configured', async () => {
       const view = await notifications().preferencesFor({ scope: scope(), userId: employeeId });
 
-      assert.equal(view.preferences.length, 7);
+      // One row per kind, so this moves whenever the catalogue does. Nine since SubscriptionLapsed
+      // joined them — a company used to lose write access with nobody being told.
+      assert.equal(view.preferences.length, 9);
       const approvals = view.preferences.find((row) => row.kind === 'ApprovalWaiting');
       assert.deepEqual(
         {
@@ -904,6 +924,21 @@ describe('notifications and escalation (e2e)', () => {
       assert.equal(email().sent.length, 1);
       assert.match(email().sent[0]?.subject ?? '', /needs your approval/i);
       assert.match(email().sent[0]?.text ?? '', /\/approvals\/A-1/);
+
+      /*
+       * An address a mail client can actually open.
+       *
+       * The deep link is stored workspace-relative — a database CHECK requires it, so an in-app
+       * notification cannot be pointed off-site. Email is the one place that cannot use it: a
+       * mail client has no origin to resolve `/approvals/A-1` against, and it rendered as
+       * `Open it: /approvals/A-1`, which is text nobody can click. Seen in a real inbox, which is
+       * the only place it shows.
+       */
+      assert.match(
+        email().sent[0]?.text ?? '',
+        /Open it: https?:\/\/[^/]+\/approvals\/A-1/,
+        'the email carries a relative path rather than a link',
+      );
 
       const delivered = await ctx.prisma.runAsPlatformOperation(() =>
         ctx.prisma.client.outboxMessage.findFirst({ where: { topic: 'notification.email' } }),
@@ -1283,6 +1318,32 @@ describe('notifications and escalation (e2e)', () => {
       const growth = await ctx.prisma.runAsPlatformOperation(() =>
         ctx.prisma.client.plan.findUnique({ where: { code: 'growth' } }),
       );
+
+      /*
+       * The wallet, because that is where a company's spend actually lives.
+       *
+       * This fixture used to set `ai_consumed_minor` on the subscription and the sweep used to
+       * read it — and between them they tested a path the product never takes, because nothing
+       * writes that column. Every one of these tests passed while the alert could not fire for a
+       * single real company.
+       *
+       * Setting up the wallet is what the running product does: a settled call moves `used_minor`
+       * through the ledger, and the hard stop refuses the next call against the same figure. A
+       * test built on it is a test of the thing being shipped.
+       */
+      await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.budgetWallet.create({
+          data: {
+            tenantId: input.tenant ?? tenantId,
+            scope: 'Company',
+            currency: 'INR',
+            allowanceMinor: input.allowance,
+            usedMinor: input.consumed,
+            periodStart: new Date(),
+          },
+        }),
+      );
+
       return ctx.prisma.runAsPlatformOperation(() =>
         ctx.prisma.client.tenantSubscription.create({
           data: {
@@ -1293,8 +1354,9 @@ describe('notifications and escalation (e2e)', () => {
             billingCycle: 'Annual',
             seatsLicensed: input.seats ?? 50,
             renewsAt: new Date(Date.now() + 200 * 86_400_000),
+            // The commercial record of what was sold. Read by nothing that decides anything —
+            // kept so a difference between sold and enforced stays visible.
             aiAllowanceMinor: input.allowance,
-            aiConsumedMinor: input.consumed,
           },
         }),
       );
@@ -1363,13 +1425,15 @@ describe('notifications and escalation (e2e)', () => {
     });
 
     it('notifies again at the next threshold', async () => {
-      const subscription = await subscribe({ allowance: 100_000, consumed: 82_000 });
+      await subscribe({ allowance: 100_000, consumed: 82_000 });
       await budgets().raiseDueAlerts();
 
+      // Spending more moves the wallet, which is the only thing that moves when a real call
+      // settles.
       await ctx.prisma.runAsPlatformOperation(() =>
-        ctx.prisma.client.tenantSubscription.update({
-          where: { id: subscription.id },
-          data: { aiConsumedMinor: 100_000 },
+        ctx.prisma.client.budgetWallet.updateMany({
+          where: { tenantId, scope: 'Company', subjectId: null },
+          data: { usedMinor: 100_000 },
         }),
       );
       const second = await budgets().raiseDueAlerts();
@@ -1467,7 +1531,8 @@ describe('notifications and escalation (e2e)', () => {
         agent().get(`/tenants/${tenantId}/notifications/preferences`),
         employeeUboss,
       ).expect(200);
-      assert.equal(view.body.preferences.length, 7);
+      // Eight since `Badge` joined the catalogue — one preference row per kind.
+      assert.equal(view.body.preferences.length, 9);
       assert.match(view.body.note, /cannot be turned off/i);
 
       await as(agent().put(`/tenants/${tenantId}/notifications/preferences`), employeeUboss)

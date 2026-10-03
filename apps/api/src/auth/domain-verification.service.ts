@@ -165,42 +165,24 @@ export class DomainVerificationService {
       return this.reload(scope, claim.id);
     }
 
-    const recordName = this.recordNameFor(claim.domain);
-    let records: string[][];
+    /*
+     * The proof itself lives in `proveControlOf`, which is also what self-serve registration
+     * calls before any company exists. One definition of what counts as proof; this method is
+     * only what to *do* about the answer.
+     */
+    const proof = await this.proveControlOf(claim.domain, claim.verificationToken);
 
-    try {
-      records = await this.dns.resolveTxt(recordName);
-    } catch (cause) {
-      // ENOTFOUND / ENODATA is the ordinary "you have not created it yet" case, so the message
-      // says what to do rather than reporting a DNS error code at the reader.
-      const code = (cause as { code?: string }).code ?? 'unknown';
-      const reason =
-        code === 'ENOTFOUND' || code === 'ENODATA'
-          ? `No TXT record was found at ${recordName}. It can take a few minutes to propagate after you create it.`
-          : `The DNS lookup for ${recordName} failed (${code}).`;
-
+    if (!proof.proved) {
       await this.prisma.runInTenantTransaction(scope, () =>
-        this.enterprise.markDomainFailed(scope, claim.id, now, reason),
+        this.enterprise.markDomainFailed(scope, claim.id, now, proof.reason),
       );
-      await this.recordFailure(scope, claim.id, claim.domain, code, actorUserId);
-      return this.reload(scope, claim.id);
-    }
-
-    // A TXT record arrives as an array of string chunks that must be concatenated: values over
-    // 255 bytes are split, and treating each chunk as a separate value silently fails to match.
-    const values = records.map((chunks) => chunks.join(''));
-    const expected = this.recordValueFor(claim.verificationToken);
-
-    if (!values.includes(expected)) {
-      const reason =
-        values.length === 0
-          ? `No TXT record was found at ${recordName}.`
-          : `A TXT record exists at ${recordName} but none of its values match the expected token.`;
-
-      await this.prisma.runInTenantTransaction(scope, () =>
-        this.enterprise.markDomainFailed(scope, claim.id, now, reason),
+      await this.recordFailure(
+        scope,
+        claim.id,
+        claim.domain,
+        proof.dnsCode ?? 'unknown',
+        actorUserId,
       );
-      await this.recordFailure(scope, claim.id, claim.domain, 'token_mismatch', actorUserId);
       return this.reload(scope, claim.id);
     }
 
@@ -293,6 +275,65 @@ export class DomainVerificationService {
 
   recordValueFor(token: string): string {
     return `${TOKEN_FIELD}=${token}`;
+  }
+
+  /**
+   * Does this domain publish this token? The one place that question is answered.
+   *
+   * ## Why it takes a domain and a token rather than a claim
+   *
+   * Self-serve registration has to prove control of a domain **before** the company exists, and
+   * `DomainVerification` rows are tenant-owned — they cannot be written until there is a tenant to
+   * own them. So the proof itself had to be separable from the record of it.
+   *
+   * Making it a method here rather than copying three lines into the registration service is the
+   * point: "what counts as proof" is exactly the rule that must not have two versions. The chunk
+   * joining below is why — a TXT value over 255 bytes arrives split, and a second implementation
+   * that compared chunks individually would silently never match, for the subset of customers
+   * whose DNS provider happened to split it.
+   *
+   * No side effects: it reads DNS and answers. Recording what came of it belongs to the caller,
+   * because the two callers record it in different places.
+   */
+  async proveControlOf(
+    domain: string,
+    token: string,
+  ): Promise<{ proved: boolean; reason: string; dnsCode: string | null }> {
+    const recordName = this.recordNameFor(domain);
+    let records: string[][];
+
+    try {
+      records = await this.dns.resolveTxt(recordName);
+    } catch (cause) {
+      // ENOTFOUND / ENODATA is the ordinary "you have not created it yet" case, so the message
+      // says what to do rather than reporting a DNS error code at the reader.
+      const code = (cause as { code?: string }).code ?? 'unknown';
+      return {
+        proved: false,
+        dnsCode: code,
+        reason:
+          code === 'ENOTFOUND' || code === 'ENODATA'
+            ? `No TXT record was found at ${recordName}. It can take a few minutes to propagate after you create it.`
+            : `The DNS lookup for ${recordName} failed (${code}).`,
+      };
+    }
+
+    // A TXT record arrives as an array of string chunks that must be concatenated: values over
+    // 255 bytes are split, and treating each chunk as a separate value silently fails to match.
+    const values = records.map((chunks) => chunks.join(''));
+
+    if (!values.includes(this.recordValueFor(token))) {
+      return {
+        proved: false,
+        dnsCode: 'token_mismatch',
+        reason:
+          values.length === 0
+            ? `No TXT record was found at ${recordName}.`
+            : `A TXT record exists at ${recordName} but none of its values match the expected token.`,
+      };
+    }
+
+    return { proved: true, reason: 'The domain publishes the expected token.', dnsCode: null };
   }
 
   private async recordFailure(

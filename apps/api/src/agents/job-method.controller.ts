@@ -169,7 +169,9 @@ export class JobMethodController {
 
   /** The same form as JSON, for a client that renders it rather than downloading it. */
   @Get(':aiWorkAssignmentId/form')
-  async download(@Param('aiWorkAssignmentId', new ParseUUIDPipe()) aiWorkAssignmentId: string): Promise<unknown> {
+  async download(
+    @Param('aiWorkAssignmentId', new ParseUUIDPipe()) aiWorkAssignmentId: string,
+  ): Promise<unknown> {
     return this.jobMethods.downloadForm({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
@@ -179,7 +181,9 @@ export class JobMethodController {
 
   /** What has been captured, its provenance, and how many agents it looks like. */
   @Get(':aiWorkAssignmentId')
-  async view(@Param('aiWorkAssignmentId', new ParseUUIDPipe()) aiWorkAssignmentId: string): Promise<unknown> {
+  async view(
+    @Param('aiWorkAssignmentId', new ParseUUIDPipe()) aiWorkAssignmentId: string,
+  ): Promise<unknown> {
     return this.jobMethods.view({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),

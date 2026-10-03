@@ -5,6 +5,7 @@ import { APP_GUARD } from '@nestjs/core';
 
 import { AppModule } from '../src/app.module.js';
 import { PermissionGuard } from '../src/authorization/permission.guard.js';
+import { ModuleEntitlementService } from '../src/commercial/module-entitlement.service.js';
 import { TenantGuard } from '../src/tenancy/tenant.guard.js';
 
 /**
@@ -92,5 +93,35 @@ describe('global guard registration order', () => {
     // A "fix" that deleted one of the guards would satisfy an ordering check on its own.
     assert.notEqual(guardPosition(modules, TenantGuard), -1);
     assert.notEqual(guardPosition(modules, PermissionGuard), -1);
+  });
+
+  /*
+   * The plan gate, which is only a gate if the commercial plane is in the graph.
+   *
+   * `PermissionGuard` refuses a module the company's plan does not include, and it takes
+   * `ModuleEntitlementService` **optionally** — required, every test module that builds a Nest
+   * application would have to provide the commercial plane for reasons unrelated to what it
+   * tests. The cost of that choice is a fail-open: remove `CommercialModule` from the graph and
+   * entitlement silently stops being enforced, with every other test still green.
+   *
+   * This is the test that would not be. It asserts the provider is reachable from `AppModule`,
+   * which is the one place the fail-open matters.
+   *
+   * What it does not assert is the refusal itself — that is behaviour, proven against the
+   * running product, where a company on `growth` (no `performance` module) is answered 403 by
+   * `GET /tenants/:id/performance/me` and 200 by a module its plan does include.
+   */
+  it('wires the plan gate into the guard, so entitlement is enforced and not merely optional', () => {
+    const provided = modules.some((module) => {
+      const providers = (Reflect.getMetadata('providers', module as object) ?? []) as unknown[];
+      return providers.includes(ModuleEntitlementService);
+    });
+
+    assert.ok(
+      provided,
+      'ModuleEntitlementService is not provided anywhere in AppModule’s graph. PermissionGuard ' +
+        'injects it @Optional, so it will resolve to undefined and every company will reach ' +
+        'every module its role grants — including the ones its plan does not include.',
+    );
   });
 });

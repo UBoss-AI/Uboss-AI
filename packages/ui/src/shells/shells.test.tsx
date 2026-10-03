@@ -251,9 +251,7 @@ describe('AppShell — the section names itself once', () => {
     expect(headings).toHaveLength(1);
     expect(headings[0]).toHaveTextContent('Hierarchy');
     expect(screen.queryByText('Organization Hierarchy')).not.toBeInTheDocument();
-    expect(
-      screen.queryByText('Reporting structure and company identity.'),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Reporting structure and company identity.')).not.toBeInTheDocument();
   });
 
   it('lets a screen that is not a navigation entry name itself', () => {
@@ -307,8 +305,16 @@ describe('AppShell', () => {
       </AppShell>,
     );
 
-    // The workspace name appears twice by design: the sidebar brand sub-line and the top bar.
-    expect(screen.getAllByText('SPM Medicare')).toHaveLength(2);
+    /*
+     * Once, in the top bar — not twice.
+     *
+     * The sidebar brand sub-line used to repeat the workspace name, which put the customer's name
+     * under the product's own and made the brand block look like it belonged to them. It now says
+     * what the product is. The workspace is still named, where it is named alongside the section
+     * and the person's scope, and this asserts it is still named exactly once.
+     */
+    expect(screen.getAllByText('SPM Medicare')).toHaveLength(1);
+    expect(screen.getByText('powered by UBoss AI')).toBeInTheDocument();
     expect(screen.getByText('Dashboard content')).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Primary' })).toBeInTheDocument();
   });
@@ -502,13 +508,21 @@ describe('Company navigation model', () => {
     expect(SETTINGS_SECTIONS.map((section) => section.key)).toContain('users');
   });
 
-  // The counterpart: this one is NOT a Settings duplicate. The Settings section of a similar name
-  // is `uboss`, the cross-company lookup policy; the search screen itself is only ever reached
-  // from here, so dropping it would orphan it.
-  it('keeps UBoss Profile Search, which Settings does not carry', () => {
+  /*
+   * UBoss Profile Search moved into Settings, and the pair is what this asserts.
+   *
+   * It used to be the counterpart of the rule above — the one sidebar item Settings did not carry,
+   * kept there because dropping it would have orphaned the screen. The client asked for it to live
+   * in Settings, so the section now exists and the sidebar entry is gone.
+   *
+   * Both halves are checked together on purpose. Removing the item without adding the section is
+   * exactly the mistake the old comment was guarding against: a screen the product still routes to
+   * and no longer links to from anywhere.
+   */
+  it('reaches UBoss Profile Search through Settings and not through the sidebar', () => {
     const keys = COMPANY_NAV.flatMap((group) => group.items.map((item) => item.key));
-    expect(keys).toContain('profile-search');
-    expect(SETTINGS_SECTIONS.map((section) => section.key)).not.toContain('profile-search');
+    expect(keys).not.toContain('profile-search');
+    expect(SETTINGS_SECTIONS.map((section) => section.key)).toContain('uboss');
   });
 
   it('uses the canonical Engine Agent and Executor Agent labels', () => {
@@ -574,7 +588,7 @@ describe('SettingsShell', () => {
 
     fireEvent.change(screen.getByLabelText('Search settings'), { target: { value: 'budget' } });
 
-    expect(screen.getByRole('button', { name: 'Tokens & Cost' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tokens & Usage' })).toBeInTheDocument();
   });
 
   it('says so when nothing matches, rather than showing an empty column', () => {
@@ -641,9 +655,7 @@ describe('SettingsShell', () => {
      * sense their profile. The label promised a page about them and delivered a page about the
      * company.
      */
-    expect(
-      screen.getByRole('button', { name: 'How this company works' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'How this company works' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Login & Security' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'General' })).not.toBeInTheDocument();
   });
@@ -720,12 +732,20 @@ describe('LoginPresentation', () => {
     expect(screen.queryByText(/register/i)).not.toBeInTheDocument();
   });
 
-  it('states that accounts are provisioned, not self-created', () => {
+  it('states that somebody invites you, rather than denying a signup that now exists', () => {
     render(<NoPublicSignupNotice />);
 
-    // The fact this notice exists to state.
-    expect(screen.getByText(/No public signup/)).toBeInTheDocument();
-    expect(screen.getByText(/set up for you/)).toBeInTheDocument();
+    /*
+     * This said "No public signup" until self-serve registration shipped, at which point it
+     * became a claim the product had outgrown: a company can now set itself up at `/start`.
+     *
+     * The claim worth keeping is the one that did not change — you do not add yourself to a
+     * company that already exists — and that is what is asserted. A company starting its own
+     * workspace is a different door, and the notice no longer denies it.
+     */
+    expect(screen.getByText(/cannot add yourself to a company/i)).toBeInTheDocument();
+    expect(screen.getByText(/invites you/i)).toBeInTheDocument();
+    expect(screen.queryByText(/No public signup/i)).not.toBeInTheDocument();
   });
 
   /*
@@ -893,7 +913,13 @@ describe('LoginPresentation — two front doors, one visual system', () => {
     const said = container.textContent ?? '';
 
     // A customer should not have to learn that UBoss has a platform plane in order to sign in.
-    for (const word of ['Master Console', 'Platform & Development', 'Internal', 'DevOps', 'Environment']) {
+    for (const word of [
+      'Master Console',
+      'Platform & Development',
+      'Internal',
+      'DevOps',
+      'Environment',
+    ]) {
       expect(said).not.toContain(word);
     }
   });

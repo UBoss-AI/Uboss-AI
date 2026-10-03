@@ -2,11 +2,7 @@
 	email dev@ubossai.com
 }
 
-www.ubossai.com {
-	redir https://ubossai.com{uri} permanent
-}
-
-ubossai.com {
+chiefagent.ubossai.com {
 	reverse_proxy marketing:3100
 }
 

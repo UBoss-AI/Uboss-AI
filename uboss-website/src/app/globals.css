@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import './experience.css';
 @import './design-v2.css';
+@import './site.css';
 
 /**
  * The site's whole visual system, in one place.
@@ -40,8 +41,8 @@
   --color-warn: #fbbf24;
 
   --font-sans:
-    'Manrope Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial,
-    sans-serif;
+    'Manrope Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Inter, Roboto,
+    'Helvetica Neue', Arial, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 }
 

@@ -1,7 +1,12 @@
 import { createHash } from 'node:crypto';
 
 import {
-  BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 
 import {
   AUTOMATION_STANCE,

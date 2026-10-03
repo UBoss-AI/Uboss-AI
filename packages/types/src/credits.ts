@@ -605,3 +605,67 @@ export function mayResumeAfterTopUp(input: { runState: string; blockedReason: st
       'permission, approval and limit when it runs.',
   };
 }
+
+// ---------------------------------------------------------------------------
+// Buying more tokens outright
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a one-off token purchase has got to.
+ *
+ * Deliberately not the payment provider's own words. The provider has several statuses that mean
+ * the same thing here, and it will add more; this product needs four, and a company's screen
+ * should not change wording because a provider renamed something.
+ */
+export const TOKEN_PURCHASE_STATUSES = ['Pending', 'Paid', 'Failed', 'Abandoned'] as const;
+export type TokenPurchaseStatus = (typeof TOKEN_PURCHASE_STATUSES)[number];
+
+export const TOKEN_PURCHASE_STATUS_LABELS: Record<TokenPurchaseStatus, string> = {
+  Pending: 'Waiting for payment',
+  Paid: 'Paid',
+  Failed: 'Payment failed',
+  Abandoned: 'Not completed',
+};
+
+/**
+ * The smallest top-up this product will sell.
+ *
+ * Not a technical limit. A payment provider's own fee is a fixed amount plus a percentage, so a
+ * tiny top-up costs more to collect than it is worth, and offering one invites a company to buy
+ * forty of them. Ten thousand tokens is a few hundred rupees at the usual rate, which is an amount
+ * somebody can approve without a conversation.
+ */
+export const MINIMUM_TOP_UP_TOKENS = 10_000;
+
+/**
+ * The largest, and why there is one at all.
+ *
+ * A ceiling is a typo guard, not a sales limit: somebody meaning 50,000 and typing 5,000,000 would
+ * otherwise be shown a bill five hundred times what they intended, on a provider's own page, with
+ * a card already saved. A company that genuinely wants more than this buys twice or talks to us.
+ */
+export const MAXIMUM_TOP_UP_TOKENS = 2_000_000;
+
+/** Whether this many tokens may be bought, and a sentence saying why not. */
+export function validateTopUpTokens(tokens: number): { ok: boolean; reason: string } {
+  if (!Number.isInteger(tokens)) {
+    return { ok: false, reason: 'Tokens are bought in whole numbers.' };
+  }
+  if (tokens < MINIMUM_TOP_UP_TOKENS) {
+    return {
+      ok: false,
+      reason:
+        `The smallest top-up is ${MINIMUM_TOP_UP_TOKENS.toLocaleString('en-IN')} tokens. ` +
+        'Below that the payment costs more to collect than the tokens are worth.',
+    };
+  }
+  if (tokens > MAXIMUM_TOP_UP_TOKENS) {
+    return {
+      ok: false,
+      reason:
+        `The largest single top-up is ${MAXIMUM_TOP_UP_TOKENS.toLocaleString('en-IN')} tokens. ` +
+        'Buy twice, or talk to us about raising the monthly allowance instead.',
+    };
+  }
+  return { ok: true, reason: 'Within the range this product sells.' };
+}

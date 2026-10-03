@@ -244,6 +244,31 @@ export const TABLE_DISPOSITION: Record<string, Disposition> = {
   // also the idempotency record that stops one provider retry being charged as two events, which
   // only works for as long as it is kept.
   stripe_webhook_events: 'Accountability',
+  /*
+   * What the company bought outright, beyond its plan.
+   *
+   * `Accountability` for the same reason as `billing_invoices`: this is the record of a payment
+   * taken, and it is the customer's evidence as much as ours. It also carries the quote — how many
+   * tokens, at what rate — which is the only thing that can settle a dispute about what a top-up
+   * was supposed to deliver.
+   *
+   * And it is the idempotency record for the credit: `credit_grant_id` on this row is what stops a
+   * redelivered webhook crediting a wallet twice, which only works for as long as the row is kept.
+   */
+  token_purchases: 'Accountability',
+  /*
+   * Where the company came from, when it signed itself up.
+   *
+   * `Accountability` rather than `Content`, and the deciding question is "who let this company in".
+   * For every other customer the answer is a named person at UBoss in the provisioning trail; for
+   * a self-serve signup the answer is this row — the address that was proved, the domain that was
+   * proved, and when. Deleting it would leave a company whose origin nobody can account for.
+   *
+   * It is also what holds the line on the domain: the exclusivity index is on
+   * `domain_verifications`, but the question of who first claimed a domain and when is answered
+   * here.
+   */
+  pending_registrations: 'Accountability',
   cost_ledger_entries: 'Accountability',
   credit_grants: 'Accountability',
   credit_requests: 'Accountability',

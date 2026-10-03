@@ -35,7 +35,11 @@ import { SECURITY_ACTIONS, SecurityEventPublisher } from '../auth/security-event
  * `NotInvited` is included because that is when a role is *supposed* to be granted — see the note
  * inside `assign` on the loop that closed on itself.
  */
-export const ASSIGNABLE_ACCOUNT_STATES: readonly string[] = ['Active', 'InvitePending', 'NotInvited'];
+export const ASSIGNABLE_ACCOUNT_STATES: readonly string[] = [
+  'Active',
+  'InvitePending',
+  'NotInvited',
+];
 
 /**
  * Granting and revoking authority.
@@ -252,7 +256,9 @@ export class RoleAdministrationService {
       // the reason is taken from what this call was asking for.
       const looksLikeForeignKey =
         code === 'P2003' ||
-        /foreign\s*key/i.test(`${error instanceof Error ? error.message : ''}${JSON.stringify((error as { meta?: unknown }).meta ?? '')}`);
+        /foreign\s*key/i.test(
+          `${error instanceof Error ? error.message : ''}${JSON.stringify((error as { meta?: unknown }).meta ?? '')}`,
+        );
       const namesDepartments =
         (input.scopeKind === 'Department' || input.scopeKind === 'MultipleDepartments') &&
         (input.departmentIds ?? []).length > 0;
@@ -479,18 +485,43 @@ export class RoleAdministrationService {
     return { id: role.id };
   }
 
+  /**
+   * The roles somebody in this company actually wrote.
+   *
+   * ## Why this is not simply every row in `custom_roles`
+   *
+   * The table holds two different things. One is a role an administrator sat down and composed —
+   * "Reports — own work" — which is what the screen calls "roles this company wrote" and what an
+   * administrator expects to be able to open, edit and hand out.
+   *
+   * The other is machinery. Granting a single capability through the Access & Permissions step
+   * writes a row of its own — `Capability: RunAssignedAgents`, `Capability: OwnTasks` — because a
+   * capability has to hang off something a grant can point at. Those are the product's, not the
+   * company's: nobody composed them, nobody should edit them, and one company's list of five was
+   * three of these and two real roles.
+   *
+   * `createdByUserId` is the honest discriminator, because it is exactly the difference: a role
+   * with a person behind it was written by a person. The machinery rows are created by the system
+   * and carry none.
+   *
+   * **Nothing is deleted or disabled.** The rows stay, the grants that point at them keep working,
+   * and the authorization engine reads them as before. What changes is that a list headed "roles
+   * this company wrote" now contains only roles this company wrote.
+   */
   async listCustomRoles(scope: TenantScope) {
     const roles = await this.repository.listCustomRoles(scope);
 
-    return roles.map((role) => ({
-      id: role.id,
-      displayName: role.displayName,
-      description: role.description,
-      permissions: sanitisePermissionSet(role.permissions),
-      maxScope: role.maxScope,
-      enabled: role.enabled,
-      createdAt: role.createdAt.toISOString(),
-    }));
+    return roles
+      .filter((role) => role.createdByUserId !== null)
+      .map((role) => ({
+        id: role.id,
+        displayName: role.displayName,
+        description: role.description,
+        permissions: sanitisePermissionSet(role.permissions),
+        maxScope: role.maxScope,
+        enabled: role.enabled,
+        createdAt: role.createdAt.toISOString(),
+      }));
   }
 
   // ---- User type ----

@@ -35,7 +35,8 @@ export function Section({
   className?: string;
   children: ReactNode;
 }) {
-  const surface = tone === 'ink-1' ? 'bg-[#050505]' : tone === 'ink-2' ? 'bg-[#09090b]' : 'bg-black';
+  const surface =
+    tone === 'ink-1' ? 'bg-[#050505]' : tone === 'ink-2' ? 'bg-[#09090b]' : 'bg-black';
   return (
     <section
       {...(id === undefined ? {} : { id })}

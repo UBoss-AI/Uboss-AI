@@ -39,15 +39,37 @@ import type { DashboardMeta, DashboardTileView } from '../lib/api-client';
  * what produces a hydration mismatch.
  */
 
+/**
+ * One icon per work area, and the same one the sidebar uses.
+ *
+ * A tile with no entry here fell back to `list`, which is how Hierarchy, Agent Builder, Workspace
+ * Chat and Settings all arrived on screen drawn identically — four shortcuts that looked like the
+ * same shortcut. Every area now names its own, and they match the rail so the two agree.
+ */
 const TILE_ICONS: Record<string, IconName> = {
   objectives: 'target',
   tasks: 'list',
   agents: 'bot',
+  hierarchy: 'tree',
+  'agent-builder': 'wrench',
+  chat: 'chat',
   approvals: 'shield',
   exceptions: 'alert',
   performance: 'medal',
   reports: 'chart',
+  settings: 'gear',
+  stage: 'map',
 };
+
+/**
+ * Lanes no wire reaches. Empty, and kept as the shape of the rule rather than deleted.
+ *
+ * It briefly held the Build & Setup lane, which sat below the core: every wire to it left the
+ * core's edge at one point and fanned downward, which knotted the middle of the diagram. That
+ * lane no longer exists — its tiles are in the left column with the rest — so the core sits level
+ * with the middle of seven tiles and the fan is symmetric again, three above and four below.
+ */
+const UNWIRED_LANES: readonly string[] = [];
 
 /** One drawn branch: the path from the core to a node, and which side it is on. */
 interface Wire {
@@ -65,12 +87,22 @@ export function OrchestrationMap({
   tiles,
   meta,
   scope,
-  onOpen,
+  selected,
+  onSelect,
 }: {
   tiles: DashboardTileView[];
   meta: DashboardMeta | null;
   scope: string;
-  onOpen: (href: string) => void;
+  /** Which area's card is open beneath the map, if any. */
+  selected: string | null;
+  /**
+   * Pressing a node selects it rather than navigating.
+   *
+   * The client's rule: the card opens here, under the map, and going into the section is a second
+   * deliberate act. Pressing the node that is already open closes it, so the same control both
+   * opens and closes — which is what a person expects from something that toggles in place.
+   */
+  onSelect: (tile: string | null) => void;
 }) {
   const frame = useRef<HTMLDivElement>(null);
   const core = useRef<HTMLSpanElement>(null);
@@ -103,6 +135,9 @@ export function OrchestrationMap({
     for (const [key, element] of nodes.current) {
       const node = element.getBoundingClientRect();
       if (node.width === 0) continue;
+      // Build & Setup is a strip beneath the map, not a branch off it — see `UNWIRED_LANE`.
+      const lane = meta?.tiles.find((entry) => entry.key === key)?.lane ?? 'execution';
+      if (UNWIRED_LANES.includes(lane)) continue;
 
       const onTheLeft = node.left - bounds.left + node.width / 2 < cx;
       const startX = cx + (onTheLeft ? -radius : radius);
@@ -155,8 +190,7 @@ export function OrchestrationMap({
   const describe = (key: string) => meta.tiles.find((entry) => entry.key === key);
 
   /** The tiles the server permitted, in the order the contract lists them, per side. */
-  const laneTiles = (lane: string) =>
-    tiles.filter((tile) => describe(tile.tile)?.lane === lane);
+  const laneTiles = (lane: string) => tiles.filter((tile) => describe(tile.tile)?.lane === lane);
 
   const renderLane = (lane: { key: string; label: string; measures: string }) => {
     const inLane = laneTiles(lane.key);
@@ -179,6 +213,7 @@ export function OrchestrationMap({
              * work area that disappears when it is clear is one somebody stops trusting.
              */
             const hasCount = tile.count !== null;
+            const isOpen = selected === tile.tile;
 
             return (
               <button
@@ -188,12 +223,15 @@ export function OrchestrationMap({
                   if (element === null) nodes.current.delete(tile.tile);
                   else nodes.current.set(tile.tile, element);
                 }}
-                className={`uboss-orch-node uboss-orch-node--${lane.key}`}
-                onClick={() => onOpen(detail.href)}
+                className={`uboss-orch-node uboss-orch-node--${lane.key}${
+                  isOpen ? ' uboss-orch-node--open' : ''
+                }`}
+                aria-expanded={isOpen}
+                onClick={() => onSelect(isOpen ? null : tile.tile)}
                 aria-label={
                   hasCount
                     ? `${detail.label}: ${tile.count}. ${detail.measures ?? ''}`
-                    : `Open ${detail.label}`
+                    : `Show ${detail.label}`
                 }
               >
                 <span className="uboss-orch-node-plate" aria-hidden="true">
@@ -211,7 +249,14 @@ export function OrchestrationMap({
                   <span className="uboss-orch-node-count">{tile.count}</span>
                 ) : (
                   <span className="uboss-orch-node-go" aria-hidden="true">
-                    <Icon name="arrow" size={15} />
+                    {/*
+                      Plus and minus, not an arrow.
+
+                      An arrow promises you are leaving, and pressing this no longer takes you
+                      anywhere — it opens a card below. Plus/minus is the one pair everybody reads
+                      as "show me more of this, in place".
+                    */}
+                    <Icon name={isOpen ? 'minus' : 'plus'} size={15} />
                   </span>
                 )}
               </button>
@@ -232,10 +277,7 @@ export function OrchestrationMap({
   const drawn = (meta.lanes ?? []).filter((lane) => laneTiles(lane.key).length > 0);
 
   return (
-    <div
-      className={`uboss-orch-map${drawn.length < 2 ? ' uboss-orch-map--solo' : ''}`}
-      ref={frame}
-    >
+    <div className={`uboss-orch-map${drawn.length < 2 ? ' uboss-orch-map--solo' : ''}`} ref={frame}>
       {/*
         The wires. Decoration in the strict sense — everything they express is already in the
         headings and the nodes, so they are hidden from assistive technology entirely.

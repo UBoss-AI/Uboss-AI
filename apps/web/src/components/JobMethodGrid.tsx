@@ -171,7 +171,9 @@ export function JobMethodGrid({
   };
 
   return (
-    <div className={cn('uboss-wfgrid-wrap', expanded === true && 'uboss-wfgrid-wrap--tall', className)}>
+    <div
+      className={cn('uboss-wfgrid-wrap', expanded === true && 'uboss-wfgrid-wrap--tall', className)}
+    >
       <table className="uboss-wfg">
         <caption className="uboss-sr-only">
           The job method — {JOB_METHOD_COLUMNS.length} columns, one row per step
@@ -202,7 +204,10 @@ export function JobMethodGrid({
             <motion.tr
               key={rowIds[index] ?? `fallback-${row.step}`}
               layout
-              transition={{ ...transition('panel', 'standard'), delay: stagger(index, rows.length) }}
+              transition={{
+                ...transition('panel', 'standard'),
+                delay: stagger(index, rows.length),
+              }}
               className={cn(
                 touched === rowIds[index] && 'uboss-wfg-row--touched',
                 over === index && 'uboss-wfg-row--over',
@@ -270,47 +275,47 @@ export function JobMethodGrid({
 
               <td>
                 <div className="uboss-wfg-rowops">
-                {readOnly === true ? null : (
-                  /*
-                   * The handle is what is picked up, not the row.
-                   *
-                   * `motion.tr` owns `onDragStart` for its own gesture system, so the native one
-                   * cannot live on the row — and a row that is draggable everywhere cannot have
-                   * its text selected, which is the first thing anybody tries in a spreadsheet.
-                   */
-                  <span
-                    className="uboss-wfg-grip"
-                    draggable
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`Move step ${row.step}`}
-                    onDragStart={(event) => {
-                      event.dataTransfer.effectAllowed = 'move';
-                      // Firefox starts no drag without a payload.
-                      event.dataTransfer.setData('text/plain', String(index));
-                      setDragging(index);
-                    }}
-                    onDragEnd={() => {
-                      setDragging(null);
-                      setOver(null);
-                    }}
-                    onKeyDown={(event) => {
-                      // The same move from the keyboard, because a drag is not available to
-                      // everybody and reordering is not a decorative feature.
-                      if (event.key === 'ArrowUp' && index > 0) {
-                        event.preventDefault();
-                        moveRow(index, index - 1);
-                      }
-                      if (event.key === 'ArrowDown' && index < rows.length - 1) {
-                        event.preventDefault();
-                        moveRow(index, index + 1);
-                      }
-                    }}
-                  >
-                    <Icon name="grid" size={13} />
-                  </span>
-                )}
-                {row.step}
+                  {readOnly === true ? null : (
+                    /*
+                     * The handle is what is picked up, not the row.
+                     *
+                     * `motion.tr` owns `onDragStart` for its own gesture system, so the native one
+                     * cannot live on the row — and a row that is draggable everywhere cannot have
+                     * its text selected, which is the first thing anybody tries in a spreadsheet.
+                     */
+                    <span
+                      className="uboss-wfg-grip"
+                      draggable
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Move step ${row.step}`}
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = 'move';
+                        // Firefox starts no drag without a payload.
+                        event.dataTransfer.setData('text/plain', String(index));
+                        setDragging(index);
+                      }}
+                      onDragEnd={() => {
+                        setDragging(null);
+                        setOver(null);
+                      }}
+                      onKeyDown={(event) => {
+                        // The same move from the keyboard, because a drag is not available to
+                        // everybody and reordering is not a decorative feature.
+                        if (event.key === 'ArrowUp' && index > 0) {
+                          event.preventDefault();
+                          moveRow(index, index - 1);
+                        }
+                        if (event.key === 'ArrowDown' && index < rows.length - 1) {
+                          event.preventDefault();
+                          moveRow(index, index + 1);
+                        }
+                      }}
+                    >
+                      <Icon name="grid" size={13} />
+                    </span>
+                  )}
+                  {row.step}
                   {readOnly === true ? null : (
                     <button
                       type="button"

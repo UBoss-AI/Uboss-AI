@@ -1003,6 +1003,10 @@ export class ObjectiveAnalysisService {
       // Prompt 30: an analysis has an objective and no run, so it is checked against the
       // company and objective budgets and not against an agent's per-run limit.
       objectiveId: state.objectiveId,
+      // And against the allowance of whoever pressed Run Objective. One analysis is seven model
+      // calls and the most expensive thing a person can do here in one click, which makes it the
+      // first thing a per-person allowance has to see.
+      actorUserId: state.actorUserId,
     });
 
     state.promptTokens += response.promptTokens;

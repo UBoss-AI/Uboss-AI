@@ -130,7 +130,20 @@ export function WorkflowGrid({
   expanded = false,
   className,
 }: WorkflowGridProps) {
-  const columns = FORM2_WORKFLOW_COLUMNS;
+  /*
+   * Every column the client's form has, except the approval gate.
+   *
+   * The gate is gone by decision, not by oversight. A step that says "Manager sign-off" stops the
+   * work between two people until somebody with that role decides, and the company this is built
+   * for has two kinds of person: an administrator who defines the work, and an employee who does
+   * it. There is no Manager to stop it for, so a gate set here would be work that waits for
+   * nobody.
+   *
+   * The column, its values and every approval already recorded stay where they are — an objective
+   * published before this still runs, and its decisions are still readable. What changes is that
+   * a new one cannot be created, which is the only part an administrator sees.
+   */
+  const columns = FORM2_WORKFLOW_COLUMNS.filter((column) => column.key !== 'approval');
 
   /*
    * Row identity, kept here rather than on the step.
@@ -212,7 +225,11 @@ export function WorkflowGrid({
      */
     const dismiss = (event: Event) => {
       const target = event.target;
-      if (target instanceof Node && target instanceof Element && target.closest('.uboss-wfg-menu') !== null) {
+      if (
+        target instanceof Node &&
+        target instanceof Element &&
+        target.closest('.uboss-wfg-menu') !== null
+      ) {
         return;
       }
       setMenu(null);
@@ -429,7 +446,10 @@ export function WorkflowGrid({
             <motion.tr
               key={rowIds[index] ?? `fallback-${step.position}`}
               layout
-              transition={{ ...transition('panel', 'standard'), delay: stagger(index, steps.length) }}
+              transition={{
+                ...transition('panel', 'standard'),
+                delay: stagger(index, steps.length),
+              }}
               className={touched === rowIds[index] ? 'uboss-wfg-row--touched' : undefined}
               onAnimationComplete={() => {
                 // Cleared by the animation, not a timer, so the mark cannot outlive what it marks.
@@ -587,7 +607,11 @@ export function WorkflowGrid({
               key={item.op}
               type="button"
               role="menuitem"
-              className={item.op === 'delete' ? 'uboss-wfg-menu-item uboss-wfg-menu-item--danger' : 'uboss-wfg-menu-item'}
+              className={
+                item.op === 'delete'
+                  ? 'uboss-wfg-menu-item uboss-wfg-menu-item--danger'
+                  : 'uboss-wfg-menu-item'
+              }
               // Delete keeps the same floor the row button has: never the last row.
               disabled={item.op === 'delete' && steps.length <= 1}
               onClick={() => {

@@ -102,8 +102,7 @@ export function SkillPicker({ tenantId, attached, open, onClose, onSave }: Skill
     }
   };
 
-  const changed =
-    chosen.length !== attached.length || chosen.some((id) => !attached.includes(id));
+  const changed = chosen.length !== attached.length || chosen.some((id) => !attached.includes(id));
 
   return (
     <Drawer open={open} onClose={onClose} title="Add or replace Skills">
@@ -149,9 +148,7 @@ export function SkillPicker({ tenantId, attached, open, onClose, onSave }: Skill
       </div>
 
       <p className="uboss-muted" style={{ marginTop: 12 }}>
-        {rows === null
-          ? 'Loading…'
-          : `${rows.length} available · ${chosen.length} attached`}
+        {rows === null ? 'Loading…' : `${rows.length} available · ${chosen.length} attached`}
       </p>
 
       <div style={{ maxHeight: '48vh', overflowY: 'auto', marginTop: 6 }}>
@@ -177,10 +174,15 @@ export function SkillPicker({ tenantId, attached, open, onClose, onSave }: Skill
                 style={{ marginTop: 4 }}
               />
               <span style={{ flex: 1 }}>
-                <b>{row.name}</b>{' '}
-                <StatusBadge status={`v${row.versionNumber}`} tone="grey" />{' '}
+                <b>{row.name}</b> <StatusBadge status={`v${row.versionNumber}`} tone="grey" />{' '}
                 <StatusBadge
-                  status={row.layer === 'CompanyCustom' ? 'Ours' : row.layer === 'IndustryPack' ? (row.industry ?? 'Pack') : 'UBoss Verified'}
+                  status={
+                    row.layer === 'CompanyCustom'
+                      ? 'Ours'
+                      : row.layer === 'IndustryPack'
+                        ? (row.industry ?? 'Pack')
+                        : 'UBoss Verified'
+                  }
                   tone={row.layer === 'CompanyCustom' ? 'teal' : 'blue'}
                 />
                 <span className="uboss-muted" style={{ display: 'block', fontSize: 12.5 }}>
@@ -201,8 +203,8 @@ export function SkillPicker({ tenantId, attached, open, onClose, onSave }: Skill
 
         {rows !== null && rows.length === 0 ? (
           <p className="uboss-muted" style={{ padding: '14px 4px' }}>
-            Nothing matches. Only published Skills this company is entitled to appear here — a
-            draft cannot be attached, and an Industry Pack the company does not hold is not shown.
+            Nothing matches. Only published Skills this company is entitled to appear here — a draft
+            cannot be attached, and an Industry Pack the company does not hold is not shown.
           </p>
         ) : null}
       </div>

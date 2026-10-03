@@ -588,6 +588,76 @@ describe('plans, seats and company lifecycle (e2e)', () => {
   });
 
   // =========================================================================
+  describe('a company is priced in its own currency', () => {
+    /** Point this company's subscription at a currency, as its country would have done. */
+    const billIn = async (currency: string): Promise<void> => {
+      await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.tenantSubscription.update({ where: { tenantId }, data: { currency } }),
+      );
+    };
+
+    /** Set the Growth plan's price in one currency, the way the console does. */
+    const priceGrowth = async (currency: string, priceMinor: number): Promise<void> => {
+      await ctx.prisma.runAsPlatformOperation(async () => {
+        const growth = await ctx.prisma.client.plan.findUnique({ where: { code: 'growth' } });
+        await ctx.prisma.client.planPrice.upsert({
+          where: { planId_currency: { planId: growth!.id, currency } },
+          create: { planId: growth!.id, currency, priceMinor },
+          update: { priceMinor },
+        });
+      });
+    };
+
+    it('shows the rupee price to a company billed in rupees', async () => {
+      await priceGrowth('INR', 4_999_900);
+      await priceGrowth('USD', 190_000);
+      await billIn('INR');
+
+      const position = await commercial().positionForCompany(scope(), adminId);
+      assert.equal(position.plan.priceCurrency, 'INR');
+      assert.equal(position.plan.priceMinor, 4_999_900);
+    });
+
+    it('shows the dollar price to a company billed in dollars, from the same plan', async () => {
+      await priceGrowth('INR', 4_999_900);
+      await priceGrowth('USD', 190_000);
+      await billIn('USD');
+
+      const position = await commercial().positionForCompany(scope(), adminId);
+      assert.equal(position.plan.priceCurrency, 'USD');
+      assert.equal(position.plan.priceMinor, 190_000);
+    });
+
+    it('shows no price at all where the plan is not sold in that currency', async () => {
+      await priceGrowth('INR', 4_999_900);
+      await billIn('AED');
+
+      /*
+       * Null, and nothing converted.
+       *
+       * This is the assertion the whole change exists for. A converted figure would be a number
+       * the invoice cannot match — the provider charges what the plan actually carries — and the
+       * customer would discover the difference after paying. The screen asks for a conversation
+       * instead.
+       */
+      const position = await commercial().positionForCompany(scope(), adminId);
+      assert.equal(position.plan.priceMinor, null);
+      assert.equal(position.plan.priceCurrency, null);
+    });
+
+    it('does not fall back to the plan’s own base price in another currency', async () => {
+      // The plan's base `priceMinor`/`currency` is USD in the seed. A company billed in rupees
+      // with no rupee row must not be shown the dollar figure with a rupee symbol in front of it.
+      await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.planPrice.deleteMany({ where: { currency: 'INR' } }),
+      );
+      await billIn('INR');
+
+      const position = await commercial().positionForCompany(scope(), adminId);
+      assert.equal(position.plan.priceMinor, null);
+    });
+  });
+
   describe('plan is not RBAC', () => {
     it('omits roles from the commercial position, and says why', async () => {
       const position = await commercial().positionForCompany(scope(), adminId);
@@ -604,7 +674,19 @@ describe('plans, seats and company lifecycle (e2e)', () => {
       assert.ok(position.plan.code, '(1) Commercial Plan');
       assert.ok(position.entitlements.planModules.length > 0, '(2) Module Entitlements');
       assert.equal(position.release.channel, 'Stable', '(3) Feature / Release Channel');
-      assert.equal(position.allowance.aiAllowanceMinor, 100_000, '(4) Commercial Allowance');
+      /*
+       * Two figures, because they are two different facts.
+       *
+       * `soldAllowanceMinor` is the commercial one this list is about: what the plan sold. The
+       * `aiAllowanceMinor` beside it is what the company's wallet actually enforces, and this
+       * company has never spent anything so it has no wallet yet — which is zero, not unknown.
+       *
+       * They used to be one number read off the subscription, and that number was the reason
+       * Billing could report 0% consumed for every company forever: the consumption half of the
+       * same pair was a column nothing writes.
+       */
+      assert.equal(position.allowance.soldAllowanceMinor, 100_000, '(4) Commercial Allowance');
+      assert.equal(position.allowance.aiAllowanceMinor, 0, 'no wallet yet, so nothing enforced');
       assert.equal(position.seats.ceiling, 4, 'seats are commercial, not permissions');
     });
 

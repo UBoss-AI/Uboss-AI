@@ -271,10 +271,14 @@ function cellText(cell: ExcelJS.Cell): string {
   // A formula cell carries its result; a rich-text cell carries runs. Both are text to a person.
   const asObject = value as { result?: unknown; richText?: { text: string }[]; text?: string };
   if (Array.isArray(asObject.richText)) {
-    return asObject.richText.map((run) => run.text).join('').trim();
+    return asObject.richText
+      .map((run) => run.text)
+      .join('')
+      .trim();
   }
   if (typeof asObject.text === 'string') return asObject.text.trim();
-  if (asObject.result !== undefined && asObject.result !== null) return String(asObject.result).trim();
+  if (asObject.result !== undefined && asObject.result !== null)
+    return String(asObject.result).trim();
   return '';
 }
 

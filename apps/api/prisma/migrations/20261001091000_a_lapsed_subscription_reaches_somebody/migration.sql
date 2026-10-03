@@ -1,0 +1,28 @@
+-- A ninth notification kind: the subscription was not paid and work has stopped.
+--
+-- ## Why this is not one of the eight that already exist
+--
+-- `BudgetThreshold` is the nearest, and it is a different fact: it means the company's AI
+-- allowance is running down, which is a decision about buying more tokens. This means the
+-- company's own subscription went unpaid and the workspace has gone read-only — different cause,
+-- different person to act, and different consequence. Filing it under the budget kind would also
+-- put it in the same preference row, so somebody who muted budget warnings would never be told
+-- their workspace had stopped.
+--
+-- `SecurityEvent` is the other temptation, because that kind is mandatory and cannot be muted.
+-- But a payment lapse is not a security event, and borrowing the kind to borrow its urgency
+-- would make the security trail's own reporting wrong.
+--
+-- ## Why it needs to exist at all
+--
+-- Until now a company lost write access in silence. The webhook moved it to read-only, the
+-- request guard refused the next write, and nobody was told in advance or afterwards. The first
+-- thing anybody learned about it was a person failing to save their work.
+--
+-- Additive only. Adding a value to an enum cannot invalidate a stored row, so no existing
+-- notification is touched and nothing needs backfilling: every row already carries one of the
+-- eight values and they all remain legal.
+--
+-- IF NOT EXISTS so re-running this against a database that already has it is a no-op rather than
+-- a failure -- the test database is stamped separately from the development one.
+ALTER TYPE "notification_kind" ADD VALUE IF NOT EXISTS 'SubscriptionLapsed';

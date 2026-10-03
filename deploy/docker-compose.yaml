@@ -15,7 +15,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U uboss -d uboss_prod"]
+      test: ['CMD-SHELL', 'pg_isready -U uboss -d uboss_prod']
       interval: 5s
       timeout: 5s
       retries: 30
@@ -24,11 +24,11 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ['redis-server', '--appendonly', 'yes']
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
       timeout: 5s
       retries: 30
@@ -36,14 +36,14 @@ services:
 
   db-setup:
     image: postgres:17-alpine
-    restart: "no"
+    restart: 'no'
     depends_on:
       postgres:
         condition: service_healthy
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD:?Set a strong hex password}
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Set a separate strong hex password}
-    entrypoint: ["sh", "-ec"]
+    entrypoint: ['sh', '-ec']
     command:
       - |
         psql -h postgres -U uboss -d uboss_prod -v app_password="$${APP_DB_PASSWORD}" <<'SQL'
@@ -69,7 +69,7 @@ services:
       NODE_ENV: production
       API_HOST: 0.0.0.0
       API_PORT: 4000
-      API_DOCS_ENABLED: "false"
+      API_DOCS_ENABLED: 'false'
       DATABASE_MIGRATION_URL: postgresql://uboss:${POSTGRES_PASSWORD:?Set a strong hex password}@postgres:5432/uboss_prod?schema=public
       DATABASE_URL: postgresql://uboss_app:${APP_DB_PASSWORD:?Set a separate strong hex password}@postgres:5432/uboss_prod?schema=public
       REDIS_URL: redis://redis:6379
@@ -80,12 +80,79 @@ services:
       UBOSS_INITIAL_ADMIN_EMAIL: ${UBOSS_INITIAL_ADMIN_EMAIL:-}
       UBOSS_INITIAL_ADMIN_NAME: ${UBOSS_INITIAL_ADMIN_NAME:-}
       UBOSS_INITIAL_ADMIN_PASSWORD: ${UBOSS_INITIAL_ADMIN_PASSWORD:-}
+      # Mail. Without a complete set the API keeps the logging adapter, which records an email and
+      # sends nothing — so an invitation, a password reset and a security alert all leave the
+      # product and arrive nowhere. A *partial* set is refused at boot rather than half-working.
+      UBOSS_SMTP_HOST: ${UBOSS_SMTP_HOST:-}
+      UBOSS_SMTP_PORT: ${UBOSS_SMTP_PORT:-587}
+      UBOSS_SMTP_USERNAME: ${UBOSS_SMTP_USERNAME:-}
+      UBOSS_SMTP_PASSWORD: ${UBOSS_SMTP_PASSWORD:-}
+      UBOSS_SMTP_FROM_EMAIL: ${UBOSS_SMTP_FROM_EMAIL:-}
+      UBOSS_SMTP_FROM_NAME: ${UBOSS_SMTP_FROM_NAME:-UBoss AI}
+      # Empty in production: the product mails whoever it is meant to mail. A staging deployment
+      # sets it, because staging's people are either fixtures at domains that do not exist — whose
+      # mail is accepted and then bounces, one per message, into the sending mailbox — or real
+      # customers restored from a dump, who must not be told about work that is not happening.
+      UBOSS_SMTP_ALLOWED_RECIPIENT_DOMAINS: ${UBOSS_SMTP_ALLOWED_RECIPIENT_DOMAINS:-}
+      # Sign in with Google, Microsoft or Apple.
+      #
+      # Each provider is all-or-nothing: an id without a secret is treated as absent, because a
+      # button that cannot complete is worse than no button — the failure looks like a broken
+      # product rather than a key somebody has not supplied. A provider with no credentials shows
+      # as plainly disabled on the sign-in screen and says why.
+      #
+      # The redirect URI to register with each provider is the API's own callback:
+      #   https://api.ubossai.com/auth/sso/callback
+      # It is derived from AUTH_PUBLIC_API_BASE_URL above, so the two must agree or every sign-in
+      # comes back to an address the provider will refuse.
+      #
+      # None of these ever creates an account. A returned address must already belong to an
+      # invited, active person or the sign-in is refused — anybody can obtain a Google account,
+      # and that must not be a way into somebody's company.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+      # `common` lets any Microsoft tenant in; a single-tenant deployment names its directory id.
+      MICROSOFT_TENANT_ID: ${MICROSOFT_TENANT_ID:-common}
+      APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
+      APPLE_CLIENT_SECRET: ${APPLE_CLIENT_SECRET:-}
+      # Payments. Without these the billing module keeps its unconfigured adapter: a company can
+      # see its plan and cannot buy one. Every paid path — the first subscription, a plan change,
+      # a token top-up — refuses with "payments are not configured", which is honest and useless.
+      #
+      # The webhook secret is not optional alongside the other two. Stripe's callback is how a
+      # payment becomes an entitlement, and the handler verifies its signature over the raw body;
+      # without the secret every genuine delivery is refused as a forgery, so a company would pay
+      # and never be upgraded. A partial set is a worse state than none.
+      #
+      # Set in the host's `.env` beside the database passwords, never in this file.
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      # The platform's own model credential, used when a company has not supplied its own. Empty
+      # is a valid deployment: every company then brings its own connection, and one that has not
+      # is told its provider is unreachable rather than being quietly run on somebody else's key.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Where uploaded files' bytes go. Without it the API keeps the in-memory store, so every
+      # chat attachment, knowledge document and piece of completion evidence would live in the
+      # process and vanish on the next restart — the record surviving and the bytes not, which
+      # surfaces as a download that fails long after the upload was forgotten.
+      UBOSS_FILE_STORAGE_DIR: /var/lib/uboss/files
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
       interval: 15s
       timeout: 5s
       retries: 10
       start_period: 60s
+    volumes:
+      - file-data:/var/lib/uboss/files
     networks: [private]
 
   web:
@@ -120,6 +187,31 @@ services:
       NEXT_PUBLIC_PRODUCT_LOGIN_URL: https://app.ubossai.com/login
     networks: [private]
 
+  # Nothing was taking a backup. The scripts existed in `infra/backup/` and the production stack
+  # ran none of them, so the honest description of this deployment was "no backups at all".
+  #
+  # It dumps as the owner role, never as `uboss_app`: that role is NOBYPASSRLS, so a dump taken as
+  # the application would silently omit every tenant row and restore to an empty database while
+  # exiting zero. `pg-backup.sh` refuses it outright, and this passes the migration URL for that
+  # reason rather than by accident.
+  backup:
+    build:
+      <<: *source
+      dockerfile: deploy/Dockerfile.backup
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_MIGRATION_URL: postgresql://uboss:${POSTGRES_PASSWORD:?Set a strong hex password}@postgres:5432/uboss_prod?schema=public
+      UBOSS_BACKUP_DIR: /backups
+      UBOSS_BACKUP_INTERVAL_SECONDS: ${UBOSS_BACKUP_INTERVAL_SECONDS:-86400}
+      UBOSS_BACKUP_KEEP_DAYS: ${UBOSS_BACKUP_KEEP_DAYS:-14}
+      UBOSS_BACKUP_VERIFY_EVERY: ${UBOSS_BACKUP_VERIFY_EVERY:-7}
+    volumes:
+      - backup-data:/backups
+    networks: [private]
+
   gateway:
     build:
       <<: *source
@@ -133,9 +225,9 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
     volumes:
       - caddy-data:/data
       - caddy-config:/config
@@ -146,6 +238,15 @@ volumes:
   redis-data:
   caddy-data:
   caddy-config:
+  # Uploaded files' bytes. The database holds the reference and never the content, so a restore
+  # of postgres alone brings back every file *record* with nothing behind it — this volume is the
+  # other half of a recovery and belongs in the same backup.
+  file-data:
+  # On the same host as the database it protects, which is the one thing this volume cannot fix.
+  # It survives a container, an image rebuild and a bad migration; it does not survive the host.
+  # Off-host copies are a decision about where a company's data may live — see
+  # `infra/backup/object-storage-policy.md` — and are not made here.
+  backup-data:
 
 networks:
   private:

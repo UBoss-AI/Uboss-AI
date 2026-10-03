@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 
+import { OverdueTaskSweeper } from './overdue-task.sweeper.js';
 import { PerformanceController } from './performance.controller.js';
 import { PerformanceService } from './performance.service.js';
 
@@ -15,7 +16,7 @@ import { PerformanceService } from './performance.service.js';
 @Global()
 @Module({
   controllers: [PerformanceController],
-  providers: [PerformanceService],
-  exports: [PerformanceService],
+  providers: [PerformanceService, OverdueTaskSweeper],
+  exports: [PerformanceService, OverdueTaskSweeper],
 })
 export class PerformanceModule {}

@@ -6,7 +6,7 @@ import { useId, useMemo, useState, type ReactNode } from 'react';
 import { Icon } from '../primitives/Icon';
 import { cn } from '../lib/class-names';
 import { transition } from '../motion/motion';
-import type { SettingsSection } from '../navigation/navigation-model';
+import { SETTINGS_GROUPS, type SettingsSection } from '../navigation/navigation-model';
 
 export interface SettingsShellProps {
   /**
@@ -94,27 +94,51 @@ export function SettingsShell({
           />
         </div>
 
-        {visible.map((section) => {
-          const active = section.key === activeKey;
+        {/*
+          Banded by what somebody came to do.
+
+          A flat list of a dozen — General, Users & Access, Roles & Permissions, Objective Rules,
+          Agent Policy, Tokens & Cost, Integrations, Notifications, Security, Billing, Appearance —
+          in no order anybody could name, so finding one meant reading all of them, every time.
+
+          A band with nothing in it is not drawn: which sections a reader gets depends on their
+          grants, and an empty "Money" heading would say the product had lost something.
+
+          While searching, the headings go: a filtered list is already short, and grouping three
+          results under three headings is more chrome than answer.
+        */}
+        {(query.trim() === '' ? SETTINGS_GROUPS : ['' as const]).map((group) => {
+          const inGroup =
+            query.trim() === '' ? visible.filter((section) => section.group === group) : visible;
+          if (inGroup.length === 0) return null;
 
           return (
-            <button
-              key={section.key}
-              type="button"
-              className="uboss-settings-nav-item"
-              aria-current={active ? 'page' : undefined}
-              onClick={() => onSelect(section.key)}
-            >
-              {active ? (
-                <motion.span
-                  layoutId={indicatorId}
-                  className="uboss-settings-indicator"
-                  aria-hidden="true"
-                  transition={transition('panel', 'standard')}
-                />
-              ) : null}
-              <span className="uboss-settings-nav-label">{labelFor(section)}</span>
-            </button>
+            <div key={group || 'results'}>
+              {group === '' ? null : <div className="uboss-settings-nav-group">{group}</div>}
+              {inGroup.map((section) => {
+                const active = section.key === activeKey;
+
+                return (
+                  <button
+                    key={section.key}
+                    type="button"
+                    className="uboss-settings-nav-item"
+                    aria-current={active ? 'page' : undefined}
+                    onClick={() => onSelect(section.key)}
+                  >
+                    {active ? (
+                      <motion.span
+                        layoutId={indicatorId}
+                        className="uboss-settings-indicator"
+                        aria-hidden="true"
+                        transition={transition('panel', 'standard')}
+                      />
+                    ) : null}
+                    <span className="uboss-settings-nav-label">{labelFor(section)}</span>
+                  </button>
+                );
+              })}
+            </div>
           );
         })}
 

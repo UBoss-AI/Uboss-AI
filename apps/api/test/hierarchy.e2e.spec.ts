@@ -1234,10 +1234,9 @@ describe('organization hierarchy (e2e)', () => {
      */
     it('refuses an ordinary employee the company structure — CR-03 §9', async () => {
       await buildChain();
-      await as(
-        agent().get(`/tenants/${tenantId}/organization/hierarchy`),
-        employeeUboss,
-      ).expect(403);
+      await as(agent().get(`/tenants/${tenantId}/organization/hierarchy`), employeeUboss).expect(
+        403,
+      );
 
       // And the administrator still sees it, so this is a scope change and not a broken route.
       const response = await as(

@@ -24,6 +24,7 @@ import {
   organizationApi,
   performanceApi,
   type PerformanceView,
+  type PerformanceEventRow,
   todoApi,
   type EmployeeProfile,
   type EngineAgentView,
@@ -470,9 +471,7 @@ export function EmployeeDrawer({
           <b>{profile?.displayName ?? 'Loading…'}</b>
           <br />
           <small className="uboss-muted-3">
-            {profile === null
-              ? ''
-              : `${profile.designation} · ${profile.departmentName}`}
+            {profile === null ? '' : `${profile.designation} · ${profile.departmentName}`}
           </small>
         </div>
         <button
@@ -682,14 +681,12 @@ export function EmployeeDrawer({
                     <input
                       className="uboss-input"
                       value={draft.displayName}
-                      onChange={(event) =>
-                        setDraft({ ...draft, displayName: event.target.value })
-                      }
+                      onChange={(event) => setDraft({ ...draft, displayName: event.target.value })}
                       data-testid="edit-name"
                     />
                     <span className="uboss-field-note">
-                      A person has one name across every company they work in, so correcting it
-                      here corrects it everywhere. Their UBoss ID and history stay with them.
+                      A person has one name across every company they work in, so correcting it here
+                      corrects it everywhere. Their UBoss ID and history stay with them.
                     </span>
                   </label>
 
@@ -698,9 +695,7 @@ export function EmployeeDrawer({
                     <input
                       className="uboss-input"
                       value={draft.employeeId}
-                      onChange={(event) =>
-                        setDraft({ ...draft, employeeId: event.target.value })
-                      }
+                      onChange={(event) => setDraft({ ...draft, employeeId: event.target.value })}
                     />
                   </label>
 
@@ -709,9 +704,7 @@ export function EmployeeDrawer({
                     <input
                       className="uboss-input"
                       value={draft.designation}
-                      onChange={(event) =>
-                        setDraft({ ...draft, designation: event.target.value })
-                      }
+                      onChange={(event) => setDraft({ ...draft, designation: event.target.value })}
                     />
                   </label>
 
@@ -883,7 +876,9 @@ export function EmployeeDrawer({
               tasks === null ? (
                 <SkeletonText lines={3} />
               ) : tasks.length === 0 ? (
-                <p className="uboss-muted-3">No work is assigned to them, or it is not yours to see.</p>
+                <p className="uboss-muted-3">
+                  No work is assigned to them, or it is not yours to see.
+                </p>
               ) : (
                 <DataTable
                   caption="Work assigned to this person"
@@ -993,20 +988,29 @@ export function EmployeeDrawer({
                     <DataTable
                       caption="What their score is made of"
                       columns={[
+                        /*
+                         * One row type across all three columns, not a different one per column.
+                         *
+                         * Each column used to declare only the field it read, which made the table's
+                         * row type whichever column TypeScript inferred from first — so the other two
+                         * were checked against a shape that did not have their fields. It happened to
+                         * compile; it was never actually type-checked.
+                         */
                         {
                           key: 'kind',
                           header: 'Event',
-                          render: (row: { kind: string }) => row.kind,
+                          render: (row: PerformanceEventRow) => row.kind,
                         },
                         {
                           key: 'points',
                           header: 'Points',
-                          render: (row: { points: number }) => String(row.points),
+                          numeric: true,
+                          render: (row: PerformanceEventRow) => String(row.points),
                         },
                         {
                           key: 'at',
                           header: 'When',
-                          render: (row: { occurredAt: string }) =>
+                          render: (row: PerformanceEventRow) =>
                             new Date(row.occurredAt).toLocaleDateString(),
                         },
                       ]}
@@ -1044,8 +1048,7 @@ export function EmployeeDrawer({
                     {
                       key: 'when',
                       header: 'When',
-                      render: (row: ActivityRow) =>
-                        new Date(row.occurredAt).toLocaleString(),
+                      render: (row: ActivityRow) => new Date(row.occurredAt).toLocaleString(),
                     },
                     {
                       key: 'what',

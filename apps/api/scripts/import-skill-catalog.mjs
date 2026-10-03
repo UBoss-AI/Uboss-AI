@@ -277,8 +277,7 @@ async function main() {
         steps: [
           {
             order: 1,
-            instruction:
-              `Confirm this is the right Skill for the work: ${row['Positive Trigger']}`,
+            instruction: `Confirm this is the right Skill for the work: ${row['Positive Trigger']}`,
           },
           {
             order: 2,
@@ -311,7 +310,7 @@ async function main() {
         evidenceRequirement:
           evidence.length > 0
             ? evidence.join('; ')
-            : (row['Minimum Inputs'] || 'The inputs this Skill declares.'),
+            : row['Minimum Inputs'] || 'The inputs this Skill declares.',
       },
       sourceReference:
         `Universal Enterprise Skill Catalog — ${row['Skill ID']}; standards ${row['Source IDs'] || 'not stated'}`.slice(
@@ -363,81 +362,81 @@ async function main() {
   const now = new Date();
 
   for (const skill of prepared) {
-   /*
-    * One interactive transaction per Skill, and the platform flag set inside it.
-    *
-    * `set_config(..., true)` is transaction-local. Outside a transaction every Prisma call is its
-    * own implicit one, so the flag was gone before the very next statement ran and the insert met
-    * the row-level security policy with nothing set — "new row violates row-level security policy
-    * for table skills", which is the policy doing its job. The flag has to live in the same
-    * transaction as the writes it authorises.
-    */
-   await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT set_config('app.platform_operation', 'on', true)`;
+    /*
+     * One interactive transaction per Skill, and the platform flag set inside it.
+     *
+     * `set_config(..., true)` is transaction-local. Outside a transaction every Prisma call is its
+     * own implicit one, so the flag was gone before the very next statement ran and the insert met
+     * the row-level security policy with nothing set — "new row violates row-level security policy
+     * for table skills", which is the policy doing its job. The flag has to live in the same
+     * transaction as the writes it authorises.
+     */
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.platform_operation', 'on', true)`;
 
-    const existing = await tx.skill.findFirst({
-      where: { tenantId: null, key: skill.key },
-      select: { id: true },
-    });
-
-    const skillRow = existing
-      ? await tx.skill.update({
-          where: { id: existing.id },
-          data: {
-            name: skill.name,
-            layer: skill.layer,
-            industry: skill.industry,
-            department: skill.department,
-            archetype: skill.archetype,
-          },
-        })
-      : await tx.skill.create({
-          data: {
-            tenantId: null,
-            key: skill.key,
-            name: skill.name,
-            layer: skill.layer,
-            industry: skill.industry,
-            department: skill.department,
-            archetype: skill.archetype,
-          },
-        });
-
-    const { sourceAutonomy, ...content } = skill.content;
-
-    const versionRow = await tx.skillVersion.upsert({
-      where: { skillId_versionNumber: { skillId: skillRow.id, versionNumber: 1 } },
-      create: {
-        tenantId: null,
-        skillId: skillRow.id,
-        versionNumber: 1,
-        status: 'Published',
-        ...content,
-        sourceAutonomy,
-        creationMode: 'FromDocument',
-        sourceReference: skill.sourceReference,
-        approvedByUserId: publisherId,
-        approvedAt: now,
-        publishedByUserId: publisherId,
-        publishedAt: now,
-      },
-      update: {
-        ...content,
-        sourceAutonomy,
-        sourceReference: skill.sourceReference,
-      },
-    });
-
-    if (skillRow.publishedVersionId !== versionRow.id) {
-      await tx.skill.update({
-        where: { id: skillRow.id },
-        data: { publishedVersionId: versionRow.id },
+      const existing = await tx.skill.findFirst({
+        where: { tenantId: null, key: skill.key },
+        select: { id: true },
       });
-    }
 
-    if (existing) updated += 1;
-    else created += 1;
-   });
+      const skillRow = existing
+        ? await tx.skill.update({
+            where: { id: existing.id },
+            data: {
+              name: skill.name,
+              layer: skill.layer,
+              industry: skill.industry,
+              department: skill.department,
+              archetype: skill.archetype,
+            },
+          })
+        : await tx.skill.create({
+            data: {
+              tenantId: null,
+              key: skill.key,
+              name: skill.name,
+              layer: skill.layer,
+              industry: skill.industry,
+              department: skill.department,
+              archetype: skill.archetype,
+            },
+          });
+
+      const { sourceAutonomy, ...content } = skill.content;
+
+      const versionRow = await tx.skillVersion.upsert({
+        where: { skillId_versionNumber: { skillId: skillRow.id, versionNumber: 1 } },
+        create: {
+          tenantId: null,
+          skillId: skillRow.id,
+          versionNumber: 1,
+          status: 'Published',
+          ...content,
+          sourceAutonomy,
+          creationMode: 'FromDocument',
+          sourceReference: skill.sourceReference,
+          approvedByUserId: publisherId,
+          approvedAt: now,
+          publishedByUserId: publisherId,
+          publishedAt: now,
+        },
+        update: {
+          ...content,
+          sourceAutonomy,
+          sourceReference: skill.sourceReference,
+        },
+      });
+
+      if (skillRow.publishedVersionId !== versionRow.id) {
+        await tx.skill.update({
+          where: { id: skillRow.id },
+          data: { publishedVersionId: versionRow.id },
+        });
+      }
+
+      if (existing) updated += 1;
+      else created += 1;
+    });
   }
 
   console.log('');

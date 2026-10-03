@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
 import {
@@ -30,8 +31,12 @@ import {
   type CommercialPosition,
   type CommercialRequestRow,
   type MeResponse,
+  type TokenPurchaseRow,
+  type TokenQuote,
+  type UpgradeOptions,
 } from '../../../lib/api-client';
 
+import { AccessRefused, isRefusal } from '../../../components/AccessRefused';
 import { useAccountMenu } from '../../../lib/use-account-menu';
 import { useSignedInUser } from '../../../lib/use-signed-in-user';
 import { RoutedAppShell } from '../../../components/RoutedAppShell';
@@ -103,6 +108,8 @@ export default function CompanyBillingSettingsPage() {
   const [position, setPosition] = useState<CommercialPosition | null>(null);
   const [requests, setRequests] = useState<CommercialRequestRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /* A 403 here means this is somebody else's screen, not a broken one u2014 see the catch in `load`. */
+  const [refused, setRefused] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
   const [kind, setKind] = useState<string>('MoreSeats');
@@ -114,6 +121,11 @@ export default function CompanyBillingSettingsPage() {
   const [connection, setConnection] = useState<BillingConnection | null>(null);
   const [invoices, setInvoices] = useState<BillingInvoiceRow[] | null>(null);
   const [paying, setPaying] = useState(false);
+
+  const [upgradeOptions, setUpgradeOptions] = useState<UpgradeOptions | null>(null);
+  const [tokenPurchases, setTokenPurchases] = useState<TokenPurchaseRow[] | null>(null);
+  const [tokenAmount, setTokenAmount] = useState('50000');
+  const [tokenQuote, setTokenQuote] = useState<TokenQuote | null>(null);
 
   const tenantId =
     resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
@@ -141,20 +153,43 @@ export default function CompanyBillingSettingsPage() {
       commercialApi.requests(tenantId),
       billingApi.connection(tenantId),
       billingApi.invoices(tenantId),
+      billingApi.plans(tenantId),
+      billingApi.tokenPurchases(tenantId),
     ])
-      .then(([positionResult, requestResult, connectionResult, invoiceResult]) => {
-        setPosition(positionResult);
-        setRequests(requestResult.requests);
-        setConnection(connectionResult);
-        setInvoices(invoiceResult.invoices);
-      })
-      .catch((caught: unknown) =>
+      .then(
+        ([
+          positionResult,
+          requestResult,
+          connectionResult,
+          invoiceResult,
+          planResult,
+          purchaseResult,
+        ]) => {
+          setPosition(positionResult);
+          setRequests(requestResult.requests);
+          setConnection(connectionResult);
+          setInvoices(invoiceResult.invoices);
+          setUpgradeOptions(planResult);
+          setTokenPurchases(purchaseResult.purchases);
+        },
+      )
+      .catch((caught: unknown) => {
+        /*
+         * A refusal is not a failure, and must not be shown as one.
+         *
+         * Billing is `settings: Administer` — the same permission the Settings screen already
+         * used to decide whether to offer the Billing tile at all. Somebody who reaches this URL
+         * without it is not looking at a broken screen; they are looking at something that is not
+         * theirs, and a red "could not load" banner would send them to support over a working
+         * product. Every other gated screen in this product answers that case the same way.
+         */
+        setRefused(isRefusal(caught));
         setError(
           caught instanceof ApiError
             ? caught.message
             : 'Could not load this company’s plan and seats.',
-        ),
-      );
+        );
+      });
   }, [tenantId]);
 
   useEffect(load, [load]);
@@ -175,14 +210,83 @@ export default function CompanyBillingSettingsPage() {
         .checkout(tenantId, cycle)
         .then(({ url }) => window.location.assign(url))
         .catch((caught: unknown) => {
-          setError(
-            caught instanceof ApiError ? caught.message : 'Could not start the payment.',
-          );
+          setError(caught instanceof ApiError ? caught.message : 'Could not start the payment.');
           setPaying(false);
         });
     },
     [tenantId],
   );
+
+  /**
+   * Buy a different plan.
+   *
+   * The same full navigation as paying the existing bill, and for the same reason: the provider
+   * owns the next page. Monthly only from this screen — a company choosing annual is choosing a
+   * year's commitment, which belongs in a conversation rather than behind a button they might
+   * press by accident.
+   */
+  const upgradeTo = useCallback(
+    (planCode: string) => {
+      if (!tenantId) return;
+      setPaying(true);
+      setError(null);
+      billingApi
+        .upgrade(tenantId, planCode, 'Monthly')
+        .then(({ url }) => window.location.assign(url))
+        .catch((caught: unknown) => {
+          setError(caught instanceof ApiError ? caught.message : 'Could not start the payment.');
+          setPaying(false);
+        });
+    },
+    [tenantId],
+  );
+
+  /**
+   * Price the number in the box, as it is typed.
+   *
+   * Asked of the server rather than multiplied here. The rate is a platform setting and it is
+   * deliberately not published to a company — a screen that could compute the price would be a
+   * screen that knows the rate, and anybody reading its source would too.
+   */
+  useEffect(() => {
+    if (!tenantId) return;
+    const tokens = Number(tokenAmount);
+    if (!Number.isInteger(tokens) || tokens <= 0) {
+      setTokenQuote(null);
+      return;
+    }
+
+    let current = true;
+    const timer = setTimeout(() => {
+      billingApi
+        .quoteTokens(tenantId, tokens)
+        .then((quote) => {
+          if (current) setTokenQuote(quote);
+        })
+        .catch(() => {
+          if (current) setTokenQuote(null);
+        });
+    }, 300);
+
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [tenantId, tokenAmount]);
+
+  const buyTokens = useCallback(() => {
+    if (!tenantId) return;
+    const tokens = Number(tokenAmount);
+    setPaying(true);
+    setError(null);
+    billingApi
+      .buyTokens(tenantId, tokens)
+      .then(({ url }) => window.location.assign(url))
+      .catch((caught: unknown) => {
+        setError(caught instanceof ApiError ? caught.message : 'Could not start the payment.');
+        setPaying(false);
+      });
+  }, [tenantId, tokenAmount]);
 
   const manageBilling = useCallback(() => {
     if (!tenantId) return;
@@ -275,13 +379,17 @@ export default function CompanyBillingSettingsPage() {
       <PageHeader
         title="Billing"
         description="Your plan, what it entitles this company to, and how many seats are in use."
-        breadcrumbs={[{ label: 'Settings' }, { label: 'Billing' }]}
+        breadcrumbs={[{ label: 'Settings', href: '/settings' }, { label: 'Billing' }]}
       />
 
-      {error ? <Banner tone="danger">{error}</Banner> : null}
+      {refused ? (
+        <AccessRefused what="Billing" message={error} />
+      ) : error ? (
+        <Banner tone="danger">{error}</Banner>
+      ) : null}
       {notice ? <Banner tone="ok">{notice}</Banner> : null}
 
-      {!position ? (
+      {refused ? null : !position ? (
         <Card>
           <CardBody>
             <SkeletonText lines={5} />
@@ -293,10 +401,28 @@ export default function CompanyBillingSettingsPage() {
             className="uboss-grid"
             style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))' }}
           >
+            {/*
+              The plan, with what it costs.
+
+              This is the one money figure a company is shown, and it is shown because it is
+              theirs: it is what they agreed to pay and what an invoice will say. The card used to
+              carry the billing state instead — "Current" — which is a word about a payment nobody
+              had asked about, in the place where the price belongs.
+
+              A negotiated Enterprise plan has no list price, so it falls back to the state rather
+              than printing a made-up figure or an empty line.
+            */}
             <MetricCard
               label="Plan"
               value={position.plan.name ?? 'No plan'}
-              {...(position.plan.billingState ? { delta: position.plan.billingState } : {})}
+              {...(position.plan.priceMinor !== null && position.plan.priceCurrency !== null
+                ? {
+                    delta:
+                      `${formatMinor(position.plan.priceMinor, position.plan.priceCurrency)} ${position.plan.billingCycleLabel ?? ''}`.trim(),
+                  }
+                : position.plan.billingState
+                  ? { delta: position.plan.billingState }
+                  : {})}
             />
             <MetricCard
               label="Seats in use"
@@ -309,14 +435,27 @@ export default function CompanyBillingSettingsPage() {
                     : `${position.seats.available ?? 0} available`
               }
             />
+            {/*
+              AI work in UBoss Tokens, never in rupees.
+
+              What a company pays is the plan price beside this card — that is their money and
+              they can see it. What an individual AI call cost is not: a charge and a token count
+              together are enough to divide out a per-million rate, match it to a public price
+              list, and read off both the provider's name and UBoss's margin. Tokens are a UBoss
+              unit and divide into neither.
+
+              This card also used to read 0% for every company however much they had run, because
+              it was built on a column nothing writes. It now reads the same wallet the hard stop
+              refuses calls against, so the number on screen is the limit actually being applied.
+            */}
             <MetricCard
-              label="AI allowance used"
+              label="AI use this period"
               value={
                 position.allowance.percentConsumed === null
                   ? '—'
                   : `${position.allowance.percentConsumed}%`
               }
-              delta={`${formatMinor(position.allowance.aiConsumedMinor, position.allowance.currency)} of ${formatMinor(position.allowance.aiAllowanceMinor, position.allowance.currency)}`}
+              delta={`${position.allowance.aiConsumedTokens.toLocaleString()} of ${position.allowance.aiAllowanceTokens.toLocaleString()} UBoss Tokens`}
             />
             <MetricCard
               label="Renews"
@@ -456,6 +595,192 @@ export default function CompanyBillingSettingsPage() {
               </CardBody>
             </Card>
           </div>
+
+          {/*
+            Buying a bigger plan, which needs nobody's approval.
+
+            Deliberately above "Ask for a change": a published plan at a published price is bought,
+            not requested. The request form below is for the things that genuinely need a decision —
+            more seats on the plan you are on, a bigger allowance, a module. Putting the two the
+            other way round would teach a customer to raise a ticket for something they can do
+            themselves in a minute.
+          */}
+          <Card>
+            <CardHeader
+              title="Move to a different plan"
+              aside={
+                upgradeOptions === null ? null : (
+                  <StatusBadge status={`Priced in ${upgradeOptions.currency}`} tone="grey" />
+                )
+              }
+            />
+            <CardBody>
+              {/*
+                The list is shown whenever there is anything besides the current plan — not only
+                when something is buyable.
+
+                The first version hid the whole list the moment nothing could be bought, so a
+                company whose other plans were simply not published yet was told "nothing to move
+                to". That is the wrong sentence: the plan exists, it has a price, and what they
+                need to know is that it is not on sale online yet and who to ask. Each card says
+                that for itself, which is why the list is worth showing even when no button is.
+              */}
+              {upgradeOptions === null ? (
+                <p className="uboss-muted-3">Loading…</p>
+              ) : upgradeOptions.plans.filter((plan) => !plan.current).length === 0 ? (
+                <EmptyState
+                  title="Nothing else is sold in your currency yet"
+                  description={
+                    'Every other plan is priced in a different currency. We do not convert ' +
+                    'prices — a converted figure is not what your card would be charged — so ' +
+                    'talk to us and we will price them for you.'
+                  }
+                />
+              ) : (
+                <div className="uboss-plan-choices">
+                  {upgradeOptions.plans.map((plan) => (
+                    <div
+                      key={plan.code}
+                      className={`uboss-plan-choice${plan.current ? ' uboss-plan-choice--current' : ''}`}
+                    >
+                      <div className="uboss-row uboss-row--between">
+                        <b>{plan.name}</b>
+                        {plan.current ? <StatusBadge status="Current" tone="success" /> : null}
+                      </div>
+
+                      <p className="uboss-plan-choice__price">
+                        {/*
+                          A price or nothing — never a converted one.
+
+                          A plan with no price in this company's currency is not sold to them, and
+                          showing another currency's figure would put a number on the screen that
+                          the invoice will not match.
+                        */}
+                        {plan.priceMinor === null ? (
+                          <span className="uboss-muted-3">
+                            Not priced in {upgradeOptions.currency}
+                          </span>
+                        ) : (
+                          <>
+                            {formatMinor(plan.priceMinor, upgradeOptions.currency)}
+                            <small className="uboss-muted-3"> a month</small>
+                          </>
+                        )}
+                      </p>
+
+                      <p className="uboss-muted-3 uboss-plan-choice__seats">
+                        {plan.seatLimit === null
+                          ? 'Seats agreed with you'
+                          : `${plan.seatLimit} seats`}
+                      </p>
+
+                      {plan.buyable ? (
+                        <button
+                          type="button"
+                          className="uboss-button"
+                          disabled={paying}
+                          onClick={() => upgradeTo(plan.code)}
+                        >
+                          {paying ? 'Opening…' : `Move to ${plan.name}`}
+                        </button>
+                      ) : (
+                        <small className="uboss-muted-3">{plan.unavailableReason}</small>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <p className="uboss-muted-3">
+                Payment is taken on the provider’s own page. The plan changes when they confirm it,
+                not when the browser comes back — so nothing is granted on a page that could have
+                been opened by hand.
+              </p>
+            </CardBody>
+          </Card>
+
+          {/*
+            Buying tokens, which is a different thing from buying a plan.
+
+            A plan is bought once a month and changes what the company is. A top-up is bought when
+            the month's allowance runs out and changes nothing else — it does not move next month's
+            allowance, and saying so here stops the obvious misreading.
+          */}
+          <Card>
+            <CardHeader title="Buy more UBoss Tokens" />
+            <CardBody>
+              <p className="uboss-muted-3">
+                A one-off top-up, added to this month’s allowance. It does not change your plan or
+                what next month gives you.
+              </p>
+
+              <FormField label="How many tokens?">
+                {(wiring) => (
+                  <input
+                    {...wiring}
+                    type="number"
+                    min={10000}
+                    step={10000}
+                    value={tokenAmount}
+                    onChange={(event) => setTokenAmount(event.target.value)}
+                    placeholder="50000"
+                  />
+                )}
+              </FormField>
+
+              {tokenQuote === null ? null : tokenQuote.ok ? (
+                <p>
+                  <b>{formatMinor(tokenQuote.amountMinor, tokenQuote.currency)}</b>{' '}
+                  <span className="uboss-muted-3">
+                    for {tokenQuote.tokens.toLocaleString('en-IN')} tokens
+                  </span>
+                </p>
+              ) : (
+                <p className="uboss-muted-3">{tokenQuote.reason}</p>
+              )}
+
+              <button
+                type="button"
+                className="uboss-button"
+                disabled={paying || tokenQuote === null || !tokenQuote.ok}
+                onClick={buyTokens}
+              >
+                {paying ? 'Opening…' : 'Buy tokens'}
+              </button>
+
+              {tokenPurchases !== null && tokenPurchases.length > 0 ? (
+                <ul className="uboss-topup-history">
+                  {tokenPurchases.slice(0, 5).map((purchase) => (
+                    <li key={purchase.id} className="uboss-row uboss-row--between">
+                      <span>
+                        {purchase.tokens.toLocaleString('en-IN')} tokens —{' '}
+                        {formatMinor(purchase.amountMinor, purchase.currency)}
+                      </span>
+                      <span>
+                        <StatusBadge
+                          status={purchase.status}
+                          tone={
+                            purchase.status === 'Paid'
+                              ? 'success'
+                              : purchase.status === 'Failed'
+                                ? 'danger'
+                                : 'grey'
+                          }
+                        />
+                        {/* An unfinished purchase keeps its page, so a closed tab is not a dead end. */}
+                        {purchase.checkoutUrl === null ? null : (
+                          <>
+                            {' '}
+                            <a href={purchase.checkoutUrl}>Finish paying</a>
+                          </>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </CardBody>
+          </Card>
 
           <Card>
             <CardHeader title="Ask for a change" />
@@ -703,9 +1028,7 @@ export default function CompanyBillingSettingsPage() {
               {invoices === null ? (
                 <SkeletonText lines={3} />
               ) : invoices.length === 0 ? (
-                <p className="uboss-muted-3">
-                  No invoice has been issued to this company yet.
-                </p>
+                <p className="uboss-muted-3">No invoice has been issued to this company yet.</p>
               ) : (
                 <DataTable
                   caption="Invoices issued by the payment provider"
@@ -780,15 +1103,25 @@ export default function CompanyBillingSettingsPage() {
           </Card>
 
           <Card>
-            <CardHeader title="Not built yet" />
+            {/*
+              This card used to say the per-run breakdown "arrives with AI usage metering".
+
+              The metering arrived. The figure above is now read from the same wallet the hard stop
+              enforces, and the run-by-run detail is a screen of its own. A "not built yet" note
+              that outlives the thing it was waiting for is worse than no note: it tells a customer
+              a feature they are already using does not exist, and it is the last thing anybody
+              thinks to delete.
+            */}
+            <CardHeader title="Where the detail is" />
             <CardBody>
-              <ul className="uboss-muted-3">
-                <li>
-                  <b>Usage detail per Engine Agent run</b> — the allowance figure above is the
-                  contracted amount and what has been consumed against it; the per-run breakdown
-                  arrives with AI usage metering.
-                </li>
-              </ul>
+              <p className="uboss-muted-3" style={{ margin: 0 }}>
+                The figure above is this period as a whole. For the run-by-run breakdown — which
+                agent, which objective, and what each one used — open{' '}
+                <Link className="uboss-link" href="/settings?section=tokens">
+                  Tokens &amp; Cost
+                </Link>
+                .
+              </p>
             </CardBody>
           </Card>
         </>

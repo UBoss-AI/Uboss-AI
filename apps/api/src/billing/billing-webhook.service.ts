@@ -2,6 +2,10 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import type Stripe from 'stripe';
 
 import { AuditEventService } from '../audit/audit-event.service.js';
+import { CommercialService } from '../commercial/commercial.service.js';
+import { CompanyLifecycleService } from '../commercial/company-lifecycle.service.js';
+import { BillingNoticeService } from './billing-notice.service.js';
+import { TokenPurchaseService } from './token-purchase.service.js';
 import { PrismaService } from '../persistence/prisma.service.js';
 import { tenantScopeForPlatformOperation } from '../persistence/tenant-context.js';
 import { mapStripeSubscriptionStatus } from './billing-mapping.js';
@@ -47,6 +51,10 @@ export class BillingWebhookService {
     private readonly prisma: PrismaService,
     private readonly stripe: StripeClient,
     private readonly auditEvents: AuditEventService,
+    private readonly lifecycle: CompanyLifecycleService,
+    private readonly notices: BillingNoticeService,
+    private readonly topUps: TokenPurchaseService,
+    private readonly commercial: CommercialService,
   ) {}
 
   /**
@@ -56,7 +64,10 @@ export class BillingWebhookService {
    * the same bytes — key order and number formatting both differ — so the signature would never
    * match and every real delivery would be rejected as a forgery.
    */
-  async handle(payload: Buffer, signature: string | undefined): Promise<{ received: true; outcome: string }> {
+  async handle(
+    payload: Buffer,
+    signature: string | undefined,
+  ): Promise<{ received: true; outcome: string }> {
     const secret = this.stripe.webhookSecret;
     if (secret === null) {
       /*
@@ -113,13 +124,42 @@ export class BillingWebhookService {
     }
   }
 
-  /** Record the delivery, or report that it has already been seen. */
+  /**
+   * Record the delivery, or report that it has already been seen.
+   *
+   * ## Why a failed delivery is claimable again
+   *
+   * This file promises that "a delivery this product genuinely failed to apply must be retried",
+   * and the error is rethrown so the provider does retry it. It then arrived back here, found its
+   * own row from the failed attempt, and was answered 200 as a duplicate — so the provider
+   * stopped, and the event was lost for good.
+   *
+   * That was survivable while the worst case was a missing invoice row. It stopped being
+   * survivable when this service began deciding whether a company may use the product: a single
+   * transient database error during `unpaid` would have left a company that has stopped paying
+   * working indefinitely, with no second chance and nothing obviously wrong anywhere.
+   *
+   * So a row whose outcome is `failed` is treated as unclaimed and attempted again. A row that
+   * was applied or deliberately ignored is still a duplicate, and a row with no outcome at all is
+   * still a duplicate — that one is an attempt in flight, and letting a second one in beside it
+   * is how a payment gets applied twice.
+   */
   private async claim(event: Stripe.Event): Promise<boolean> {
     return this.prisma.runAsPlatformOperation(async () => {
       const existing = await this.prisma.client.stripeWebhookEvent.findUnique({
         where: { id: event.id },
       });
-      if (existing !== null) return false;
+      if (existing !== null) {
+        if (existing.outcome !== 'failed') return false;
+
+        // Claim it back. The update is conditional on it still being failed, so two retries
+        // racing each other cannot both take it.
+        const retaken = await this.prisma.client.stripeWebhookEvent.updateMany({
+          where: { id: event.id, outcome: 'failed' },
+          data: { outcome: null, detail: null, processedAt: null },
+        });
+        return retaken.count === 1;
+      }
 
       try {
         await this.prisma.client.stripeWebhookEvent.create({
@@ -206,6 +246,41 @@ export class BillingWebhookService {
         outcome: 'ignored',
         detail: 'The session carried no company reference.',
         tenantId: null,
+      };
+    }
+
+    /*
+     * A top-up is the other thing this event can mean.
+     *
+     * Both a subscription sale and a one-off token purchase arrive as `checkout.session.completed`
+     * — the difference is the session's mode and the id this product put in its metadata. Checked
+     * first, because a top-up has no subscription and would otherwise fall through to the
+     * "not a subscription sale" branch below and be ignored, with the money taken.
+     */
+    const topUpId = session.metadata?.['ubossTokenPurchaseId'];
+    if (typeof topUpId === 'string' && topUpId !== '') {
+      if (session.payment_status !== 'paid') {
+        return {
+          outcome: 'ignored',
+          detail: `The top-up session completed as "${session.payment_status}", not paid.`,
+          tenantId,
+        };
+      }
+
+      const paymentRef =
+        typeof session.payment_intent === 'string'
+          ? session.payment_intent
+          : (session.payment_intent?.id ?? null);
+
+      const result = await this.topUps.markPaid({
+        purchaseId: topUpId,
+        providerPaymentRef: paymentRef,
+      });
+
+      return {
+        outcome: result.credited ? 'applied' : 'ignored',
+        detail: result.detail,
+        tenantId: result.tenantId ?? tenantId,
       };
     }
 
@@ -309,6 +384,66 @@ export class BillingWebhookService {
       }),
     );
 
+    /*
+     * The plan the company paid for, when this subscription carries one.
+     *
+     * A self-serve upgrade puts the plan's code in the subscription's metadata at Checkout, and
+     * this is where it lands. Applied **before** entitlement below, so that a company moving from
+     * Pilot to Starter has its new seats and allowance in place by the time anything judges what
+     * it may do.
+     *
+     * Read by code and looked up, never trusted as a description: the price, the seats and the
+     * allowance all come from the plan row.
+     */
+    const paidPlanCode = subscription.metadata?.['ubossPlanCode'];
+    if (typeof paidPlanCode === 'string' && paidPlanCode !== '' && mapped.entitled) {
+      await this.commercial.applyPaidPlanChange({
+        tenantId,
+        planCode: paidPlanCode,
+        providerReference: subscription.id,
+      });
+    }
+
+    /*
+     * And now the part that actually does something to the company.
+     *
+     * Everything above this line writes down what the provider said. `mapped.entitled` is the
+     * sentence that matters — "this company may or may not use the product" — and until this
+     * call existed it was written into an audit metadata field and nowhere else. The guard reads
+     * the company's lifecycle state, not its subscription state, so a company whose card had
+     * failed was marked unpaid and went on working.
+     *
+     * Deliberately after the subscription row is written, not before: if this throws, the row
+     * already reflects the provider and the delivery is retried, which re-reads it. The other
+     * order would leave a company locked out with no record of why.
+     */
+    const lifecycle = await this.lifecycle.applyBillingEntitlement({
+      tenantId,
+      entitled: mapped.entitled,
+      providerStatus: subscription.status,
+    });
+
+    /*
+     * And tell somebody, once the move is committed.
+     *
+     * Outside the transaction that moved the company, deliberately: raising notices is a loop
+     * over administrators that writes rows and may queue mail, and holding the company's row
+     * locks across it would block that company's own requests for the duration. The access
+     * change is the fact; the notice is a consequence, and a notice that fails must not roll
+     * back a company's access.
+     *
+     * Only when something actually moved. A redelivery that changed nothing has nothing to
+     * announce, and announcing it anyway is how a company learns to ignore these.
+     */
+    if (lifecycle.moved && lifecycle.transitionId !== null) {
+      await this.notices.accessChanged({
+        tenantId,
+        entitled: mapped.entitled,
+        transitionId: lifecycle.transitionId,
+        providerStatus: subscription.status,
+      });
+    }
+
     await this.auditEvents.recordForTenant(tenantScopeForPlatformOperation(tenantId), {
       action: 'billing.subscription_synced',
       resourceType: 'tenant_subscription',
@@ -322,12 +457,18 @@ export class BillingWebhookService {
         state: mapped.state,
         billingState: mapped.billingState,
         entitled: String(mapped.entitled),
+        // What happened to their actual access, including when the answer is "nothing, and here
+        // is why" — which is the question asked whenever a payment does not change anything.
+        access: lifecycle.moved ? `${lifecycle.from} → ${lifecycle.to}` : 'unchanged',
+        accessWhy: lifecycle.why,
       },
     });
 
     return {
       outcome: 'applied',
-      detail: `${subscription.status} → ${mapped.state}/${mapped.billingState}`,
+      detail:
+        `${subscription.status} → ${mapped.state}/${mapped.billingState}` +
+        (lifecycle.moved ? `, access ${lifecycle.from} → ${lifecycle.to}` : ''),
       tenantId,
     };
   }
@@ -336,7 +477,8 @@ export class BillingWebhookService {
   private async onInvoice(
     invoice: Stripe.Invoice,
   ): Promise<{ outcome: string; detail: string | null; tenantId: string | null }> {
-    const customerId = typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
+    const customerId =
+      typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
     if (customerId === undefined) {
       return { outcome: 'ignored', detail: 'The invoice had no customer.', tenantId: null };
     }
@@ -458,7 +600,9 @@ function subscriptionPeriodEnd(subscription: Stripe.Subscription): Date | null {
 function lastPaymentError(invoice: Stripe.Invoice): string | null {
   const payments = (
     invoice as unknown as {
-      payments?: { data?: { payment?: { payment_intent?: { last_payment_error?: { message?: string } } } }[] };
+      payments?: {
+        data?: { payment?: { payment_intent?: { last_payment_error?: { message?: string } } } }[];
+      };
     }
   ).payments;
   const message = payments?.data?.[0]?.payment?.payment_intent?.last_payment_error?.message;

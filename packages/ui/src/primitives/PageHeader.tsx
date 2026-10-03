@@ -45,19 +45,43 @@ export function PageHeader({
 }: PageHeaderProps) {
   const nameShownAbove = useContext(PageNameShownAboveContext);
 
+  /*
+   * Does this trail actually lead anywhere?
+   *
+   * Only crumbs before the last one can: the final crumb is the page you are on, and it is never
+   * a link. A trail of one — `[{ label: 'Dashboard' }]` — is a label, not a route, and drawing it
+   * inside the shell would restore the "it looks double" complaint for no benefit.
+   */
+  const leadsBack =
+    breadcrumbs !== undefined &&
+    breadcrumbs
+      .slice(0, -1)
+      .some((crumb) => crumb.href !== undefined || crumb.onSelect !== undefined);
+
   if (nameShownAbove) {
     /*
-     * Nothing at all when there is nothing to put here. An empty div still carries the page-head
-     * rule's margin, which would leave a gap above the first card on every screen that has no
-     * actions — which is most of them.
+     * The trail comes back, and only when it is the way back.
+     *
+     * Suppressing the whole header inside the shell was right about the title and wrong about the
+     * trail. The top bar names the section, so repeating it as a heading did look double — but the
+     * trail is not a heading, it is the route out, and throwing it away left every sub-screen a
+     * dead end. Objective → Workflow, Settings → Billing, Agent Builder → an assignment: each one
+     * passed a working `href` and none of them drew it, so the only way back was the sidebar,
+     * which returns you to the top of a section rather than to where you came from.
+     *
+     * That is the locked rule in `Breadcrumbs`' own note — no dead-end screens — and it had been
+     * quietly broken for every screen inside a shell.
      */
-    if (actions === undefined || actions === null) return null;
+    if ((actions === undefined || actions === null) && !leadsBack) return null;
     return (
       <div className={cn(className)}>
-        {/* The actions keep their row and their alignment; only the text beside them is gone. */}
-        <div className="uboss-page-head uboss-page-head--actions-only">
-          <div className="uboss-page-actions">{actions}</div>
-        </div>
+        {leadsBack ? <Breadcrumbs items={breadcrumbs} /> : null}
+        {actions === undefined || actions === null ? null : (
+          /* The actions keep their row and their alignment; only the title beside them is gone. */
+          <div className="uboss-page-head uboss-page-head--actions-only">
+            <div className="uboss-page-actions">{actions}</div>
+          </div>
+        )}
       </div>
     );
   }

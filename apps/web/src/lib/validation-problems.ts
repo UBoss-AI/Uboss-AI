@@ -85,8 +85,14 @@ const PHRASES: { pattern: RegExp; say: (label: string, match: RegExpMatchArray) 
     say: (label, m) => `${label} must be one of: ${m[1]}.`,
   },
   { pattern: /must be an email$/, say: (label) => `${label} must be an email address.` },
-  { pattern: /must not be less than (\d+)$/, say: (label, m) => `${label} cannot be below ${m[1]}.` },
-  { pattern: /must not be greater than (\d+)$/, say: (label, m) => `${label} cannot be above ${m[1]}.` },
+  {
+    pattern: /must not be less than (\d+)$/,
+    say: (label, m) => `${label} cannot be below ${m[1]}.`,
+  },
+  {
+    pattern: /must not be greater than (\d+)$/,
+    say: (label, m) => `${label} cannot be above ${m[1]}.`,
+  },
 ];
 
 /** `content.objectiveName` -> objectiveName; `steps.0.whatExactWork` -> steps.0.whatExactWork */
@@ -100,7 +106,10 @@ function fieldFrom(path: string): { field: string; label: string } | null {
   // Step paths keep their index, because "Step 2" is how the grid numbers them for a person.
   const stepIndex = parts.find((part) => /^\d+$/.test(part));
   if (parts[0] === 'steps' && stepIndex !== undefined) {
-    return { field: `steps.${stepIndex}.${last}`, label: `Step ${Number(stepIndex) + 1}: ${label.toLowerCase()}` };
+    return {
+      field: `steps.${stepIndex}.${last}`,
+      label: `Step ${Number(stepIndex) + 1}: ${label.toLowerCase()}`,
+    };
   }
   return { field: last, label };
 }
@@ -131,7 +140,10 @@ export function parseValidationProblems(message: string): ValidationProblem[] {
   const problems: ValidationProblem[] = [];
   for (const [index, boundary] of boundaries.entries()) {
     const start = boundary.index ?? 0;
-    const end = index + 1 < boundaries.length ? (boundaries[index + 1]?.index ?? trimmed.length) : trimmed.length;
+    const end =
+      index + 1 < boundaries.length
+        ? (boundaries[index + 1]?.index ?? trimmed.length)
+        : trimmed.length;
     const piece = trimmed.slice(start, end).trim();
     const path = boundary[0];
     const rest = piece.slice(piece.indexOf(path) + path.length).trim();

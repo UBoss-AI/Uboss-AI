@@ -116,9 +116,7 @@ export function AgentObjectiveList({
 
   const shown = useMemo(() => {
     if (filter === 'All') return groups;
-    return groups.filter((group) =>
-      group.items.some((item) => agentState(item) === filter),
-    );
+    return groups.filter((group) => group.items.some((item) => agentState(item) === filter));
   }, [filter, groups]);
 
   const open = groups.find((group) => group.objectiveId === openObjectiveId) ?? null;

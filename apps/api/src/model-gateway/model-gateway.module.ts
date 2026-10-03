@@ -15,6 +15,7 @@ import {
   PROVIDER_ADAPTERS,
   ProviderAdapter,
 } from './provider-adapter.js';
+import { PlatformAlertService } from '../platform/platform-alert.service.js';
 import { RoutingModelGateway } from './routing-model-gateway.js';
 
 // `PROVIDER_ADAPTERS` lives in `provider-adapter.ts`: the service needs it and this module needs
@@ -73,6 +74,9 @@ export { PROVIDER_ADAPTERS } from './provider-adapter.js';
         PROVIDER_ADAPTERS,
         CostEngineService,
         ProviderThrottleService,
+        // So a profile that cannot route reaches somebody, instead of waiting on the call row
+        // for a person to open the console.
+        PlatformAlertService,
       ],
       useFactory: (
         prisma: PrismaService,
@@ -80,7 +84,8 @@ export { PROVIDER_ADAPTERS } from './provider-adapter.js';
         adapters: readonly ProviderAdapter[],
         cost: CostEngineService,
         throttle: ProviderThrottleService,
-      ) => new RoutingModelGateway(prisma, vault, adapters, cost, throttle),
+        alerts: PlatformAlertService,
+      ) => new RoutingModelGateway(prisma, vault, adapters, cost, throttle, alerts),
     },
   ],
   exports: [ModelGateway, ProviderService, PROVIDER_ADAPTERS],

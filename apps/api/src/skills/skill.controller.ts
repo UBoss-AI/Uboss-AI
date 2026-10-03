@@ -367,7 +367,10 @@ export class SkillController {
   /** Start a new draft version. The published one is untouched — that is what editing means. */
   @Post(':id/versions')
   @RequirePermission({ module: 'settings', action: 'Administer' })
-  async startDraft(@Param('id', ParseUUIDPipe) id: string, @Body() body: StartDraftDto): Promise<unknown> {
+  async startDraft(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: StartDraftDto,
+  ): Promise<unknown> {
     return this.skills.startNewDraft({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),

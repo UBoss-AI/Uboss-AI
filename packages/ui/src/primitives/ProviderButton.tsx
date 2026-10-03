@@ -42,10 +42,19 @@ export interface ProviderButtonProps {
 const MARKS: Record<ProviderKind, ReactNode> = {
   google: (
     <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
-      <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.7 30.2.5 24 .5 14.6.5 6.5 5.9 2.6 13.8l7.8 6.1C12.3 13.9 17.6 9.5 24 9.5z" />
-      <path fill="#4285F4" d="M46.6 24.5c0-1.6-.15-3.2-.43-4.7H24v9h12.7c-.55 2.9-2.2 5.4-4.7 7.1l7.6 5.9c4.4-4.1 7-10.1 7-17.3z" />
+      <path
+        fill="#EA4335"
+        d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.7 30.2.5 24 .5 14.6.5 6.5 5.9 2.6 13.8l7.8 6.1C12.3 13.9 17.6 9.5 24 9.5z"
+      />
+      <path
+        fill="#4285F4"
+        d="M46.6 24.5c0-1.6-.15-3.2-.43-4.7H24v9h12.7c-.55 2.9-2.2 5.4-4.7 7.1l7.6 5.9c4.4-4.1 7-10.1 7-17.3z"
+      />
       <path fill="#FBBC05" d="M10.4 28.6a14.5 14.5 0 010-9.2l-7.8-6.1a24 24 0 000 21.4l7.8-6.1z" />
-      <path fill="#34A853" d="M24 47.5c6.2 0 11.5-2 15.3-5.6l-7.6-5.9c-2.1 1.4-4.8 2.3-7.7 2.3-6.4 0-11.7-4.4-13.6-10.3l-7.8 6.1C6.5 42.1 14.6 47.5 24 47.5z" />
+      <path
+        fill="#34A853"
+        d="M24 47.5c6.2 0 11.5-2 15.3-5.6l-7.6-5.9c-2.1 1.4-4.8 2.3-7.7 2.3-6.4 0-11.7-4.4-13.6-10.3l-7.8 6.1C6.5 42.1 14.6 47.5 24 47.5z"
+      />
     </svg>
   ),
   microsoft: (
@@ -67,7 +76,14 @@ const MARKS: Record<ProviderKind, ReactNode> = {
   generic: null,
 };
 
-export function ProviderButton({ kind, label, onClick, disabled, title, className }: ProviderButtonProps) {
+export function ProviderButton({
+  kind,
+  label,
+  onClick,
+  disabled,
+  title,
+  className,
+}: ProviderButtonProps) {
   return (
     <button
       type="button"
@@ -96,11 +112,19 @@ export function ProviderButton({ kind, label, onClick, disabled, title, classNam
  * the right default: a provider this does not know about is not a provider to guess at.
  */
 export function providerKindFrom(issuer: string | null | undefined): ProviderKind {
-  const value = (issuer ?? '').toLowerCase();
-  if (value.includes('accounts.google.com') || value.includes('google')) return 'google';
-  if (value.includes('login.microsoftonline.com') || value.includes('sts.windows.net') || value.includes('microsoft')) {
+  if (!issuer) return 'generic';
+
+  let hostname: string;
+  try {
+    hostname = new URL(issuer).hostname.toLowerCase().replace(/\.$/, '');
+  } catch {
+    return 'generic';
+  }
+
+  if (hostname === 'accounts.google.com') return 'google';
+  if (hostname === 'login.microsoftonline.com' || hostname === 'sts.windows.net') {
     return 'microsoft';
   }
-  if (value.includes('appleid.apple.com') || value.includes('apple')) return 'apple';
+  if (hostname === 'appleid.apple.com') return 'apple';
   return 'generic';
 }

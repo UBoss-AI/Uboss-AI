@@ -14,15 +14,17 @@ import { usePathname } from 'next/navigation';
 import { Menu, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
+import { PRODUCT_START_URL } from '@/lib/product-login';
+
 import { Button, cn } from './ui';
 
 const LINKS: readonly { label: string; href: string }[] = [
   { label: 'Product', href: '/platform' },
-  { label: 'How It Works', href: '/how-it-works' },
-  { label: 'Skills', href: '/skills' },
   { label: 'Solutions', href: '/solutions' },
+  { label: 'Connect', href: '/connect' },
   { label: 'Pricing', href: '/pricing' },
   { label: 'Security', href: '/security' },
+  { label: 'Company', href: '/company' },
 ];
 
 export function Nav() {
@@ -42,10 +44,18 @@ export function Nav() {
   useEffect(() => {
     if (!open) return;
     const close = () => setOpen(false);
-    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') { setOpen(false); document.getElementById('mobile-menu-button')?.focus(); } };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+        document.getElementById('mobile-menu-button')?.focus();
+      }
+    };
     window.addEventListener('resize', close);
     document.addEventListener('keydown', escape);
-    return () => { window.removeEventListener('resize', close); document.removeEventListener('keydown', escape); };
+    return () => {
+      window.removeEventListener('resize', close);
+      document.removeEventListener('keydown', escape);
+    };
   }, [open]);
 
   return (
@@ -61,13 +71,19 @@ export function Nav() {
         aria-label="Main"
         className="mx-auto flex h-[68px] w-full max-w-[1200px] items-center justify-between px-6 sm:px-8 lg:px-10"
       >
-        <Link href="/" className="flex items-center gap-2.5" aria-label="Chief Agent — Powered by UBoss AI — home">
+        <Link
+          href="/"
+          className="flex items-center gap-2.5"
+          aria-label="Chief Agent — Powered by UBoss AI — home"
+        >
           <span className="grid h-7 w-7 place-items-center rounded-[9px] bg-gradient-to-br from-[#a78bfa] to-[#7c3aed] text-[13px] font-bold text-white">
             U
           </span>
           <span className="text-[15px] font-semibold leading-tight tracking-[-0.01em]">
             Chief Agent
-            <small className="block pt-0.5 text-[9px] font-medium tracking-normal text-[#a1a1aa]">Powered by UBoss AI</small>
+            <small className="block pt-0.5 text-[9px] font-medium tracking-normal text-[#a1a1aa]">
+              Powered by UBoss AI
+            </small>
           </span>
         </Link>
 
@@ -85,12 +101,23 @@ export function Nav() {
           ))}
         </ul>
 
+        {/*
+          Sign in, and start.
+
+          The primary button was "Book a Demo", so the only two things this header offered were
+          signing in to a workspace you already had and asking somebody to call you. A visitor who
+          wanted to create one had nowhere to press: self-serve registration existed and nothing
+          in the site's chrome reached it, on any page.
+
+          Where the product's address is not configured, the demo form is the honest fallback —
+          it is the one route that always exists.
+        */}
         <div className="hidden items-center gap-3 lg:flex">
           <Button href="/sign-in" variant="ghost" size="sm">
             Sign In
           </Button>
-          <Button href="/demo" size="sm">
-            Book a Demo
+          <Button href={PRODUCT_START_URL === '' ? '/demo' : PRODUCT_START_URL} size="sm">
+            {PRODUCT_START_URL === '' ? 'Book a Demo' : 'Start a workspace'}
           </Button>
         </div>
 
@@ -134,8 +161,12 @@ export function Nav() {
                 <Button href="/sign-in" variant="ghost" size="sm" className="flex-1">
                   Sign In
                 </Button>
-                <Button href="/demo" size="sm" className="flex-1">
-                  Book a Demo
+                <Button
+                  href={PRODUCT_START_URL === '' ? '/demo' : PRODUCT_START_URL}
+                  size="sm"
+                  className="flex-1"
+                >
+                  {PRODUCT_START_URL === '' ? 'Book a Demo' : 'Start a workspace'}
                 </Button>
               </li>
             </ul>

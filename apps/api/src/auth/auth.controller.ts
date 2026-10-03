@@ -39,16 +39,21 @@ import {
   SignInMethodsQueryDto,
   StartMfaEnrolmentDto,
   StartSsoDto,
+  StartSocialDto,
   VerifyMfaDto,
 } from './enterprise-identity.dto.js';
 import { UserRepository } from '../persistence/user.repository.js';
 
 import { AuthenticationPolicyService } from './authentication-policy.service.js';
-import { configuredSocialProviders } from './social-providers.config.js';
+import {
+  configuredSocialProviders,
+  SOCIAL_SIGN_IN_IS_IMPLEMENTED,
+} from './social-providers.config.js';
 import { InvitationService } from './invitation.service.js';
 import { LoginService } from './login.service.js';
 import { MfaLoginService } from './mfa-login.service.js';
 import { MfaService } from './mfa.service.js';
+import { IdentityMailService } from './identity-mail.service.js';
 import { PasswordResetService } from './password-reset.service.js';
 import { SessionService } from './session.service.js';
 import { SsoService } from './sso/sso.service.js';
@@ -98,6 +103,9 @@ export class AuthController {
     private readonly sessions: SessionService,
     private readonly invitations: InvitationService,
     private readonly passwordResets: PasswordResetService,
+    // The reset link itself. Identity mail rather than a workspace notification: the person may
+    // be locked out of every company they belong to at the moment they ask.
+    private readonly identityMail: IdentityMailService,
     private readonly tenantContext: TenantContextService,
     private readonly mfa: MfaService,
     private readonly mfaLogins: MfaLoginService,
@@ -116,7 +124,12 @@ export class AuthController {
    */
   @Get('captcha')
   @AllowAnonymous()
-  captchaChallenge(): { enabled: boolean; token?: string; question?: string; expiresInSeconds?: number } {
+  captchaChallenge(): {
+    enabled: boolean;
+    token?: string;
+    question?: string;
+    expiresInSeconds?: number;
+  } {
     const challenge = this.captcha.issue();
     if (challenge === null) return { enabled: false };
     return {
@@ -386,7 +399,23 @@ export class AuthController {
   @AllowAnonymous()
   @HttpCode(HttpStatus.ACCEPTED)
   async requestPasswordReset(@Body() body: RequestPasswordResetDto, @Req() request: Request) {
-    await this.passwordResets.request(body.email, request.ip);
+    const outcome = await this.passwordResets.request(body.email, request.ip);
+
+    /*
+     * And actually send it.
+     *
+     * The service's own docblock said the token was "returned from the service so the
+     * notifications module can deliver it", and nothing ever did: the token was minted, hashed,
+     * stored — and this method discarded it while answering "a password reset link has been sent
+     * to it". Nobody could reset a password, and the response said otherwise.
+     *
+     * Awaited rather than queued, because the token expires in under an hour and a retry tomorrow
+     * delivers a dead link. Never throws, so the answer below is identical whether or not an
+     * account exists — anything else is an oracle for which addresses are registered.
+     */
+    if (outcome.token !== undefined && outcome.email !== undefined) {
+      await this.identityMail.sendPasswordReset({ to: outcome.email, token: outcome.token });
+    }
 
     return {
       accepted: true,
@@ -470,20 +499,66 @@ export class AuthController {
       // client id, no discovery URL.
       ssoConnections: methods.ssoConnections,
       /*
-       * Which of Google, Microsoft and Apple this deployment holds credentials for.
+       * Which of Google, Microsoft and Apple a person can actually sign in with.
        *
-       * Only the name and the mark — never a client id, and never a secret. A provider with no
-       * credentials is simply absent from this list, so the login screen shows a button that
-       * cannot work only if somebody deliberately made it so.
+       * Two conditions, and the second one is the point. Holding credentials is not the same as
+       * being able to complete a sign-in: the configuration reader, the database shape and this
+       * screen were all built, and **the flow itself never was** — there is no route behind the
+       * button, and `SsoService.complete` refuses a social request outright with
+       * `flow_kind_mismatch`.
+       *
+       * Advertising on credentials alone meant the day somebody put `GOOGLE_CLIENT_ID` into the
+       * environment, the button went live and 404ed. That is the worst version of this: the
+       * person who set it up believes they switched a feature on, and the people who press it
+       * conclude the product is broken. Disabled with a reason is information; enabled and dead
+       * is a lie.
+       *
+       * Only the name and the mark are ever returned — never a client id, never a secret.
        */
-      socialProviders: configuredSocialProviders().map((provider) => ({
-        kind: provider.kind,
-        displayName: provider.displayName,
-      })),
+      socialProviders: AuthController.offeredSocialProviders(),
       // Advertised so the screen can warn "you will be asked for a code", never so it can skip
       // the check — the server decides that again after the password.
       mfaExpected: methods.requireMfa,
     };
+  }
+
+  /**
+   * Which of Google, Microsoft and Apple this deployment can actually sign somebody in with.
+   *
+   * Only the name and the mark, ever. Never a client id, never a secret, never a discovery URL.
+   */
+  private static offeredSocialProviders() {
+    return (SOCIAL_SIGN_IN_IS_IMPLEMENTED ? configuredSocialProviders() : []).map((provider) => ({
+      kind: provider.kind,
+      displayName: provider.displayName,
+    }));
+  }
+
+  /**
+   * The same three, before anybody has typed anything.
+   *
+   * ## Why this is separate from `sign-in-methods`
+   *
+   * That endpoint takes an email because its answer depends on one: whether a *company* requires
+   * SSO, and which connection is theirs. Social providers are not a company's — they are this
+   * deployment's, and the same three for everybody.
+   *
+   * Reading them from an endpoint that demands an address meant the sign-in screen knew nothing
+   * about them on arrival, so `socialProviders` was empty and all three buttons rendered disabled
+   * saying **"not set up for this deployment yet"** — on the first screen of the product, about a
+   * provider that was set up. A visitor whose whole reason for choosing the Google button is not
+   * having to type anything first was told the feature did not exist.
+   *
+   * ## This is not new exposure
+   *
+   * `sign-in-methods` already returns the identical list to anybody who types any syntactically
+   * valid address, with no account and no authentication. Which providers a deployment offers is
+   * on the sign-in screen by definition; it is not a secret and cannot be one.
+   */
+  @Get('social-providers')
+  @AllowAnonymous()
+  socialProviders() {
+    return { socialProviders: AuthController.offeredSocialProviders() };
   }
 
   // =========================================================================
@@ -752,6 +827,26 @@ export class AuthController {
   }
 
   /**
+   * Start a sign-in with UBoss's own Google, Microsoft or Apple application.
+   *
+   * Separate from `sso/start` because the two differ in the thing that matters: that one names a
+   * company's connection and therefore its tenant before the browser leaves, and this one knows
+   * neither until a verified address comes back. One route taking either would have to decide
+   * which it was from the body, which is the browser deciding how it gets authenticated.
+   *
+   * Returns only the URL to go to. A provider this deployment has no credentials for is refused
+   * with the same sentence an unknown connection gets, so this cannot be used to discover which
+   * providers are configured.
+   */
+  @Post('sso/social/start')
+  @AllowAnonymous()
+  @HttpCode(HttpStatus.OK)
+  async startSocial(@Body() body: StartSocialDto) {
+    const start = await this.sso.beginSocial(body.kind, body.redirectAfter);
+    return { authorizationUrl: start.authorizationUrl };
+  }
+
+  /**
    * The identity provider's callback.
    *
    * A `GET` that ends in a redirect, because that is what the browser arrives with. On success
@@ -780,7 +875,13 @@ export class AuthController {
 
     const session = await this.sessions.establish(result.userId, originFrom(request), {
       primaryAuthMethod: 'Oidc',
-      ssoConnectionId: result.connectionId,
+      /*
+       * Null for a sign-in through UBoss's own Google, Microsoft or Apple application: there is
+       * no company connection to point at. Omitted rather than stored as a null, because the
+       * column means "this session came from that company's identity provider" and a social
+       * sign-in did not.
+       */
+      ...(result.connectionId === null ? {} : { ssoConnectionId: result.connectionId }),
       ...(result.providerSessionId === undefined
         ? {}
         : { providerSessionId: result.providerSessionId }),

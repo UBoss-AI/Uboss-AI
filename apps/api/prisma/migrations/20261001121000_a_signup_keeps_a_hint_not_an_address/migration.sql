@@ -1,0 +1,11 @@
+-- A signup keeps a coarse hint of where it came from, not the caller's address.
+--
+-- The column was added as `created_ip` an hour ago and nothing has written to it yet. A full IP
+-- address is personal data with a real retention cost, and the question this column exists to
+-- answer is only "did a hundred of these come from the same place" — which a /16 answers as well
+-- as a full address does.
+--
+-- `clientHintFrom` in `one-time-token.ts` already reduces an address this way for the security
+-- trail, and it is what will write here. Renaming the column stops the schema from promising
+-- something more precise than it holds.
+ALTER TABLE "pending_registrations" RENAME COLUMN "created_ip" TO "created_from_hint";

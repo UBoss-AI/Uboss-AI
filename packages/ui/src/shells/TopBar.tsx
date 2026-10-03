@@ -34,6 +34,14 @@ export type TopBarProps = (
    * name alone rather than an empty slot or a guess.
    */
   sectionName?: string | undefined;
+  /**
+   * The id to put on the page heading, so the content region can be named by it.
+   *
+   * The heading lives up here rather than inside `<main>` — one name per screen, not two — which
+   * left the content region with no accessible name at all. `<main aria-labelledby>` points at
+   * this heading, so somebody arriving by skip link or by landmark hears where they are.
+   */
+  pageNameId?: string | undefined;
   /** Role and scope, shown as a pill, e.g. "Company Admin · Whole company". */
   scopeLabel?: string | undefined;
   /** Unread notification indicator. Kept for the case where only "something is waiting" is known. */
@@ -146,7 +154,11 @@ export function TopBar(props: TopBarProps) {
           top-level heading at all — the page heading below it is the element being removed. There
           is still exactly one per screen, because there is one bar per screen.
         */}
-        {sectionName === undefined ? null : <h1 className="uboss-ws-mark-section">{sectionName}</h1>}
+        {sectionName === undefined ? null : (
+          <h1 className="uboss-ws-mark-section" id={props.pageNameId}>
+            {sectionName}
+          </h1>
+        )}
 
         {isMaster && sectionName === undefined ? MASTER_HEADER_LABEL : null}
 
@@ -204,37 +216,37 @@ export function TopBar(props: TopBarProps) {
           every width instead of drifting as the bar's contents reflow.
         */}
         <div className="uboss-bell-anchor">
-        <button
-          type="button"
-          className="uboss-icon-btn"
-          onClick={onOpenNotifications}
-          aria-haspopup="dialog"
-          aria-expanded={notificationPanel != null}
-          aria-label={notificationLabel(
-            unreadNotifications,
-            awaitingAcknowledgement,
-            hasNotifications,
-          )}
-        >
-          <Icon name="bell" size={18} />
-          {unreadNotifications > 0 ? (
-            <span
-              className={cn(
-                'uboss-icon-btn-count',
-                awaitingAcknowledgement > 0 && 'uboss-icon-btn-count--urgent',
-              )}
-              aria-hidden="true"
-            >
-              {unreadNotifications > 99 ? '99+' : unreadNotifications}
-            </span>
-          ) : awaitingAcknowledgement > 0 || hasNotifications ? (
-            // Nothing unread, but something still needs acknowledging — or the caller only knows
-            // that something is waiting. A dot rather than a "0", which would read as "nothing".
-            <span className="uboss-icon-btn-dot" aria-hidden="true" />
-          ) : null}
-        </button>
+          <button
+            type="button"
+            className="uboss-icon-btn"
+            onClick={onOpenNotifications}
+            aria-haspopup="dialog"
+            aria-expanded={notificationPanel != null}
+            aria-label={notificationLabel(
+              unreadNotifications,
+              awaitingAcknowledgement,
+              hasNotifications,
+            )}
+          >
+            <Icon name="bell" size={18} />
+            {unreadNotifications > 0 ? (
+              <span
+                className={cn(
+                  'uboss-icon-btn-count',
+                  awaitingAcknowledgement > 0 && 'uboss-icon-btn-count--urgent',
+                )}
+                aria-hidden="true"
+              >
+                {unreadNotifications > 99 ? '99+' : unreadNotifications}
+              </span>
+            ) : awaitingAcknowledgement > 0 || hasNotifications ? (
+              // Nothing unread, but something still needs acknowledging — or the caller only knows
+              // that something is waiting. A dot rather than a "0", which would read as "nothing".
+              <span className="uboss-icon-btn-dot" aria-hidden="true" />
+            ) : null}
+          </button>
 
-        {notificationPanel}
+          {notificationPanel}
         </div>
 
         {/*

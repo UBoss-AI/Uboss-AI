@@ -16,6 +16,7 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 
 import { COMPANY_MODULES, PLATFORM_ROLE_KINDS, type PlatformRoleKind } from '@uboss/types';
@@ -136,6 +137,20 @@ export class CreatePlanDto {
   @IsInt()
   @Min(0)
   sortOrder?: number;
+}
+
+export class SetPlanPriceDto {
+  /**
+   * The price in minor units, or null to stop selling the plan in this currency.
+   *
+   * Null is a real instruction and not an omission, which is why the field is required: a payload
+   * that simply left it out would be ambiguous between "remove the price" and "I forgot", and one
+   * of those two readings charges a customer nothing.
+   */
+  @ValidateIf((dto: SetPlanPriceDto) => dto.priceMinor !== null)
+  @IsInt()
+  @Min(0)
+  priceMinor!: number | null;
 }
 
 export class UpdatePlanDto {

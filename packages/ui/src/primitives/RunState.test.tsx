@@ -46,7 +46,12 @@ describe('RunState — motion means work', () => {
 
   it('names what is blocking rather than reporting a generic failure', () => {
     // Four different Blocked states exist because four different people have to fix them.
-    for (const state of ['BlockedByBudget', 'BlockedByConnection', 'BlockedByPermission', 'BlockedByProvider'] as const) {
+    for (const state of [
+      'BlockedByBudget',
+      'BlockedByConnection',
+      'BlockedByPermission',
+      'BlockedByProvider',
+    ] as const) {
       const { container, unmount } = render(<RunState state={state} />);
       expect(container.querySelector('.uboss-run-state')?.getAttribute('data-state')).toBe(state);
       expect(screen.getByText(RUN_STATE_LABELS[state])).toBeInTheDocument();

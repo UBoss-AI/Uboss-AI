@@ -7,7 +7,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import { COMPANY_MODULES, type CompanyModuleKey } from '@uboss/types';
+import {
+  COMPANY_MODULES,
+  priceInCurrency,
+  type BillingCurrency,
+  type CompanyModuleKey,
+} from '@uboss/types';
 
 import { AuditEventService } from '../audit/audit-event.service.js';
 import { SECURITY_ACTIONS, SecurityEventPublisher } from '../auth/security-event.publisher.js';
@@ -20,6 +25,7 @@ import type {
 import { PlatformRepository } from '../persistence/platform.repository.js';
 import { PrismaService } from '../persistence/prisma.service.js';
 import type { TenantScope } from '../persistence/tenant-context.js';
+import { tokensFrom, ubossTokenMinorUnits } from '../cost/uboss-token.js';
 import { SeatService, type SeatPosition } from './seat.service.js';
 
 /**
@@ -41,6 +47,18 @@ export interface CommercialPosition {
     startedAt: string | null;
     renewsAt: string | null;
     daysToRenewal: number | null;
+    /**
+     * What the plan costs, in its own currency's minor units. Null for a negotiated Enterprise
+     * plan, which has no list price.
+     *
+     * This is the one money figure a company is shown, and it is shown because it is theirs: it is
+     * what they agreed to pay and what an invoice will say. What an individual AI call cost is a
+     * different thing entirely and never appears — see the allowance block below, which a company
+     * reads in UBoss Tokens.
+     */
+    priceMinor: number | null;
+    priceCurrency: string | null;
+    billingCycleLabel: string | null;
   };
   /** (2) Module Entitlements — which modules the company *has*. Never who may use them. */
   entitlements: {
@@ -51,10 +69,22 @@ export interface CommercialPosition {
   };
   /** (3) Feature / Release Channel — which *version* of a module the company sees. */
   release: { channel: ReleaseChannel; fromPlan: ReleaseChannel; overridden: boolean };
-  /** (4) Commercial Allowance — how much AI spend was bought. */
+  /** (4) Commercial Allowance — how much AI work was bought, and how much of it is gone. */
   allowance: {
+    /** Minor units. Read by the platform plane; a company is shown the token figures. */
     aiAllowanceMinor: number;
     aiConsumedMinor: number;
+    /** The same two, as UBoss Tokens — the only form a company ever sees. */
+    aiAllowanceTokens: number;
+    aiConsumedTokens: number;
+    /**
+     * What the plan says was sold, when that differs from what the wallet enforces.
+     *
+     * Equal to `aiAllowanceMinor` in a company set up correctly. A difference means somebody is
+     * being held to a limit other than the one they bought, which is worth seeing rather than
+     * reconciling away.
+     */
+    soldAllowanceMinor: number;
     currency: string;
     percentConsumed: number | null;
   };
@@ -747,6 +777,108 @@ export class CommercialService {
    * 40 seats to 10 would be able to add 37 more during the window and be far over its contract
    * the moment the window shut. So an unnecessary grace window is the opposite of protective.
    */
+  /**
+   * Move a company to the plan it has just paid for.
+   *
+   * ## Why the payment is the approval
+   *
+   * Every other plan change in this service goes through a request somebody at UBoss decides, and
+   * that is right: more seats or a bigger allowance on an existing contract is a commercial
+   * decision with a counterparty. A self-serve upgrade is not. The customer chose a published
+   * plan at its published price and paid for it — there is nothing left for anybody to approve,
+   * and manufacturing a request-and-approval pair to make the trail look familiar would record a
+   * decision nobody made.
+   *
+   * So this writes its own audit event saying exactly that, and the provider's own event id is in
+   * it: the evidence for this change is a payment, and the trail points at it.
+   *
+   * ## Why it still goes through this service
+   *
+   * Because the seat arithmetic is not obvious. A plan change moves the ceiling, and a company
+   * already over the new one must not have people removed — `graceForNewCeiling` holds the old
+   * ceiling for the plan's grace period instead. A second implementation in the billing module
+   * would get that wrong the first time somebody paid for a smaller plan.
+   */
+  async applyPaidPlanChange(input: {
+    tenantId: string;
+    planCode: string;
+    /** The provider's event, so the trail points at the evidence. */
+    providerReference: string;
+  }): Promise<{ moved: boolean; from: string; to: string }> {
+    return this.prisma.runAsPlatformOperation(async () => {
+      const subscription = await this.prisma.client.tenantSubscription.findUnique({
+        where: { tenantId: input.tenantId },
+        include: { plan: true },
+      });
+      if (!subscription) {
+        throw new ConflictException('That company has no subscription to move.');
+      }
+
+      const plan = await this.platform.findPlanByCode(input.planCode);
+      if (!plan) {
+        throw new ConflictException(`No plan with the code "${input.planCode}".`);
+      }
+
+      if (subscription.planId === plan.id) {
+        // Already there. A redelivered webhook, which must not be an error: the provider retries
+        // for days, and a 500 here would make it keep trying over a change already made.
+        return { moved: false, from: subscription.plan.code, to: plan.code };
+      }
+
+      const currentCeiling = subscription.seatsLicensed ?? subscription.plan.seatLimit ?? 0;
+      const grace = await this.graceForNewCeiling({
+        tenantId: input.tenantId,
+        newCeiling: plan.seatLimit,
+        currentCeiling,
+        graceDays: subscription.plan.downgradeGraceDays,
+      });
+
+      await this.prisma.client.tenantSubscription.update({
+        where: { id: subscription.id },
+        data: {
+          planId: plan.id,
+          seatsLicensed: plan.seatLimit,
+          /*
+           * The allowance the new plan sells, recorded on the subscription.
+           *
+           * The wallet is what the hard stop actually reads, and it is moved by a credit grant
+           * rather than from here — the cost module owns that, through a ledger entry that
+           * `reconcile` can check. This column is the commercial record of what was sold.
+           */
+          aiAllowanceMinor: plan.aiAllowanceMinor ?? 0,
+          ...grace,
+          version: { increment: 1 },
+        },
+      });
+
+      await this.auditEvents.appendWithinCurrentScope(input.tenantId, {
+        action: 'commercial.plan_changed_on_payment',
+        resourceType: 'tenant_subscription',
+        resourceId: subscription.id,
+        resourceVersion: subscription.version,
+        summary: `${subscription.plan.name} → ${plan.name}, because the company paid for it.`,
+        reason:
+          'A self-serve upgrade. The customer chose a published plan at its published price and ' +
+          'paid; there was no decision for anybody at UBoss to make, so none is recorded.',
+        metadata: {
+          from: subscription.plan.code,
+          to: plan.code,
+          seatsFrom: String(currentCeiling),
+          seatsTo: String(plan.seatLimit ?? 'unlimited'),
+          providerReference: input.providerReference,
+          // Said plainly, because it is the question asked when a company is over its new ceiling.
+          nobodyRemoved: true,
+        },
+      });
+
+      this.logger.log(
+        `Company ${input.tenantId} moved ${subscription.plan.code} → ${plan.code} on payment.`,
+      );
+
+      return { moved: true, from: subscription.plan.code, to: plan.code };
+    });
+  }
+
   private async graceForNewCeiling(input: {
     tenantId: string;
     newCeiling: number | null;
@@ -781,7 +913,9 @@ export class CommercialService {
     return this.prisma.runAsPlatformOperation(async () => {
       const subscription = await this.prisma.client.tenantSubscription.findUnique({
         where: { tenantId },
-        include: { plan: true, pendingPlan: true },
+        // The plan's per-currency prices, because this company is billed in its own currency and
+        // the plan's base figure may be in a different one.
+        include: { plan: { include: { prices: true } }, pendingPlan: true },
       });
 
       const seats = await this.seats.positionFor(
@@ -799,8 +933,71 @@ export class CommercialService {
         (module) => !removedModules.includes(module),
       );
 
-      const allowance = subscription?.aiAllowanceMinor ?? 0;
-      const consumed = subscription?.aiConsumedMinor ?? 0;
+      /*
+       * The allowance and what is spent of it, both read from the wallet the hard stop enforces.
+       *
+       * These used to come off the subscription, and `ai_consumed_minor` is a column **nothing has
+       * ever written**. So Billing reported 0% consumed for every company on every plan, however
+       * much AI they had run — and the budget alert, which was built on the same number, could
+       * never fire at any threshold. Neither was broken code: the column was added for metering
+       * that had not arrived yet, the metering arrived somewhere else, and the two were never
+       * joined up.
+       *
+       * Meanwhile Settings → Tokens & Cost read the wallet and showed the real figure. One company,
+       * two screens, two different answers about the same money — which is worse than either
+       * screen being wrong, because it leaves nobody able to say which to believe.
+       *
+       * The wallet wins, and not by preference: `used_minor` is derived from an append-only ledger
+       * and is the number the hard stop actually refuses calls against. A screen that showed
+       * anything else would be describing a limit that is not the one being applied.
+       *
+       * No wallet yet means no AI has been paid for, which is zero — not unknown. The wallet is
+       * created on first spend, so its absence is itself the answer.
+       *
+       * `ai_consumed_minor` is left on the subscription rather than dropped: it is read by nothing
+       * now, and removing a column is a migration that buys nothing today.
+       */
+      const wallet = await this.prisma.client.budgetWallet.findFirst({
+        where: { tenantId, scope: 'Company', subjectId: null },
+        select: { allowanceMinor: true, usedMinor: true, currency: true },
+      });
+
+      const allowance = wallet?.allowanceMinor ?? 0;
+      const consumed = wallet?.usedMinor ?? 0;
+
+      /*
+       * What currency this company is billed in, and what the plan costs in it.
+       *
+       * The subscription's own currency, which was set from the company's country when it was
+       * created and is fixed thereafter — see `money.ts`. Not re-derived from the country here:
+       * every minor-unit integer already stored against this company is in *this* currency, and
+       * recomputing it would change what all of them mean the day somebody corrected a country.
+       */
+      const billedIn = subscription?.currency ?? wallet?.currency ?? 'USD';
+      const priceForThisCompany =
+        subscription === null
+          ? null
+          : priceInCurrency(
+              subscription.plan.prices.map((row) => ({
+                currency: row.currency as BillingCurrency,
+                priceMinor: row.priceMinor,
+              })),
+              billedIn,
+            );
+
+      /*
+       * What was sold, beside what is enforced.
+       *
+       * The plan's allowance and the wallet's are set in two different places — one when the plan
+       * is priced, one when the company is provisioned — so they can disagree, and when they do it
+       * is a real finding rather than a display problem: a company is being held to a limit other
+       * than the one it bought. Carried through so the platform can see the difference; the
+       * company's own screen shows only the limit it is actually held to.
+       */
+      const soldAllowance = subscription?.aiAllowanceMinor ?? 0;
+
+      // Read once for the two conversions below, rather than once each: it is the same row.
+      const tokenRate = await ubossTokenMinorUnits(this.prisma, this.logger);
 
       const channelFromPlan = subscription?.plan.releaseChannel ?? 'Stable';
       const channel = subscription?.releaseChannelOverride ?? channelFromPlan;
@@ -819,6 +1016,24 @@ export class CommercialService {
             subscription?.renewsAt == null
               ? null
               : Math.ceil((subscription.renewsAt.getTime() - Date.now()) / 86_400_000),
+          /*
+           * The price in **this company's** currency, or none.
+           *
+           * The plan's own `priceMinor` is its base figure and may be in a different currency
+           * altogether — showing it to a company billed in rupees would put a dollar amount on an
+           * Indian customer's screen. So the plan's price list is searched for this company's
+           * currency and nothing else.
+           *
+           * Null is a real answer: a plan sold in rupees and dollars is simply not priced in
+           * dirhams yet, and the screen says so. What it must never do is convert one of the
+           * others — a rate this product invented would produce a figure the invoice will not
+           * match, and the customer would find that out after paying.
+           */
+          priceMinor: priceForThisCompany,
+          priceCurrency: priceForThisCompany === null ? null : billedIn,
+          // Monthly or annual, so a price has a period attached. A figure with no period is not a
+          // price — it is a number somebody has to ask about.
+          billingCycleLabel: subscription?.billingCycle === 'Annual' ? 'a year' : 'a month',
         },
         entitlements: {
           planModules: [...planModules],
@@ -834,7 +1049,17 @@ export class CommercialService {
         allowance: {
           aiAllowanceMinor: allowance,
           aiConsumedMinor: consumed,
-          currency: subscription?.currency ?? 'USD',
+          /*
+           * The same two figures as UBoss Tokens, which is the only form a company is shown.
+           *
+           * The minor-unit figures stay in the payload because the platform console reads them —
+           * margin is the whole point of that screen — and because the percentage below has to be
+           * worked out from the exact numbers rather than from rounded token counts.
+           */
+          aiAllowanceTokens: tokensFrom(allowance, tokenRate),
+          aiConsumedTokens: tokensFrom(consumed, tokenRate),
+          soldAllowanceMinor: soldAllowance,
+          currency: wallet?.currency ?? subscription?.currency ?? 'INR',
           percentConsumed: allowance > 0 ? Math.round((consumed / allowance) * 100) : null,
         },
         seats,

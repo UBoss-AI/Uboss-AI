@@ -1,11 +1,15 @@
 import { Module } from '@nestjs/common';
 
+import { CommercialModule } from '../commercial/commercial.module.js';
 import { PlatformBillingController } from './billing-platform.controller.js';
+import { BillingNoticeService } from './billing-notice.service.js';
 import { BillingWebhookService } from './billing-webhook.service.js';
 import { StripeWebhookController } from './billing-webhook.controller.js';
 import { CompanyBillingController } from './billing.controller.js';
 import { BillingService } from './billing.service.js';
 import { StripeClient } from './stripe.client.js';
+import { UnfinishedSweepRunner } from './unfinished-sweep.runner.js';
+import { TokenPurchaseService } from './token-purchase.service.js';
 
 /**
  * Taking payment, and keeping the record of it.
@@ -22,8 +26,24 @@ import { StripeClient } from './stripe.client.js';
  * invite exactly that.
  */
 @Module({
+  /*
+   * `CommercialModule` for `CompanyLifecycleService`.
+   *
+   * The webhook is what decides a company has stopped paying, and that decision has to reach the
+   * company's lifecycle state — the only thing the request guard actually enforces. Importing it
+   * rather than reimplementing the transition keeps one set of rules about what a company may
+   * move to, with one audit trail behind it.
+   */
+  imports: [CommercialModule],
   controllers: [CompanyBillingController, PlatformBillingController, StripeWebhookController],
-  providers: [StripeClient, BillingService, BillingWebhookService],
+  providers: [
+    StripeClient,
+    BillingService,
+    BillingWebhookService,
+    BillingNoticeService,
+    TokenPurchaseService,
+    UnfinishedSweepRunner,
+  ],
   exports: [BillingService],
 })
 export class BillingModule {}

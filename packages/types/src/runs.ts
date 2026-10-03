@@ -483,4 +483,151 @@ export interface RunProgressEvent {
   attempt: number;
   at: string;
   correlationId: string;
+  /**
+   * The assigned AI work this run performs, or null when it belongs to no step.
+   *
+   * ## Why the event carries it
+   *
+   * A screen drawing the objective's workflow needs to know **which node** just moved, and the
+   * assignment is what names it — `AiWorkAssignment.nodeId` is the graph node, the same id a
+   * human task and an approval request point at. Without this the stream can say "something is
+   * running" and nothing more, which is the difference between a plan you can watch and a badge
+   * that spins.
+   *
+   * The assignment id rather than the node id, deliberately: it is already on the run row the
+   * publisher holds, so carrying it costs nothing in the hot path — no join, no second query per
+   * event. A screen showing a workflow has already loaded that workflow's assignments and can map
+   * one to the other without asking the server again.
+   *
+   * Null for a run that belongs to no step: a scheduler tick, or somebody testing an agent
+   * directly. Those are real runs and they are worth streaming; they simply light no node.
+   */
+  aiWorkAssignmentId: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Putting an agent on a schedule
+// ---------------------------------------------------------------------------
+
+/**
+ * A schedule as a person sets it: some days, and a time on those days.
+ *
+ * ## Why this type exists at all
+ *
+ * The scheduler reads a five-field cron expression from `EngineAgent.scheduleCron`, and until now
+ * **nothing in the product ever wrote that field.** The Agent Builder asked for a "Trigger /
+ * Frequency" as free text, a company typed "Every Monday 10:30", it was stored, displayed on the
+ * Engine Agents table — and the agent never ran, because the engine was looking at a different
+ * column that stayed null. The schedule was a sentence nobody machine-read.
+ *
+ * So this is the shape a screen collects and the thing a cron expression is generated from. Two
+ * representations of one schedule is a risk, which is why the conversion lives here beside the
+ * type and why `scheduleFromBusinessCron` exists to read it back: a schedule written by this
+ * product must be editable by this product, not a string somebody has to re-derive.
+ *
+ * ## Why no day-of-month and no month
+ *
+ * Because the engine refuses them, and for a stated reason: *"a business schedule is a time on a
+ * weekday, and anything else would bypass the working-day and holiday rules."* An agent that ran
+ * on the 1st of the month regardless of whether that was a Sunday or a public holiday would be
+ * outside the business calendar the rest of the product honours.
+ */
+export interface AgentSchedule {
+  /** Which days it runs. Empty means every day — the engine's own `*` for day-of-week. */
+  weekdays: readonly Weekday[];
+  /** 0–23, in the company's own timezone. */
+  hour: number;
+  /** 0–59. */
+  minute: number;
+}
+
+/** What is wrong with a schedule, in words a screen can show unchanged. Empty means it is fine. */
+export function agentScheduleProblems(schedule: AgentSchedule): string[] {
+  const problems: string[] = [];
+
+  if (!Number.isInteger(schedule.hour) || schedule.hour < 0 || schedule.hour > 23) {
+    problems.push('The hour must be between 0 and 23.');
+  }
+  if (!Number.isInteger(schedule.minute) || schedule.minute < 0 || schedule.minute > 59) {
+    problems.push('The minute must be between 0 and 59.');
+  }
+  for (const day of schedule.weekdays) {
+    if (!(WEEKDAYS as readonly string[]).includes(day)) {
+      problems.push(`"${String(day)}" is not a day of the week.`);
+    }
+  }
+
+  return problems;
+}
+
+/**
+ * The schedule as the engine reads it.
+ *
+ * Day-of-month and month are always `*`, which is what the parser requires. Weekdays are written
+ * as numbers because that is what the parser accepts first and it leaves no room for a locale to
+ * disagree about what "Tue" means.
+ */
+export function agentScheduleToBusinessCron(schedule: AgentSchedule): string {
+  const dayOfWeek =
+    schedule.weekdays.length === 0
+      ? '*'
+      : [...new Set(schedule.weekdays.map((day) => WEEKDAYS.indexOf(day)))]
+          .sort((a, b) => a - b)
+          .join(',');
+
+  return `${schedule.minute} ${schedule.hour} * * ${dayOfWeek}`;
+}
+
+/**
+ * Read a stored expression back into the shape a screen edits.
+ *
+ * Null for anything this product did not write — a hand-edited expression with a list of hours, or
+ * a range. The screen then shows the raw expression rather than pretending the editor covers it,
+ * which is the honest answer: refusing to display a schedule somebody set is worse than admitting
+ * the editor is simpler than the engine.
+ */
+export function scheduleFromBusinessCron(expression: string): AgentSchedule | null {
+  const fields = expression.trim().split(/\s+/);
+  if (fields.length !== 5) return null;
+
+  const [minuteField, hourField, domField, monthField, dowField] = fields as [
+    string,
+    string,
+    string,
+    string,
+    string,
+  ];
+  if (domField !== '*' || monthField !== '*') return null;
+
+  const minute = Number(minuteField);
+  const hour = Number(hourField);
+  if (!Number.isInteger(minute) || minute < 0 || minute > 59) return null;
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) return null;
+
+  if (dowField === '*') return { weekdays: [], hour, minute };
+
+  const weekdays: Weekday[] = [];
+  for (const part of dowField.split(',')) {
+    const index = Number(part.trim());
+    if (!Number.isInteger(index) || index < 0 || index > 6) return null;
+    const day = WEEKDAYS[index];
+    if (day !== undefined) weekdays.push(day);
+  }
+
+  return { weekdays, hour, minute };
+}
+
+/** The schedule in a sentence, for a table cell and for confirming what was set. */
+export function describeAgentSchedule(schedule: AgentSchedule): string {
+  const time = `${String(schedule.hour).padStart(2, '0')}:${String(schedule.minute).padStart(2, '0')}`;
+
+  if (schedule.weekdays.length === 0) return `Every day at ${time}`;
+  if (schedule.weekdays.length === 7) return `Every day at ${time}`;
+
+  const order = [...schedule.weekdays].sort((a, b) => WEEKDAYS.indexOf(a) - WEEKDAYS.indexOf(b));
+  const isWorkingWeek =
+    order.length === 5 && order.every((day) => DEFAULT_WORKING_DAYS.includes(day));
+  if (isWorkingWeek) return `Every working day at ${time}`;
+
+  return `${order.join(', ')} at ${time}`;
 }

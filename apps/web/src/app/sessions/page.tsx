@@ -198,7 +198,7 @@ export default function SessionsPage() {
       <PageHeader
         title="Login & Security"
         description="How you sign in, and every device currently signed in as you."
-        breadcrumbs={[{ label: 'Settings' }, { label: 'Login & Security' }]}
+        breadcrumbs={[{ label: 'Settings', href: '/settings' }, { label: 'Login & Security' }]}
         actions={
           <Button
             variant="danger"

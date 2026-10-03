@@ -420,6 +420,19 @@ export async function resetTestDatabase(context: TestContext): Promise<void> {
     'departments',
     'person_identifiers',
     'tenant_memberships',
+    'pending_registrations',
+    /*
+     * Named explicitly, because the cascade does **not** catch it.
+     *
+     * `pending_registrations.tenant_id` is `ON DELETE SET NULL` rather than CASCADE: a signup is
+     * the record of where a company came from and deliberately outlives it. The consequence is
+     * that deleting `tenants` below nulls the column and leaves the rows, and a self-serve signup
+     * refuses a second attempt for the same address — so one test's leftovers made every later
+     * test in the file fail with a 409 that had nothing to do with what it was testing.
+     *
+     * This is the exception the comment on `tenants` warns about: the cascade only does that work
+     * where the FK actually cascades.
+     */
     'users',
     // Last: everything above is reachable from here, and deleting it also catches any table added
     // since that the list has not been updated for — the FK cascades do that work.
@@ -452,7 +465,7 @@ export async function resetTestDatabase(context: TestContext): Promise<void> {
        WHERE "code" IN ('starter', 'growth', 'enterprise', 'pilot') AND "active" = false`,
   );
 
-  // `platform_settings`, back to exactly the six rows the Prompt 9 migration seeds.
+  // `platform_settings`, back to the rows the migrations seed.
   //
   // **The third instance of this leak**, and the reason it keeps happening is worth naming: a
   // platform-plane table has no tenant to cascade from, so `TRUNCATE tenants CASCADE` never
@@ -467,8 +480,44 @@ export async function resetTestDatabase(context: TestContext): Promise<void> {
       WHERE "key" NOT IN (
         'provisioning.default_plan_code', 'provisioning.default_timezone',
         'provisioning.default_currency', 'governance.company_creation',
-        'governance.data_residency', 'governance.aadhaar_handling'
+        'governance.data_residency', 'governance.aadhaar_handling',
+        'commercial.ai_sell_multiplier', 'commercial.uboss_token_minor_units',
+        -- Where a service alert is POSTed. Empty by default and kept for the same reason as the
+        -- multiplier above: a platform-plane table has no tenant to cascade from, so the truncate
+        -- never reaches it and a row one test writes is still there on the next run.
+        'operations.alert_webhook_url'
       )`,
+  );
+
+  /*
+   * The AI sell multiplier, put back at the value its migration seeds.
+   *
+   * Sparing it from the delete above is not enough on its own: a run from before it was spared
+   * has already removed it, and an allow-list only protects a row that is there. Its absence is
+   * not neutral either — the engine falls back to selling at cost, so every cost test would be
+   * asserting a pass-through the product deliberately does not do.
+   *
+   * Upserted rather than inserted, so a test that changes the multiplier cannot leave the next
+   * one reading its value. That is the same leak the plan rows above are reset for.
+   */
+  await context.admin.unsafeRootClient.$executeRawUnsafe(
+    `INSERT INTO "platform_settings"
+       ("id", "key", "value", "description", "section", "locked", "created_at", "updated_at", "row_version")
+     VALUES (gen_random_uuid(), 'commercial.ai_sell_multiplier', '5'::jsonb,
+             'What a company pays for AI, as a multiple of what the call costs UBoss.',
+             'Commercial', false, NOW(), NOW(), 1)
+     ON CONFLICT ("key") DO UPDATE SET "value" = '5'::jsonb`,
+  );
+
+  // The UBoss Token rate, for the same reason and in the same way. Ten paise of sell value per
+  // token; a test that reads a company's allowance in tokens is reading against this number.
+  await context.admin.unsafeRootClient.$executeRawUnsafe(
+    `INSERT INTO "platform_settings"
+       ("id", "key", "value", "description", "section", "locked", "created_at", "updated_at", "row_version")
+     VALUES (gen_random_uuid(), 'commercial.uboss_token_minor_units', '10'::jsonb,
+             'Minor units of sell value to one UBoss Token. Never shown to a company.',
+             'Commercial', false, NOW(), NOW(), 1)
+     ON CONFLICT ("key") DO UPDATE SET "value" = '10'::jsonb`,
   );
 
   // The Prompt 11 commercial columns, back to the values the migration gives them.

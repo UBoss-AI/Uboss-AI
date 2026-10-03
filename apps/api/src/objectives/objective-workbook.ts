@@ -189,9 +189,7 @@ export class ObjectiveWorkbook {
       );
     }
 
-    const byLabel = new Map(
-      FORM2_OBJECTIVE_FIELDS.map((field) => [normalise(field.label), field]),
-    );
+    const byLabel = new Map(FORM2_OBJECTIVE_FIELDS.map((field) => [normalise(field.label), field]));
 
     sheet.eachRow((row, index) => {
       if (index === 1) return;
@@ -324,7 +322,11 @@ function text(cell: ExcelJS.Cell): string {
   if (value instanceof Date) return value.toISOString().slice(0, 10);
 
   const shaped = value as { result?: unknown; richText?: { text: string }[]; text?: string };
-  if (Array.isArray(shaped.richText)) return shaped.richText.map((run) => run.text).join('').trim();
+  if (Array.isArray(shaped.richText))
+    return shaped.richText
+      .map((run) => run.text)
+      .join('')
+      .trim();
   if (typeof shaped.text === 'string') return shaped.text.trim();
   if (shaped.result !== undefined && shaped.result !== null) return String(shaped.result).trim();
   return '';

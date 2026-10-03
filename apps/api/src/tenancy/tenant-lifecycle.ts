@@ -56,6 +56,54 @@ export function lifecycleCapability(state: TenantLifecycleState): LifecycleCapab
   return LIFECYCLE_CAPABILITIES[state];
 }
 
+// ---------------------------------------------------------------------------
+// Why a company is where it is
+// ---------------------------------------------------------------------------
+
+/**
+ * The closed set of reasons a company's state is worth explaining in words.
+ *
+ * A code, never the recorded reason itself. `TenantLifecycleTransition.reason` is free text a
+ * platform operator wrote, and it can contain a fraud suspicion, a legal hold or a complainant's
+ * name — none of which an employee may read. The guard refuses writes on every request, so what
+ * it prints is printed to everybody in the company.
+ */
+export const ACCESS_REASON_CODES = ['PaymentOverdue'] as const;
+export type AccessReasonCode = (typeof ACCESS_REASON_CODES)[number];
+
+export function isAccessReasonCode(value: string | null): value is AccessReasonCode {
+  return value !== null && (ACCESS_REASON_CODES as readonly string[]).includes(value);
+}
+
+/**
+ * What each code says to the person who hit the wall, in the product's own words.
+ *
+ * Written to be acted on rather than merely understood: it names the cause, says what is and is
+ * not lost, and points at the one screen that fixes it. "Read-only mode" on its own is a sentence
+ * somebody takes to support; this is one they can take to their administrator.
+ */
+const ACCESS_REASON_MESSAGES: Record<AccessReasonCode, string> = {
+  PaymentOverdue:
+    'This company is read-only because its subscription has not been paid. Nothing has been ' +
+    'deleted and everything is still here to read. An administrator can settle it under ' +
+    'Settings → Billing, and work resumes as soon as the payment goes through.',
+};
+
+/**
+ * The refusal to show, given the state and whatever is recorded about why.
+ *
+ * Falls back to the state's own sentence whenever there is no code, the code is one this build
+ * does not know, or the state is not one a code explains. A stored value that no longer validates
+ * must not produce a blank or a crash: it produces the generic message, which was the behaviour
+ * before any of this existed.
+ */
+export function refusalFor(state: TenantLifecycleState, accessReasonCode: string | null): string {
+  const capability = LIFECYCLE_CAPABILITIES[state];
+  if (state !== TenantLifecycleState.ReadOnly) return capability.reason;
+  if (!isAccessReasonCode(accessReasonCode)) return capability.reason;
+  return ACCESS_REASON_MESSAGES[accessReasonCode];
+}
+
 /**
  * HTTP methods treated as writes.
  *

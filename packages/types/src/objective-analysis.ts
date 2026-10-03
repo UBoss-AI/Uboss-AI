@@ -296,7 +296,9 @@ export function executionDepths(
     const waits = (node?.dod.dependencies ?? []).filter((dependency) => present.has(dependency));
     const next = new Set(seen).add(id);
     const value =
-      waits.length === 0 ? 0 : Math.max(...waits.map((dependency) => depthOf(dependency, next) + 1));
+      waits.length === 0
+        ? 0
+        : Math.max(...waits.map((dependency) => depthOf(dependency, next) + 1));
     depth.set(id, value);
     return value;
   };

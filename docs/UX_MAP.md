@@ -1938,13 +1938,13 @@ the person _picker_ shows faces, the reporting-manager dropdown cannot and does 
 Counted by walking each role's own sidebar in a browser rather than from the navigation model, so
 this is what the roles are actually offered:
 
-| Role | Sidebar items | Notes |
-| --- | --- | --- |
-| Company Admin | 13 | |
-| Head / Approver | 12 | Performance withheld — the engine refuses `performance/me` for a department-scoped role (**ADR-302**, open question **ADR-303**) |
-| Manager | 13 | Performance offered and it opens: this scope resolves the owner |
-| Employee | 11 | no `objective`, no `agent-builder` (CR-03) |
-| Platform Admin | 15 | separate plane, entered through "Open the Master Console" rather than a workspace picker |
+| Role            | Sidebar items | Notes                                                                                                                            |
+| --------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Company Admin   | 13            |                                                                                                                                  |
+| Head / Approver | 12            | Performance withheld — the engine refuses `performance/me` for a department-scoped role (**ADR-302**, open question **ADR-303**) |
+| Manager         | 13            | Performance offered and it opens: this scope resolves the owner                                                                  |
+| Employee        | 11            | no `objective`, no `agent-builder` (CR-03)                                                                                       |
+| Platform Admin  | 15            | separate plane, entered through "Open the Master Console" rather than a workspace picker                                         |
 
 Every item each role is offered was opened and watched for a refusal. None refuses. That property
 is the rule the navigation now holds, and it is checked rather than assumed: a visible sidebar item
@@ -1964,11 +1964,11 @@ diagram drew was a suggestion.
 
 What changed, end to end:
 
-| Where | What it does now |
-| --- | --- |
-| `objective-analysis.service` | Projects the sequential edges it just built onto each node's `dod.dependencies`. A generated plan carries its own order. |
-| `assignment.service` | Creates a task whose dependencies are unfinished as `Waiting` rather than `Assigned`. |
-| `work-release.service` (new) | On any completion, re-examines every waiting step in the objective version and releases the ones whose dependencies are all finished. |
+| Where                                                          | What it does now                                                                                                                           |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `objective-analysis.service`                                   | Projects the sequential edges it just built onto each node's `dod.dependencies`. A generated plan carries its own order.                   |
+| `assignment.service`                                           | Creates a task whose dependencies are unfinished as `Waiting` rather than `Assigned`.                                                      |
+| `work-release.service` (new)                                   | On any completion, re-examines every waiting step in the objective version and releases the ones whose dependencies are all finished.      |
 | `human-task.service`, `approval.service`, `run-engine.service` | The four completion points that call it: a task submitted, a task completed by approval, an approval gate approved, an agent run finished. |
 
 `Waiting` is a new task status and is **not** `Blocked`. `Blocked` is a person saying they cannot
@@ -1987,7 +1987,7 @@ raised after the transaction commits, so a notification failure can never roll b
 finished work, and it is deduped per task so a step is announced once.
 
 **Proven.** Six e2e tests in `assignment.e2e.spec.ts` including the negative one that matters — the
-server refuses `start` on a waiting task with *"A task that is Waiting cannot become In progress"*,
+server refuses `start` on a waiting task with _"A task that is Waiting cannot become In progress"_,
 a 400 rather than a 403, because the person genuinely holds the permission and it is the plan's
 order that refuses them. Nineteen browser assertions across three signed-in people watched a real
 chain hand over: Kavya's step visible but not startable and naming what it waited for, Aman

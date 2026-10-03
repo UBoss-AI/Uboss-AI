@@ -443,9 +443,9 @@ export default function MasterCreateCompanyPage() {
             </Banner>
 
             <Banner tone="warn">
-              The invitation is <b>queued, not sent</b>: nothing consumes an activation
-              invitation, and no mail provider is configured, so the queued message stays queued.
-              It is visible on the outbox view. Saying it had been sent would be the alternative.
+              The invitation is <b>queued, not sent</b>: nothing consumes an activation invitation,
+              and no mail provider is configured, so the queued message stays queued. It is visible
+              on the outbox view. Saying it had been sent would be the alternative.
             </Banner>
 
             <div className="uboss-actions">

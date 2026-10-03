@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { dirname, resolve, sep } from 'node:path';
 
 import { Injectable, Logger } from '@nestjs/common';
 
@@ -117,6 +119,108 @@ export class InMemoryStorageAdapter extends StorageAdapter {
   /** Test-only: how many objects are held. Lets a test prove a deletion actually removed bytes. */
   get size(): number {
     return this.objects.size;
+  }
+}
+
+/**
+ * Files on a disk, which is what a single-host deployment actually needs.
+ *
+ * ## Why this exists
+ *
+ * Until it did, the only adapter that stored anything was the in-memory one — so every uploaded
+ * file in production would have lived in the API process and vanished on the next restart or
+ * deploy. Every chat attachment, every knowledge document, every piece of completion evidence.
+ * The record would survive, the bytes would not, and the failure would show up as a download
+ * that 500s long after the upload was forgotten.
+ *
+ * S3 is the right answer at scale and its adapter is below, unconnected. This is the right answer
+ * for one VPS with a docker volume, and it needs no external service, no credentials and no
+ * decision about which region a company's data lives in.
+ *
+ * ## The key is generated, and the path is checked anyway
+ *
+ * The ref is `tenants/<id>/files/<uuid>` — no part of it comes from the filename, which is
+ * attacker-controlled. `resolve` is still checked against the root on every read and delete,
+ * because a generated key today does not stop a future caller passing a stored ref from
+ * somewhere else, and `../` in a ref would otherwise read any file the process can.
+ *
+ * ## Written whole, then moved
+ *
+ * A crash midway through a write would otherwise leave a truncated file that reads back as a
+ * corrupt document rather than a missing one — and a corrupt file passes every check that looks
+ * for absence. The temporary name is in the same directory so the rename is atomic.
+ */
+@Injectable()
+export class DiskStorageAdapter extends StorageAdapter {
+  readonly canStore = true;
+  readonly name = 'disk';
+
+  private readonly logger = new Logger(DiskStorageAdapter.name);
+
+  constructor(private readonly root: string) {
+    super();
+  }
+
+  async put(input: {
+    tenantId: string;
+    filename: string;
+    contentType: string;
+    bytes: Buffer;
+  }): Promise<StoredObject> {
+    const ref = `tenants/${input.tenantId}/files/${randomUUID()}`;
+    const target = this.resolve(ref);
+
+    await mkdir(dirname(target), { recursive: true });
+
+    const temporary = `${target}.${randomUUID()}.partial`;
+    try {
+      await writeFile(temporary, input.bytes);
+      await rename(temporary, target);
+    } catch (error) {
+      await rm(temporary, { force: true }).catch(() => undefined);
+      throw new StorageUnavailableError(
+        `Could not store the file: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    return {
+      ref,
+      contentHash: createHash('sha256').update(input.bytes).digest('hex'),
+      sizeBytes: input.bytes.byteLength,
+    };
+  }
+
+  async get(ref: StorageRef): Promise<Buffer> {
+    try {
+      return await readFile(this.resolve(ref));
+    } catch (error) {
+      throw new StorageUnavailableError(
+        `Nothing is stored at "${ref}": ` +
+          `${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  async delete(ref: StorageRef): Promise<void> {
+    // Idempotent by contract: deleting what is already gone is not an error.
+    await rm(this.resolve(ref), { force: true });
+  }
+
+  /**
+   * The absolute path for a ref, refusing anything that escapes the root.
+   *
+   * The refs this adapter mints cannot escape, so this is guarding against a ref that came from
+   * somewhere else — a restored database, a future caller, a bug. That is exactly when a path
+   * check earns its place.
+   */
+  private resolve(ref: StorageRef): string {
+    const target = resolve(this.root, ref);
+    const rootWithSeparator = resolve(this.root) + sep;
+    if (!target.startsWith(rootWithSeparator)) {
+      this.logger.error(`Refusing a storage ref that escapes the root: ${ref}`);
+      throw new StorageUnavailableError('That storage reference is not inside the file store.');
+    }
+    return target;
   }
 }
 

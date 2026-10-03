@@ -316,9 +316,7 @@ function WorkspaceChatInner() {
     try {
       const sent = await chatApi.send(tenantId, openId, {
         body: draft,
-        ...(attached.length === 0
-          ? {}
-          : { attachmentIds: attached.map((file) => file.id) }),
+        ...(attached.length === 0 ? {} : { attachmentIds: attached.map((file) => file.id) }),
       });
       setDraft('');
       setAttached([]);
@@ -394,140 +392,153 @@ function WorkspaceChatInner() {
         conversation, and a conversation belongs in the conversation list.
       */}
 
-      {loading ? (
-        <Card>
-          <CardBody>Loading…</CardBody>
-        </Card>
-      ) : (
-        <div className="chat-layout">
-          {/* ---- the conversation list ---- */}
+      {/*
+        The screen holds its own height, and the two panes scroll inside it.
+
+        A wrapper rather than a height on the grid itself, because the disclosure underneath is
+        part of this screen: with the frame on the grid alone, the footnote hung below the fold and
+        the page scrolled by exactly its height — a smaller version of the complaint this change
+        exists to fix. As a flex column, the grid takes whatever the footnote leaves, whatever the
+        footnote's text turns out to be, and opening the disclosure scrolls the page, which is what
+        a disclosure is supposed to do.
+      */}
+      <div className="chat-screen">
+        {loading ? (
           <Card>
-            <CardBody>
-              <div className="chat-new">
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => setStarting((current) => !current)}
-                  data-testid="new-conversation"
-                >
-                  <Icon name="plus" size={16} />
-                  New
-                </Button>
-              </div>
-
-              {starting && tenantId !== null ? (
-                <NewConversationPanel
-                  tenantId={tenantId}
-                  people={otherPeople}
-                  mayCreateGroup={mayCreateGroup}
-                  onCancel={() => setStarting(false)}
-                  onOpened={(conversationId) => {
-                    setStarting(false);
-                    setOpenId(conversationId);
-                    void load();
-                  }}
-                />
-              ) : null}
-
-              <div className="chat-search">
-                <SearchField
-                  label="Search your conversations"
-                  hideLabel
-                  value={search}
-                  placeholder="Search your conversations"
-                  onChange={(event) => setSearch(event.target.value)}
-                />
-                <Button variant="default" onClick={() => void runSearch()}>
-                  Search
-                </Button>
-              </div>
-
-              {found !== null ? (
-                <div data-testid="chat-search-results">
-                  <p className="chat-muted">
-                    {found.length === 0 ? 'Nothing found.' : `${found.length} result(s).`}
-                  </p>
-                  <p className="chat-muted">{stances?.search}</p>
-                  <Button variant="ghost" onClick={() => setFound(null)}>
-                    Clear
+            <CardBody>Loading…</CardBody>
+          </Card>
+        ) : (
+          <div className="chat-layout">
+            {/* ---- the conversation list ---- */}
+            <Card>
+              <CardBody>
+                <div className="chat-new">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => setStarting((current) => !current)}
+                    data-testid="new-conversation"
+                  >
+                    <Icon name="plus" size={16} />
+                    New
                   </Button>
                 </div>
-              ) : null}
 
-              {/*
+                {starting && tenantId !== null ? (
+                  <NewConversationPanel
+                    tenantId={tenantId}
+                    people={otherPeople}
+                    mayCreateGroup={mayCreateGroup}
+                    onCancel={() => setStarting(false)}
+                    onOpened={(conversationId) => {
+                      setStarting(false);
+                      setOpenId(conversationId);
+                      void load();
+                    }}
+                  />
+                ) : null}
+
+                <div className="chat-search">
+                  <SearchField
+                    label="Search your conversations"
+                    hideLabel
+                    value={search}
+                    placeholder="Search your conversations"
+                    onChange={(event) => setSearch(event.target.value)}
+                  />
+                  <Button variant="default" onClick={() => void runSearch()}>
+                    Search
+                  </Button>
+                </div>
+
+                {found !== null ? (
+                  <div data-testid="chat-search-results">
+                    <p className="chat-muted">
+                      {found.length === 0 ? 'Nothing found.' : `${found.length} result(s).`}
+                    </p>
+                    <p className="chat-muted">{stances?.search}</p>
+                    <Button variant="ghost" onClick={() => setFound(null)}>
+                      Clear
+                    </Button>
+                  </div>
+                ) : null}
+
+                {/*
                 Grouped by kind, because the three answer different questions.
 
                 A flat list ordered by recency is right for a mailbox and wrong here: a workshop
                 that has been quiet for a week sinking below six direct messages is a workshop
                 nobody opens again.
               */}
-              <ChatRail
-                conversations={conversations}
-                departments={departments}
-                openId={openId}
-                meUserId={me?.user.userId ?? null}
-                onOpen={setOpenId}
-                onOpenWorkshop={(departmentId) => void openWorkshop(departmentId)}
-              />
-            </CardBody>
-          </Card>
+                <ChatRail
+                  conversations={conversations}
+                  departments={departments}
+                  openId={openId}
+                  meUserId={me?.user.userId ?? null}
+                  onOpen={setOpenId}
+                  onOpenWorkshop={(departmentId) => void openWorkshop(departmentId)}
+                />
+              </CardBody>
+            </Card>
 
-          {/* ---- the open conversation ---- */}
-          <Card>
-            {/*
+            {/* ---- the open conversation ---- */}
+            <Card>
+              {/*
               Three rows: who you are talking to, what was said, and the box you say it in.
 
               A chat is read bottom-up — the newest message is the one you came for, and the
               composer is where your hands already are. As an ordinary stack the composer sat
               near the top of a mostly empty card whenever a conversation was quiet.
             */}
-            <CardBody className="chat-pane">
-              {open === null ? (
-                <p className="chat-muted">Choose a conversation.</p>
-              ) : (
-                <>
-                  <h2 className="chat-title">{conversationLabel(open, me?.user.userId ?? null)}</h2>
+              <CardBody className="chat-pane">
+                {open === null ? (
+                  <p className="chat-muted">Choose a conversation.</p>
+                ) : (
+                  <>
+                    <h2 className="chat-title">
+                      {conversationLabel(open, me?.user.userId ?? null)}
+                    </h2>
 
-                  {/* ---- what this conversation is about ---- */}
-                  {open.context.length > 0 ? (
-                    <section data-testid="chat-context" className="chat-context">
-                      <h3 className="chat-subhead">About</h3>
-                      {open.context.map((entry) =>
-                        entry.accessible ? (
-                          <a
-                            key={`${entry.type}:${entry.id}`}
-                            className="chat-context-link"
-                            href={entry.deepLink}
-                            data-testid="chat-context-accessible"
-                          >
-                            <Icon name="target" />
-                            <span>{entry.title}</span>
-                            {entry.status !== null ? (
-                              <StatusBadge status={entry.status} tone="blue" />
-                            ) : null}
-                          </a>
-                        ) : (
-                          /**
-                           * The refused shape. A stated reason, never a placeholder — being in a
-                           * conversation does not grant access to what it refers to, and an empty
-                           * box would read as a bug rather than as a boundary.
-                           */
-                          <p
-                            key={`${entry.type}:${entry.id}`}
-                            className="chat-context-restricted"
-                            data-testid="chat-context-restricted"
-                          >
-                            <Icon name="shield" />
-                            <span>{entry.reason}</span>
-                          </p>
-                        ),
-                      )}
-                    </section>
-                  ) : null}
+                    {/* ---- what this conversation is about ---- */}
+                    {open.context.length > 0 ? (
+                      <section data-testid="chat-context" className="chat-context">
+                        <h3 className="chat-subhead">About</h3>
+                        {open.context.map((entry) =>
+                          entry.accessible ? (
+                            <a
+                              key={`${entry.type}:${entry.id}`}
+                              className="chat-context-link"
+                              href={entry.deepLink}
+                              data-testid="chat-context-accessible"
+                            >
+                              <Icon name="target" />
+                              <span>{entry.title}</span>
+                              {entry.status !== null ? (
+                                <StatusBadge status={entry.status} tone="blue" />
+                              ) : null}
+                            </a>
+                          ) : (
+                            /**
+                             * The refused shape. A stated reason, never a placeholder — being in a
+                             * conversation does not grant access to what it refers to, and an empty
+                             * box would read as a bug rather than as a boundary.
+                             */
+                            <p
+                              key={`${entry.type}:${entry.id}`}
+                              className="chat-context-restricted"
+                              data-testid="chat-context-restricted"
+                            >
+                              <Icon name="shield" />
+                              <span>{entry.reason}</span>
+                            </p>
+                          ),
+                        )}
+                      </section>
+                    ) : null}
 
-                  {/* ---- messages ---- */}
-                  <ul className="chat-messages" data-testid="chat-messages">
-                    {/*
+                    {/* ---- messages ---- */}
+                    <ul className="chat-messages" data-testid="chat-messages">
+                      {/*
                       A conversation nobody has spoken in yet says so.
 
                       An empty pane between a title and a composer reads as something that failed
@@ -535,134 +546,134 @@ function WorkspaceChatInner() {
                       being the first to say anything is the normal case rather than a sign that
                       the screen is broken.
                     */}
-                    {open.messages.length === 0 ? (
-                      <li className="chat-empty">
-                        Nothing has been said here yet. Start the conversation.
-                      </li>
-                    ) : null}
-                    {open.messages.map((message) => (
-                      /*
-                       * A message arrives rather than appearing. Keyed by its id, so this runs
-                       * once when the message is first rendered and never again on a re-fetch.
-                       *
-                       * This is not a liveness claim. There is no socket bound and this screen
-                       * deliberately has no typing indicator, presence dot or "live" badge — a
-                       * test enforces that. A message easing in says "this is new to the list",
-                       * which is true of a message that has just been loaded.
-                       */
-                      <motion.li
-                        key={message.id}
-                        className="chat-message"
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={transition('small', 'enter')}
-                      >
-                        <div className="chat-message-meta">
-                          <span>{message.authorName}</span>
-                          <time dateTime={message.sentAt}>
-                            {new Date(message.sentAt).toLocaleString()}
-                          </time>
-                        </div>
-                        {message.deleted ? (
-                          // The row stays so the reply beneath it still makes sense.
-                          <p className="chat-deleted">Message deleted</p>
-                        ) : (
-                          <p className="chat-body">{message.body}</p>
-                        )}
-                        {message.attachments.map((attachment) => (
-                          <p key={attachment.storedFileId} className="chat-attachment">
-                            <Icon name="file" />
-                            <span>{attachment.filename}</span>
-                            {attachment.downloadable ? null : (
-                              // Shown as attached and not openable. Hiding it would make the
-                              // conversation misleading; serving it would make chat the way
-                              // malware moves around a company.
-                              <StatusBadge status="Checking" tone="warn" />
-                            )}
-                          </p>
-                        ))}
-                      </motion.li>
-                    ))}
-                  </ul>
+                      {open.messages.length === 0 ? (
+                        <li className="chat-empty">
+                          Nothing has been said here yet. Start the conversation.
+                        </li>
+                      ) : null}
+                      {open.messages.map((message) => (
+                        /*
+                         * A message arrives rather than appearing. Keyed by its id, so this runs
+                         * once when the message is first rendered and never again on a re-fetch.
+                         *
+                         * This is not a liveness claim. There is no socket bound and this screen
+                         * deliberately has no typing indicator, presence dot or "live" badge — a
+                         * test enforces that. A message easing in says "this is new to the list",
+                         * which is true of a message that has just been loaded.
+                         */
+                        <motion.li
+                          key={message.id}
+                          className="chat-message"
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={transition('small', 'enter')}
+                        >
+                          <div className="chat-message-meta">
+                            <span>{message.authorName}</span>
+                            <time dateTime={message.sentAt}>
+                              {new Date(message.sentAt).toLocaleString()}
+                            </time>
+                          </div>
+                          {message.deleted ? (
+                            // The row stays so the reply beneath it still makes sense.
+                            <p className="chat-deleted">Message deleted</p>
+                          ) : (
+                            <p className="chat-body">{message.body}</p>
+                          )}
+                          {message.attachments.map((attachment) => (
+                            <p key={attachment.storedFileId} className="chat-attachment">
+                              <Icon name="file" />
+                              <span>{attachment.filename}</span>
+                              {attachment.downloadable ? null : (
+                                // Shown as attached and not openable. Hiding it would make the
+                                // conversation misleading; serving it would make chat the way
+                                // malware moves around a company.
+                                <StatusBadge status="Checking" tone="warn" />
+                              )}
+                            </p>
+                          ))}
+                        </motion.li>
+                      ))}
+                    </ul>
 
-                  <div className="chat-compose">
-                    <textarea
-                      aria-label="Message"
-                      value={draft}
-                      rows={3}
-                      onChange={(event) => setDraft(event.target.value)}
-                      placeholder="Write a message. Use @name to mention somebody in this conversation."
-                    />
+                    <div className="chat-compose">
+                      <textarea
+                        aria-label="Message"
+                        value={draft}
+                        rows={3}
+                        onChange={(event) => setDraft(event.target.value)}
+                        placeholder="Write a message. Use @name to mention somebody in this conversation."
+                      />
 
-                    {/*
+                      {/*
                       What is attached, before it is sent.
 
                       Listed rather than counted: "2 files" is not something somebody can check,
                       and the one thing they want to do at this moment is take the wrong one off
                       again.
                     */}
-                    {attached.length === 0 ? null : (
-                      <ul className="chat-attached" data-testid="chat-attached">
-                        {attached.map((file) => (
-                          <li key={file.id}>
-                            <Icon name="file" size={16} />
-                            <span>{file.filename}</span>
-                            <button
-                              type="button"
-                              className="uboss-link"
-                              onClick={() =>
-                                setAttached((current) =>
-                                  current.filter((entry) => entry.id !== file.id),
-                                )
-                              }
-                            >
-                              Remove
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                      {attached.length === 0 ? null : (
+                        <ul className="chat-attached" data-testid="chat-attached">
+                          {attached.map((file) => (
+                            <li key={file.id}>
+                              <Icon name="file" size={16} />
+                              <span>{file.filename}</span>
+                              <button
+                                type="button"
+                                className="uboss-link"
+                                onClick={() =>
+                                  setAttached((current) =>
+                                    current.filter((entry) => entry.id !== file.id),
+                                  )
+                                }
+                              >
+                                Remove
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
 
-                    <div className="chat-compose-actions">
-                      <input
-                        ref={fileInput}
-                        type="file"
-                        className="chat-file"
-                        aria-label="Attach a file"
-                        onChange={(event) => {
-                          const file = event.target.files?.[0];
-                          if (file !== undefined) void attach(file);
-                          event.target.value = '';
-                        }}
-                      />
-                      <Button
-                        variant="default"
-                        disabled={busy}
-                        onClick={() => fileInput.current?.click()}
-                        data-testid="chat-attach"
-                      >
-                        <Icon name="file" size={16} />
-                        Attach
-                      </Button>
-                      <Button
-                        onClick={() => void send()}
-                        disabled={busy || (draft.trim() === '' && attached.length === 0)}
-                      >
-                        Send
-                      </Button>
+                      <div className="chat-compose-actions">
+                        <input
+                          ref={fileInput}
+                          type="file"
+                          className="chat-file"
+                          aria-label="Attach a file"
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            if (file !== undefined) void attach(file);
+                            event.target.value = '';
+                          }}
+                        />
+                        <Button
+                          variant="default"
+                          disabled={busy}
+                          onClick={() => fileInput.current?.click()}
+                          data-testid="chat-attach"
+                        >
+                          <Icon name="file" size={16} />
+                          Attach
+                        </Button>
+                        <Button
+                          onClick={() => void send()}
+                          disabled={busy || (draft.trim() === '' && attached.length === 0)}
+                        >
+                          Send
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                </>
-              )}
-            </CardBody>
-          </Card>
-        </div>
-      )}
+                  </>
+                )}
+              </CardBody>
+            </Card>
+          </div>
+        )}
 
-      {stances !== null ? (
-        <Card>
-          <CardBody>
-            {/*
+        {stances !== null ? (
+          <Card>
+            <CardBody>
+              {/*
               Still printed verbatim, in the server's words, because both are claims somebody would
               otherwise make on the product's behalf: that a linked Objective is readable because it
               is linked, and that "live" means a socket.
@@ -673,18 +684,20 @@ function WorkspaceChatInner() {
               pushing the composer up the screen on a phone. Collapsed, not deleted: the honesty
               is the point of it, and `open` would defeat the change while `hidden` would hide it.
             */}
-            <details className="chat-stances">
-              <summary>How chat handles linked work and delivery</summary>
-              <p className="chat-muted" data-testid="chat-context-stance">
-                {stances.context}
-              </p>
-              <p className="chat-muted" data-testid="chat-realtime-stance">
-                {stances.realtime}
-              </p>
-            </details>
-          </CardBody>
-        </Card>
-      ) : null}
+              <details className="chat-stances">
+                <summary>How chat handles linked work and delivery</summary>
+                <p className="chat-muted" data-testid="chat-context-stance">
+                  {stances.context}
+                </p>
+                <p className="chat-muted" data-testid="chat-realtime-stance">
+                  {stances.realtime}
+                </p>
+              </details>
+            </CardBody>
+          </Card>
+        ) : null}
+      </div>
+
       {tenantId === null ? null : (
         <RequestChangePanel
           tenantId={tenantId}

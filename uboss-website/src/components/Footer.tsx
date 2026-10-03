@@ -16,7 +16,7 @@ const COLUMNS: readonly { heading: string; links: { label: string; href: string 
     links: [
       { label: 'Objective Optimization', href: '/platform#objectives' },
       { label: 'Human & AI Work', href: '/platform#workforce' },
-      { label: 'Skills', href: '/skills' },
+      { label: 'Skills and rules', href: '/skills' },
       { label: 'Job Agents', href: '/platform#agents' },
       { label: 'Executor', href: '/platform#executor' },
     ],
@@ -48,10 +48,23 @@ const COLUMNS: readonly { heading: string; links: { label: string; href: string 
   {
     heading: 'Company',
     links: [
-      { label: 'About the platform', href: '/platform' },
-      { label: 'Contact', href: '/demo' },
-      { label: 'Book a Demo', href: '/demo' },
-      { label: 'Sign In', href: '/sign-in' },
+      { label: 'About UBoss', href: '/company' },
+      { label: 'Book a demo', href: '/demo' },
+      { label: 'Sign in', href: '/sign-in' },
+    ],
+  },
+  {
+    /*
+     * A footer without these is a footer an enterprise buyer reads as a mock-up.
+     *
+     * Both pages describe how the product behaves and both say, on the page, which facts a
+     * contract still has to supply — see their own notes. Linking them is right; pretending they
+     * are a signed notice would not be.
+     */
+    heading: 'Legal',
+    links: [
+      { label: 'Data and privacy', href: '/privacy' },
+      { label: 'How it is sold', href: '/terms' },
     ],
   },
 ];
@@ -61,7 +74,7 @@ export function Footer() {
     <footer className="relative bg-black">
       <Rule />
       <div className="mx-auto w-full max-w-[1200px] px-6 py-16 sm:px-8 lg:px-10">
-        <div className="grid gap-12 md:grid-cols-[1.4fr_repeat(5,1fr)]">
+        <div className="grid gap-12 md:grid-cols-[1.4fr_repeat(3,1fr)] lg:grid-cols-[1.4fr_repeat(6,1fr)]">
           <div>
             <Link href="/" className="flex items-center gap-2.5">
               <span className="grid h-7 w-7 place-items-center rounded-[9px] bg-gradient-to-br from-[#a78bfa] to-[#7c3aed] text-[13px] font-bold text-white">
@@ -101,8 +114,8 @@ export function Footer() {
             © {new Date().getFullYear()} Chief Agent. Powered by UBoss AI.
           </p>
           <p className="text-[12.5px] text-[#8b8b93]">
-            Product illustrations on this site depict Chief Agent screens and workflows. They are not
-            customer data.
+            Product illustrations on this site depict Chief Agent screens and workflows. They are
+            not customer data.
           </p>
         </div>
       </div>

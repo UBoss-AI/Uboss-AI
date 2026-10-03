@@ -7,5 +7,15 @@
  * per-page styling (locked UI rule: reusable components instead of one-off page styles).
  */
 
-/* Load the design system's font. The token stack falls back to system fonts if this fails. */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+/*
+ * The fonts are loaded in `layout.tsx`, by `next/font`, and not here.
+ *
+ * This file used to `@import` Inter from fonts.googleapis.com. That request starts late (an
+ * `@import` is only discovered once the importing sheet has parsed), it blocks the first paint on
+ * a third party, and on any network that blocks Google — which includes several customers' own
+ * proxies — it silently does nothing and the whole product renders in `system-ui`. Nothing errors;
+ * the software simply looks like different software to those people.
+ *
+ * `next/font` fetches both faces at build time and serves them from this origin. Nothing here
+ * reaches the network at runtime.
+ */

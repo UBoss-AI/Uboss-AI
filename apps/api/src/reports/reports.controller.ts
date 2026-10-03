@@ -18,6 +18,7 @@ import {
   DASHBOARD_TILE_LABELS,
   DASHBOARD_TILE_LANE,
   DASHBOARD_TILE_MEASURE,
+  DASHBOARD_TILE_DESCRIPTION,
   DASHBOARD_TILE_MODULE,
   DASHBOARD_TILES,
   DEFAULT_REPORT_RANGE,
@@ -169,7 +170,15 @@ export class ReportsController {
         key: tile,
         label: DASHBOARD_TILE_LABELS[tile],
         href: DASHBOARD_TILE_DESTINATIONS[tile],
-        measures: DASHBOARD_TILE_MEASURE[tile],
+        /*
+         * The line under the label: what the number means, or what the area is.
+         *
+         * Resolved here rather than on the screen, so a tile can never fall back to a generic
+         * sentence. Performance and Reports both read "Everything this area holds" when the
+         * component chose the fallback — two different destinations described identically, which
+         * told a reader nothing about either.
+         */
+        measures: DASHBOARD_TILE_MEASURE[tile] ?? DASHBOARD_TILE_DESCRIPTION[tile],
         module: DASHBOARD_TILE_MODULE[tile],
         lane: DASHBOARD_TILE_LANE[tile],
       })),
@@ -365,6 +374,8 @@ export class ReportsController {
         return this.reports.auditActivity({ scope, window });
       case 'PerformanceAndBadges':
         return this.reports.performanceAndBadges({ scope, reportScope, window });
+      case 'AgentRunsPerDay':
+        return this.reports.agentRunsPerDay({ scope, reportScope, window });
     }
   }
 

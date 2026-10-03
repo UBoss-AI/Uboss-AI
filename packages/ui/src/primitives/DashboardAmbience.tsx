@@ -53,7 +53,10 @@ interface Node {
   i: number;
 }
 
-function buildField(): { nodes: Node[]; links: { a: Node; b: Node; hot: boolean; cyan: boolean }[] } {
+function buildField(): {
+  nodes: Node[];
+  links: { a: Node; b: Node; hot: boolean; cyan: boolean }[];
+} {
   const nodes: Node[] = [];
   for (let row = 0; row < ROWS; row += 1) {
     for (let column = 0; column < COLUMNS; column += 1) {
@@ -142,7 +145,9 @@ export function DashboardAmbience() {
                   cx={node.x.toFixed(1)}
                   cy={node.y.toFixed(1)}
                   r={2}
-                  style={{ ['--uboss-nn-delay' as string]: `${(noise(node.i + 17) * 5.5).toFixed(2)}s` }}
+                  style={{
+                    ['--uboss-nn-delay' as string]: `${(noise(node.i + 17) * 5.5).toFixed(2)}s`,
+                  }}
                 />
               );
             })}

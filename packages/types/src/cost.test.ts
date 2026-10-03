@@ -43,14 +43,52 @@ const level = (overrides: Partial<SpendCheckLevel> = {}): SpendCheckLevel => ({
 });
 
 describe('the budget hierarchy', () => {
-  it('is the four levels the functional document names', () => {
-    assert.deepEqual([...BUDGET_SCOPES], ['Company', 'Department', 'Objective', 'Agent']);
+  it('is the four levels the functional document names, plus the person', () => {
+    /*
+     * `Person` is the fifth, and the only one keyed to a human being.
+     *
+     * The four the document names all describe *work* — a department, an objective, an agent —
+     * so the company budget was the only thing between one employee and the whole month's AI.
+     * Somebody running an agent in a loop could exhaust it in an afternoon, and everybody else
+     * would be refused for something they did not do.
+     */
+    assert.deepEqual([...BUDGET_SCOPES], ['Company', 'Department', 'Person', 'Objective', 'Agent']);
   });
 
   it('orders them outermost first', () => {
     assert.ok(BUDGET_SCOPE_ORDER.Company < BUDGET_SCOPE_ORDER.Department);
-    assert.ok(BUDGET_SCOPE_ORDER.Department < BUDGET_SCOPE_ORDER.Objective);
+    // A person belongs to a department, and the work they do belongs to them — so a refusal
+    // reads "the company", then "your department", then "you", then what you were doing.
+    assert.ok(BUDGET_SCOPE_ORDER.Department < BUDGET_SCOPE_ORDER.Person);
+    assert.ok(BUDGET_SCOPE_ORDER.Person < BUDGET_SCOPE_ORDER.Objective);
     assert.ok(BUDGET_SCOPE_ORDER.Objective < BUDGET_SCOPE_ORDER.Agent);
+  });
+
+  it('adds a person only when the work belongs to one', () => {
+    // A scheduled run belongs to nobody, and charging it to whoever owns the objective would put
+    // a name on spend that person did not cause.
+    assert.deepEqual(
+      scopesToCheck({
+        departmentId: null,
+        objectiveId: null,
+        engineAgentId: null,
+        actorUserId: 'u-1',
+      }),
+      [
+        { scope: 'Company', subjectId: null },
+        { scope: 'Person', subjectId: 'u-1' },
+      ],
+    );
+
+    assert.deepEqual(
+      scopesToCheck({
+        departmentId: null,
+        objectiveId: null,
+        engineAgentId: null,
+        actorUserId: null,
+      }),
+      [{ scope: 'Company', subjectId: null }],
+    );
   });
 
   it('always checks the company level, even with nothing else attached', () => {

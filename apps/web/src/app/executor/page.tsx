@@ -34,6 +34,7 @@ import {
 } from '../../lib/api-client';
 import { useAccountMenu } from '../../lib/use-account-menu';
 import { useSignedInUser } from '../../lib/use-signed-in-user';
+import { AccessRefused, isRefusal } from '../../components/AccessRefused';
 import { RoutedAppShell } from '../../components/RoutedAppShell';
 import {
   forgetWorkspace,
@@ -73,6 +74,7 @@ export default function ExecutorPage() {
   const [kindFilter, setKindFilter] = useState<ExceptionKind | null>(null);
   const [showClosed, setShowClosed] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refused, setRefused] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -114,6 +116,10 @@ export default function ExecutorPage() {
         setLoading(false);
       })
       .catch((caught: unknown) => {
+        // A refusal replaces the screen; a fault keeps it and says what went wrong. See
+        // `AccessRefused` — an Employee has no `executor` grant, and used to get the whole
+        // exception console with a red line above it and a "Sweep now" button they could press.
+        setRefused(isRefusal(caught));
         setError(caught instanceof ApiError ? caught.message : 'Could not load exceptions.');
         setLoading(false);
       });
@@ -185,271 +191,295 @@ export default function ExecutorPage() {
         description="Monitor execution and route exceptions."
         breadcrumbs={[{ label: 'Executor Agent' }]}
         actions={
-          <Button size="sm" disabled={busy} onClick={sweep}>
-            <Icon name="bolt" size={16} />
-            Sweep now
-          </Button>
+          /*
+           * Nothing to sweep when the console is not yours.
+           *
+           * "Sweep now" sat in the header of a refused screen, enabled, for anybody who reached
+           * this route — so an Employee could press a button that runs the Executor's escalation
+           * pass and watch it refuse. The server refuses it either way; what changes is that the
+           * product no longer offers it.
+           */
+          refused ? null : (
+            <Button size="sm" disabled={busy} onClick={sweep}>
+              <Icon name="bolt" size={16} />
+              Sweep now
+            </Button>
+          )
         }
       />
 
-      {/* The client's own wording. It states the boundary the whole screen is arranged around. */}
-      <Banner tone="warn">
-        The Executor monitors human and Engine Agent execution and routes exceptions. It does not do
-        the work — it validates, escalates and resolves. It never closes its own findings, and it
-        never stands in for a required human approval.
-      </Banner>
+      {refused ? (
+        <Card>
+          <CardBody>
+            <AccessRefused what="The Executor Agent" message={error} />
+          </CardBody>
+        </Card>
+      ) : (
+        <>
+          {/* The client's own wording. It states the boundary the whole screen is arranged around. */}
+          <Banner tone="warn">
+            The Executor monitors human and Engine Agent execution and routes exceptions. It does
+            not do the work — it validates, escalates and resolves. It never closes its own
+            findings, and it never stands in for a required human approval.
+          </Banner>
 
-      {error === null ? null : <Banner tone="danger">{error}</Banner>}
-      {notice === null ? null : <Banner tone="ok">{notice}</Banner>}
+          {error === null ? null : <Banner tone="danger">{error}</Banner>}
+          {notice === null ? null : <Banner tone="ok">{notice}</Banner>}
 
-      <Card>
-        <CardBody>
-          <div className="uboss-toolbar" style={{ gap: 6, flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              className="uboss-chip"
-              aria-pressed={kindFilter === null}
-              onClick={() => setKindFilter(null)}
-            >
-              All
-            </button>
-            {(meta?.kinds ?? []).map((entry) => (
-              <button
-                type="button"
-                className="uboss-chip"
-                key={entry.kind}
-                aria-pressed={kindFilter === entry.kind}
-                onClick={() => setKindFilter(entry.kind)}
-                title={`Default owner: ${entry.defaultOwner}`}
-              >
-                {entry.label}
-              </button>
-            ))}
-            <label className="uboss-checkbox" style={{ marginLeft: 'auto' }}>
-              <input
-                type="checkbox"
-                checked={showClosed}
-                onChange={(event) => setShowClosed(event.target.checked)}
-              />
-              Include closed
-            </label>
-          </div>
-
-          <DataTable
-            // Scoped: exceptions arrive a beat apart so a sweep that raised something is
-            // visible as a change. No other table in the product does this.
-            className="uboss-exceptions"
-            caption="Exceptions"
-            rows={exceptions}
-            rowKey={(row) => row.id}
-            loading={loading}
-            columns={[
-              {
-                key: 'item',
-                header: 'Work item',
-                render: (row) => (
-                  <>
-                    <b>{row.detail.slice(0, 80)}</b>
-                    <br />
-                    <small className="uboss-mono uboss-muted-3">
-                      {row.sourceType} · {row.sourceId.slice(0, 8)}
-                    </small>
-                  </>
-                ),
-              },
-              {
-                key: 'type',
-                header: 'Type',
-                render: (row) => (
-                  <StatusBadge tone="teal" status={EXCEPTION_KIND_LABELS[row.kind]} />
-                ),
-              },
-              {
-                key: 'owner',
-                header: 'Owner',
-                render: (row) =>
-                  row.ownerUserId === null ? (
-                    // Not an empty cell: the document's default owner for the kind is an honest
-                    // answer to "whose is this?" when routing could not name an individual.
-                    <span className="uboss-muted-3" title={row.defaultOwner}>
-                      Unassigned — {row.defaultOwner}
-                    </span>
-                  ) : (
-                    <span className="uboss-mono uboss-muted-3">{row.ownerUserId.slice(0, 8)}</span>
-                  ),
-              },
-              {
-                key: 'severity',
-                header: 'Severity',
-                render: (row) => (
-                  <StatusBadge
-                    tone={EXCEPTION_SEVERITY_TONES[row.severity] as StatusTone}
-                    status={row.severity}
+          <Card>
+            <CardBody>
+              <div className="uboss-toolbar" style={{ gap: 6, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="uboss-chip"
+                  aria-pressed={kindFilter === null}
+                  onClick={() => setKindFilter(null)}
+                >
+                  All
+                </button>
+                {(meta?.kinds ?? []).map((entry) => (
+                  <button
+                    type="button"
+                    className="uboss-chip"
+                    key={entry.kind}
+                    aria-pressed={kindFilter === entry.kind}
+                    onClick={() => setKindFilter(entry.kind)}
+                    title={`Default owner: ${entry.defaultOwner}`}
+                  >
+                    {entry.label}
+                  </button>
+                ))}
+                <label className="uboss-checkbox" style={{ marginLeft: 'auto' }}>
+                  <input
+                    type="checkbox"
+                    checked={showClosed}
+                    onChange={(event) => setShowClosed(event.target.checked)}
                   />
-                ),
-              },
-              {
-                key: 'age',
-                header: 'Age',
-                render: (row) => (
-                  <span className={row.escalation.due ? 'uboss-mono' : 'uboss-mono uboss-muted-3'}>
-                    {age(row.openedAt)}
-                    {row.escalation.due ? ' · overdue' : ''}
-                  </span>
-                ),
-              },
-              {
-                key: 'state',
-                header: 'State',
-                render: (row) => (
-                  <StatusBadge
-                    tone={EXCEPTION_STATE_TONES[row.state] as StatusTone}
-                    status={EXCEPTION_STATE_LABELS[row.state]}
-                  />
-                ),
-              },
-              {
-                key: 'open',
-                header: '',
-                render: (row) => (
-                  <Button size="sm" onClick={() => setSelected(row)}>
-                    Open
-                  </Button>
-                ),
-              },
-            ]}
-            emptyTitle="Nothing needs attention"
-            emptyDescription="The Executor raises an exception here when it finds something. Sweep to check now."
-          />
-        </CardBody>
-      </Card>
-
-      {/* ---- Detail: the reference's exceptionDetail() ---- */}
-      <Drawer
-        open={selected !== null}
-        onClose={() => setSelected(null)}
-        title={selected === null ? '' : EXCEPTION_KIND_LABELS[selected.kind]}
-        footer={<Button onClick={() => setSelected(null)}>Close</Button>}
-      >
-        {selected === null ? null : (
-          <>
-            <div className="uboss-kv">
-              <span className="uboss-kv-key">Severity</span>
-              <span className="uboss-kv-value">
-                <StatusBadge
-                  tone={EXCEPTION_SEVERITY_TONES[selected.severity] as StatusTone}
-                  status={selected.severity}
-                />
-              </span>
-            </div>
-            <div className="uboss-kv">
-              <span className="uboss-kv-key">State</span>
-              <span className="uboss-kv-value">
-                <StatusBadge
-                  tone={EXCEPTION_STATE_TONES[selected.state] as StatusTone}
-                  status={EXCEPTION_STATE_LABELS[selected.state]}
-                />
-              </span>
-            </div>
-            <div className="uboss-kv">
-              <span className="uboss-kv-key">Age</span>
-              <span className="uboss-kv-value">{selected.escalation.reason}</span>
-            </div>
-            <div className="uboss-kv">
-              <span className="uboss-kv-key">Attempts</span>
-              <span className="uboss-kv-value">{selected.attempts}</span>
-            </div>
-
-            <div className="uboss-section-label">What happened</div>
-            <p>{selected.detail}</p>
-
-            {selected.evidence === null || selected.evidence === undefined ? null : (
-              <>
-                <div className="uboss-section-label">Evidence</div>
-                <pre className="uboss-mono" style={{ fontSize: 11, whiteSpace: 'pre-wrap' }}>
-                  {JSON.stringify(selected.evidence, null, 2)}
-                </pre>
-              </>
-            )}
-
-            {selected.closedAt === null ? null : (
-              <>
-                <div className="uboss-section-label">Closed</div>
-                <p>{selected.closeReason}</p>
-              </>
-            )}
-
-            <div className="uboss-section-label">Resolution history</div>
-            {selected.history.map((event, index) => (
-              <div className="uboss-kv" key={index}>
-                <span className="uboss-kv-key">
-                  {event.action ?? event.state}
-                  <br />
-                  <small className="uboss-muted-3">
-                    {/* Who did it — the machine and nobody are different answers. */}
-                    {event.byExecutor ? 'Executor Agent' : 'A person'}
-                  </small>
-                </span>
-                <span className="uboss-kv-value" style={{ textAlign: 'left' }}>
-                  {event.note}
-                </span>
+                  Include closed
+                </label>
               </div>
-            ))}
 
-            {selected.availableActions.length === 0 ? (
-              <p className="uboss-notice-min">
-                <Icon name="check" size={14} />
-                This exception is closed. Reopening it would rewrite a resolution somebody recorded
-                — if the condition recurs, the sweep raises a new one.
-              </p>
-            ) : (
+              <DataTable
+                // Scoped: exceptions arrive a beat apart so a sweep that raised something is
+                // visible as a change. No other table in the product does this.
+                className="uboss-exceptions"
+                caption="Exceptions"
+                rows={exceptions}
+                rowKey={(row) => row.id}
+                loading={loading}
+                columns={[
+                  {
+                    key: 'item',
+                    header: 'Work item',
+                    render: (row) => (
+                      <>
+                        <b>{row.detail.slice(0, 80)}</b>
+                        <br />
+                        <small className="uboss-mono uboss-muted-3">
+                          {row.sourceType} · {row.sourceId.slice(0, 8)}
+                        </small>
+                      </>
+                    ),
+                  },
+                  {
+                    key: 'type',
+                    header: 'Type',
+                    render: (row) => (
+                      <StatusBadge tone="teal" status={EXCEPTION_KIND_LABELS[row.kind]} />
+                    ),
+                  },
+                  {
+                    key: 'owner',
+                    header: 'Owner',
+                    render: (row) =>
+                      row.ownerUserId === null ? (
+                        // Not an empty cell: the document's default owner for the kind is an honest
+                        // answer to "whose is this?" when routing could not name an individual.
+                        <span className="uboss-muted-3" title={row.defaultOwner}>
+                          Unassigned — {row.defaultOwner}
+                        </span>
+                      ) : (
+                        <span className="uboss-mono uboss-muted-3">
+                          {row.ownerUserId.slice(0, 8)}
+                        </span>
+                      ),
+                  },
+                  {
+                    key: 'severity',
+                    header: 'Severity',
+                    render: (row) => (
+                      <StatusBadge
+                        tone={EXCEPTION_SEVERITY_TONES[row.severity] as StatusTone}
+                        status={row.severity}
+                      />
+                    ),
+                  },
+                  {
+                    key: 'age',
+                    header: 'Age',
+                    render: (row) => (
+                      <span
+                        className={row.escalation.due ? 'uboss-mono' : 'uboss-mono uboss-muted-3'}
+                      >
+                        {age(row.openedAt)}
+                        {row.escalation.due ? ' · overdue' : ''}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: 'state',
+                    header: 'State',
+                    render: (row) => (
+                      <StatusBadge
+                        tone={EXCEPTION_STATE_TONES[row.state] as StatusTone}
+                        status={EXCEPTION_STATE_LABELS[row.state]}
+                      />
+                    ),
+                  },
+                  {
+                    key: 'open',
+                    header: '',
+                    render: (row) => (
+                      <Button size="sm" onClick={() => setSelected(row)}>
+                        Open
+                      </Button>
+                    ),
+                  },
+                ]}
+                emptyTitle="Nothing needs attention"
+                emptyDescription="The Executor raises an exception here when it finds something. Sweep to check now."
+              />
+            </CardBody>
+          </Card>
+
+          {/* ---- Detail: the reference's exceptionDetail() ---- */}
+          <Drawer
+            open={selected !== null}
+            onClose={() => setSelected(null)}
+            title={selected === null ? '' : EXCEPTION_KIND_LABELS[selected.kind]}
+            footer={<Button onClick={() => setSelected(null)}>Close</Button>}
+          >
+            {selected === null ? null : (
               <>
-                <div className="uboss-section-label">What you can do</div>
-                <div className="uboss-actions">
-                  {/*
+                <div className="uboss-kv">
+                  <span className="uboss-kv-key">Severity</span>
+                  <span className="uboss-kv-value">
+                    <StatusBadge
+                      tone={EXCEPTION_SEVERITY_TONES[selected.severity] as StatusTone}
+                      status={selected.severity}
+                    />
+                  </span>
+                </div>
+                <div className="uboss-kv">
+                  <span className="uboss-kv-key">State</span>
+                  <span className="uboss-kv-value">
+                    <StatusBadge
+                      tone={EXCEPTION_STATE_TONES[selected.state] as StatusTone}
+                      status={EXCEPTION_STATE_LABELS[selected.state]}
+                    />
+                  </span>
+                </div>
+                <div className="uboss-kv">
+                  <span className="uboss-kv-key">Age</span>
+                  <span className="uboss-kv-value">{selected.escalation.reason}</span>
+                </div>
+                <div className="uboss-kv">
+                  <span className="uboss-kv-key">Attempts</span>
+                  <span className="uboss-kv-value">{selected.attempts}</span>
+                </div>
+
+                <div className="uboss-section-label">What happened</div>
+                <p>{selected.detail}</p>
+
+                {selected.evidence === null || selected.evidence === undefined ? null : (
+                  <>
+                    <div className="uboss-section-label">Evidence</div>
+                    <pre className="uboss-mono" style={{ fontSize: 11, whiteSpace: 'pre-wrap' }}>
+                      {JSON.stringify(selected.evidence, null, 2)}
+                    </pre>
+                  </>
+                )}
+
+                {selected.closedAt === null ? null : (
+                  <>
+                    <div className="uboss-section-label">Closed</div>
+                    <p>{selected.closeReason}</p>
+                  </>
+                )}
+
+                <div className="uboss-section-label">Resolution history</div>
+                {selected.history.map((event, index) => (
+                  <div className="uboss-kv" key={index}>
+                    <span className="uboss-kv-key">
+                      {event.action ?? event.state}
+                      <br />
+                      <small className="uboss-muted-3">
+                        {/* Who did it — the machine and nobody are different answers. */}
+                        {event.byExecutor ? 'Executor Agent' : 'A person'}
+                      </small>
+                    </span>
+                    <span className="uboss-kv-value" style={{ textAlign: 'left' }}>
+                      {event.note}
+                    </span>
+                  </div>
+                ))}
+
+                {selected.availableActions.length === 0 ? (
+                  <p className="uboss-notice-min">
+                    <Icon name="check" size={14} />
+                    This exception is closed. Reopening it would rewrite a resolution somebody
+                    recorded — if the condition recurs, the sweep raises a new one.
+                  </p>
+                ) : (
+                  <>
+                    <div className="uboss-section-label">What you can do</div>
+                    <div className="uboss-actions">
+                      {/*
                     Prompt 40A (CR-03) §6 — an exception is the case most likely to need a
                     conversation, because the person who can resolve it is often not the person
                     who found it.
                   */}
-                  <DiscussButton
-                    tenantId={tenantId}
-                    contextType="ExecutorException"
-                    resourceId={selected.id}
-                  />
-                  {selected.availableActions.map((action) => (
-                    <Button
-                      size="sm"
-                      key={action}
-                      disabled={busy}
-                      {...(action === 'Resolve' ? { variant: 'primary' as const } : {})}
-                      onClick={() => {
-                        const note = window.prompt(
-                          `${RESOLUTION_ACTION_LABELS[action]} — what should the record say?`,
-                        );
-                        if (note === null || note.trim() === '') return;
-                        if (action === 'Reassign' || action === 'Escalate') {
-                          const toUserId = window.prompt('Which user id should this go to?');
-                          if (toUserId === null || toUserId.trim() === '') return;
-                          act(action, note, toUserId.trim());
-                          return;
-                        }
-                        act(action, note);
-                      }}
-                    >
-                      {RESOLUTION_ACTION_LABELS[action]}
-                    </Button>
-                  ))}
-                </div>
+                      <DiscussButton
+                        tenantId={tenantId}
+                        contextType="ExecutorException"
+                        resourceId={selected.id}
+                      />
+                      {selected.availableActions.map((action) => (
+                        <Button
+                          size="sm"
+                          key={action}
+                          disabled={busy}
+                          {...(action === 'Resolve' ? { variant: 'primary' as const } : {})}
+                          onClick={() => {
+                            const note = window.prompt(
+                              `${RESOLUTION_ACTION_LABELS[action]} — what should the record say?`,
+                            );
+                            if (note === null || note.trim() === '') return;
+                            if (action === 'Reassign' || action === 'Escalate') {
+                              const toUserId = window.prompt('Which user id should this go to?');
+                              if (toUserId === null || toUserId.trim() === '') return;
+                              act(action, note, toUserId.trim());
+                              return;
+                            }
+                            act(action, note);
+                          }}
+                        >
+                          {RESOLUTION_ACTION_LABELS[action]}
+                        </Button>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                <p className="uboss-notice-min">
+                  <Icon name="shield" size={14} />
+                  {selected.note}
+                </p>
               </>
             )}
-
-            <p className="uboss-notice-min">
-              <Icon name="shield" size={14} />
-              {selected.note}
-            </p>
-          </>
-        )}
-      </Drawer>
+          </Drawer>
+        </>
+      )}
     </RoutedAppShell>
   );
 }

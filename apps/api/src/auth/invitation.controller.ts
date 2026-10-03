@@ -93,7 +93,10 @@ export class InvitationController {
 
   @Delete(':invitationId')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async cancel(@Param('invitationId', new ParseUUIDPipe()) invitationId: string, @Query('tenantId') tenantId: string) {
+  async cancel(
+    @Param('invitationId', new ParseUUIDPipe()) invitationId: string,
+    @Query('tenantId') tenantId: string,
+  ) {
     const actor = getActor();
     await this.invitations.cancel(
       tenantId,

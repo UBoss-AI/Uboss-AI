@@ -64,6 +64,24 @@ function sourceLabel(source: string): string {
 }
 
 /**
+ * What a setting normally is, in words a person would use.
+ *
+ * `String(value)` is what this used to be, and it put `true`, `false`, `null` and the empty string
+ * in front of customers. The first two are a programmer's words for on and off; the last two are
+ * not words at all, and one of them produced the sentence "Default is" followed by nothing.
+ *
+ * Returns null where there is nothing worth saying, so the caller leaves the line out rather than
+ * printing half of it.
+ */
+function describeDefault(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'boolean') return value ? 'on' : 'off';
+  const text = String(value).trim();
+  if (text === '') return null;
+  return text;
+}
+
+/**
  * Company Settings — the full information architecture, with left navigation and a right panel.
  *
  * ## Matched to the reference
@@ -244,7 +262,9 @@ export default function CompanySettingsPage() {
   const close = useCallback(() => {
     if (
       dirty &&
-      !window.confirm('You have unsaved changes on this panel. Leaving now discards them. Continue?')
+      !window.confirm(
+        'You have unsaved changes on this panel. Leaving now discards them. Continue?',
+      )
     ) {
       return;
     }
@@ -279,6 +299,7 @@ export default function CompanySettingsPage() {
       const SCREENS: Record<string, string> = {
         users: '/settings/users',
         billing: '/settings/billing',
+        uboss: '/profile-search',
       };
       const screen = SCREENS[key];
       if (screen !== undefined) {
@@ -391,24 +412,19 @@ export default function CompanySettingsPage() {
         dialog carries a navigation column beside its panel, which the 720px wide modifier cannot
         hold.
       */}
-      <Modal
-        open
-        onClose={close}
-        title="Settings"
-        className="uboss-modal--settings"
-      >
-      {error ? <Banner tone="danger">{error}</Banner> : null}
-      {notice ? <Banner tone="ok">{notice}</Banner> : null}
+      <Modal open onClose={close} title="Settings" className="uboss-modal--settings">
+        {error ? <Banner tone="danger">{error}</Banner> : null}
+        {notice ? <Banner tone="ok">{notice}</Banner> : null}
 
-      {!view ? (
-        <Card>
-          <CardBody>
-            <SkeletonText lines={8} />
-          </CardBody>
-        </Card>
-      ) : (
-        <>
-          {/*
+        {!view ? (
+          <Card>
+            <CardBody>
+              <SkeletonText lines={8} />
+            </CardBody>
+          </Card>
+        ) : (
+          <>
+            {/*
             Counted for an administrator, not for everybody.
 
             An employee opening Settings does not need to be told that thirteen categories exist
@@ -417,17 +433,17 @@ export default function CompanySettingsPage() {
             a shorter list than they expected means a permission boundary rather than a missing
             feature, and that is a real question they would otherwise raise.
           */}
-          {mayAdministerAnything && view.withheldCategories > 0 ? (
-            <Banner tone="info">
-              {view.withheldCategories} categor
-              {view.withheldCategories === 1 ? 'y is' : 'ies are'} not shown because your role
-              cannot read {view.withheldCategories === 1 ? 'it' : 'them'}. Every setting carries its
-              own permission and the server enforces it — a shorter list here is a permission
-              boundary, not a missing feature.
-            </Banner>
-          ) : null}
+            {mayAdministerAnything && view.withheldCategories > 0 ? (
+              <Banner tone="info">
+                {view.withheldCategories} categor
+                {view.withheldCategories === 1 ? 'y is' : 'ies are'} not shown because your role
+                cannot read {view.withheldCategories === 1 ? 'it' : 'them'}. Every setting carries
+                its own permission and the server enforces it — a shorter list here is a permission
+                boundary, not a missing feature.
+              </Banner>
+            ) : null}
 
-          {/*
+            {/*
             A separate sentence, because it is a separate fact.
 
             These are not withheld from anybody. They are company administration, and this screen
@@ -435,74 +451,74 @@ export default function CompanySettingsPage() {
             can only look at. Saying "your role cannot read it" here would be untrue, and a
             refusal a person can catch out is worse than no message at all.
           */}
-          {mayAdministerAnything && view.administrativeCategories > 0 ? (
-            <Banner tone="info">
-              {view.administrativeCategories} further categor
-              {view.administrativeCategories === 1 ? 'y holds' : 'ies hold'} company administration
-              only, so {view.administrativeCategories === 1 ? 'it is' : 'they are'} not listed
-              here. Nothing is hidden from you that you could act on.
-            </Banner>
-          ) : null}
+            {mayAdministerAnything && view.administrativeCategories > 0 ? (
+              <Banner tone="info">
+                {view.administrativeCategories} further categor
+                {view.administrativeCategories === 1 ? 'y holds' : 'ies hold'} company
+                administration only, so {view.administrativeCategories === 1 ? 'it is' : 'they are'}{' '}
+                not listed here. Nothing is hidden from you that you could act on.
+              </Banner>
+            ) : null}
 
-          <SettingsShell
-            sections={sections}
-            activeKey={active}
-            onSelect={switchCategory}
-            // The reference's personal labels for a caller who administers nothing.
-            personalLabels={!mayAdministerAnything}
-          >
-            <Card>
-              <CardHeader
-                /*
-                 * The same words as the sidebar.
-                 *
-                 * Six categories carry a personal label — the sidebar used it and this heading
-                 * did not, so somebody clicked "How this company works" and landed on a card
-                 * titled "General". Two names for one place is how a screen makes a person
-                 * wonder whether they are where they think they are.
-                 */
-                title={
-                  (mayAdministerAnything
-                    ? activeSection?.label
-                    : (activeSection?.personalLabel ?? activeSection?.label)) ?? ''
-                }
-                aside={
+            <SettingsShell
+              sections={sections}
+              activeKey={active}
+              onSelect={switchCategory}
+              // The reference's personal labels for a caller who administers nothing.
+              personalLabels={!mayAdministerAnything}
+            >
+              <Card>
+                <CardHeader
                   /*
-                   * "Read only" means the settings in this category are, and some categories
-                   * hold no settings at all.
+                   * The same words as the sidebar.
                    *
-                   * Roles is one of them: it has no rows in `company_settings` and never will,
-                   * because a role is not a setting — so `anyEditable` is false and the badge
-                   * appeared above a panel where an administrator writes roles. A badge that
-                   * contradicts the button underneath it teaches people to ignore badges.
+                   * Six categories carry a personal label — the sidebar used it and this heading
+                   * did not, so somebody clicked "How this company works" and landed on a card
+                   * titled "General". Two names for one place is how a screen makes a person
+                   * wonder whether they are where they think they are.
                    */
-                  active === 'roles' || category?.anyEditable === true ? null : (
-                    <StatusBadge status="Read only" tone="grey" />
-                  )
-                }
-              />
-              <CardBody>
-                {/*
+                  title={
+                    (mayAdministerAnything
+                      ? activeSection?.label
+                      : (activeSection?.personalLabel ?? activeSection?.label)) ?? ''
+                  }
+                  aside={
+                    /*
+                     * "Read only" means the settings in this category are, and some categories
+                     * hold no settings at all.
+                     *
+                     * Roles is one of them: it has no rows in `company_settings` and never will,
+                     * because a role is not a setting — so `anyEditable` is false and the badge
+                     * appeared above a panel where an administrator writes roles. A badge that
+                     * contradicts the button underneath it teaches people to ignore badges.
+                     */
+                    active === 'roles' || category?.anyEditable === true ? null : (
+                      <StatusBadge status="Read only" tone="grey" />
+                    )
+                  }
+                />
+                <CardBody>
+                  {/*
                   The one-line description, except where the panel opens with its own. Two
                   sentences saying the same thing, one above the other, is the filler this
                   screen was asked to lose.
                 */}
-                {active === 'roles' ? null : (
-                  <p className="uboss-muted-3">{activeSection?.description}</p>
-                )}
+                  {active === 'roles' ? null : (
+                    <p className="uboss-muted-3">{activeSection?.description}</p>
+                  )}
 
-                {/* Tokens & Cost is the reference's `setTokens()`: a bespoke panel rather than
+                  {/* Tokens & Cost is the reference's `setTokens()`: a bespoke panel rather than
                     a list of generic setting controls — an allowance bar, the per-level budgets
                     and the credit history. Rendered above whatever generic settings the
                     category also carries. */}
-                {active === 'tokens' && <TokensAndCostPanel tenantId={tenantId} />}
-                {/* Prompt 31 sits under the budget rather than on its own screen: the
+                  {active === 'tokens' && <TokensAndCostPanel tenantId={tenantId} />}
+                  {/* Prompt 31 sits under the budget rather than on its own screen: the
                     reference's Tokens & Cost card already offers Request top-up, Reallocate and
                     Credit history, and a second screen would be a second place a reader looks
                     for the same subject. */}
-                {active === 'tokens' && <CreditsPanel tenantId={tenantId} />}
+                  {active === 'tokens' && <CreditsPanel tenantId={tenantId} />}
 
-                {/*
+                  {/*
                   Roles & Permissions, as a screen rather than a sentence.
 
                   It held one paragraph and a *Read only* badge: true, and useless as the whole
@@ -510,94 +526,137 @@ export default function CompanySettingsPage() {
                   could not see a single permission. The catalogue is now spelled out, and the
                   roles a company writes for itself are made here rather than nowhere.
                 */}
-                {active === 'roles' && tenantId !== null ? (
-                  <RolesPanel tenantId={tenantId} mayAdminister={mayAdministerAnything} />
-                ) : null}
+                  {active === 'roles' && tenantId !== null ? (
+                    <RolesPanel tenantId={tenantId} mayAdminister={mayAdministerAnything} />
+                  ) : null}
 
-                {category === null ? (
-                  <SkeletonText lines={3} />
-                ) : active === 'roles' ? (
-                  // The panel above is this category's content. The generic "nothing configured
-                  // here" banner would print the paragraph it replaced, underneath it.
-                  null
-                ) : category.settings.length === 0 ? (
-                  <Banner tone="info">
-                    {category.note ??
-                      'Nothing is configured in this category yet. It appears here because the ' +
-                        'full settings structure is fixed; its controls arrive with the prompt ' +
-                        'that owns them.'}
-                  </Banner>
-                ) : (
-                  <>
-                    {category.settings.map((setting) => (
-                      <div key={setting.key} style={{ marginBottom: 18 }}>
-                        {control(setting)}
-                        <div className="uboss-actions" style={{ marginTop: 6 }}>
-                          <StatusBadge
-                            status={sourceLabel(setting.source)}
-                            tone={sourceTone(setting.source)}
-                          />
-                          {setting.material ? (
-                            <>
-                              <StatusBadge status="Governance" tone="purple" />
-                              <Button
-                                variant="ghost"
-                                onClick={() => {
-                                  if (!tenantId) {
-                                    return;
-                                  }
-                                  settingsApi
-                                    .history(tenantId, setting.key)
-                                    .then(setHistory)
-                                    .catch((caught: unknown) =>
-                                      setError(
-                                        caught instanceof ApiError
-                                          ? caught.message
-                                          : 'Could not load the history.',
-                                      ),
-                                    );
-                                }}
-                              >
-                                Change history
-                              </Button>
-                            </>
-                          ) : null}
-                          {setting.source !== 'default' &&
-                          String(setting.value) !== String(setting.defaultValue) ? (
-                            <span className="uboss-muted-3" style={{ fontSize: 12 }}>
-                              Default is {String(setting.defaultValue)}
-                            </span>
-                          ) : null}
+                  {category === null ? (
+                    <SkeletonText lines={3} />
+                  ) : /*
+                       Sections whose content is a panel, not a list of switches.
+
+                       Each of these renders its own screen above, and the generic "nothing is
+                       configured here" banner used to print underneath it — telling somebody
+                       reading their support tickets that the category was empty and its controls
+                       would "arrive with the prompt that owns them", which is a sentence from the
+                       build plan showing through to a customer.
+                     */
+                  active === 'roles' || active === 'help' ? null : category.settings.length ===
+                    0 ? (
+                    <Banner tone="info">
+                      {category.note ??
+                        'There is nothing to set here. This section is configured elsewhere in ' +
+                          'the product, or by UBoss on your behalf.'}
+                    </Banner>
+                  ) : (
+                    <>
+                      {category.settings.map((setting) => (
+                        <div key={setting.key} style={{ marginBottom: 18 }}>
+                          {control(setting)}
+                          <div className="uboss-actions" style={{ marginTop: 6 }}>
+                            {/*
+                              A badge only where it says something.
+
+                              Every setting has a default, so a "Default" chip on the ones nobody
+                              has touched was a label on the ordinary case — repeated down every
+                              category, drawing the eye to the settings that need no attention and
+                              away from the ones somebody had actually changed. Those still carry
+                              their badge, and now it is the only one on the screen.
+                            */}
+                            {setting.source === 'default' ? null : (
+                              <StatusBadge
+                                status={sourceLabel(setting.source)}
+                                tone={sourceTone(setting.source)}
+                              />
+                            )}
+                            {setting.material ? (
+                              <>
+                                {/*
+                                  "Governance" said nothing to the person reading it.
+
+                                  It marks a setting whose changes are kept — `material: true` —
+                                  and the word for that is not a branch of political science. An
+                                  administrator seeing a purple chip reading "Governance" beside a
+                                  timezone field has no way to know whether it is a warning, a
+                                  category or a permission they lack.
+                                */}
+                                <StatusBadge status="Changes are recorded" tone="purple" />
+                                <Button
+                                  variant="ghost"
+                                  onClick={() => {
+                                    if (!tenantId) {
+                                      return;
+                                    }
+                                    settingsApi
+                                      .history(tenantId, setting.key)
+                                      .then(setHistory)
+                                      .catch((caught: unknown) =>
+                                        setError(
+                                          caught instanceof ApiError
+                                            ? caught.message
+                                            : 'Could not load the history.',
+                                        ),
+                                      );
+                                  }}
+                                >
+                                  Change history
+                                </Button>
+                              </>
+                            ) : null}
+                            {/*
+                              "Default is " — and then nothing.
+
+                              `String(defaultValue)` printed `true`, `false`, `null`, `undefined`
+                              and the empty string straight onto the screen. A boolean setting read
+                              "Default is false", which is a programmer's word for "off"; a setting
+                              whose default is blank read "Default is" and simply stopped, mid
+                              sentence, on a customer's screen.
+
+                              `describeDefault` returns nothing at all where there is nothing to
+                              say, so the line is absent rather than truncated.
+                            */}
+                            {(() => {
+                              const said =
+                                setting.source === 'default' ||
+                                String(setting.value) === String(setting.defaultValue)
+                                  ? null
+                                  : describeDefault(setting.defaultValue);
+                              return said === null ? null : (
+                                <span className="uboss-muted-3" style={{ fontSize: 12 }}>
+                                  {`Normally ${said}`}
+                                </span>
+                              );
+                            })()}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
 
-                    {materialDirty ? (
-                      <FormField
-                        label="Why is this changing?"
-                        required
-                        hint="Required for a governance setting, and kept in its change history."
-                      >
-                        {(wiring) => (
-                          <textarea
-                            {...wiring}
-                            className="uboss-input"
-                            rows={2}
-                            value={reason}
-                            onChange={(event) => setReason(event.target.value)}
-                          />
-                        )}
-                      </FormField>
-                    ) : null}
+                      {materialDirty ? (
+                        <FormField
+                          label="Why is this changing?"
+                          required
+                          hint="Required for a governance setting, and kept in its change history."
+                        >
+                          {(wiring) => (
+                            <textarea
+                              {...wiring}
+                              className="uboss-input"
+                              rows={2}
+                              value={reason}
+                              onChange={(event) => setReason(event.target.value)}
+                            />
+                          )}
+                        </FormField>
+                      ) : null}
 
-                    {dirty ? (
-                      <Banner tone="warn">
-                        You have unsaved changes on this panel. Leaving without saving discards
-                        them.
-                      </Banner>
-                    ) : null}
+                      {dirty ? (
+                        <Banner tone="warn">
+                          You have unsaved changes on this panel. Leaving without saving discards
+                          them.
+                        </Banner>
+                      ) : null}
 
-                    {/*
+                      {/*
                       No Save on a panel where nothing is yours to change.
 
                       The buttons were always rendered and merely disabled — correct in behaviour,
@@ -607,77 +666,79 @@ export default function CompanySettingsPage() {
                       action", so the row goes rather than sitting there greyed out for ever. The
                       server refuses the write either way; this is what the screen says about it.
                     */}
-                    {category?.anyEditable ? (
-                      <div className="uboss-actions">
-                        <Button
-                          variant="primary"
-                          disabled={!dirty || saving || (materialDirty && reason.trim().length < 5)}
-                          onClick={save}
-                        >
-                          {saving ? 'Saving…' : 'Save changes'}
-                        </Button>
-                        <Button
-                          disabled={!dirty || saving}
-                          onClick={() => {
-                            setDraft({});
-                            setReason('');
-                          }}
-                        >
-                          Discard
-                        </Button>
-                      </div>
-                    ) : null}
-                  </>
-                )}
+                      {category?.anyEditable ? (
+                        <div className="uboss-actions">
+                          <Button
+                            variant="primary"
+                            disabled={
+                              !dirty || saving || (materialDirty && reason.trim().length < 5)
+                            }
+                            onClick={save}
+                          >
+                            {saving ? 'Saving…' : 'Save changes'}
+                          </Button>
+                          <Button
+                            disabled={!dirty || saving}
+                            onClick={() => {
+                              setDraft({});
+                              setReason('');
+                            }}
+                          >
+                            Discard
+                          </Button>
+                        </div>
+                      ) : null}
+                    </>
+                  )}
 
-                {history !== null ? (
-                  <Card>
-                    <CardHeader
-                      title={`Change history — ${history.key}`}
-                      aside={
-                        <Button variant="ghost" onClick={() => setHistory(null)}>
-                          Close
-                        </Button>
-                      }
-                    />
-                    <CardBody>
-                      <DataTable
-                        caption="Every change to this governance setting, newest first"
-                        columns={[
-                          {
-                            key: 'when',
-                            header: 'When',
-                            render: (row) => new Date(row.changedAt).toLocaleString(),
-                          },
-                          {
-                            key: 'from',
-                            header: 'From',
-                            render: (row) => row.previousValue ?? 'the default',
-                          },
-                          { key: 'to', header: 'To', render: (row) => row.newValue },
-                          { key: 'why', header: 'Why', render: (row) => row.reason },
-                        ]}
-                        rows={history.changes}
-                        rowKey={(row) => row.changedAt}
-                        emptyTitle="No changes yet"
-                        emptyDescription="This setting still has its inherited value."
+                  {history !== null ? (
+                    <Card>
+                      <CardHeader
+                        title={`Change history — ${history.key}`}
+                        aside={
+                          <Button variant="ghost" onClick={() => setHistory(null)}>
+                            Close
+                          </Button>
+                        }
                       />
-                    </CardBody>
-                  </Card>
-                ) : null}
+                      <CardBody>
+                        <DataTable
+                          caption="Every change to this governance setting, newest first"
+                          columns={[
+                            {
+                              key: 'when',
+                              header: 'When',
+                              render: (row) => new Date(row.changedAt).toLocaleString(),
+                            },
+                            {
+                              key: 'from',
+                              header: 'From',
+                              render: (row) => row.previousValue ?? 'the default',
+                            },
+                            { key: 'to', header: 'To', render: (row) => row.newValue },
+                            { key: 'why', header: 'Why', render: (row) => row.reason },
+                          ]}
+                          rows={history.changes}
+                          rowKey={(row) => row.changedAt}
+                          emptyTitle="No changes yet"
+                          emptyDescription="This setting still has its inherited value."
+                        />
+                      </CardBody>
+                    </Card>
+                  ) : null}
 
-                {/*
+                  {/*
                   Personal notification preferences sit in this category because the reference
                   puts the Digest and Acknowledgement controls here, alongside the company's
                   alert and escalation-chain configuration. Somebody looking for "how often do I
                   hear about this" looks where the alerts are described.
                 */}
-                {/*
+                  {/*
                   Integrations & Connections lives in its own category, matching the reference's
                   `setIntegrations()` panel. The company-level actions appear only when the server
                   says this caller may administer — and the server refuses them regardless.
                 */}
-                {/*
+                  {/*
                   Skills & AI, matching the reference panel. A platform Skill is shown as not
                   editable here; the only path to your own version is Clone.
 
@@ -686,68 +747,76 @@ export default function CompanySettingsPage() {
                   purpose. The panel still works, and restoring the section is one line — deleting
                   it would make that one line a rewrite for no gain today.
                 */}
-                {active === 'skills' && tenantId !== null ? (
-                  <SkillsPanel tenantId={tenantId} mayAdminister={mayAdministerAnything} />
-                ) : null}
+                  {active === 'skills' && tenantId !== null ? (
+                    <SkillsPanel tenantId={tenantId} mayAdminister={mayAdministerAnything} />
+                  ) : null}
 
-                {active === 'integrations' && tenantId !== null ? (
-                  <ConnectionsPanel
-                    tenantId={tenantId}
-                    mayAdminister={category?.anyEditable ?? mayAdministerAnything}
-                  />
-                ) : null}
+                  {active === 'integrations' && tenantId !== null ? (
+                    <ConnectionsPanel
+                      tenantId={tenantId}
+                      mayAdminister={category?.anyEditable ?? mayAdministerAnything}
+                    />
+                  ) : null}
 
-                {active === 'notifications' && tenantId !== null ? (
-                  <NotificationPreferences tenantId={tenantId} />
-                ) : null}
+                  {active === 'notifications' && tenantId !== null ? (
+                    <NotificationPreferences tenantId={tenantId} />
+                  ) : null}
 
-                {/*
+                  {/*
                   The *Open X* buttons are gone.
 
                   Selecting one of those sections now opens its screen directly — the panel that
                   used to sit here existed only to offer a second click, and its whole content
                   was a sentence saying where the thing really was.
                 */}
-                {active === 'agent' ? <MemoryAndFeedbackPanel tenantId={tenantId} /> : null}
-                {active === 'knowledge' ? <KnowledgeAndDataPanel tenantId={tenantId} /> : null}
-                {active === 'appearance' ? <AppearancePanel /> : null}
-                {active === 'organization' ? (
-                  <div className="uboss-actions">
-                    <Button variant="navy" onClick={() => router.push('/hierarchy')}>
-                      Open the Organization Hierarchy
-                    </Button>
-                  </div>
-                ) : null}
-                {active === 'audit' ? (
-                  <div className="uboss-actions">
-                    <Button variant="navy" onClick={() => router.push('/internal/audit')}>
-                      Open the audit trail
-                    </Button>
-                  </div>
-                ) : null}
-                {active === 'security' ? (
-                  <>
-                    {/* The company's posture. "Login & Security" below it is the *person's* own
+                  {active === 'agent' ? <MemoryAndFeedbackPanel tenantId={tenantId} /> : null}
+                  {active === 'knowledge' ? <KnowledgeAndDataPanel tenantId={tenantId} /> : null}
+                  {active === 'appearance' ? <AppearancePanel /> : null}
+                  {active === 'organization' ? (
+                    <div className="uboss-actions">
+                      <Button variant="navy" onClick={() => router.push('/hierarchy')}>
+                        Open the Organization Hierarchy
+                      </Button>
+                    </div>
+                  ) : null}
+                  {active === 'audit' ? (
+                    <div className="uboss-actions">
+                      <Button variant="navy" onClick={() => router.push('/internal/audit')}>
+                        Open the audit trail
+                      </Button>
+                    </div>
+                  ) : null}
+                  {/*
+                    Help & Support, a section of its own at last.
+
+                    It lived inside Security, on the reasoning that letting UBoss into your
+                    workspace is a security decision — which is true of one panel on it and of
+                    nothing else. Everything a person actually opens it for is support: raising a
+                    ticket, reading the answer, seeing whether UBoss itself is up. Somebody with a
+                    problem does not think "this is a security question", so they never found it,
+                    and the one screen that answers "who do I ask" was behind the word they had
+                    least reason to press.
+                  */}
+                  {active === 'help' ? <SupportPanel tenantId={tenantId} /> : null}
+                  {active === 'security' ? (
+                    <>
+                      {/* The company's posture. "Login & Security" below it is the *person's* own
                         settings — their factors and their devices — which is a different
                         question from the company's security history and stays a separate
                         screen. */}
-                    <SecurityCenterPanel tenantId={tenantId} />
-                    {/* Prompt 36. On the Security screen rather than a category of its own: a
-                        company authorizing UBoss to enter their workspace is a security decision,
-                        and the approved sidebar has no Support category. */}
-                    <SupportPanel tenantId={tenantId} />
-                    <div className="uboss-actions">
-                      <Button variant="navy" onClick={() => router.push('/sessions')}>
-                        Open my own Login &amp; Security
-                      </Button>
-                    </div>
-                  </>
-                ) : null}
-              </CardBody>
-            </Card>
-          </SettingsShell>
-        </>
-      )}
+                      <SecurityCenterPanel tenantId={tenantId} />
+                      <div className="uboss-actions">
+                        <Button variant="navy" onClick={() => router.push('/sessions')}>
+                          Open my own Login &amp; Security
+                        </Button>
+                      </div>
+                    </>
+                  ) : null}
+                </CardBody>
+              </Card>
+            </SettingsShell>
+          </>
+        )}
       </Modal>
     </RoutedAppShell>
   );

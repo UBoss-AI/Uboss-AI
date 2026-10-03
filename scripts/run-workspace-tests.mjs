@@ -77,7 +77,9 @@ for (const suite of suites) {
 }
 
 if (failed.length > 0) {
-  console.error(`\n${failed.length} of ${suites.length} suites failed: ${failed.map((s) => s.name).join(', ')}`);
+  console.error(
+    `\n${failed.length} of ${suites.length} suites failed: ${failed.map((s) => s.name).join(', ')}`,
+  );
   process.exit(1);
 }
 

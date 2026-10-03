@@ -45,6 +45,9 @@ import type {
   ApprovalRequestType,
   AgentTestRunView,
   OrchestrationView,
+  RunProgressEvent,
+  DashboardTile,
+  AgentSchedule,
 } from '@uboss/types';
 const API_BASE_URL = process.env['NEXT_PUBLIC_API_BASE_URL'] ?? 'http://localhost:4000';
 
@@ -806,12 +809,49 @@ export interface CreateCompanyPrerequisites {
   readiness: { wizardImplemented: boolean; note: string };
 }
 
+/**
+ * What each company is worth, and what it costs to serve.
+ *
+ * **Platform plane only.** `providerCostMinor` is what UBoss pays its provider and must never
+ * reach a company workspace; `aiChargedMinor` is what the company was charged, which is the only
+ * one of the two it ever sees.
+ */
+export interface PlatformEconomics {
+  currency: string;
+  companies: {
+    tenantId: string;
+    name: string;
+    planCode: string | null;
+    invoicedMinor: number;
+    paidMinor: number;
+    aiChargedMinor: number;
+    providerCostMinor: number;
+    aiMarginMinor: number;
+    /** Null — not zero — when nobody has paid. Those are different sentences. */
+    marginMinor: number | null;
+    calls: number;
+    uncostedCalls: number;
+    costIsComplete: boolean;
+  }[];
+  totals: {
+    invoicedMinor: number;
+    paidMinor: number;
+    aiChargedMinor: number;
+    providerCostMinor: number;
+    aiMarginMinor: number;
+    marginMinor: number | null;
+    uncostedCalls: number;
+  };
+  generatedAt: string;
+}
+
 export const platformApi = {
   me: () => call<PlatformMe>('/platform/console/me'),
   dashboard: () => call<PlatformDashboard>('/platform/console/dashboard'),
   companies: () => call<{ companies: CompanySummary[] }>('/platform/console/companies'),
   company: (tenantId: string) =>
     call<CompanyDetail>(`/platform/console/companies/${encodeURIComponent(tenantId)}`),
+  economics: () => call<PlatformEconomics>('/platform/console/economics'),
 
   setSubscription: (tenantId: string, body: Record<string, unknown>) =>
     call<{ id: string }>(
@@ -988,6 +1028,10 @@ export interface CommercialPosition {
     startedAt: string | null;
     renewsAt: string | null;
     daysToRenewal: number | null;
+    /** What the plan costs, in its own currency. Null for a negotiated Enterprise plan. */
+    priceMinor: number | null;
+    priceCurrency: string | null;
+    billingCycleLabel: string | null;
   };
   entitlements: {
     planModules: string[];
@@ -997,8 +1041,22 @@ export interface CommercialPosition {
   };
   release: { channel: string; fromPlan: string; overridden: boolean };
   allowance: {
+    /**
+     * Minor units — the platform console's figures, and never a company's.
+     *
+     * (The plan's own price is a different matter and is shown: see `plan.priceMinor`.)
+     *
+     * A company is shown `aiAllowanceTokens` / `aiConsumedTokens`. Money per AI call and the
+     * provider's token counts are the two things that, held together, give away the provider and
+     * the margin, so a company-facing screen shows neither.
+     */
     aiAllowanceMinor: number;
     aiConsumedMinor: number;
+    /** UBoss Tokens — what a company sees. */
+    aiAllowanceTokens: number;
+    aiConsumedTokens: number;
+    /** What the plan sold, when that differs from what the wallet enforces. Platform-side. */
+    soldAllowanceMinor: number;
     currency: string;
     percentConsumed: number | null;
   };
@@ -1135,6 +1193,16 @@ export interface BillingCompanyRow {
   planCode: string;
   state: string;
   billingState: string;
+  /**
+   * What the company can actually do right now.
+   *
+   * `state` and `billingState` are the commercial record; this is the column the request guard
+   * enforces. They can disagree, and when they do that is the finding — a company marked
+   * Suspended here and `Active` in its lifecycle is one that stopped paying and kept working.
+   */
+  lifecycleState: string;
+  /** Why, as a code. `PaymentOverdue` when billing was what moved it. */
+  accessReasonCode: string | null;
   billingCycle: string;
   currency: string;
   stripeCustomerId: string | null;
@@ -1186,7 +1254,77 @@ export const billingApi = {
     call<{ url: string }>(`/tenants/${encodeURIComponent(tenantId)}/billing/portal`, {
       method: 'POST',
     }),
+
+  /** The plans this company could move to, priced in its own currency. */
+  plans: (tenantId: string) =>
+    call<UpgradeOptions>(`/tenants/${encodeURIComponent(tenantId)}/billing/plans`),
+
+  /** Buy a different plan. Returns the provider's own page to navigate to. */
+  upgrade: (tenantId: string, planCode: string, cycle: 'Monthly' | 'Annual') =>
+    call<{ url: string }>(`/tenants/${encodeURIComponent(tenantId)}/billing/upgrade`, {
+      method: 'POST',
+      body: JSON.stringify({ planCode, cycle }),
+    }),
+
+  /** What a number of tokens would cost, before anybody is sent to pay. */
+  quoteTokens: (tenantId: string, tokens: number) =>
+    call<TokenQuote>(
+      `/tenants/${encodeURIComponent(tenantId)}/billing/tokens/quote?tokens=${tokens}`,
+    ),
+
+  tokenPurchases: (tenantId: string) =>
+    call<{ purchases: TokenPurchaseRow[] }>(
+      `/tenants/${encodeURIComponent(tenantId)}/billing/tokens`,
+    ),
+
+  buyTokens: (tenantId: string, tokens: number) =>
+    call<{ url: string; purchaseId: string; tokens: number; amountMinor: number }>(
+      `/tenants/${encodeURIComponent(tenantId)}/billing/tokens`,
+      { method: 'POST', body: JSON.stringify({ tokens }) },
+    ),
 };
+
+/** A plan this company could move to. */
+export interface UpgradePlanOption {
+  code: string;
+  name: string;
+  description: string | null;
+  seatLimit: number | null;
+  entitledModules: string[];
+  current: boolean;
+  /** Null where this plan has no price in the company's currency — it is not sold to them. */
+  priceMinor: number | null;
+  buyable: boolean;
+  unavailableReason: string | null;
+}
+
+export interface UpgradeOptions {
+  /** The currency this company is billed in. Every price above is in it, or absent. */
+  currency: string;
+  plans: UpgradePlanOption[];
+}
+
+export interface TokenQuote {
+  tokens: number;
+  amountMinor: number;
+  currency: string;
+  ok: boolean;
+  /** Why not, when the number is outside what is sold. */
+  reason: string;
+}
+
+export interface TokenPurchaseRow {
+  id: string;
+  tokens: number;
+  amountMinor: number;
+  currency: string;
+  status: string;
+  createdAt: string;
+  paidAt: string | null;
+  /** Set only while a purchase is unfinished, so a closed tab can be reopened. */
+  checkoutUrl: string | null;
+  failureReason: string | null;
+}
 
 /** Billing & Payments, in the platform console. */
 export const platformBillingApi = {
@@ -1246,6 +1384,25 @@ export function formatMinor(minor: number | null | undefined, currency = 'USD'):
     currency,
     maximumFractionDigits: 0,
   }).format(minor / 100);
+}
+
+/**
+ * Money that has actually been spent, to the sub-unit.
+ *
+ * Separate from `formatMinor`, which rounds to whole units because it formats *prices* — a plan
+ * at ₹4,999 gains nothing from `.00`. Spend is the other case: an agent that has cost ₹0.40 must
+ * not render as ₹0, because this product says in several places that a zero is a claim and an
+ * absence is a dash, and rounding would quietly turn one into the other.
+ *
+ * The currency is printed as its code rather than its symbol. A wallet can be in a currency whose
+ * symbol the reader's locale would render ambiguously — several currencies share `$` — and on a
+ * screen about money owed, the code is the unambiguous one.
+ */
+export function formatSpend(minor: number, currency: string): string {
+  const sign = minor < 0 ? '-' : '';
+  const absolute = Math.abs(minor);
+  const major = Math.floor(absolute / 100).toLocaleString();
+  return `${sign}${currency} ${major}.${String(absolute % 100).padStart(2, '0')}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1397,6 +1554,24 @@ export const provisioningApi = {
     ),
 };
 
+/**
+ * One `/auth/me` in flight at a time, shared by whoever asks while it is running.
+ *
+ * Deliberately not a cache with a lifetime. The moment it becomes one, every place that changes a
+ * membership has to know to clear it, and the failure when somebody forgets is a person who cannot
+ * see the company they were just added to — with nothing on screen to explain it. Sharing only the
+ * in-flight promise removes the duplicate requests a single render makes and keeps the answer as
+ * fresh as it was before.
+ */
+let meInFlight: Promise<MeResponse> | null = null;
+
+function sharedMe(): Promise<MeResponse> {
+  meInFlight ??= call<MeResponse>('/auth/me').finally(() => {
+    meInFlight = null;
+  });
+  return meInFlight;
+}
+
 export const authApi = {
   /**
    * Sign in with a password.
@@ -1465,14 +1640,26 @@ export const authApi = {
    * Answers with the provider authorization URL. The server refuses a provider it holds no
    * credentials for rather than building a URL that cannot complete.
    */
-  startSocial: (kind: "google" | "microsoft" | "apple") =>
-    call<{ authorizationUrl: string }>("/auth/sso/social/start", {
-      method: "POST",
+  startSocial: (kind: 'google' | 'microsoft' | 'apple') =>
+    call<{ authorizationUrl: string }>('/auth/sso/social/start', {
+      method: 'POST',
       body: JSON.stringify({ kind }),
     }),
 
   signInMethods: (email: string) =>
     call<SignInMethods>(`/auth/sign-in-methods?email=${encodeURIComponent(email)}`),
+
+  /**
+   * Which social providers this deployment offers, before an email has been typed.
+   *
+   * `signInMethods` answers this too, but only for an address — so the sign-in screen knew
+   * nothing on arrival and rendered all three buttons disabled, saying a provider that was
+   * configured had not been set up.
+   */
+  socialProviders: () =>
+    call<{ socialProviders: { kind: 'google' | 'microsoft' | 'apple'; displayName: string }[] }>(
+      '/auth/social-providers',
+    ),
 
   verifyMfa: (code: string) =>
     call<LoginResponse & { secondFactor: string; remainingRecoveryCodes?: number }>(
@@ -1526,7 +1713,21 @@ export const authApi = {
 
   logout: () => call<void>('/auth/logout', { method: 'POST' }),
 
-  me: () => call<MeResponse>('/auth/me'),
+  /**
+   * Who is signed in, and which companies they belong to.
+   *
+   * Asked by every company page directly, and again by `useMyAccess` inside the same render — so a
+   * single navigation issued it at least twice, and with the notification bell and the account
+   * menu the count went higher. Multiplied by twenty-six screens that each build their own shell,
+   * that is most of what made moving between sections feel slow.
+   *
+   * `sharedMe` collapses the calls that overlap into one. It is not a cache of the answer: it
+   * holds the *promise* only while it is in flight, so callers a moment apart share a request and
+   * a caller a minute later asks again. Membership does change — somebody is added to a company,
+   * somebody is offboarded — and an answer held any longer would have to be invalidated from
+   * places that have no business knowing about it.
+   */
+  me: () => sharedMe(),
 
   sessions: () => call<{ sessions: SessionRow[] }>('/auth/sessions'),
 
@@ -1773,6 +1974,8 @@ export interface AccessPerson {
   reportingManagerName: string | null;
   employmentState: string | null;
   roleCount: number;
+  /** Which roles, so the column can name one instead of counting to one. */
+  roleKinds: string[];
   /** Guests only. Their access to the company ends on this date. */
   guestAccessExpiresAt: string | null;
   guestExpired: boolean;
@@ -1849,7 +2052,8 @@ export const accessApi = {
       displayName: string;
       resourceIds: string[];
       accessDays: number;
-      reason: string;
+      /** Optional. Absent means the audit row describes the grant itself. */
+      reason?: string;
     },
   ) =>
     call<{ userId: string; ubossUniqueId: string; expiresAt: string }>(
@@ -1935,6 +2139,20 @@ export const accessApi = {
     call<unknown>(
       `/tenants/${encodeURIComponent(tenantId)}/access/people/${encodeURIComponent(userId)}/roles`,
       { method: 'POST', body: JSON.stringify(body) },
+    ),
+
+  /** What one person holds today, with the assignment ids a revoke needs. */
+  rolesOf: (tenantId: string, userId: string) =>
+    call<{
+      assignments: { id: string; roleKind: string; scopeKind: string; expired: boolean }[];
+    }>(
+      `/tenants/${encodeURIComponent(tenantId)}/access/people/${encodeURIComponent(userId)}/roles`,
+    ),
+
+  revokeRole: (tenantId: string, assignmentId: string) =>
+    call<unknown>(
+      `/tenants/${encodeURIComponent(tenantId)}/access/roles/${encodeURIComponent(assignmentId)}`,
+      { method: 'DELETE' },
     ),
 
   customRoles: (tenantId: string) =>
@@ -2043,14 +2261,11 @@ export const accessApi = {
     ),
 
   /** Validate a filled-in hierarchy workbook. **Applies nothing.** */
-  validateHierarchyWorkbook: (
-    tenantId: string,
-    body: { file: string; sourceFileName?: string },
-  ) =>
-    call<BulkPreview>(
-      `/tenants/${encodeURIComponent(tenantId)}/access/bulk/hierarchy/validate`,
-      { method: 'POST', body: JSON.stringify(body) },
-    ),
+  validateHierarchyWorkbook: (tenantId: string, body: { file: string; sourceFileName?: string }) =>
+    call<BulkPreview>(`/tenants/${encodeURIComponent(tenantId)}/access/bulk/hierarchy/validate`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 
   bulkOperations: (tenantId: string) =>
     call<{ operations: Record<string, unknown>[] }>(
@@ -2168,6 +2383,8 @@ export interface PerformanceEventRow {
   points: number;
   sourceKind: string;
   sourceId: string;
+  /** The work this point came from, named. Null when the record no longer exists. */
+  sourceTitle: string | null;
   reason: string | null;
   occurredAt: string;
   /** True when an approved blocker cancelled this outcome. It still happened. */
@@ -3188,7 +3405,23 @@ export interface WorkflowDraftView {
   assignedAt: string | null;
   assignedByUserId: string | null;
   editable: boolean;
+  /**
+   * What each node is doing, resolved by the server from tasks, runs and approvals.
+   *
+   * Only nodes that are doing something appear — a node with no entry is idle, which is most of a
+   * plan at any moment. This is the state the canvas draws on load; the live stream moves it
+   * afterwards without another request.
+   */
+  activity: WorkflowNodeActivity[];
   note: string;
+}
+
+export interface WorkflowNodeActivity {
+  nodeId: string;
+  state: 'working' | 'waiting' | 'done' | 'failed';
+  /** Null wherever the work cannot report a fraction honestly. Never filled in by a screen. */
+  percent: number | null;
+  message: string;
 }
 
 export interface WorkflowMetaView {
@@ -3229,7 +3462,12 @@ export const objectiveReviewApi = {
    * Confirm who is going to do the work. A precondition of `completeReview`, which refuses with
    * "Confirm the execution team before sending this for approval" until it has been done.
    */
-  confirmTeam: (tenantId: string, objectiveId: string, executionTeam?: string, versionId?: string) =>
+  confirmTeam: (
+    tenantId: string,
+    objectiveId: string,
+    executionTeam?: string,
+    versionId?: string,
+  ) =>
     call<ObjectiveView>(
       `/tenants/${encodeURIComponent(tenantId)}/objectives/${encodeURIComponent(
         objectiveId,
@@ -3638,12 +3876,7 @@ export const agentBuilderApi = {
       { method: 'PUT', body: JSON.stringify({ patch }) },
     ),
 
-  test: (
-    tenantId: string,
-    assignmentId: string,
-    sampleInput: string,
-    expectedOutcome?: string,
-  ) =>
+  test: (tenantId: string, assignmentId: string, sampleInput: string, expectedOutcome?: string) =>
     call<AgentBuilderView>(
       `/tenants/${encodeURIComponent(tenantId)}/agent-builder/${encodeURIComponent(
         assignmentId,
@@ -3709,16 +3942,32 @@ export interface EngineAgentView {
   currentVersion: EngineAgentVersionView | null;
   openDraft: EngineAgentVersionView | null;
   versions: EngineAgentVersionView[];
+  /** One line for the table: the live schedule where there is one, the design intent otherwise. */
   scheduleOrTrigger: string | null;
+  /** The live schedule, so the editor opens on what is actually set. Null when there is none. */
+  schedule: AgentSchedule | null;
+  /** A stored expression the picker cannot draw — shown as-is rather than simplified. */
+  scheduleExpression: string | null;
+  /** The scheduler's checkpoint. Null until it has considered this agent. */
+  nextRunAt: string | null;
   skillVersionIds: string[];
   toolCategories: string[];
   connectionId: string | null;
   health: EngineAgentHealth;
-  /** Null throughout until the cost ledger exists — a zero would be a claim, not an absence. */
+  /**
+   * How much AI this agent has consumed, in tokens. Null when it has never run — a zero would be
+   * a claim, not an absence.
+   *
+   * Tokens and never money: a company is quoted a plan price in money and everything it consumes
+   * is counted in tokens. The pair on one screen is what divides into a per-million rate, so
+   * per-usage money stays on the platform plane.
+   */
   usage: {
     hasData: boolean;
     promptTokens: number | null;
     completionTokens: number | null;
+    totalTokens: number | null;
+    calls: number;
     note: string;
   };
   actions: EngineAgentAction[];
@@ -3752,6 +4001,39 @@ export const engineAgentsApi = {
   view: (tenantId: string, agentId: string) =>
     call<EngineAgentView>(
       `/tenants/${encodeURIComponent(tenantId)}/agents/${encodeURIComponent(agentId)}`,
+    ),
+
+  /**
+   * Change what an agent is called.
+   *
+   * A name only. Every other change to an agent goes through a version, because the setup a run
+   * used has to stay answerable — a label does not, and forcing a typo through the version
+   * machinery would create a draft and possibly an approval. The rename is written to the audit
+   * trail with both names.
+   */
+  rename: (tenantId: string, agentId: string, name: string) =>
+    call<EngineAgentView>(
+      `/tenants/${encodeURIComponent(tenantId)}/agents/${encodeURIComponent(agentId)}/name`,
+      { method: 'POST', body: JSON.stringify({ name }) },
+    ),
+
+  /**
+   * Put an agent on a schedule, or take it off one.
+   *
+   * Days and a time, never a cron expression: the server does that translation so there is one
+   * place it happens. `null` clears the schedule.
+   */
+  setSchedule: (tenantId: string, agentId: string, schedule: AgentSchedule | null) =>
+    call<EngineAgentView>(
+      `/tenants/${encodeURIComponent(tenantId)}/agents/${encodeURIComponent(agentId)}/schedule`,
+      {
+        method: 'POST',
+        body: JSON.stringify(
+          schedule === null
+            ? {}
+            : { weekdays: schedule.weekdays, hour: schedule.hour, minute: schedule.minute },
+        ),
+      },
     ),
 
   pause: (tenantId: string, agentId: string, reason: string) =>
@@ -4286,9 +4568,11 @@ export interface CostLedgerEntryView {
   balanceAfterReservedMinor: number;
   agentRunId: string | null;
   objectiveId: string | null;
+  departmentId: string | null;
+  engineAgentId: string | null;
+  /** The capability class, never a provider or model name. */
   logicalProfile: string | null;
-  inputTokens: number | null;
-  outputTokens: number | null;
+  correlationId: string | null;
   occurredAt: string;
 }
 
@@ -4300,9 +4584,47 @@ export interface CostMetaView {
   note: string;
 }
 
+/**
+ * Who spent it, grouped.
+ *
+ * **Rupees only.** Tokens are a provider's unit of account: publishing them invites a customer to
+ * divide the charge by the tokens, read off a per-million rate and match it against a public price
+ * list — which names the provider as surely as printing its name would, and exposes the margin
+ * besides. They are still recorded, and the platform plane reads them.
+ *
+ * `uncostedCalls` is not a diagnostic detail — it is what makes the spend readable. A charge whose
+ * model has no published price settles at zero, so a row can honestly read "₹0 across 1,412
+ * calls", and a screen showing only the ₹0 would be reporting a department that costs nothing.
+ */
+/**
+ * What a company consumed, counted in tokens.
+ *
+ * No money and no currency: a company is quoted a plan price in money and counts everything it
+ * consumes in tokens. Both on one screen divide into a per-million rate, so the route strips the
+ * money before it leaves the server — this type is not the only thing keeping it off the screen.
+ */
+export interface UsageBreakdownView {
+  by: 'department' | 'objective' | 'agent' | 'user';
+  rows: {
+    key: string | null;
+    tokens: number;
+    calls: number;
+    uncostedCalls: number;
+  }[];
+  totals: {
+    tokens: number;
+    calls: number;
+    uncostedCalls: number;
+  };
+}
+
 export const costApi = {
   meta: (tenantId: string) =>
     call<CostMetaView>(`/tenants/${encodeURIComponent(tenantId)}/cost/meta`),
+  usage: (tenantId: string, by: UsageBreakdownView['by']) =>
+    call<UsageBreakdownView>(
+      `/tenants/${encodeURIComponent(tenantId)}/cost/usage?by=${encodeURIComponent(by)}`,
+    ),
   wallets: (tenantId: string) =>
     call<WalletView[]>(`/tenants/${encodeURIComponent(tenantId)}/cost/wallets`),
   ledger: (tenantId: string, filters: { walletId?: string; agentRunId?: string } = {}) => {
@@ -4714,6 +5036,85 @@ export interface RuntimeInputFieldView {
   hint: string;
   required: boolean;
 }
+
+/**
+ * The company's runs, rather than one agent's.
+ *
+ * Separate from `agentRunsApi` because the question is a different one: that reads an agent's
+ * history, this reads what is happening across the workspace right now. They are different routes
+ * under different paths, and merging them into one object would suggest a relationship the server
+ * does not have.
+ */
+/** Where a signup has got to. The same shape every one of its routes answers with. */
+export interface RegistrationView {
+  id: string;
+  state: string;
+  companyName: string;
+  domain: string;
+  emailVerified: boolean;
+  domainVerified: boolean;
+  /** The record to publish. Null until the address has been proved — see the service's note. */
+  dns: { recordName: string; recordType: string; recordValue: string } | null;
+  failureReason: string | null;
+  expiresAt: string;
+  /** The company, once it exists. Null for every step before that. */
+  tenantId: string | null;
+}
+
+/**
+ * A company signing itself up.
+ *
+ * ## Why every call here is anonymous
+ *
+ * Because nobody has an account yet — that is the whole point. These are the only routes in the
+ * product reachable without a session, and the server's own `@AllowAnonymous()` says so. The `id`
+ * and the `token` in the link from the inbox are what stands in for authentication, which is why
+ * neither is ever put in a URL this client logs or in a page title.
+ *
+ * ## There is no plan to choose here
+ *
+ * Deliberately. The server refuses a `planCode` in the body with a 400: a self-serve signup lands
+ * on the Pilot plan, and a browser that could name its own plan could name the most expensive one
+ * and get it free. Moving to a paid plan happens later, inside the workspace, where there is a
+ * company to bill and somebody with the authority to agree to it.
+ */
+export const registrationApi = {
+  start: (body: { workEmail: string; fullName: string; companyName: string; domain: string }) =>
+    call<{ id: string }>('/register', { method: 'POST', body: JSON.stringify(body) }),
+
+  /** The link from the inbox: proves the address and hands back the DNS record to publish. */
+  confirm: (id: string, token: string) =>
+    call<RegistrationView>(
+      `/register/${encodeURIComponent(id)}/confirm?token=${encodeURIComponent(token)}`,
+      { method: 'POST' },
+    ),
+
+  /** Look for the record. The company is created the moment it is found. */
+  checkDomain: (id: string, token: string) =>
+    call<RegistrationView>(
+      `/register/${encodeURIComponent(id)}/domain-check?token=${encodeURIComponent(token)}`,
+      { method: 'POST' },
+    ),
+
+  /** So the page can be reloaded, or come back tomorrow, without losing the thread. */
+  view: (id: string, token: string) =>
+    call<RegistrationView>(
+      `/register/${encodeURIComponent(id)}?token=${encodeURIComponent(token)}`,
+    ),
+};
+
+export const runsApi = {
+  /**
+   * What is unfinished, as progress events.
+   *
+   * The same shape the live stream sends, so a screen holding both merges them by run id without
+   * translating either. Read once on arrival; the stream carries everything after.
+   */
+  unfinished: (tenantId: string) =>
+    call<{ runs: RunProgressEvent[]; note: string }>(
+      `/tenants/${encodeURIComponent(tenantId)}/runs/unfinished`,
+    ),
+};
 
 export const agentRunsApi = {
   list: (tenantId: string, agentId: string, limit = 20) =>
@@ -5135,6 +5536,48 @@ export interface ServiceStatusView {
 
 const supportBase = (tenantId: string) => `/tenants/${encodeURIComponent(tenantId)}/support`;
 
+/**
+ * The operator's side of Support — platform plane.
+ *
+ * A company raises a ticket from Settings › Support, and until this existed nobody at UBoss could
+ * see it: the Master Console's Support page was a shell, so the queue, the routes to assign and
+ * resolve, and the tickets themselves were all built and unreachable.
+ *
+ * `tenantId` rides on each row because a queue crosses companies — which is the whole reason it
+ * is a platform screen rather than a company one.
+ */
+export const platformSupportApi = {
+  queue: () =>
+    call<{ open: number; waitingOnCustomer: number; unassigned: number; urgent: number }>(
+      '/platform/support/queue',
+    ),
+
+  tickets: (onlyOpen = true) =>
+    call<{ tickets: (SupportTicketView & { tenantId: string })[] }>(
+      `/platform/support/tickets${onlyOpen ? '?onlyOpen=true' : ''}`,
+    ),
+
+  ticket: (ticketId: string) =>
+    call<{
+      ticket: SupportTicketView & { tenantId: string };
+      notes: SupportTicketNoteView[];
+    }>(`/platform/support/tickets/${encodeURIComponent(ticketId)}`),
+
+  /** Move a ticket on. `resolutionNote` is required by the server when resolving. */
+  transition: (ticketId: string, to: string, resolutionNote?: string) =>
+    call<SupportTicketView>(`/platform/support/tickets/${encodeURIComponent(ticketId)}/state`, {
+      method: 'POST',
+      body: JSON.stringify({ to, ...(resolutionNote === undefined ? {} : { resolutionNote }) }),
+    }),
+
+  /** A reply the company sees, or an internal note only operators do. */
+  note: (ticketId: string, body: string, isInternal: boolean) =>
+    call<SupportTicketNoteView>(`/platform/support/tickets/${encodeURIComponent(ticketId)}/notes`, {
+      method: 'POST',
+      body: JSON.stringify({ body, isInternal }),
+    }),
+};
+
 export const supportApi = {
   meta: (tenantId: string) => call<SupportMeta>(`${supportBase(tenantId)}/meta`),
 
@@ -5214,7 +5657,14 @@ export interface DashboardView {
 
 export interface DashboardMeta {
   tiles: {
-    key: string;
+    /*
+     * The work area this describes, not a loose string.
+     *
+     * Typed because the dashboard switches on it: the detail card reads a different list for an
+     * objective than for an exception, and a `string` key would let a new tile be added on the
+     * server with nothing here failing to compile until somebody opened it.
+     */
+    key: DashboardTile;
     label: string;
     href: string;
     measures: string | null;
@@ -5278,9 +5728,7 @@ export const dashboardApi = {
    * correctly, not something going wrong.
    */
   orchestration: (tenantId: string) =>
-    call<OrchestrationView>(
-      `/tenants/${encodeURIComponent(tenantId)}/dashboard/orchestration`,
-    ),
+    call<OrchestrationView>(`/tenants/${encodeURIComponent(tenantId)}/dashboard/orchestration`),
 };
 
 export const reportsApi = {

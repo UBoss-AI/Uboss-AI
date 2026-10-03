@@ -679,7 +679,10 @@ describe('Engine, Sub-Engine and Executor', () => {
   });
 
   it('has no Sub-Engine when nothing sits in the middle', () => {
-    const stages = executionStages([{ id: 'first', kind: 'Human', dod: { dependencies: [] } }, { id: 'second', kind: 'Human', dod: { dependencies: ['first'] } }]);
+    const stages = executionStages([
+      { id: 'first', kind: 'Human', dod: { dependencies: [] } },
+      { id: 'second', kind: 'Human', dod: { dependencies: ['first'] } },
+    ]);
     assert.equal(stages.get('first'), 'Engine');
     assert.equal(stages.get('second'), 'Executor');
     assert.ok(![...stages.values()].includes('SubEngine'));
@@ -716,13 +719,18 @@ describe('Engine, Sub-Engine and Executor', () => {
 
   it('ignores a dependency on a step the plan does not contain', () => {
     // A deleted step. Treating it as depth would push everything after a node nothing can finish.
-    const stages = executionStages([{ id: 'only', kind: 'Human', dod: { dependencies: ['deleted'] } }]);
+    const stages = executionStages([
+      { id: 'only', kind: 'Human', dod: { dependencies: ['deleted'] } },
+    ]);
     assert.equal(stages.get('only'), 'Engine');
   });
 
   it('survives a cycle rather than hanging on it', () => {
     // A broken plan. The editor's validation is what reports it; this must still answer.
-    const stages = executionStages([{ id: 'a', kind: 'Human', dod: { dependencies: ['b'] } }, { id: 'b', kind: 'Human', dod: { dependencies: ['a'] } }]);
+    const stages = executionStages([
+      { id: 'a', kind: 'Human', dod: { dependencies: ['b'] } },
+      { id: 'b', kind: 'Human', dod: { dependencies: ['a'] } },
+    ]);
     assert.equal(stages.size, 2);
     for (const stage of stages.values()) {
       assert.ok(['Engine', 'SubEngine', 'Executor'].includes(stage));

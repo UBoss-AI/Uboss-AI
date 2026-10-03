@@ -56,3 +56,4 @@ uboss-website/WEBSITE-3D-PLAN.md
 uboss-website/image.png
 apps/api/scripts/provision-spm-medicare.mjs
 docs/UBOSS_MASTER_*.md
+apps/api/.file-store/

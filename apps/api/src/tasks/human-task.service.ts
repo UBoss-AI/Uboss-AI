@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 
 import {
   ALLOWED_HUMAN_TASK_TRANSITIONS,
@@ -15,6 +15,7 @@ import { AuditEventService } from '../audit/audit-event.service.js';
 import { AuthorizationService } from '../authorization/authorization.service.js';
 import { PrismaService } from '../persistence/prisma.service.js';
 import type { TenantScope } from '../persistence/tenant-context.js';
+import { PerformanceService } from '../performance/performance.service.js';
 import { WorkReleaseService, type ReleasedTask } from './work-release.service.js';
 
 export interface HumanTaskView {
@@ -92,13 +93,34 @@ type TaskRow = Awaited<ReturnType<PrismaService['client']['humanTask']['findFirs
  * work — this service never filters by "is it mine?" in application code, because that is the
  * check that gets forgotten on the one endpoint nobody thought about.
  */
+/** A task that has just finished, and the little about it a score needs. */
+export interface FinishedTask {
+  id: string;
+  title: string;
+  assignedToUserId: string;
+  dueAt: Date | null;
+  completedAt: Date;
+}
+
 @Injectable()
 export class HumanTaskService {
+  private readonly logger = new Logger(HumanTaskService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorization: AuthorizationService,
     private readonly auditEvents: AuditEventService,
     private readonly workRelease: WorkReleaseService,
+    /*
+     * What finishing a piece of work is worth.
+     *
+     * The performance module's own note says it is global "because the modules that produce
+     * events arrive later — to-do completion, approval…". This is that module arriving: until
+     * now nothing called it, so the policy, the points and the badge ladder all existed and no
+     * employee's score ever moved. Measured before this: zero performance events across every
+     * company in the database.
+     */
+    private readonly performance: PerformanceService,
   ) {}
 
   /** The To-do list. `mine` is the default because that is what the screen opens on. */
@@ -484,6 +506,21 @@ export class HumanTaskService {
         });
       }
 
+      // Scored here, in the same transaction that completed it — see `scoreCompletion`.
+      if (!needsApproval) {
+        await this.scoreCompletion(
+          input.scope,
+          {
+            id: row.id,
+            title: row.title,
+            assignedToUserId: row.assignedToUserId,
+            dueAt: row.dueAt,
+            completedAt: now,
+          },
+          now,
+        );
+      }
+
       return this.viewOf(await this.load(input.taskId));
     });
 
@@ -548,6 +585,9 @@ export class HumanTaskService {
           // Read so a completion can release whatever the plan had waiting behind this step.
           nodeId: true,
           objectiveVersionId: true,
+          // Read so finishing it can be scored: whose work it was, and what it was due by.
+          assignedToUserId: true,
+          dueAt: true,
         },
       });
 
@@ -605,6 +645,19 @@ export class HumanTaskService {
       const outstanding = governing.filter((request) => request.status === 'Pending');
       const approved = governing.filter((request) => request.status === 'Approved');
       if (outstanding.length > 0 || approved.length !== governing.length) {
+        /*
+         * Not finished — and if that is because something was sent back, it costs the submitter.
+         *
+         * Scored here rather than at the decision because this is the one place that knows which
+         * requests govern the submission on the table; a rejection from a withdrawn submission
+         * two revisions ago must not be charged again. The task itself is left exactly where it
+         * was, which is what ADR-295 asks for.
+         */
+        await this.scoreRejections(
+          input.scope,
+          row,
+          governing.filter((request) => request.status === 'Rejected').map((request) => request.id),
+        );
         return { changed: false, status: row.status as HumanTaskStatus, released: [] };
       }
 
@@ -655,6 +708,20 @@ export class HumanTaskService {
         actorUserId: input.actorUserId,
         finishedNodeId: row.nodeId,
       });
+
+      // An approved submission is what finishes the work, so the points are earned here rather
+      // than when it was submitted. Same transaction, same reason as the path above.
+      await this.scoreCompletion(
+        input.scope,
+        {
+          id: row.id,
+          title: row.title,
+          assignedToUserId: row.assignedToUserId,
+          dueAt: row.dueAt,
+          completedAt: now,
+        },
+        now,
+      );
 
       return { changed: true, status: 'Completed' as HumanTaskStatus, released };
     });
@@ -807,6 +874,133 @@ export class HumanTaskService {
     );
   }
 
+  /**
+   * Record what finishing this task was worth, once the work is actually finished.
+   *
+   * ## On time, or late — and nothing in between
+   *
+   * A task with no due date cannot be late, so it counts as on time: the company chose not to put
+   * a clock on it, and penalising somebody for a deadline nobody set would be inventing one.
+   * Otherwise the comparison is completion against the due date, which is the only thing either
+   * party agreed to.
+   *
+   * ## Called inside the completion's own transaction
+   *
+   * `recordEvent` opens a tenant transaction, and `runInTenantTransaction` **joins** one that is
+   * already open rather than nesting — so calling it here adds no second transaction. It was
+   * called after the commit at first, and that is what produced `deadlock detected`: the audit
+   * trail takes a transaction-scoped advisory lock per chain, and a second transaction reaching
+   * for the same lock immediately behind the first is exactly the shape that deadlocks.
+   *
+   * It records no authorization decision of its own, so nothing here depends on a context the
+   * transaction would refuse. And it is idempotent — an event is keyed on its source — so the
+   * plain completion path and the one that runs after an approval can both call it and one row
+   * is written.
+   *
+   * ## A failure here never fails the work
+   *
+   * Somebody finished their task. If the score cannot be written the task is still finished, so
+   * this reports the problem and returns rather than throwing it back at the person who did the
+   * work.
+   */
+  private async scoreCompletion(
+    scope: TenantScope,
+    task: FinishedTask,
+    completedAt: Date,
+  ): Promise<void> {
+    const onTime = task.dueAt === null || completedAt.getTime() <= task.dueAt.getTime();
+
+    try {
+      if (!onTime) {
+        /*
+         * One deadline, one penalty.
+         *
+         * `OverdueTaskSweeper` charges `Missed` once the company's window closes on a task
+         * nobody has done. Finishing it afterwards is still late, and recording that too would
+         * quietly turn a company's stated −5 for lateness into −20 for the same slip. The
+         * deadline has already been paid for, so the completion is recorded in the audit trail
+         * and costs nothing further.
+         *
+         * Only for the late branch: a task finished on time cannot have been swept.
+         */
+        const alreadyCharged = await this.performance.hasEvent(scope, {
+          subjectUserId: task.assignedToUserId,
+          kind: 'Missed',
+          sourceKind: 'human_task',
+          sourceId: task.id,
+        });
+        if (alreadyCharged) {
+          this.logger.log(
+            `"${task.title}" was finished after it had already been scored as missed; ` +
+              'the deadline is not charged twice.',
+          );
+          return;
+        }
+      }
+
+      await this.performance.recordEvent({
+        scope,
+        subjectUserId: task.assignedToUserId,
+        kind: onTime ? 'OnTimeAccepted' : 'LateCompletion',
+        sourceKind: 'human_task',
+        sourceId: task.id,
+        occurredAt: completedAt,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Completed "${task.title}" but could not record its performance event: ` +
+          `${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  /**
+   * Record that a submission was sent back, on the person whose submission it was.
+   *
+   * ## This is not the task transition ADR-295 refuses
+   *
+   * The docblock on `reconcileApprovalOutcome` says the product defines no task transition for a
+   * rejection and that inventing one is how a lifecycle acquires semantics nobody approved. That
+   * still holds, and nothing here moves the task: it stays `WaitingApproval` until the person
+   * reopens it, exactly as before. What is recorded is a *score*, which the policy already
+   * defined — `qualityRejectedPoints` has been sitting in every company's policy with nothing
+   * able to produce it.
+   *
+   * ## Keyed on the approval, not the task
+   *
+   * A task can be sent back, resubmitted and sent back again, and each of those is a separate
+   * outcome. Keying the event on the task would collapse them into one, because `recordEvent`
+   * deduplicates on (subject, source, kind). Keying it on the rejected request means one event
+   * per rejection, and re-running reconciliation over the same rejection writes nothing.
+   *
+   * ## The subject is the person who did the work
+   *
+   * Not whoever pressed reject. A rejection costs the submitter, and the approver's own record
+   * should not move because they read something carefully.
+   */
+  private async scoreRejections(
+    scope: TenantScope,
+    task: { id: string; title: string; assignedToUserId: string },
+    rejectedRequestIds: readonly string[],
+  ): Promise<void> {
+    for (const requestId of rejectedRequestIds) {
+      try {
+        await this.performance.recordEvent({
+          scope,
+          subjectUserId: task.assignedToUserId,
+          kind: 'QualityRejected',
+          sourceKind: 'approval_request',
+          sourceId: requestId,
+        });
+      } catch (error) {
+        this.logger.warn(
+          `"${task.title}" was sent back but the outcome could not be scored: ` +
+            `${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+
   /** Always inside a tenant transaction: an unscoped read under RLS returns nothing. */
   private async load(taskId: string): Promise<TaskRowWithChildren> {
     const row = await this.prisma.client.humanTask.findFirst({
@@ -956,7 +1150,9 @@ export class HumanTaskService {
     }
 
     const titles = (nodeIds: string[], from: Map<string, string>): string[] =>
-      nodeIds.map((nodeId) => from.get(nodeId)).filter((title): title is string => title !== undefined);
+      nodeIds
+        .map((nodeId) => from.get(nodeId))
+        .filter((title): title is string => title !== undefined);
 
     for (const view of dependent) {
       view.dependsOnLabels = titles(view.dependsOnNodeIds, named);

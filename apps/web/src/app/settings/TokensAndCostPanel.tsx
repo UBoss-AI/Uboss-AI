@@ -9,6 +9,7 @@ import {
   CardBody,
   DataTable,
   Icon,
+  SegmentedControl,
   StatusBadge,
   type StatusTone,
 } from '@uboss/ui';
@@ -16,10 +17,21 @@ import {
 import {
   ApiError,
   costApi,
+  formatSpend,
   type CostLedgerEntryView,
   type CostMetaView,
+  type UsageBreakdownView,
   type WalletView,
 } from '../../lib/api-client';
+import { formatDay, formatSpan } from '../../lib/when';
+
+/** The column heading for each grouping. `user` is handled separately — "User" reads as a login. */
+const usageLabel: Record<UsageBreakdownView['by'], string> = {
+  department: 'Department',
+  objective: 'Objective',
+  agent: 'Agent',
+  user: 'Person',
+};
 
 /**
  * Tokens & Cost — the reference's `setTokens()`, inside Settings.
@@ -55,6 +67,8 @@ export function TokensAndCostPanel({ tenantId }: { tenantId: string | null }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reconciliation, setReconciliation] = useState<string | null>(null);
+  const [usageBy, setUsageBy] = useState<UsageBreakdownView['by']>('department');
+  const [usage, setUsage] = useState<UsageBreakdownView | null>(null);
 
   const load = useCallback(async () => {
     if (tenantId === null) return;
@@ -74,6 +88,33 @@ export function TokensAndCostPanel({ tenantId }: { tenantId: string | null }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /*
+   * Reloaded when the grouping changes, because the grouping happens on the server.
+   *
+   * Fetching every dimension once and regrouping here would mean sending the whole ledger to a
+   * browser to add it up — and the ledger is the one table that only ever grows.
+   */
+  useEffect(() => {
+    if (tenantId === null) return;
+    let current = true;
+    setUsage(null);
+    costApi
+      .usage(tenantId, usageBy)
+      .then((loaded) => {
+        if (current) setUsage(loaded);
+      })
+      .catch((caught: unknown) => {
+        if (current) {
+          setError(
+            caught instanceof ApiError ? caught.message : 'Could not load where the spend went.',
+          );
+        }
+      });
+    return () => {
+      current = false;
+    };
+  }, [tenantId, usageBy]);
 
   const openLedger = async () => {
     if (tenantId === null) return;
@@ -110,14 +151,13 @@ export function TokensAndCostPanel({ tenantId }: { tenantId: string | null }) {
   const company = (wallets ?? []).find((wallet) => wallet.scope === 'Company') ?? null;
   const others = (wallets ?? []).filter((wallet) => wallet.scope !== 'Company');
 
-  /** Minor units to a readable amount. Integer arithmetic all the way to the string. */
-  const money = (minor: number, currency: string) => {
-    const sign = minor < 0 ? '-' : '';
-    const absolute = Math.abs(minor);
-    return `${sign}${currency} ${Math.floor(absolute / 100).toLocaleString()}.${String(
-      absolute % 100,
-    ).padStart(2, '0')}`;
-  };
+  /**
+   * Minor units to a readable amount. Integer arithmetic all the way to the string.
+   *
+   * Shared with the Engine Agents Cost column rather than kept here, so one agent's spend cannot
+   * be rendered one way on this panel and another way on that list.
+   */
+  const money = formatSpend;
 
   const thresholdTone = (threshold: WalletView['threshold']): StatusTone =>
     threshold === 'HardStop' || threshold === 'Critical'
@@ -144,35 +184,36 @@ export function TokensAndCostPanel({ tenantId }: { tenantId: string | null }) {
           ) : (
             <>
               <div className="uboss-spread">
-                <div className="uboss-section-label">Tokens &amp; Cost</div>
+                <div className="uboss-section-label">Tokens &amp; Usage</div>
                 <StatusBadge
                   status={`${company.percent}% committed`}
                   tone={thresholdTone(company.threshold)}
                 />
               </div>
 
+              {/*
+                Tokens, not rupees.
+
+                These four tiles read the company's AI wallet, which the engine keeps in money —
+                allowance, remaining, used, reserved. A company is quoted a plan price in money
+                and counts everything it consumes in tokens, so the money figures do not belong
+                on a company's screen: the two together are what divide into a per-million rate.
+
+                What survives the change is the part that answers the question an admin actually
+                has. "How much have we used" is the token count. "Are we about to be stopped" is
+                the percentage and the bar below, which name no amount and need none.
+              */}
               <div className="uboss-grid uboss-row-2">
                 <div>
-                  <div className="uboss-muted-3">Total allowance</div>
+                  <div className="uboss-muted-3">Tokens used</div>
                   <div className="uboss-kv-value">
-                    {money(company.allowanceMinor, company.currency)}
+                    {usage === null ? '—' : usage.totals.tokens.toLocaleString()}
                   </div>
                 </div>
                 <div>
-                  <div className="uboss-muted-3">Remaining</div>
+                  <div className="uboss-muted-3">AI calls</div>
                   <div className="uboss-kv-value">
-                    {money(company.remainingMinor, company.currency)}
-                  </div>
-                </div>
-                <div>
-                  <div className="uboss-muted-3">Used</div>
-                  <div className="uboss-kv-value">{money(company.usedMinor, company.currency)}</div>
-                </div>
-                <div>
-                  {/* The figure a reader will not expect, and the one that explains the others. */}
-                  <div className="uboss-muted-3">Reserved for runs in flight</div>
-                  <div className="uboss-kv-value">
-                    {money(company.reservedMinor, company.currency)}
+                    {usage === null ? '—' : usage.totals.calls.toLocaleString()}
                   </div>
                 </div>
               </div>
@@ -205,13 +246,13 @@ export function TokensAndCostPanel({ tenantId }: { tenantId: string | null }) {
               <div className="uboss-kv">
                 <span className="uboss-kv-key">Next reset</span>
                 <span className="uboss-kv-value">
-                  {company.resetsAt ?? 'This allowance does not reset.'}
+                  {formatDay(company.resetsAt) ?? 'This allowance does not reset.'}
                 </span>
               </div>
               <div className="uboss-kv">
                 <span className="uboss-kv-key">Expires</span>
                 <span className="uboss-kv-value">
-                  {company.expiresAt ?? 'This allowance does not expire.'}
+                  {formatDay(company.expiresAt) ?? 'This allowance does not expire.'}
                 </span>
               </div>
               <div className="uboss-kv">
@@ -224,7 +265,19 @@ export function TokensAndCostPanel({ tenantId }: { tenantId: string | null }) {
                       Not enough spending yet to project one.
                     </span>
                   ) : (
-                    `${company.projectedExhaustion.at} — about ${company.projectedExhaustion.daysAway} days away`
+                    /*
+                      This read `2034-01-10T06:02:05.809Z — about 2659.1 days away`.
+
+                      A machine timestamp with milliseconds and a UTC marker, and a span carrying a
+                      tenth of a day of precision on a number that is a projection. Seven years out,
+                      nobody wants 2,659 of anything — they want to know it is years away, which is
+                      the only thing the estimate can honestly support.
+                    */
+                    `${formatDay(company.projectedExhaustion.at) ?? company.projectedExhaustion.at}${
+                      formatSpan(company.projectedExhaustion.daysAway) === null
+                        ? ''
+                        : ` — ${formatSpan(company.projectedExhaustion.daysAway)} away`
+                    }`
                   )}
                 </span>
               </div>
@@ -329,6 +382,69 @@ export function TokensAndCostPanel({ tenantId }: { tenantId: string | null }) {
             These budget widgets belong here in Settings — never duplicated on the Dashboard.
           </p>
         </CardBody>
+      </Card>
+
+      <Card>
+        <CardBody>
+          <div className="uboss-spread">
+            <div className="uboss-section-label">Where the spend went</div>
+            <SegmentedControl
+              label="Group the spend by"
+              value={usageBy}
+              onChange={(next) => setUsageBy(next as UsageBreakdownView['by'])}
+              options={[
+                { value: 'department', label: 'Department' },
+                { value: 'objective', label: 'Objective' },
+                { value: 'agent', label: 'Agent' },
+                { value: 'user', label: 'Person' },
+              ]}
+            />
+          </div>
+          <p className="uboss-muted-3">
+            Only work that finished — capacity set aside for a call that has not happened yet is not
+            counted, because reporting it would report consumption that never occurred.
+          </p>
+        </CardBody>
+        <DataTable
+          caption="Spend by dimension"
+          rows={usage?.rows ?? []}
+          rowKey={(row) => row.key ?? 'unattributed'}
+          loading={usage === null}
+          emptyTitle="No AI used yet"
+          emptyDescription="No agent or assistant has consumed tokens for this company yet."
+          columns={[
+            {
+              key: 'key',
+              header: usageBy === 'user' ? 'Person' : usageLabel[usageBy],
+              render: (row) => (
+                <span className="uboss-mono">
+                  {/* An engine settle is written on the engine's own behalf and names nobody.
+                      Said plainly rather than shown as a blank cell somebody has to interpret. */}
+                  {row.key === null ? 'Not attributed' : row.key.slice(0, 8)}
+                </span>
+              ),
+            },
+            {
+              key: 'tokens',
+              header: 'Tokens',
+              numeric: true,
+              render: (row) => row.tokens.toLocaleString(),
+            },
+            {
+              key: 'calls',
+              header: 'Calls',
+              numeric: true,
+              /*
+               * Just the count. "N unpriced" used to hang under it, which was a money idea —
+               * whether UBoss had published a rate for the model that answered. In a token
+               * reading it says nothing: an unpriced model consumed exactly as many tokens as a
+               * priced one, so the figure beside it is not understated and the warning that used
+               * to sit above this table does not apply.
+               */
+              render: (row) => row.calls.toLocaleString(),
+            },
+          ]}
+        />
       </Card>
 
       {showLedger && (

@@ -10,10 +10,14 @@ import {
   CardBody,
   CardHeader,
   DataTable,
+  FormField,
+  Modal,
   PageHeader,
   SkeletonText,
   StatusBadge,
 } from '@uboss/ui';
+
+import { COMPANY_MODULES } from '@uboss/types';
 
 import { ApiError, formatMinor, platformApi, type PlanRow } from '../../../lib/api-client';
 import { useMasterConsole } from '../layout';
@@ -38,6 +42,21 @@ import { planTone } from '../companies/page';
  * Enterprise row is exactly this case, and an Enterprise plan with a negotiated price is not
  * free.
  */
+/** The tiers the API accepts. `Pilot` is last because it is the exception, not a step in a ladder. */
+const PLAN_TIERS = ['Starter', 'Growth', 'Enterprise', 'Pilot'] as const;
+
+const EMPTY_PLAN = {
+  code: '',
+  name: '',
+  tier: 'Starter' as string,
+  description: '',
+  seatLimit: '',
+  priceMinor: '',
+  allowanceMinor: '',
+  currency: 'INR',
+  modules: [] as string[],
+};
+
 export default function MasterPlansPage() {
   const router = useRouter();
   const { can } = useMasterConsole();
@@ -45,6 +64,9 @@ export default function MasterPlansPage() {
   const [plans, setPlans] = useState<PlanRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [includeRetired, setIncludeRetired] = useState(false);
+  const [newPlanOpen, setNewPlanOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [draft, setDraft] = useState(EMPTY_PLAN);
 
   const load = useCallback(() => {
     platformApi
@@ -74,7 +96,7 @@ export default function MasterPlansPage() {
               {includeRetired ? 'Active plans only' : 'Include retired'}
             </Button>
             {mayAdminister ? (
-              <Button variant="navy" icon="plus" disabled title="Plan authoring is a later prompt.">
+              <Button variant="navy" icon="plus" onClick={() => setNewPlanOpen(true)}>
                 New plan
               </Button>
             ) : null}
@@ -197,6 +219,208 @@ export default function MasterPlansPage() {
           </p>
         </CardBody>
       </Card>
+      {/*
+        Writing a plan, on the screen that lists them.
+
+        The button was disabled with the tooltip "Plan authoring is a later prompt" — a note from
+        the build plan, shown to an operator, about a route that has existed and worked the whole
+        time. `POST /platform/console/plans` validates its modules, refuses a duplicate code and
+        writes the audit row; nothing was waiting to be built but this form.
+
+        A dialog rather than a page: a plan is eight fields, and the list behind it is the context
+        you are adding to.
+      */}
+      <Modal
+        open={newPlanOpen}
+        onClose={() => setNewPlanOpen(false)}
+        title="New plan"
+        footer={
+          <>
+            <Button onClick={() => setNewPlanOpen(false)}>Cancel</Button>
+            <Button
+              variant="primary"
+              disabled={busy || draft.code.trim() === '' || draft.name.trim() === ''}
+              onClick={() => {
+                setBusy(true);
+                setError(null);
+                platformApi
+                  .createPlan({
+                    code: draft.code.trim(),
+                    tier: draft.tier,
+                    name: draft.name.trim(),
+                    ...(draft.description.trim() === ''
+                      ? {}
+                      : { description: draft.description.trim() }),
+                    // Null rather than 0 for an Enterprise plan with negotiated seats: the column
+                    // means "no fixed ceiling", and a zero would mean nobody may join.
+                    ...(draft.seatLimit.trim() === ''
+                      ? {}
+                      : { seatLimit: Number(draft.seatLimit) }),
+                    entitledModules: draft.modules,
+                    ...(draft.priceMinor.trim() === ''
+                      ? {}
+                      : { priceMinor: Number(draft.priceMinor) }),
+                    ...(draft.allowanceMinor.trim() === ''
+                      ? {}
+                      : { aiAllowanceMinor: Number(draft.allowanceMinor) }),
+                    currency: draft.currency,
+                  })
+                  .then(() => {
+                    setNewPlanOpen(false);
+                    setDraft(EMPTY_PLAN);
+                    load();
+                  })
+                  .catch((caught: unknown) =>
+                    setError(
+                      caught instanceof ApiError ? caught.message : 'Could not create that plan.',
+                    ),
+                  )
+                  .finally(() => setBusy(false));
+              }}
+            >
+              Create plan
+            </Button>
+          </>
+        }
+      >
+        <FormField
+          label="Code"
+          required
+          hint="Stable and referenced by configuration, so it cannot be changed later. Lower case, no spaces."
+        >
+          {(wiring) => (
+            <input
+              {...wiring}
+              className="uboss-input uboss-mono"
+              value={draft.code}
+              onChange={(event) => setDraft({ ...draft, code: event.target.value })}
+              placeholder="growth"
+            />
+          )}
+        </FormField>
+
+        <FormField label="Name" required>
+          {(wiring) => (
+            <input
+              {...wiring}
+              className="uboss-input"
+              value={draft.name}
+              onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+            />
+          )}
+        </FormField>
+
+        <FormField label="Tier" required>
+          {(wiring) => (
+            <select
+              {...wiring}
+              className="uboss-input"
+              value={draft.tier}
+              onChange={(event) => setDraft({ ...draft, tier: event.target.value })}
+            >
+              {PLAN_TIERS.map((tier) => (
+                <option key={tier} value={tier}>
+                  {tier}
+                </option>
+              ))}
+            </select>
+          )}
+        </FormField>
+
+        <FormField label="Description">
+          {(wiring) => (
+            <input
+              {...wiring}
+              className="uboss-input"
+              value={draft.description}
+              onChange={(event) => setDraft({ ...draft, description: event.target.value })}
+            />
+          )}
+        </FormField>
+
+        <FormField label="Seats" hint="Leave empty for a negotiated Enterprise plan.">
+          {(wiring) => (
+            <input
+              {...wiring}
+              className="uboss-input uboss-mono"
+              inputMode="numeric"
+              value={draft.seatLimit}
+              onChange={(event) => setDraft({ ...draft, seatLimit: event.target.value })}
+            />
+          )}
+        </FormField>
+
+        <FormField
+          label="Price per month, in minor units"
+          hint="4900 is ₹49.00. Leave empty for a negotiated price."
+        >
+          {(wiring) => (
+            <input
+              {...wiring}
+              className="uboss-input uboss-mono"
+              inputMode="numeric"
+              value={draft.priceMinor}
+              onChange={(event) => setDraft({ ...draft, priceMinor: event.target.value })}
+            />
+          )}
+        </FormField>
+
+        <FormField
+          label="AI allowance per month, in minor units"
+          hint="What the plan includes. A plan with no price cannot include one — that allowance is money UBoss has already paid a provider."
+        >
+          {(wiring) => (
+            <input
+              {...wiring}
+              className="uboss-input uboss-mono"
+              inputMode="numeric"
+              value={draft.allowanceMinor}
+              onChange={(event) => setDraft({ ...draft, allowanceMinor: event.target.value })}
+            />
+          )}
+        </FormField>
+
+        <FormField label="Currency">
+          {(wiring) => (
+            <input
+              {...wiring}
+              className="uboss-input uboss-mono"
+              maxLength={3}
+              value={draft.currency}
+              onChange={(event) =>
+                setDraft({ ...draft, currency: event.target.value.toUpperCase() })
+              }
+            />
+          )}
+        </FormField>
+
+        <FormField label="Modules this plan entitles" hint="What a company on it can see.">
+          {() => (
+            <div
+              className="uboss-grid"
+              style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 6 }}
+            >
+              {COMPANY_MODULES.map((module) => (
+                <label key={module} className="uboss-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={draft.modules.includes(module)}
+                    onChange={(event) =>
+                      setDraft({
+                        ...draft,
+                        modules: event.target.checked
+                          ? [...draft.modules, module]
+                          : draft.modules.filter((held) => held !== module),
+                      })
+                    }
+                  />
+                  <span>{module}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </FormField>
+      </Modal>
     </>
   );
 }

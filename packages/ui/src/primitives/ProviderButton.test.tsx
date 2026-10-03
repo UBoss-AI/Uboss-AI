@@ -25,6 +25,13 @@ describe('providerKindFrom — the issuer decides, not the label', () => {
     expect(providerKindFrom('https://sso.acme-internal.example')).toBe('generic');
   });
 
+  it('does not recognize a provider hostname embedded in an untrusted URL', () => {
+    expect(providerKindFrom('https://evil.example/login.microsoftonline.com')).toBe('generic');
+    expect(providerKindFrom('https://login.microsoftonline.com.evil.example/')).toBe('generic');
+    expect(providerKindFrom('https://google.evil.example')).toBe('generic');
+    expect(providerKindFrom('not a URL containing appleid.apple.com')).toBe('generic');
+  });
+
   it('survives a connection with no issuer at all', () => {
     expect(providerKindFrom(null)).toBe('generic');
     expect(providerKindFrom(undefined)).toBe('generic');
@@ -41,8 +48,12 @@ describe('ProviderButton', () => {
   });
 
   it('hides the mark from assistive technology', () => {
-    const { container } = render(<ProviderButton kind="microsoft" label="Continue with Microsoft" />);
-    expect(container.querySelector('.uboss-provider-mark')?.getAttribute('aria-hidden')).toBe('true');
+    const { container } = render(
+      <ProviderButton kind="microsoft" label="Continue with Microsoft" />,
+    );
+    expect(container.querySelector('.uboss-provider-mark')?.getAttribute('aria-hidden')).toBe(
+      'true',
+    );
   });
 
   it('starts the flow when pressed', () => {

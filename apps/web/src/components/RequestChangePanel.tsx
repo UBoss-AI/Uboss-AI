@@ -2,7 +2,11 @@
 
 import { useCallback, useState } from 'react';
 
-import { CHANGE_REQUEST_KIND_LABELS, CHANGE_REQUEST_KINDS, type ChangeRequestKind } from '@uboss/types';
+import {
+  CHANGE_REQUEST_KIND_LABELS,
+  CHANGE_REQUEST_KINDS,
+  type ChangeRequestKind,
+} from '@uboss/types';
 import { Banner, Button, Icon, Modal } from '@uboss/ui';
 
 import { ApiError, approvalsApi } from '../lib/api-client';
@@ -60,9 +64,7 @@ export function RequestChangePanel({
         onClose();
       })
       .catch((caught: unknown) =>
-        setError(
-          caught instanceof ApiError ? caught.message : 'That request could not be filed.',
-        ),
+        setError(caught instanceof ApiError ? caught.message : 'That request could not be filed.'),
       )
       .finally(() => setBusy(false));
   }, [conversationId, kind, onClose, onFiled, reason, tenantId]);
@@ -81,9 +83,7 @@ export function RequestChangePanel({
             variant="primary"
             onClick={file}
             disabled={busy || reason.trim().length < 10}
-            title={
-              reason.trim().length < 10 ? 'Say what needs changing and why.' : undefined
-            }
+            title={reason.trim().length < 10 ? 'Say what needs changing and why.' : undefined}
           >
             <Icon name="arrow" size={16} />
             Send to the Admin

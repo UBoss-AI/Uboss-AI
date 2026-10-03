@@ -42,7 +42,9 @@ describe('vendor prefixes', () => {
   it('never writes both the prefixed and unprefixed spelling of a property', () => {
     const prefixed = declarations.filter(({ property }) => /^-(webkit|moz|ms|o)-/.test(property));
     const unprefixedNames = new Set(
-      declarations.filter(({ property }) => !property.startsWith('-')).map(({ property }) => property),
+      declarations
+        .filter(({ property }) => !property.startsWith('-'))
+        .map(({ property }) => property),
     );
 
     const collisions = prefixed

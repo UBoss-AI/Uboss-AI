@@ -487,10 +487,7 @@ export class ObjectiveController {
       'Content-Type',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
-    response.setHeader(
-      'Content-Disposition',
-      'attachment; filename="objective template.xlsx"',
-    );
+    response.setHeader('Content-Disposition', 'attachment; filename="objective template.xlsx"');
     response.send(buffer);
   }
 
@@ -552,10 +549,7 @@ export class ObjectiveController {
       'Content-Type',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
-    response.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${view.code} objective.xlsx"`,
-    );
+    response.setHeader('Content-Disposition', `attachment; filename="${view.code} objective.xlsx"`);
     response.send(buffer);
   }
 

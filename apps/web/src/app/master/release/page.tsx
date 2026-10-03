@@ -11,6 +11,8 @@ import {
   CardHeader,
   DataTable,
   EmptyState,
+  FormField,
+  Modal,
   PageHeader,
   SkeletonText,
   StatusBadge,
@@ -44,6 +46,8 @@ import { useMasterConsole } from '../layout';
  *   * An **Active flag at 0% with no enabled companies** — refused by the service. It is off in
  *     effect but reads as on, which is how a feature comes to be believed live.
  */
+const EMPTY_FLAG = { key: '', description: '', audience: '', rationale: '' };
+
 export default function MasterReleasePage() {
   const router = useRouter();
   const { can } = useMasterConsole();
@@ -51,6 +55,8 @@ export default function MasterReleasePage() {
   const [flags, setFlags] = useState<FeatureFlagRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [newFlagOpen, setNewFlagOpen] = useState(false);
+  const [draft, setDraft] = useState(EMPTY_FLAG);
 
   const load = useCallback(() => {
     platformApi
@@ -68,10 +74,12 @@ export default function MasterReleasePage() {
   /**
    * Pause a flag.
    *
-   * The one write this screen offers, and it is the *safe* direction. Turning a flag on needs a
-   * stage, an audience and a percentage — a form, and a later prompt — while turning one off is
-   * a single decision an operator may need to make quickly during an incident. Offering only the
-   * safe direction is better than offering neither.
+   * The *safe* direction, and the one an operator reaches for during an incident: a single
+   * decision, one click and a reason. Turning a flag on is the deliberate one — a stage, an
+   * audience and a percentage — and it stays a separate act with its own record.
+   *
+   * Creating a flag now lives in the dialog below. It arrives off, so nothing about the care
+   * around turning one on has changed.
    */
   const pause = async (flag: FeatureFlagRow) => {
     const reason = window.prompt(`Why is ${flag.key} being paused?`);
@@ -107,7 +115,7 @@ export default function MasterReleasePage() {
         ]}
         actions={
           mayControl ? (
-            <Button variant="navy" icon="plus" disabled title="Flag authoring is a later prompt.">
+            <Button variant="navy" icon="plus" onClick={() => setNewFlagOpen(true)}>
               New flag
             </Button>
           ) : undefined
@@ -217,6 +225,118 @@ export default function MasterReleasePage() {
           </ul>
         </CardBody>
       </Card>
+      {/*
+        Writing a flag, on the screen that lists them.
+
+        The button was disabled with the tooltip "Flag authoring is a later prompt" — a note from
+        the build plan, shown to an operator, about a route that has existed and worked the whole
+        time. `POST /platform/console/feature-flags` validates the key, refuses a duplicate and
+        writes the audit row.
+
+        A new flag arrives **off**. That is not a shortcut around the stage-and-percentage form the
+        old comment described: a flag is created so that code can refer to it, and turning it on is
+        a separate, deliberate act with its own reason — which is exactly the shape the update
+        route already enforces.
+      */}
+      <Modal
+        open={newFlagOpen}
+        onClose={() => setNewFlagOpen(false)}
+        title="New feature flag"
+        footer={
+          <>
+            <Button onClick={() => setNewFlagOpen(false)}>Cancel</Button>
+            <Button
+              variant="primary"
+              disabled={busy || draft.key.trim() === '' || draft.rationale.trim() === ''}
+              onClick={() => {
+                setBusy(true);
+                setError(null);
+                platformApi
+                  .createFeatureFlag({
+                    key: draft.key.trim(),
+                    ...(draft.description.trim() === ''
+                      ? {}
+                      : { description: draft.description.trim() }),
+                    ...(draft.audience.trim() === '' ? {} : { audience: draft.audience.trim() }),
+                    rationale: draft.rationale.trim(),
+                  })
+                  .then(() => {
+                    setNewFlagOpen(false);
+                    setDraft(EMPTY_FLAG);
+                    load();
+                  })
+                  .catch((caught: unknown) =>
+                    setError(
+                      caught instanceof ApiError ? caught.message : 'Could not create that flag.',
+                    ),
+                  )
+                  .finally(() => setBusy(false));
+              }}
+            >
+              Create flag
+            </Button>
+          </>
+        }
+      >
+        <FormField
+          label="Key"
+          required
+          hint="Lower case letters, digits and hyphens. This is what the code checks, so it cannot be changed later."
+        >
+          {(wiring) => (
+            <input
+              {...wiring}
+              className="uboss-input uboss-mono"
+              value={draft.key}
+              onChange={(event) => setDraft({ ...draft, key: event.target.value })}
+              placeholder="workshop-chat-v2"
+            />
+          )}
+        </FormField>
+
+        <FormField label="What it controls">
+          {(wiring) => (
+            <input
+              {...wiring}
+              className="uboss-input"
+              value={draft.description}
+              onChange={(event) => setDraft({ ...draft, description: event.target.value })}
+            />
+          )}
+        </FormField>
+
+        <FormField label="Audience" hint="Who it is for, when it is turned on. Optional.">
+          {(wiring) => (
+            <input
+              {...wiring}
+              className="uboss-input"
+              value={draft.audience}
+              onChange={(event) => setDraft({ ...draft, audience: event.target.value })}
+            />
+          )}
+        </FormField>
+
+        <FormField
+          label="What removing it would mean"
+          required
+          hint="Asked now, while the answer is still known. A flag with no stated purpose is the one nobody dares delete."
+        >
+          {(wiring) => (
+            <textarea
+              {...wiring}
+              className="uboss-input"
+              rows={3}
+              value={draft.rationale}
+              onChange={(event) => setDraft({ ...draft, rationale: event.target.value })}
+            />
+          )}
+        </FormField>
+
+        <p className="uboss-notice">
+          The flag is created <b>off</b>. Turning it on is a separate decision with its own stage,
+          audience and percentage — and its own reason in the trail.
+        </p>
+      </Modal>
     </>
   );
 }

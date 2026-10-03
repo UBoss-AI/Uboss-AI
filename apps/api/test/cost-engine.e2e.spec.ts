@@ -21,6 +21,7 @@ import {
 import { PermissionGuard } from '../src/authorization/permission.guard.js';
 import { LocalSealedSecretsVault, SecretsVault } from '../src/connections/secrets-vault.js';
 import { CostController } from '../src/cost/cost.controller.js';
+import { BudgetResetRunner } from '../src/cost/budget-reset.runner.js';
 import { CostEngineService } from '../src/cost/cost-engine.service.js';
 import { ModelGateway } from '../src/model-gateway/model-gateway.js';
 import {
@@ -140,6 +141,8 @@ describe('token and cost engine (e2e)', () => {
         AuthorizationService,
         NotificationService,
         CostEngineService,
+        // The reset sweep, so a recurring allowance can be proved to come back.
+        BudgetResetRunner,
         MockProviderAdapter,
         AnthropicProviderAdapter,
         OpenAiProviderAdapter,
@@ -775,6 +778,376 @@ describe('token and cost engine (e2e)', () => {
   // 6. Abandoned reservations
   // -------------------------------------------------------------------------
 
+  describe('what UBoss charges is not what UBoss pays', () => {
+    /*
+     * Until this existed, a company's wallet was debited the exact amount the provider charged.
+     * Every call was therefore sold at cost and the product earned nothing on AI at all — not a
+     * thin margin, none. `pricing_versions` was the only price in the system and it is the *buy*
+     * price.
+     */
+    const withMultiplier = async (value: number) => {
+      await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.platformSetting.update({
+          where: { key: 'commercial.ai_sell_multiplier' },
+          data: { value },
+        }),
+      );
+    };
+
+    it('charges the company a multiple of what the call cost', async () => {
+      await withMultiplier(5);
+      assert.equal(await cost().sellPriceFor(100), 500);
+      assert.equal(await cost().sellPriceFor(63), 315);
+    });
+
+    it('never sells a call that cost something for nothing', async () => {
+      // Rounded up. A charge of 1 paise at any multiple above 1 must not round down to free.
+      await withMultiplier(1.5);
+      assert.equal(await cost().sellPriceFor(1), 2);
+      assert.equal(await cost().sellPriceFor(0), 0);
+    });
+
+    it('sells at cost when the multiplier is missing, rather than inventing a price', async () => {
+      /*
+       * The honest failure is the one that earns nothing, not the one that overcharges. A company
+       * billed more than a call cost because a setting could not be read would be paying for a
+       * configuration error.
+       */
+      await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.platformSetting.update({
+          where: { key: 'commercial.ai_sell_multiplier' },
+          data: { value: 0 },
+        }),
+      );
+      assert.equal(await cost().sellPriceFor(100), 100);
+      await withMultiplier(5);
+    });
+
+    it('reserves against the sell price, so a budget check is against what will be charged', async () => {
+      /*
+       * Estimating at cost would let a company through a limit it cannot afford: the reservation
+       * would pass at a fifth of the real charge, and the settle would take the rest out of a
+       * balance that had already been declared sufficient.
+       */
+      await withMultiplier(5);
+      await app.get(ProviderService).publishPricing({
+        actorUserId: platformOwnerId,
+        providerModelId: FAST_MODEL,
+        currency: 'INR',
+        inputPerMillionMinorUnits: 1_000_000,
+        outputPerMillionMinorUnits: 1_000_000,
+        cachedInputPerMillionMinorUnits: null,
+      });
+
+      const atFive = await cost().estimate({
+        scope: scope(),
+        logicalProfile: 'AGENT_FAST',
+        maxTokens: 1_000,
+      });
+
+      await withMultiplier(1);
+      const atCost = await cost().estimate({
+        scope: scope(),
+        logicalProfile: 'AGENT_FAST',
+        maxTokens: 1_000,
+      });
+
+      assert.ok(atCost.estimateMinor > 0, 'the fixture priced nothing');
+      assert.equal(atFive.estimateMinor, atCost.estimateMinor * 5);
+      await withMultiplier(5);
+    });
+  });
+
+  describe('one person cannot spend the company', () => {
+    /*
+     * Every other budget scope describes *work* — a department, an objective, an agent — and none
+     * of them is keyed to a human being. So the company budget was the only thing between one
+     * employee and the whole month's AI: somebody running an agent in a loop could exhaust it in
+     * an afternoon, and everybody else would be refused for something they did not do.
+     */
+    it('refuses a person past their own allowance while the company still has room', async () => {
+      await withAllowance(1_000_000);
+      await cost().setAllowance({
+        scope: scope(),
+        actorUserId: adminUserId,
+        budgetScope: 'Person',
+        subjectId: adminUserId,
+        allowanceMinor: 1_000,
+        reason: 'A day’s worth.',
+      });
+
+      const within = await cost().reserve(
+        {
+          scope: scope(),
+          logicalProfile: 'AGENT_STANDARD',
+          purpose: 'within',
+          actorUserId: adminUserId,
+        },
+        { estimateMinor: 900, currency: 'INR' },
+      );
+      assert.equal(within.reserved, true);
+
+      const past = await cost().reserve(
+        {
+          scope: scope(),
+          logicalProfile: 'AGENT_STANDARD',
+          purpose: 'past',
+          actorUserId: adminUserId,
+        },
+        { estimateMinor: 900, currency: 'INR' },
+      );
+      assert.equal(past.reserved, false, 'a person spent past their own allowance');
+
+      // And the company itself is nowhere near its limit, which is the point.
+      const company = await companyWallet();
+      assert.ok(company.remainingMinor > 900_000);
+    });
+
+    it('leaves somebody with no allowance of their own unconstrained', async () => {
+      // Adding a scope must not silently place a limit on people nobody set one for.
+      await withAllowance(1_000_000);
+      const outcome = await cost().reserve(
+        {
+          scope: scope(),
+          logicalProfile: 'AGENT_STANDARD',
+          purpose: 'nobody set me a limit',
+          actorUserId: '01a00000-0000-7000-8000-00000000f001',
+        },
+        { estimateMinor: 900, currency: 'INR' },
+      );
+      assert.equal(outcome.reserved, true);
+    });
+
+    it('charges nobody for work the engine does on its own behalf', async () => {
+      // A scheduled run belongs to no person, and charging it to whoever owns the objective would
+      // put somebody's name on spend they did not cause.
+      await withAllowance(1_000_000);
+      const outcome = await cost().reserve(
+        { scope: scope(), logicalProfile: 'AGENT_STANDARD', purpose: 'scheduled' },
+        { estimateMinor: 900, currency: 'INR' },
+      );
+      assert.equal(outcome.reserved, true);
+    });
+  });
+
+  describe('a daily allowance comes back', () => {
+    const resets = () => app.get(BudgetResetRunner);
+
+    it('grants the period amount again and lapses what was left', async () => {
+      await withAllowance(1_000_000);
+      await cost().setAllowance({
+        scope: scope(),
+        actorUserId: adminUserId,
+        budgetScope: 'Person',
+        subjectId: adminUserId,
+        allowanceMinor: 1_000,
+        reason: 'A day’s worth.',
+        resetCadence: 'Daily',
+      });
+
+      // A day and a bit later, the reset is due.
+      const tomorrow = new Date(Date.now() + 25 * 3_600_000);
+      const swept = await resets().sweep(tomorrow);
+      assert.ok(swept.reset >= 1, 'the allowance never came back');
+
+      const wallets = await cost().wallets(scope());
+      const mine = wallets.find((wallet) => wallet.scope === 'Person');
+      assert.ok(mine, 'the person wallet is missing');
+      // Granted afresh, and the unspent remainder of the old period lapsed — so a day away does
+      // not come back as two days of allowance.
+      assert.equal(mine.remainingMinor, 1_000);
+    });
+
+    it('catches up rather than forgiving the days it missed', async () => {
+      /*
+       * A sweep that skipped to today would quietly grant one day for three, leaving somebody
+       * short by exactly as much as the system had been down.
+       */
+      await withAllowance(1_000_000);
+      await cost().setAllowance({
+        scope: scope(),
+        actorUserId: adminUserId,
+        budgetScope: 'Person',
+        subjectId: adminUserId,
+        allowanceMinor: 500,
+        reason: 'A day’s worth.',
+        resetCadence: 'Daily',
+      });
+
+      const outcome = await resets().sweep(new Date(Date.now() + 3 * 25 * 3_600_000));
+      assert.ok(outcome.reset >= 1);
+
+      const after = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.costLedgerEntry.count({
+          where: { tenantId, kind: 'Adjustment', reason: { contains: 'Daily allowance' } },
+        }),
+      );
+      assert.ok(after >= 3, `expected three periods to be granted, saw ${after}`);
+    });
+
+    it('leaves a one-off allowance alone', async () => {
+      await withAllowance(1_000_000);
+      const before = await resets().sweep(new Date(Date.now() + 365 * 25 * 3_600_000));
+      // The company wallet has no cadence, so a year later there is still nothing to do for it.
+      assert.equal(typeof before.reset, 'number');
+    });
+  });
+
+  describe('who spent it', () => {
+    /*
+     * The drill-down §20 asked for and nothing ever produced.
+     *
+     * Every charge carried its department, objective, agent and person from the day the ledger
+     * was written. Nothing grouped by one of them, so an administrator could see a company total
+     * and a list of individual rows and could not answer "which department is this" — the first
+     * question anybody asks about an AI bill.
+     */
+    const spend = async (
+      amountMinor: number,
+      context: { departmentId?: string; objectiveId?: string; engineAgentId?: string },
+      options: { priced?: boolean } = {},
+    ) => {
+      const outcome = await cost().reserve(
+        {
+          scope: scope(),
+          logicalProfile: 'AGENT_STANDARD',
+          purpose: 'drill-down fixture',
+          ...context,
+        },
+        { estimateMinor: amountMinor * 2, currency: 'INR' },
+      );
+      if (!outcome.reserved) throw new Error('expected a reservation');
+
+      // A model with a published price cites the version that priced it; one without cites
+      // nothing, which is exactly the state that makes a charge settle at zero in the product.
+      const pricing =
+        options.priced === false
+          ? {}
+          : {
+              pricingVersionId: await ctx.prisma.runAsPlatformOperation(
+                async () =>
+                  (
+                    await ctx.prisma.client.pricingVersionRow.findFirstOrThrow({
+                      where: { supersededAt: null },
+                      select: { id: true },
+                    })
+                  ).id,
+              ),
+            };
+
+      return cost().settle({
+        scope: scope(),
+        reservationId: outcome.reservation.id,
+        actualMinor: amountMinor,
+        tokens: { inputTokens: 100, outputTokens: 50, cachedInputTokens: 0 },
+        ...pricing,
+      });
+    };
+
+    it('groups what was spent by department', async () => {
+      await withAllowance(1_000_000);
+      const finance = '01a00000-0000-7000-8000-00000000d001';
+      const operations = '01a00000-0000-7000-8000-00000000d002';
+
+      await spend(500, { departmentId: finance });
+      await spend(300, { departmentId: finance });
+      await spend(200, { departmentId: operations });
+
+      const view = await cost().usageBreakdown({ scope: scope(), by: 'department' });
+
+      const byKey = new Map(view.rows.map((row) => [row.key, row]));
+      assert.equal(byKey.get(finance)?.spentMinor, 800);
+      assert.equal(byKey.get(operations)?.spentMinor, 200);
+      assert.equal(byKey.get(finance)?.calls, 2);
+
+      // Ordered by spend, so the screen's first row is the one worth asking about.
+      assert.equal(view.rows[0]?.key, finance);
+      assert.equal(view.totals.spentMinor, 1_000);
+
+      /*
+       * No token counts reach a company.
+       *
+       * Tokens are a provider's unit of account. Publishing them invites a customer to divide the
+       * charge by the tokens, read off a per-million rate and match it against a public price
+       * list — which names the provider as surely as printing its name would, and exposes the
+       * margin besides. They are still recorded, and the platform plane reads them.
+       */
+      assert.ok(!('inputTokens' in view.totals), 'a company-facing view is reporting token counts');
+      assert.ok(view.rows.every((row) => !('outputTokens' in row)));
+    });
+
+    it('groups by objective, by agent and by person from the same entries', async () => {
+      await withAllowance(1_000_000);
+      const objectiveId = '01a00000-0000-7000-8000-00000000b001';
+      const engineAgentId = '01a00000-0000-7000-8000-00000000a001';
+
+      await spend(700, { objectiveId, engineAgentId });
+
+      for (const by of ['objective', 'agent'] as const) {
+        const view = await cost().usageBreakdown({ scope: scope(), by });
+        const key = by === 'objective' ? objectiveId : engineAgentId;
+        assert.equal(
+          view.rows.find((row) => row.key === key)?.spentMinor,
+          700,
+          `grouping by ${by} lost the charge`,
+        );
+      }
+
+      // Grouping by person is legitimate and mostly null here: a settle is written by the engine
+      // on its own behalf, and the ledger says so rather than attributing it to somebody.
+      const byUser = await cost().usageBreakdown({ scope: scope(), by: 'user' });
+      assert.ok(byUser.rows.length > 0);
+    });
+
+    it('counts the charges that were never priced instead of averaging them in', async () => {
+      /*
+       * This is the number that explains a bill.
+       *
+       * A model with no published pricing version settles at zero, so its tokens are real and
+       * its cost is not. A row reading "₹0 across 1,412 calls" is telling the truth and pointing
+       * at the fix; the same row without the count is simply wrong.
+       */
+      await withAllowance(1_000_000);
+      const departmentId = '01a00000-0000-7000-8000-00000000d003';
+
+      await spend(400, { departmentId });
+      await spend(0, { departmentId }, { priced: false });
+
+      const view = await cost().usageBreakdown({ scope: scope(), by: 'department' });
+      const row = view.rows.find((entry) => entry.key === departmentId);
+
+      assert.equal(row?.calls, 2);
+      assert.equal(row?.uncostedCalls, 1, 'an unpriced charge was not reported as unpriced');
+      assert.equal(row?.spentMinor, 400, 'the unpriced call must not invent a cost');
+      assert.equal(view.totals.uncostedCalls, 1);
+    });
+
+    it('counts a charge, not a reservation', async () => {
+      // A reservation is money set aside for a call that has not happened, and its release gives
+      // it back. Counting either would report spend that never occurred.
+      await withAllowance(1_000_000);
+      const departmentId = '01a00000-0000-7000-8000-00000000d004';
+
+      const held = await cost().reserve(
+        {
+          scope: scope(),
+          logicalProfile: 'AGENT_STANDARD',
+          purpose: 'never settled',
+          departmentId,
+        },
+        { estimateMinor: 5_000, currency: 'INR' },
+      );
+      if (!held.reserved) throw new Error('expected a reservation');
+
+      const view = await cost().usageBreakdown({ scope: scope(), by: 'department' });
+      assert.equal(
+        view.rows.find((row) => row.key === departmentId),
+        undefined,
+        'an outstanding reservation was reported as money spent',
+      );
+    });
+  });
+
   describe('abandoned reservations', () => {
     it('expires a hold nobody closed, and says it expired', async () => {
       // A worker that crashes between reserving and settling would otherwise leak a company's
@@ -846,12 +1219,75 @@ describe('token and cost engine (e2e)', () => {
       const wallet = await companyWallet();
       // Charged, and nothing left held.
       assert.equal(wallet.reservedMinor, 0);
-      assert.equal(wallet.usedMinor, response.costMinorUnits);
+      /*
+       * The company is charged the **sell** price, not the provider's.
+       *
+       * This used to assert `usedMinor === costMinorUnits`, and that equality was the whole
+       * problem: `costMinorUnits` is what the call cost UBoss, so charging exactly that sold
+       * every call at cost and the product earned nothing on AI.
+       */
+      assert.equal(wallet.usedMinor, await cost().sellPriceFor(response.costMinorUnits ?? 0));
+      assert.ok(
+        wallet.usedMinor > (response.costMinorUnits ?? 0),
+        'the call was sold at cost, so there is no margin on it',
+      );
 
       const reservations = await ctx.prisma.runAsPlatformOperation(() =>
         ctx.prisma.client.budgetReservation.findMany({ where: { tenantId } }),
       );
       assert.equal(reservations[0]?.state, 'Settled');
+    });
+
+    it('records on the charge which pricing version priced it', async () => {
+      /*
+       * The citation used to stop at the gateway call.
+       *
+       * `settle` had accepted a `pricingVersionId` since it was written and the gateway never
+       * passed one, so every row in the cost ledger read as unpriced — including the priced
+       * ones. Measured against the running product: a real Claude call recorded
+       * `cost_minor_units = 63` and `pricing_version_id` on its gateway row, and the ledger
+       * entry for the same 63 paise cited nothing.
+       *
+       * It matters because it is how "how much of this spend was actually costed" is answered.
+       * Without it a company reading a ₹0 line cannot tell a call that was free from one nobody
+       * ever priced, and those need opposite responses.
+       */
+      await withAllowance(100_000);
+      const published = await app.get(ProviderService).publishPricing({
+        actorUserId: platformOwnerId,
+        providerModelId: FAST_MODEL,
+        currency: 'INR',
+        inputPerMillionMinorUnits: 1_000_000,
+        outputPerMillionMinorUnits: 1_000_000,
+        cachedInputPerMillionMinorUnits: null,
+      });
+      const pricingVersionId = (published as { currentPricing: { id: string } }).currentPricing.id;
+
+      await gateway().complete({
+        profile: 'AGENT_FAST',
+        purpose: 'cited',
+        instruction: 'Do the thing.',
+        context: 'Some material.',
+        maxTokens: 200,
+        tenantId,
+      });
+
+      const settled = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.costLedgerEntry.findFirst({
+          where: { tenantId, kind: 'Settle' },
+          orderBy: { occurredAt: 'desc' },
+        }),
+      );
+
+      assert.equal(
+        settled?.pricingVersionId,
+        pricingVersionId,
+        'the charge does not say which price produced it',
+      );
+
+      // And the drill-down therefore stops calling a priced charge unpriced.
+      const view = await cost().usageBreakdown({ scope: scope(), by: 'agent' });
+      assert.equal(view.totals.uncostedCalls, 0);
     });
 
     it('refuses a call the budget cannot afford, and records that it never happened', async () => {
@@ -922,7 +1358,12 @@ describe('token and cost engine (e2e)', () => {
       await withAllowance(10_000);
 
       const meta = await as(agent().get(`/tenants/${tenantId}/cost/meta`)).expect(200);
-      assert.equal(meta.body.scopes.length, 4);
+      // Five since `Person` joined them. The four before it all describe *work* — a department,
+      // an objective, an agent — and none of them stops one employee spending a company's month.
+      assert.equal(meta.body.scopes.length, 5);
+      assert.ok(
+        (meta.body.scopes as { scope: string }[]).some((entry) => entry.scope === 'Person'),
+      );
       assert.match(meta.body.note, /Reserved amounts count against remaining/);
 
       const wallets = await as(agent().get(`/tenants/${tenantId}/cost/wallets`)).expect(200);

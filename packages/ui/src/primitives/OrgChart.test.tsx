@@ -117,7 +117,8 @@ describe('OrgChart — text on a surface that does not follow the theme', () => 
       channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
     const luminance = (hex: string): number => {
       const value = hex.replace('#', '');
-      const at = (offset: number) => lin(Number.parseInt(value.slice(offset, offset + 2), 16) / 255);
+      const at = (offset: number) =>
+        lin(Number.parseInt(value.slice(offset, offset + 2), 16) / 255);
       return 0.2126 * at(0) + 0.7152 * at(2) + 0.0722 * at(4);
     };
     const ratio = (a: string, b: string): number => {
@@ -201,7 +202,11 @@ describe('OrgChart — node actions', () => {
     const onAddToDepartment = vi.fn();
     const onEditDepartment = vi.fn();
     render(
-      <OrgChart root={tree} onAddToDepartment={onAddToDepartment} onEditDepartment={onEditDepartment} />,
+      <OrgChart
+        root={tree}
+        onAddToDepartment={onAddToDepartment}
+        onEditDepartment={onEditDepartment}
+      />,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Add somebody to Production' }));
@@ -230,9 +235,7 @@ describe('OrgChart — node actions', () => {
   it('does not select the person when one of their actions is pressed', () => {
     const onSelectPerson = vi.fn();
     const onEditPerson = vi.fn();
-    render(
-      <OrgChart root={tree} onSelectPerson={onSelectPerson} onEditPerson={onEditPerson} />,
-    );
+    render(<OrgChart root={tree} onSelectPerson={onSelectPerson} onEditPerson={onEditPerson} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit Kavya Nair' }));
 
@@ -284,7 +287,12 @@ describe('OrgChart — taking something away', () => {
    */
   it('offers nothing that takes a person away, whatever the caller passes', () => {
     const { container } = render(
-      <OrgChart root={tree} onAddReport={vi.fn()} onEditPerson={vi.fn()} onSelectPerson={vi.fn()} />,
+      <OrgChart
+        root={tree}
+        onAddReport={vi.fn()}
+        onEditPerson={vi.fn()}
+        onSelectPerson={vi.fn()}
+      />,
     );
 
     expect(screen.queryByRole('button', { name: /Offboard/i })).not.toBeInTheDocument();
@@ -361,7 +369,10 @@ describe('OrgChart — a person’s avatar', () => {
   });
 
   it('draws a silhouette, and no image, for somebody without one', () => {
-    const only = { ...tree, children: [{ ...tree.children[0]!, children: [tree.children[0]!.children[0]!] }] };
+    const only = {
+      ...tree,
+      children: [{ ...tree.children[0]!, children: [tree.children[0]!.children[0]!] }],
+    };
     const { container } = render(<OrgChart root={only} />);
 
     expect(container.querySelectorAll('image')).toHaveLength(0);
@@ -474,12 +485,7 @@ describe('OrgChart — the frame', () => {
 
   it('gives the frame five named controls, so none of them is a tooltip only', () => {
     render(<OrgChart root={tree} controls />);
-    for (const label of [
-      'Zoom out',
-      'Zoom in',
-      'Fit the whole chart',
-      'Full screen',
-    ]) {
+    for (const label of ['Zoom out', 'Zoom in', 'Fit the whole chart', 'Full screen']) {
       expect(screen.getByLabelText(label)).toBeTruthy();
     }
     // The readout says what it is and what pressing it does, because its own text says neither.
@@ -537,9 +543,7 @@ describe('OrgChart — the frame', () => {
 
   it('presses a card rather than panning when the pointer did not move', () => {
     const onSelectPerson = vi.fn();
-    const { container } = render(
-      <OrgChart root={tree} controls onSelectPerson={onSelectPerson} />,
-    );
+    const { container } = render(<OrgChart root={tree} controls onSelectPerson={onSelectPerson} />);
     const frame = container.querySelector('.uboss-org-frame') as HTMLElement;
     const card = screen.getByLabelText('Rajiv Mehta. Head of Operations');
 

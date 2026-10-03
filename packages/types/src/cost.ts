@@ -43,12 +43,24 @@
  * bought, it lives on the subscription, and a company cannot set it. `Company` is the first level
  * a company controls.
  */
-export const BUDGET_SCOPES = ['Company', 'Department', 'Objective', 'Agent'] as const;
+export const BUDGET_SCOPES = ['Company', 'Department', 'Person', 'Objective', 'Agent'] as const;
 export type BudgetScope = (typeof BUDGET_SCOPES)[number];
 
 export const BUDGET_SCOPE_LABELS: Record<BudgetScope, string> = {
   Company: 'Company AI budget',
   Department: 'Department / cost centre',
+  /**
+   * One person's own allowance.
+   *
+   * The four scopes before this one all describe *work* — a department, an objective, an agent —
+   * and none of them stops one person consuming everything. A single employee running an agent in
+   * a loop could exhaust a company's whole month in an afternoon, and every other person would
+   * then find the product refusing them for something they did not do.
+   *
+   * It is the only scope keyed to a human being, which is why it sits apart from the three below
+   * it in the order: an objective budget is a plan's budget and a person's is a person's.
+   */
+  Person: 'One person’s allowance',
   Objective: 'Objective budget',
   Agent: 'Agent / run limit',
 };
@@ -57,8 +69,12 @@ export const BUDGET_SCOPE_LABELS: Record<BudgetScope, string> = {
 export const BUDGET_SCOPE_ORDER: Record<BudgetScope, number> = {
   Company: 0,
   Department: 1,
-  Objective: 2,
-  Agent: 3,
+  // After the department and before the work. A person belongs to a department, and the work they
+  // do belongs to them — so a refusal reads "the company", then "your department", then "you",
+  // which is the order somebody would explain it in.
+  Person: 2,
+  Objective: 3,
+  Agent: 4,
 };
 
 /**
@@ -74,12 +90,24 @@ export function scopesToCheck(input: {
   departmentId: string | null;
   objectiveId: string | null;
   engineAgentId: string | null;
+  /**
+   * Whose request this is.
+   *
+   * Null for work the engine does on its own behalf — a scheduled run, a reconciliation — which
+   * genuinely belongs to nobody and must not be charged against a person who happens to own the
+   * objective. Every level is optional in the same way: a wallet that does not exist places no
+   * limit, so adding this constrains nobody until somebody sets an allowance on it.
+   */
+  actorUserId?: string | null | undefined;
 }): { scope: BudgetScope; subjectId: string | null }[] {
   const levels: { scope: BudgetScope; subjectId: string | null }[] = [
     { scope: 'Company', subjectId: null },
   ];
   if (input.departmentId !== null) {
     levels.push({ scope: 'Department', subjectId: input.departmentId });
+  }
+  if (input.actorUserId !== null && input.actorUserId !== undefined) {
+    levels.push({ scope: 'Person', subjectId: input.actorUserId });
   }
   if (input.objectiveId !== null) {
     levels.push({ scope: 'Objective', subjectId: input.objectiveId });
@@ -109,6 +137,63 @@ export interface WalletSnapshot {
   /** Null when the budget does not reset — a one-off top-up rather than a monthly allowance. */
   resetsAt: string | null;
   expiresAt: string | null;
+}
+
+/**
+ * How often an allowance comes back.
+ *
+ * `resetsAt` on its own is a single instant: it says when the *next* reset falls due and nothing
+ * about what follows it, so a wallet that reset once never reset again. A per-person daily
+ * allowance is what makes the difference plain — it is not one reset tomorrow, it is one a day.
+ */
+export const RESET_CADENCES = ['None', 'Daily', 'Weekly', 'Monthly'] as const;
+export type ResetCadence = (typeof RESET_CADENCES)[number];
+
+export const RESET_CADENCE_LABELS: Record<ResetCadence, string> = {
+  None: 'One-off — it does not come back',
+  Daily: 'Every day',
+  Weekly: 'Every week',
+  Monthly: 'Every month',
+};
+
+/**
+ * When the next reset falls due.
+ *
+ * ## Advanced from the deadline, not from now
+ *
+ * `from` is the reset that has just happened, so a sweep running late — or after an outage —
+ * lands on the same schedule it would have without the delay. Advancing from the current moment
+ * would let every hour of downtime push a daily allowance permanently later in the day.
+ *
+ * ## It can be behind
+ *
+ * A wallet that missed three days returns the *next* due instant, which may still be in the past.
+ * That is deliberate: the caller loops until it catches up, which grants the three days that were
+ * owed rather than silently forgiving them. A `while` that cannot terminate is the alternative,
+ * so a cadence of `None` returns null and is never looped over.
+ *
+ * UTC throughout, like every other instant in this product. A company's working day is a display
+ * concern; an allowance boundary that moved with daylight saving would grant a person two on one
+ * day a year and none on another.
+ */
+export function nextReset(from: Date, cadence: ResetCadence): Date | null {
+  if (cadence === 'None') return null;
+
+  const next = new Date(from.getTime());
+  if (cadence === 'Daily') next.setUTCDate(next.getUTCDate() + 1);
+  else if (cadence === 'Weekly') next.setUTCDate(next.getUTCDate() + 7);
+  // `setUTCMonth` past the end of a short month rolls forward — 31 January plus a month is
+  // 3 March — so a monthly allowance set on the 31st drifts. Clamped to the last day instead.
+  else {
+    const day = next.getUTCDate();
+    next.setUTCDate(1);
+    next.setUTCMonth(next.getUTCMonth() + 1);
+    const lastDay = new Date(
+      Date.UTC(next.getUTCFullYear(), next.getUTCMonth() + 1, 0),
+    ).getUTCDate();
+    next.setUTCDate(Math.min(day, lastDay));
+  }
+  return next;
 }
 
 export function remainingMinor(wallet: {

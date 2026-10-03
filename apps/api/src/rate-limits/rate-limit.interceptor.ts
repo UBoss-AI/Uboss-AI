@@ -56,15 +56,32 @@ export class RateLimitInterceptor implements NestInterceptor {
     const outcome = await this.limits.check({ userId, tenantId });
     const response = http.getResponse<Response>();
 
-    // Set on allowed responses too. A client that can see it is running out of allowance can slow
-    // down before being refused, which is the difference between a rate limit that shapes traffic
-    // and one that only punishes it.
-    response.setHeader('RateLimit-Limit', String(outcome.limit));
-    response.setHeader('RateLimit-Remaining', String(outcome.remaining));
+    /**
+     * The allowance is advice, and advice cannot be given after the fact.
+     *
+     * On an event-stream route Nest writes the response headers and *then* subscribes, and this
+     * method's body does not run until that subscription — it is async, so the interceptor chain
+     * is deferred. By the time this line is reached the headers are long gone, and setting one
+     * throws *Cannot set headers after they are sent*, which the SSE machinery delivers to the
+     * browser as an `error` event. The stream dies at the moment it opens, and the message names
+     * a header rather than the limiter, so nothing in it points here.
+     *
+     * The check above still ran, and a refusal below is still a refusal — only the advisory
+     * headers are skipped, because there is nowhere left to put them.
+     */
+    if (!response.headersSent) {
+      // Set on allowed responses too. A client that can see it is running out of allowance can
+      // slow down before being refused, which is the difference between a rate limit that shapes
+      // traffic and one that only punishes it.
+      response.setHeader('RateLimit-Limit', String(outcome.limit));
+      response.setHeader('RateLimit-Remaining', String(outcome.remaining));
+    }
 
     if (outcome.allowed || outcome.refusal === undefined) return next.handle();
 
-    response.setHeader('Retry-After', String(outcome.refusal.retryAfterSeconds));
+    if (!response.headersSent) {
+      response.setHeader('Retry-After', String(outcome.refusal.retryAfterSeconds));
+    }
 
     /**
      * A business-readable 429, as the prompt asks for.

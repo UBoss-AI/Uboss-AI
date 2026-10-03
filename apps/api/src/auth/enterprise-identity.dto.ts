@@ -209,3 +209,22 @@ export class BackchannelLogoutDto {
   @MaxLength(8000)
   logout_token!: string;
 }
+
+/**
+ * Starting a sign-in with UBoss's own Google, Microsoft or Apple application.
+ *
+ * The kind, and nothing else. There is no company and no connection to name: which workspace this
+ * person reaches is decided after the provider returns, from the verified domain of the address
+ * it asserts. A field here naming a tenant would be the browser choosing which company to be let
+ * into, which is the one thing this flow must never accept.
+ */
+export class StartSocialDto {
+  @IsIn(['google', 'microsoft', 'apple'], { message: 'Unknown sign-in provider.' })
+  kind!: 'google' | 'microsoft' | 'apple';
+
+  /** Constrained to the configured web origin before use, exactly as the enterprise flow is. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  redirectAfter?: string;
+}

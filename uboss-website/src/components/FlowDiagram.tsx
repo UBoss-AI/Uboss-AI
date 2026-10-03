@@ -34,8 +34,24 @@ interface Node {
 }
 
 const NODES: readonly Node[] = [
-  { id: 'objective', label: 'OBJECTIVE', sub: 'What the business wants', kind: 'objective', x: 450, y: 42, w: 210 },
-  { id: 'core', label: 'Chief Agent', sub: 'Powered by UBoss AI', kind: 'core', x: 450, y: 140, w: 190 },
+  {
+    id: 'objective',
+    label: 'OBJECTIVE',
+    sub: 'What the business wants',
+    kind: 'objective',
+    x: 450,
+    y: 42,
+    w: 210,
+  },
+  {
+    id: 'core',
+    label: 'Chief Agent',
+    sub: 'Powered by UBoss AI',
+    kind: 'core',
+    x: 450,
+    y: 140,
+    w: 190,
+  },
   /* The three AI nodes are 100 apart because a diamond's diagonal is ~85: at the first spacing
      they touched, which read as one shape rather than three steps. */
   { id: 'human', label: 'HUMAN WORK', kind: 'human', x: 240, y: 244, w: 168 },
@@ -149,11 +165,19 @@ function NodeShape({ node, index, still }: { node: Node; index: number; still: b
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={
-        still ? { duration: 0 } : { duration: 0.5, delay: 0.25 + index * 0.08, ease: [0.16, 1, 0.3, 1] }
+        still
+          ? { duration: 0 }
+          : { duration: 0.5, delay: 0.25 + index * 0.08, ease: [0.16, 1, 0.3, 1] }
       }
     >
       {node.kind === 'ai' || node.kind === 'core' ? (
-        <circle cx={node.x} cy={node.y} r={node.kind === 'core' ? 62 : 44} fill={palette.stroke} opacity={0.07} />
+        <circle
+          cx={node.x}
+          cy={node.y}
+          r={node.kind === 'core' ? 62 : 44}
+          fill={palette.stroke}
+          opacity={0.07}
+        />
       ) : null}
       {shape}
       <text

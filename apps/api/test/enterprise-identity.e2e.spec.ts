@@ -17,8 +17,10 @@ import {
 } from '../src/auth/domain-verification.service.js';
 import { EnterpriseIdentityController } from '../src/auth/enterprise-identity.controller.js';
 import { InvitationController } from '../src/auth/invitation.controller.js';
+import { IdentityMailService } from '../src/auth/identity-mail.service.js';
 import { InvitationService } from '../src/auth/invitation.service.js';
 import { LoginService } from '../src/auth/login.service.js';
+import { EmailAdapter, LoggingEmailAdapter } from '../src/notifications/email-adapter.js';
 import { MfaLoginService } from '../src/auth/mfa-login.service.js';
 import { MfaService } from '../src/auth/mfa.service.js';
 import { PasswordResetService } from '../src/auth/password-reset.service.js';
@@ -162,6 +164,17 @@ describe('enterprise identity (e2e)', () => {
           useFactory: () => new SecretBox(keyProviderFromEnv(process.env['AUTH_ENCRYPTION_KEYS'])),
         },
         { provide: DNS_TXT_RESOLVER, useValue: dns },
+        /*
+         * `AuthController` now asks for this, so this module has to provide it.
+         *
+         * It was added to `AuthModule` when invitation and reset mail became real, and this spec
+         * assembles its own module by hand — so it kept listing the controller without the
+         * dependency, and every test in the file was cancelled by a DI failure before the first
+         * assertion ran. The transport is the logging one, which is what a deployment with no
+         * SMTP configured gets; nothing here is testing mail.
+         */
+        IdentityMailService,
+        { provide: EmailAdapter, useClass: LoggingEmailAdapter },
         UserRepository,
         UserCredentialRepository,
         InvitationRepository,

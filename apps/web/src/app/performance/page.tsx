@@ -66,8 +66,10 @@ function signed(points: number): string {
  * ## Matched to the reference's `SCR.performance`
  *
  * Two columns, `1fr 340px`. The left card carries **Badge progression** (the five-medal ladder
- * with a link to badge history) and the **Event timeline (governed events)** as key-value rows
- * with signed points and who recorded them, closing with the reference's notice. The right card
+ * with a link to badge history) and the score's own history — the reference calls it the "event
+ * timeline (governed events)" and the screen says **What earned your score**, because the reader
+ * is the person being scored — as key-value rows with signed points and the work each came from,
+ * closing with the reference's notice. The right card
  * carries the current score as one large figure with its medal, then On-time delivery, Positive
  * events, Approved exceptions and Next threshold.
  *
@@ -191,12 +193,20 @@ function PerformancePageBody() {
 
               <BadgeProgression current={view.level} thresholds={policy.thresholds} />
 
-              <div className="uboss-section-label">Event timeline (governed events)</div>
+              {/*
+                "Event timeline (governed events)".
+
+                Three words of the product's internal vocabulary on the one screen a person opens
+                to find out why their own score is what it is. "Governed" is a word about how the
+                system is built; nobody arrives here wondering whether their events were governed.
+                They arrive wondering what they are being judged on.
+              */}
+              <div className="uboss-section-label">What earned your score</div>
 
               {view.recentEvents.length === 0 ? (
                 <p className="uboss-muted">
-                  No governed events yet. A score appears here as work is completed, accepted,
-                  delivered late or missed — every point traceable to the work that produced it.
+                  Nothing scored yet. Points appear here as work is finished, accepted, delivered
+                  late or missed — and every one of them names the work it came from.
                 </p>
               ) : (
                 view.recentEvents.map((event) => (
@@ -211,8 +221,19 @@ function PerformancePageBody() {
                       {event.neutralised ? ' — neutralised by an approved blocker' : ''}
                       {event.reason === null ? '' : ` — ${event.reason}`}
                     </span>
-                    <span className="uboss-kv-value uboss-muted-3">
-                      {event.sourceKind}/{event.sourceId}
+                    {/*
+                      The work, by name.
+
+                      This printed `human_task/0199f3c2-4a8e-7...` — a table name and a row id —
+                      beside every line. Being told you lost three points is hard enough; being
+                      told it about an identifier leaves nothing to check and nothing to disagree
+                      with, which is the opposite of what an explainable score is for.
+
+                      An event whose task has since been deleted keeps its line and shows nothing
+                      here: the point still counts, so the history still has to show it.
+                    */}
+                    <span className="uboss-kv-value uboss-muted-3" title={event.sourceTitle ?? ''}>
+                      {event.sourceTitle ?? ''}
                     </span>
                   </div>
                 ))

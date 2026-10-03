@@ -254,7 +254,10 @@ export class SkillRouterController {
 
   @Post('skills/:skillId/cases')
   @RequirePermission({ module: 'settings', action: 'Administer' })
-  async addCase(@Param('skillId', new ParseUUIDPipe()) skillId: string, @Body() body: AddCaseDto): Promise<unknown> {
+  async addCase(
+    @Param('skillId', new ParseUUIDPipe()) skillId: string,
+    @Body() body: AddCaseDto,
+  ): Promise<unknown> {
     return this.router.addCase({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),

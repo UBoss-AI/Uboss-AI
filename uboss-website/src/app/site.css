@@ -1,0 +1,590 @@
+/*
+ * The page layer: sections, cards, and the way they arrive.
+ *
+ * The hero has its own stylesheet because it is a single composition with its own proportions.
+ * Everything below the hero is this file — one rhythm, one card, one reveal — so that eight pages
+ * read as one site rather than as eight pages that happen to share a palette.
+ */
+
+/* ---------- section ---------- */
+
+.sec {
+  position: relative;
+  padding: clamp(72px, 9vw, 132px) clamp(20px, 4vw, 68px);
+}
+
+/*
+   A sunk band, for the sections that should feel like a floor under the one above.
+
+   A single flat ground for a whole page is what makes a long page feel like a scroll with no
+   landmarks. Two grounds, alternating, give a reader something to measure progress against.
+ */
+.sec--sunk {
+  background: linear-gradient(180deg, rgba(139, 92, 246, 0.035) 0%, rgba(0, 0, 0, 0) 60%), #050507;
+  border-block: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sec__inner {
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+}
+
+.sec__head {
+  max-width: 720px;
+  margin-bottom: clamp(34px, 4vw, 58px);
+}
+
+.sec--center .sec__head {
+  margin-inline: auto;
+  text-align: center;
+}
+
+/*
+   The kicker answers "where am I" for somebody who arrived mid-page from a nav link — which is
+   most visitors. Set above the title and in the accent so it is read first and competes with
+   nothing.
+ */
+.sec__kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #a78bfa;
+}
+
+.sec__kicker::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.sec--center .sec__kicker {
+  justify-content: center;
+}
+
+.sec__title {
+  margin: 0;
+  font-size: clamp(1.85rem, 3.4vw, 2.85rem);
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  color: #f4f4f5;
+}
+
+/* The same italic serif as the hero, for the one word a section title turns on. */
+.sec__title em {
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, 'Times New Roman', serif;
+  font-weight: 400;
+  font-style: italic;
+  letter-spacing: -0.005em;
+  background: linear-gradient(96deg, #ffffff 0%, #c4b5fd 62%, #a78bfa 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+.sec__lead {
+  margin: 18px 0 0;
+  max-width: 62ch;
+  font-size: clamp(0.98rem, 1.15vw, 1.08rem);
+  line-height: 1.65;
+  color: #a1a1aa;
+}
+
+.sec--center .sec__lead {
+  margin-inline: auto;
+}
+
+/* ---------- cards ---------- */
+
+.card-grid {
+  display: grid;
+  gap: clamp(14px, 1.5vw, 20px);
+  grid-template-columns: repeat(auto-fit, minmax(min(var(--card-min, 300px), 100%), 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: clamp(20px, 2.1vw, 28px);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 18px;
+  background: linear-gradient(168deg, rgba(23, 23, 26, 0.9) 0%, rgba(9, 9, 11, 0.9) 100%);
+  transition:
+    border-color 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/*
+   A hairline of the accent along the top edge, drawn only on hover.
+
+   Always on, it would be a coloured rule on every card on the page. On hover it is what tells
+   somebody the card is a thing rather than a box of text — and on the cards that are links, that
+   it goes somewhere.
+ */
+.card::before {
+  content: '';
+  position: absolute;
+  inset: -1px -1px auto;
+  height: 1px;
+  border-radius: 18px 18px 0 0;
+  background: linear-gradient(90deg, rgba(139, 92, 246, 0), #a78bfa, rgba(139, 92, 246, 0));
+  opacity: 0;
+  transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.card:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  transform: translateY(-3px);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.45);
+}
+
+.card:hover::before {
+  opacity: 1;
+}
+
+/* The card that is the point of its section. Lit rather than larger: scaling one card in a grid
+   breaks the grid, and the eye finds the brighter one just as fast. */
+.card--lit {
+  border-color: rgba(167, 139, 250, 0.34);
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(124, 58, 237, 0.16) 0%, rgba(0, 0, 0, 0) 58%),
+    linear-gradient(168deg, rgba(28, 22, 48, 0.94) 0%, rgba(11, 9, 18, 0.94) 100%);
+}
+
+.card--lit::before {
+  opacity: 1;
+}
+
+.card__eyebrow {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #71717a;
+}
+
+.card__title {
+  margin: 0;
+  font-size: 1.12rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: #f4f4f5;
+}
+
+.card__body {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.62;
+  color: #a1a1aa;
+}
+
+/*
+   A numeral on a card — a count, a price, a figure.
+
+   Set in the same proportions as the hero's stat cards so a number on page four looks like a
+   number on page one.
+ */
+.card__figure {
+  font-size: clamp(1.7rem, 2.6vw, 2.3rem);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: #fff;
+}
+
+.card__list {
+  display: grid;
+  gap: 10px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: #a1a1aa;
+}
+
+.card__list li {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  gap: 10px;
+  align-items: start;
+}
+
+.card__list svg {
+  margin-top: 3px;
+  color: #a78bfa;
+}
+
+/* A rule inside a card, where one group of facts ends and another begins. */
+.card__rule {
+  height: 1px;
+  margin: 4px 0;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ---------- the way things arrive ---------- */
+
+/*
+   Applied by the component after mount, never by this stylesheet alone.
+
+   A reveal written as `opacity: 0` in CSS is a page that is blank when the script does not run,
+   and nothing reports it. The class arrives with the JavaScript that will remove it.
+ */
+.reveal {
+  opacity: 0;
+  transform: translateY(26px);
+  transition:
+    opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+
+.reveal.is-in {
+  opacity: 1;
+  transform: none;
+  /* Released once it has arrived: `will-change` on a hundred elements is a hundred layers the
+     compositor keeps alive for an animation that has finished. */
+  will-change: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .reveal.is-in {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  .card {
+    transition: none;
+  }
+
+  .card:hover {
+    transform: none;
+  }
+}
+
+/* ---------- plans ---------- */
+
+/*
+   The three facts that separate one plan from another, on one line.
+
+   Seats, modules and whether AI is included are what a buyer compares, and burying them in a
+   feature list means reading four lists to answer a question about one number.
+ */
+.plan__figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 2px;
+}
+
+.plan__figures span {
+  display: grid;
+  gap: 1px;
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #71717a;
+}
+
+.plan__figures b {
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-transform: none;
+  color: #f4f4f5;
+}
+
+.plan__cta {
+  margin-top: auto;
+  padding-top: 16px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #a78bfa;
+  transition: color 0.25s ease;
+}
+
+.plan__cta::after {
+  content: ' →';
+}
+
+.plan__cta:hover {
+  color: #c4b5fd;
+}
+
+.plan__note {
+  margin-top: clamp(24px, 3vw, 38px);
+  padding: clamp(18px, 2vw, 26px);
+  border: 1px solid rgba(167, 139, 250, 0.22);
+  border-radius: 16px;
+  background: rgba(124, 58, 237, 0.07);
+}
+
+.plan__note p {
+  margin: 0;
+  max-width: 76ch;
+  font-size: 0.95rem;
+  line-height: 1.65;
+  color: #a1a1aa;
+}
+
+.plan__note b {
+  color: #f4f4f5;
+}
+
+/*
+   The comparison scrolls sideways on a narrow screen rather than squashing.
+
+   Five columns of ticks compressed into 360px is a table nobody can read, and the alternative most
+   sites choose — hiding the table on mobile — hides the answer from the half of visitors most
+   likely to be comparing on the move.
+ */
+.plan__table-wrap {
+  margin-top: clamp(28px, 3.4vw, 46px);
+  overflow-x: auto;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 18px;
+}
+
+.plan__table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.plan__table caption {
+  padding: 16px 20px 0;
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #71717a;
+}
+
+.plan__table th,
+.plan__table td {
+  padding: 13px 18px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.plan__table thead th {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #71717a;
+}
+
+.plan__table thead th:not(:first-child),
+.plan__table tbody td {
+  text-align: center;
+}
+
+.plan__table tbody th {
+  font-weight: 500;
+  color: #a1a1aa;
+}
+
+.plan__table tbody tr:last-child th,
+.plan__table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* A tick is the accent; an absence is quiet. The eye should find what a plan has, not what it
+   lacks — a table where every gap is as loud as every tick reads as a list of shortcomings. */
+.plan__table td[data-has='yes'] svg {
+  color: #a78bfa;
+  display: inline-block;
+}
+
+.plan__table td[data-has='no'] svg {
+  color: #3f3f46;
+  display: inline-block;
+}
+
+.plan__cell-text {
+  color: #f4f4f5;
+  font-weight: 500;
+}
+
+/* ============================================================
+   Depth for the blocks that were written before the card system
+
+   Fifteen sections predate `.card`, and their blocks are flat: one border, one fill, no hover and
+   no sense of sitting above the page. The content in them is good — real skill names, real
+   department examples — and rewriting fifteen files to change how a box looks would be a large
+   diff for a small idea.
+
+   These are the same three things `.card` does, applied to the blocks those sections already use.
+   Selector list kept beside `ScrollReveal`'s, because the two describe the same set: what a reader
+   scans rather than reads.
+   ============================================================ */
+.skill-layers > div,
+.solution-panel,
+.pricing-card,
+.product-window,
+.governance-visual {
+  transition:
+    border-color 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.skill-layers > div:hover,
+.solution-panel:hover,
+.pricing-card:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  transform: translateY(-3px);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.45);
+}
+
+/*
+   The catalogue's three layers, as three cards rather than one panel with dividers.
+
+   They were a single bordered strip split by vertical rules, which reads as a table of three
+   things. They are three *kinds* of Skill — platform, industry, your own — and the difference
+   between them is the point of the section.
+ */
+.skill-layers {
+  gap: clamp(14px, 1.5vw, 20px);
+}
+
+.skill-layers > div {
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 18px;
+  background: linear-gradient(168deg, rgba(23, 23, 26, 0.9) 0%, rgba(9, 9, 11, 0.9) 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skill-layers > div,
+  .solution-panel,
+  .pricing-card,
+  .product-window,
+  .governance-visual {
+    transition: none;
+  }
+
+  .skill-layers > div:hover,
+  .solution-panel:hover,
+  .pricing-card:hover {
+    transform: none;
+  }
+}
+
+/* ---------- the legal pages ---------- */
+
+/*
+   What a page still owes its reader.
+
+   Set apart rather than folded into the prose: somebody in procurement is scanning for exactly
+   this, and a paragraph that mentions it in passing is a paragraph they will miss and then ask for
+   in an email.
+ */
+.legal__owed {
+  max-width: 68ch;
+  font-size: 0.98rem;
+}
+
+.legal__owed li {
+  grid-template-columns: 14px 1fr;
+}
+
+.legal__owed li > span:first-child {
+  color: #a78bfa;
+}
+
+.legal__note {
+  max-width: 68ch;
+  margin: clamp(22px, 2.6vw, 32px) 0 0;
+  padding: clamp(16px, 1.8vw, 22px);
+  border-left: 2px solid rgba(167, 139, 250, 0.45);
+  background: rgba(124, 58, 237, 0.06);
+  font-size: 0.95rem;
+  line-height: 1.65;
+  color: #a1a1aa;
+}
+
+/* ---------- company ---------- */
+
+/*
+   The portrait beside the principles, not above them.
+
+   Stacked, the image would be a full-width band a reader scrolls past before reaching the point of
+   the section. Beside them it is what it should be — atmosphere held against the argument, taking
+   a third of the width and none of the attention.
+ */
+.company__portrait-row {
+  display: grid;
+  gap: clamp(20px, 3vw, 40px);
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.4fr);
+  align-items: start;
+}
+
+.company__portrait {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 18px;
+  /* The artwork is near-black at its edges; a violet wash ties it to the rest of the page rather
+     than leaving a black rectangle sitting on a violet-tinted ground. */
+  background: linear-gradient(168deg, rgba(23, 23, 26, 0.9) 0%, rgba(9, 9, 11, 0.9) 100%);
+  position: relative;
+}
+
+.company__portrait img {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* Turned down, because it is atmosphere. At full strength it is the brightest thing on a page
+     whose argument is in the text beside it. */
+  opacity: 0.86;
+}
+
+/*
+   A violet veil over it.
+
+   The artwork is blue-white and the site is violet; without this it reads as a picture borrowed
+   from somewhere else. `mix-blend-mode` tints rather than covers, so the detail survives.
+ */
+.company__portrait::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(168deg, rgba(124, 58, 237, 0.22), rgba(34, 211, 238, 0.08));
+  mix-blend-mode: soft-light;
+  pointer-events: none;
+}
+
+.company__principles {
+  align-content: start;
+}
+
+@media (max-width: 860px) {
+  .company__portrait-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* On a phone the portrait follows the argument rather than delaying it. */
+  .company__portrait {
+    order: 2;
+    max-width: 420px;
+  }
+}

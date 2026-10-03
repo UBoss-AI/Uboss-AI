@@ -6,6 +6,7 @@ import { AuditModule } from './audit/audit.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { BillingModule } from './billing/billing.module.js';
 import { CommercialModule } from './commercial/commercial.module.js';
+import { RegistrationModule } from './registration/registration.module.js';
 import { ConnectionsModule } from './connections/connections.module.js';
 import { AuthorizationModule } from './authorization/authorization.module.js';
 import { HealthModule } from './health/health.module.js';
@@ -13,6 +14,7 @@ import { NotificationsModule } from './notifications/notifications.module.js';
 import { OrganizationModule } from './organization/organization.module.js';
 import { PerformanceModule } from './performance/performance.module.js';
 import { PersistenceModule } from './persistence/persistence.module.js';
+import { PlatformAlertModule } from './platform/platform-alert.module.js';
 import { PlatformModule } from './platform/platform.module.js';
 import { ProvisioningModule } from './provisioning/provisioning.module.js';
 import { RateLimitsModule } from './rate-limits/rate-limits.module.js';
@@ -70,6 +72,7 @@ import { TenancyModule } from './tenancy/tenancy.module.js';
     // global interceptors must be the outermost pair, so a throttled request is refused
     // before it reaches anything that would do work or claim an idempotency key.
     RateLimitsModule,
+    RegistrationModule,
     BillingModule,
     CommercialModule,
     // OrganizationModule provides HIERARCHY_RESOLVER, the seam AuthorizationModule declares and
@@ -81,6 +84,11 @@ import { TenancyModule } from './tenancy/tenancy.module.js';
     // PerformanceModule after AccessModule: offboarding writes the exit snapshot, so the
     // performance engine must be constructible by the time access is wired.
     PerformanceModule,
+    // PlatformAlertModule before the things that raise alerts. Global and tiny, like the audit
+    // module: what is worth alerting on — mail that cannot be delivered, a provider that cannot
+    // be reached — is spread across the product, and a module each producer had to remember to
+    // import is one somebody forgets. The failure mode there is silence.
+    PlatformAlertModule,
     // NotificationsModule after the modules that raise notifications, so the dependency
     // direction reads the way it runs: a producer is constructed, then the engine it calls.
     NotificationsModule,

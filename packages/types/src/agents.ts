@@ -258,7 +258,11 @@ export function runtimeInputsFor(setup: AgentExecutionSetup | null): RuntimeInpu
     },
   ];
 
-  if (setup?.outputDestination === null || setup?.outputDestination === undefined || setup.outputDestination.trim() === '') {
+  if (
+    setup?.outputDestination === null ||
+    setup?.outputDestination === undefined ||
+    setup.outputDestination.trim() === ''
+  ) {
     fields.push({
       key: 'destination',
       label: 'Where should the result go?',
@@ -296,9 +300,7 @@ export function unansweredRuntimeInputs(
   fields: readonly RuntimeInputField[],
   answers: RuntimeInputs,
 ): RuntimeInputField[] {
-  return fields.filter(
-    (field) => field.required && (answers[field.key] ?? '').trim() === '',
-  );
+  return fields.filter((field) => field.required && (answers[field.key] ?? '').trim() === '');
 }
 
 /** One question the builder still has to ask, and why it cannot be answered from what is known. */

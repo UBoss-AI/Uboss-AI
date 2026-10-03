@@ -512,7 +512,9 @@ describe('ProgressStep — a moving indicator must mean moving work', () => {
 
     // Rendered for assistive technology only, as " — Completed" and so on, so read the spans
     // rather than looking for the bare word.
-    const spoken = [...container.querySelectorAll('.uboss-sr-only')].map((el) => el.textContent?.trim());
+    const spoken = [...container.querySelectorAll('.uboss-sr-only')].map((el) =>
+      el.textContent?.trim(),
+    );
 
     // Whatever the indicator does, the state has to be readable without seeing it.
     expect(spoken).toEqual(['— Completed', '— In progress', '— Not started']);

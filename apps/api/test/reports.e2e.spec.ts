@@ -7,7 +7,26 @@ import { Test } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
 import request from 'supertest';
 
-import { DASHBOARD_ALLOWED_KEYS } from '@uboss/types';
+import { DASHBOARD_ALLOWED_KEYS, REPORT_OVERVIEW } from '@uboss/types';
+
+/**
+ * The columns a chart declaration names, whichever kind it is.
+ *
+ * Kept in one place because the list grows: the screen draws seven shapes now, and each names its
+ * columns differently. A check that only understood `series` and `groupBy` would silently pass
+ * every line, share and status chart ever declared — which is the exact failure the test below
+ * exists to catch, reintroduced one kind at a time.
+ */
+function columnsNamedBy(chart: Record<string, unknown>): string[] {
+  const named: unknown[] = [
+    chart['column'],
+    chart['labelColumn'],
+    chart['valueColumn'],
+    chart['totalColumn'],
+    chart['failedColumn'],
+  ];
+  return named.filter((column): column is string => typeof column === 'string');
+}
 
 import { AuditEventService } from '../src/audit/audit-event.service.js';
 import { SecurityEventService } from '../src/audit/security-event.service.js';
@@ -482,10 +501,29 @@ describe('reports and the company dashboard (e2e)', () => {
       assert.ok(tile.href.startsWith('/'), `${tile.key} does not name where it goes`);
     }
 
-    // The two that carry no number say so here as well, so a screen never has to guess.
-    const measuresOf = new Map(body.tiles.map((tile) => [tile.key, tile.measures]));
-    assert.equal(measuresOf.get('performance'), null);
-    assert.equal(measuresOf.get('reports'), null);
+    /*
+     * Every tile says something under its label, and no two say the same thing.
+     *
+     * This used to assert that Performance and Reports carried `null` here, which was true and
+     * was the defect: the screen fell back to a generic sentence, and both of them read
+     * "Everything this area holds" — two different destinations described identically. The server
+     * now resolves the line itself, from the measure where there is a count and from the area's
+     * own description where there is not, so the fallback has nothing left to do.
+     *
+     * The discipline this replaces it with is stronger: a duplicate sentence anywhere fails.
+     */
+    const lines = body.tiles.map((tile) => tile.measures);
+    for (const [index, line] of lines.entries()) {
+      assert.ok(
+        line !== null && line.trim() !== '',
+        `${body.tiles[index]?.key} says nothing under its label`,
+      );
+    }
+    assert.equal(
+      new Set(lines).size,
+      lines.length,
+      `two tiles share a description: ${lines.join(' | ')}`,
+    );
   });
 
   it('counts a finished agent run as finished', async () => {
@@ -804,8 +842,7 @@ describe('reports and the company dashboard (e2e)', () => {
       });
 
     const read = async (uboss: string) =>
-      ((await asPerson(agent().get(orchestration()), uboss).expect(200))
-        .body as OrchestrationView);
+      (await asPerson(agent().get(orchestration()), uboss).expect(200)).body as OrchestrationView;
 
     it('puts work at the stage the dependency graph says, not at one somebody typed', async () => {
       await seedPlan({ code: 'ORCH-1', ownerUserId: adminId, assigneeUserId: adminId });
@@ -956,11 +993,12 @@ describe('reports and the company dashboard (e2e)', () => {
       await asPerson(agent().get(`/tenants/${tenantId}/reports`), adminUboss).expect(200)
     ).body as { reports: { key: string }[] };
 
-    // Eleven since DependencyWaiting joined them. Written out rather than derived from
-    // REPORT_KEYS: a count taken from the constant the catalogue is built from would agree
-    // with itself whatever happened, and the point of the number is that adding a report has
-    // to be a decision somebody made here rather than something that slipped in.
-    assert.equal(catalogue.reports.length, 11, 'an admin sees all eleven');
+    // Twelve since AgentRunsPerDay joined them, which a Company Admin asked for: how much AI
+    // work the company actually did each day. Written out rather than derived from REPORT_KEYS:
+    // a count taken from the constant the catalogue is built from would agree with itself
+    // whatever happened, and the point of the number is that adding a report has to be a
+    // decision somebody made here rather than something that slipped in.
+    assert.equal(catalogue.reports.length, 12, 'an admin sees all twelve');
 
     for (const report of catalogue.reports) {
       await asPerson(agent().get(`/tenants/${tenantId}/reports/${report.key}`), adminUboss).expect(
@@ -1000,21 +1038,75 @@ describe('reports and the company dashboard (e2e)', () => {
         ).expect(200)
       ).body as { columns: string[] };
 
-      const named =
-        chart['kind'] === 'series'
-          ? [chart['labelColumn'], chart['valueColumn']]
-          : [chart['column']];
-
-      for (const column of named) {
+      for (const column of columnsNamedBy(chart)) {
         assert.ok(
-          column !== undefined && run.columns.includes(column),
-          `${report.label} charts "${String(column)}", which is not one of its columns: ` +
+          run.columns.includes(column),
+          `${report.label} charts "${column}", which is not one of its columns: ` +
             run.columns.join(', '),
         );
       }
     }
 
-    assert.equal(charted, 11, 'every report in the catalogue draws');
+    assert.equal(charted, 12, 'every report in the catalogue draws');
+  });
+
+  /*
+   * The overview panels, checked the same way and for the same reason.
+   *
+   * A panel declares its own reading of a report — the cost panel draws `day` against
+   * `amountMinor` — and it is declared in one file while the rows are built in another. Name a
+   * column that report does not return and the panel draws a tidy, empty, entirely wrong picture
+   * on the first screen of this section, where it is the first thing anybody sees.
+   *
+   * The tally's second line is checked against the report's **summary** rather than its columns,
+   * because that is where it reads from: `oldestWaitingSince` is a figure the report computed, not
+   * a column of its rows, and a typo there simply leaves the line off with nothing to say.
+   */
+  it('draws every overview panel from a column its report actually returns', async () => {
+    assert.ok(REPORT_OVERVIEW.length > 0, 'there are panels to check');
+    let checkedWithRows = 0;
+
+    for (const panel of REPORT_OVERVIEW) {
+      const run = (
+        await asPerson(
+          agent().get(`/tenants/${tenantId}/reports/${panel.report}`),
+          adminUboss,
+        ).expect(200)
+      ).body as { columns: string[]; rows: unknown[]; summary: Record<string, unknown> };
+
+      for (const column of columnsNamedBy(panel.chart as unknown as Record<string, unknown>)) {
+        assert.ok(
+          run.columns.includes(column),
+          `The "${panel.question}" panel charts "${column}", which ${panel.report} does not ` +
+            `return: ${run.columns.join(', ')}`,
+        );
+      }
+
+      /*
+       * A report with nothing in it returns no summary at all, and that is correct.
+       *
+       * `DependencyWaiting` answers an empty period with no rows and no figures — there is no
+       * oldest wait when nothing is waiting — so the key is checked where there is something to
+       * describe. The panel already handles its absence by leaving the second line off rather than
+       * printing a blank one.
+       */
+      if (panel.chart.kind === 'tally' && panel.chart.detail !== undefined && run.rows.length > 0) {
+        assert.ok(
+          panel.chart.detail.key in run.summary,
+          `The "${panel.question}" panel reads "${panel.chart.detail.key}" from ${panel.report}'s ` +
+            `summary, which holds: ${Object.keys(run.summary).join(', ')}`,
+        );
+      }
+
+      // Guards the guard: a panel checked against an empty report proves nothing about its
+      // columns either, and every panel coming back empty would make this whole test vacuous.
+      if (run.rows.length > 0) checkedWithRows += 1;
+    }
+
+    assert.ok(
+      checkedWithRows > 0,
+      'every overview panel came back empty, so this checked nothing at all',
+    );
   });
 
   it('404s an invented report name', async () => {
