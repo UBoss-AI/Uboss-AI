@@ -77,3 +77,27 @@ jobs:
             MICROSOFT_TENANT_ID=${{ vars.MICROSOFT_TENANT_ID || 'common' }}
             APPLE_CLIENT_ID=${{ secrets.APPLE_CLIENT_ID }}
             APPLE_CLIENT_SECRET=${{ secrets.APPLE_CLIENT_SECRET }}
+
+      # Hostinger acknowledges the deploy request before Docker has finished starting. Check the
+      # public services so a broken container or failed TLS setup makes this workflow red.
+      - name: Verify live services
+        shell: bash
+        run: |
+          set -euo pipefail
+          for url in \
+            https://api.ubossai.com/health \
+            https://app.ubossai.com/login \
+            https://chiefagent.ubossai.com/; do
+            ready=false
+            for attempt in $(seq 1 60); do
+              if curl --fail --location --silent --show-error --max-time 10 --output /dev/null "$url"; then
+                ready=true
+                break
+              fi
+              sleep 10
+            done
+            if [[ "$ready" != true ]]; then
+              echo "Service did not become healthy: $url" >&2
+              exit 1
+            fi
+          done
