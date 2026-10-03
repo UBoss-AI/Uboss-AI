@@ -151,14 +151,26 @@ POLICIES="$(psql "$SCRATCH_URL" -tAc \
   "SELECT count(*) FROM pg_policies WHERE schemaname='public'" 2>/dev/null | tr -d ' ' || echo '0')"
 TENANT_TABLES="$(psql "$SCRATCH_URL" -tAc \
   "SELECT count(DISTINCT table_name) FROM information_schema.columns
-    WHERE table_schema='public' AND column_name='tenant_id'" 2>/dev/null | tr -d ' ' || echo '0')"
+    WHERE table_schema='public' AND column_name='tenant_id'
+      AND table_name NOT IN ('pending_registrations', 'stripe_webhook_events')" 2>/dev/null | tr -d ' ' || echo '0')"
+# These two pre-tenant/platform-owned tables have nullable tenant_id and intentionally have no RLS.
+# Check protection per table: total policy counts can hide a missing policy when another table has two.
+UNPROTECTED="$(psql "$SCRATCH_URL" -tAc \
+  "SELECT coalesce(string_agg(t.table_name, ',' ORDER BY t.table_name), '')
+     FROM (SELECT DISTINCT table_name FROM information_schema.columns
+            WHERE table_schema='public' AND column_name='tenant_id'
+              AND table_name NOT IN ('pending_registrations', 'stripe_webhook_events')) t
+     LEFT JOIN pg_class c ON c.relname=t.table_name AND c.relnamespace='public'::regnamespace
+    WHERE c.oid IS NULL OR NOT c.relforcerowsecurity OR NOT EXISTS
+      (SELECT 1 FROM pg_policies p WHERE p.schemaname='public' AND p.tablename=t.table_name)" \
+  2>/dev/null || echo 'query-failed')"
 
-if [[ "$POLICIES" -ge "$TENANT_TABLES" && "$FORCED" -ge "$TENANT_TABLES" ]]; then
+if [[ "$TENANT_TABLES" -ge 1 && -z "$UNPROTECTED" ]]; then
   record "TenantIsolationIntact" true \
     "$POLICIES policies and $FORCED forced tables covering $TENANT_TABLES tenant tables"
 else
   record "TenantIsolationIntact" false \
-    "$POLICIES policies / $FORCED forced for $TENANT_TABLES tenant tables — isolation did not survive"
+    "$POLICIES policies / $FORCED forced for $TENANT_TABLES tenant tables; unprotected=$UNPROTECTED"
 fi
 
 # ---- 5. AuditChainIntact -----------------------------------------------------
