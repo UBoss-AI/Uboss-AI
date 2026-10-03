@@ -52,7 +52,12 @@ jobs:
             POSTGRES_PASSWORD=${{ secrets.UBOSS_POSTGRES_PASSWORD }}
             APP_DB_PASSWORD=${{ secrets.UBOSS_APP_DB_PASSWORD }}
             AUTH_ENCRYPTION_KEYS=${{ secrets.UBOSS_AUTH_ENCRYPTION_KEYS }}
-            UBOSS_INITIAL_ADMIN_EMAIL=dev@uboss.com
+            # The UBoss console owner — our own Platform Owner, not a customer. It was
+            # `dev@uboss.com`, a domain this company does not own, so the one account the
+            # deployment creates would have been unreachable by mail: no password reset, no
+            # security alert, nothing. A company admin is a different person entirely and is
+            # created from the console, never here.
+            UBOSS_INITIAL_ADMIN_EMAIL=dev@ubossai.com
             UBOSS_INITIAL_ADMIN_NAME=Chief Agent Admin
             UBOSS_INITIAL_ADMIN_PASSWORD=${{ secrets.UBOSS_INITIAL_ADMIN_PASSWORD }}
             UBOSS_SMTP_HOST=${{ secrets.UBOSS_SMTP_HOST }}
