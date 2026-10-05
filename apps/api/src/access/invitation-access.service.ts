@@ -220,13 +220,45 @@ export class InvitationAccessService {
       }),
     );
 
-    await this.identityMail.sendInvitation({
+    const delivery = await this.identityMail.sendInvitation({
       to: email === '' ? person.email : email,
       token: issued.token,
       displayName: person.displayName,
       companyName: company?.name ?? 'your workspace',
       resent: issued.resent,
     });
+
+    /*
+     * Write down what happened to the mail, where the person who sent it will look.
+     *
+     * `sendInvitation` never throws, by design — a mail failure must not undo an invitation that
+     * was properly issued. The gap was that it never told anybody either: the reason went to a
+     * log file inside the API container, the administrator was shown success, and the product had
+     * no answer to "the invitation never arrived". Now the roster carries the provider's own
+     * words, and Resend is a sensible thing to press rather than a guess.
+     *
+     * Its own write, after the invitation has committed, and its own failure swallowed for the
+     * same reason the notification below is: a bookkeeping write must not turn a correct outcome
+     * into a 500.
+     */
+    try {
+      await this.prisma.runInTenantTransaction(input.scope, () =>
+        this.prisma.client.invitation.update({
+          where: { id: issued.invitationId },
+          data: {
+            mailState: delivery.state,
+            // Bounded to the column, and the first sentence is the part that names the cause.
+            mailError: delivery.error === null ? null : delivery.error.slice(0, 500),
+            mailAttemptedAt: new Date(),
+          },
+        }),
+      );
+    } catch (error) {
+      this.logger.error(
+        'The invitation was issued and its mail outcome could not be recorded: ' +
+          (error instanceof Error ? error.message : String(error)),
+      );
+    }
 
     /*
      * Tell the person they were invited.

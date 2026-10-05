@@ -1979,7 +1979,24 @@ export interface AccessPerson {
   /** Guests only. Their access to the company ends on this date. */
   guestAccessExpiresAt: string | null;
   guestExpired: boolean;
-  invitation: { id: string; sentAt: string; expiresAt: string; expired: boolean } | null;
+  invitation: {
+    id: string;
+    sentAt: string;
+    expiresAt: string;
+    expired: boolean;
+    /**
+     * What became of the email that carried the activation link.
+     *
+     * `Sent` is "the provider took it", not "it is in their inbox". `Unknown` is an invitation
+     * issued before the outcome was recorded at all, which is every invitation older than this
+     * field — shown as nothing rather than guessed at.
+     */
+    mail: {
+      state: 'Sent' | 'Failed' | 'Unknown';
+      error: string | null;
+      attemptedAt: string | null;
+    };
+  } | null;
   /** Why this person can or cannot activate yet. */
   readiness: ActivationReadiness;
 }

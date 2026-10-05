@@ -26,6 +26,20 @@ import { EmailAdapter } from '../notifications/email-adapter.js';
  * The token. It is the credential — a reset link in a log file is a password in a log file — and
  * the recipient is masked like everywhere else this product names an address.
  */
+
+/**
+ * What happened when the provider was asked to take the message.
+ *
+ * `Sent` is "the provider accepted it", not "it reached an inbox" — nothing here can know the
+ * second, and a product that said so would be lying on a screen somebody trusts. A bounce after
+ * acceptance is a different fact, and this is not it.
+ */
+export interface MailOutcome {
+  state: 'Sent' | 'Failed';
+  /** The provider's own words when it refused. Shown to the administrator who sent the invite. */
+  error: string | null;
+}
+
 @Injectable()
 export class IdentityMailService {
   private readonly logger = new Logger(IdentityMailService.name);
@@ -56,7 +70,7 @@ export class IdentityMailService {
     displayName: string;
     companyName: string;
     resent: boolean;
-  }): Promise<void> {
+  }): Promise<MailOutcome> {
     const link = `${this.config.webBaseUrl}/activate?token=${encodeURIComponent(input.token)}`;
 
     try {
@@ -75,18 +89,26 @@ export class IdentityMailService {
         reference: 'invitation',
       });
       this.logger.log(`An activation link was sent for ${input.companyName}.`);
+      return { state: 'Sent', error: null };
     } catch (error) {
       /*
-       * Logged, not thrown.
+       * Still not thrown — but no longer only logged.
        *
        * The invitation is the deliverable and it has already committed. Turning a successfully
        * issued invitation into a 500 would leave the administrator believing nothing happened,
        * which is the Prompt 8 break-glass lesson that `InvitationAccessService` already records.
+       *
+       * What was wrong was the other half: the failure went to a log file inside the API
+       * container and nowhere else, so the administrator was shown success whatever happened and
+       * the product could not answer "did it go". Reported as "invitations are not arriving" with
+       * no way to find out why. The reason now goes back to the caller, which writes it on the
+       * invitation where the person who sent it can read it.
        */
+      const reason = error instanceof Error ? error.message : String(error);
       this.logger.error(
-        `An invitation was issued and its activation link could not be sent: ` +
-          `${error instanceof Error ? error.message : String(error)}`,
+        `An invitation was issued and its activation link could not be sent: ${reason}`,
       );
+      return { state: 'Failed', error: reason };
     }
   }
 

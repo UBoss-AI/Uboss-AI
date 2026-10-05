@@ -261,9 +261,19 @@ describe('SMTP email adapter', () => {
           reference: 'outbox-row-44',
         }),
         (error: unknown) => {
-          assert.match(String(error), /may only send to ubossai\.com/i);
+          assert.match(String(error), /may only send email to ubossai\.com/i);
           // Masked, like every other place this adapter names a recipient.
           assert.doesNotMatch(String(error), /neha\.verma/);
+          /*
+           * And no deployment environment variable in it.
+           *
+           * This message used to end with "Clear UBOSS_SMTP_ALLOWED_RECIPIENT_DOMAINS to mail
+           * anybody", which was fine while it only ever reached a log. It now reaches a company
+           * administrator: the invitation roster shows why an activation email was refused, and
+           * the name of a variable on somebody else's server is something they cannot act on.
+           * The operator's half is logged instead.
+           */
+          assert.doesNotMatch(String(error), /UBOSS_SMTP_ALLOWED_RECIPIENT_DOMAINS/);
           return true;
         },
       );

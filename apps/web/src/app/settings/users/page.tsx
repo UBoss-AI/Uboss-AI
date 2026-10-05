@@ -59,6 +59,11 @@ function activationTone(person: AccessPerson): StatusTone {
   if (person.accountState === 'Offboarded') {
     return 'grey';
   }
+  // A refused activation email is the one state here somebody has to act on, so it is the one
+  // that is not blue. Blue reads as "in progress", which is exactly what it is not.
+  if (person.invitation?.mail.state === 'Failed') {
+    return 'danger';
+  }
   return person.invitation ? 'blue' : 'grey';
 }
 
@@ -84,14 +89,44 @@ function roleLabelFor(person: AccessPerson): string {
   return `${named.slice(0, 2).join(' · ')} +${named.length - 2} more`;
 }
 
+/**
+ * What the roster says about somebody's activation — including whether the email actually went.
+ *
+ * "Invited" used to be the whole answer, and it was the same word whether the activation link had
+ * been accepted by the mail provider or refused by it. An invitation commits before its mail is
+ * attempted, so a provider failure left a perfectly valid invitation whose link nobody ever
+ * received, and the only record was a log line inside the API container. It was reported as
+ * "invitations are not arriving", and nothing on this screen could say otherwise.
+ *
+ * So a refused one now says so. "Invited" still means the provider took it, which is not proof it
+ * reached an inbox — `invitationHint` says that in as many words rather than letting the badge
+ * imply more than it knows.
+ */
 function activationLabel(person: AccessPerson): string {
   if (person.accountState === 'InvitePending') {
+    if (person.invitation?.mail.state === 'Failed') return 'Email not sent';
     return person.invitation?.expired ? 'Invitation expired' : 'Invited';
   }
   if (person.accountState === 'NotInvited') {
     return 'Not invited';
   }
   return person.accountState;
+}
+
+/** The sentence under the badge: why it failed, or what "Invited" does and does not mean. */
+function invitationHint(person: AccessPerson): string | null {
+  const invitation = person.invitation;
+  if (invitation === null || invitation === undefined) return null;
+  if (invitation.mail.state === 'Failed') {
+    return invitation.mail.error === null
+      ? 'The activation email was refused and no reason was recorded. Press Resend.'
+      : `The activation email was refused: ${invitation.mail.error}`;
+  }
+  if (invitation.mail.state === 'Sent') {
+    return 'The activation email was accepted by the mail provider. That is not proof it reached their inbox.';
+  }
+  // Issued before the outcome was recorded. Saying nothing beats inventing a status.
+  return null;
 }
 
 type Tab = 'employees' | 'guests' | 'pendingInvitations';
@@ -452,6 +487,22 @@ function UsersAccessInner() {
                             status={activationLabel(person)}
                             tone={activationTone(person)}
                           />
+                          {/*
+                            What happened to the activation email, on the row where somebody asks.
+
+                            The question this answers is "I invited them and they say nothing
+                            arrived" — which until now had no answer anywhere in the product, for
+                            anybody: the outcome was logged inside the API container, and the only
+                            queue view is platform-only and not rendered by any screen.
+                          */}
+                          {invitationHint(person) === null ? null : (
+                            <>
+                              <br />
+                              {/* The badge above carries the colour; this line carries the words,
+                                  in the same muted style every other hint on this row uses. */}
+                              <small className="uboss-muted-3">{invitationHint(person)}</small>
+                            </>
+                          )}
                           {person.readiness.ready ? null : (
                             <>
                               <br />

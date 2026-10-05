@@ -530,6 +530,20 @@ model Invitation {
   /// Incremented each time the invitation is resent, so the trail shows how many were issued.
   resendCount Int @default(0) @map("resend_count")
 
+  /// What happened to the activation email, so the person who sent it can see.
+  ///
+  /// The invitation commits first and the mail is attempted after it, deliberately: a mail
+  /// failure must not undo an invitation that was correctly issued. The cost of that choice was
+  /// that the failure went nowhere — it was logged inside the API container and the administrator
+  /// was shown success either way. Reported as "invitations are not arriving", with nothing in
+  /// the product able to say why.
+  ///
+  /// `Sent` means the provider accepted it; it is not proof of inbox delivery, and nothing here
+  /// claims otherwise. `Failed` carries the provider's own words in `mailError`.
+  mailState       String?   @map("mail_state") @db.VarChar(16)
+  mailError       String?   @map("mail_error") @db.VarChar(500)
+  mailAttemptedAt DateTime? @map("mail_attempted_at") @db.Timestamptz(6)
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
   version   Int      @default(1) @map("row_version")

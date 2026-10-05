@@ -43,7 +43,26 @@ export interface AccessPerson {
   /** Guests only. */
   guestAccessExpiresAt: string | null;
   guestExpired: boolean;
-  invitation: { id: string; sentAt: string; expiresAt: string; expired: boolean } | null;
+  /**
+   * The live invitation, and what became of the email that carried it.
+   *
+   * `mail` is the part that was missing. An invitation commits before its mail is attempted, so a
+   * provider failure left a perfectly good invitation with no way for anybody to learn the link
+   * never arrived — the administrator saw "Invited" either way. `Sent` means the provider accepted
+   * it, which is not the same as it reaching an inbox, and nothing here claims otherwise.
+   * `Unknown` is for invitations issued before this was recorded at all.
+   */
+  invitation: {
+    id: string;
+    sentAt: string;
+    expiresAt: string;
+    expired: boolean;
+    mail: {
+      state: 'Sent' | 'Failed' | 'Unknown';
+      error: string | null;
+      attemptedAt: string | null;
+    };
+  } | null;
   readiness: ActivationReadiness;
 }
 
@@ -176,6 +195,16 @@ export class UserAccessService {
               sentAt: row.invitationSentAt?.toISOString() ?? '',
               expiresAt: row.invitationExpiresAt?.toISOString() ?? '',
               expired: row.invitationExpiresAt !== null && row.invitationExpiresAt.getTime() <= now,
+              mail: {
+                state:
+                  row.invitationMailState === 'Sent'
+                    ? 'Sent'
+                    : row.invitationMailState === 'Failed'
+                      ? 'Failed'
+                      : 'Unknown',
+                error: row.invitationMailError,
+                attemptedAt: row.invitationMailAttemptedAt?.toISOString() ?? null,
+              },
             },
       readiness: activationReadiness({
         userType: row.userType as never,

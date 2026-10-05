@@ -181,9 +181,23 @@ export class SmtpEmailAdapter extends EmailAdapter {
     if (allowed.length > 0) {
       const domain = email.to.split('@').pop()?.toLowerCase() ?? '';
       if (!allowed.includes(domain)) {
+        /*
+         * The reason reaches a screen now, so it is written for the person reading it.
+         *
+         * It used to end with "Clear UBOSS_SMTP_ALLOWED_RECIPIENT_DOMAINS to mail anybody", which
+         * was the right sentence when this was only ever a log line. Since the invitation roster
+         * started showing why an activation email was refused, a company's administrator reads
+         * it — and the name of a deployment environment variable is something they cannot act on
+         * and should not be shown. The operator's half goes to the log instead.
+         */
+        this.logger.warn(
+          `A message to ${maskEmail(email.to)} was refused by the recipient allow-list ` +
+            `(${allowed.join(', ')}). Clear UBOSS_SMTP_ALLOWED_RECIPIENT_DOMAINS to mail anybody.`,
+        );
         throw new Error(
-          `This deployment may only send to ${allowed.join(', ')}, and ${maskEmail(email.to)} ` +
-            'is not one of them. Clear UBOSS_SMTP_ALLOWED_RECIPIENT_DOMAINS to mail anybody.',
+          `This deployment may only send email to ${allowed.join(', ')}, and ` +
+            `${maskEmail(email.to)} is not one of them. Ask your UBoss administrator to allow ` +
+            'this domain.',
         );
       }
     }

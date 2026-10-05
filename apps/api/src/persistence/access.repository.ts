@@ -34,6 +34,10 @@ export interface AccessRow {
   invitationId: string | null;
   invitationExpiresAt: Date | null;
   invitationSentAt: Date | null;
+  /** What became of the activation email. Null on invitations issued before it was recorded. */
+  invitationMailState: string | null;
+  invitationMailError: string | null;
+  invitationMailAttemptedAt: Date | null;
 }
 
 /**
@@ -83,7 +87,10 @@ export class AccessRepository {
            COALESCE(r."role_kinds", ARRAY[]::text[]) AS "roleKinds",
            i."id"                       AS "invitationId",
            i."expires_at"               AS "invitationExpiresAt",
-           i."created_at"               AS "invitationSentAt"
+           i."created_at"               AS "invitationSentAt",
+           i."mail_state"               AS "invitationMailState",
+           i."mail_error"               AS "invitationMailError",
+           i."mail_attempted_at"        AS "invitationMailAttemptedAt"
          FROM "tenant_memberships" m
          JOIN "users" u ON u."id" = m."user_id"
          LEFT JOIN "employment_records" e
@@ -124,7 +131,8 @@ export class AccessRepository {
               AND (ra."expires_at" IS NULL OR ra."expires_at" > NOW())
          ) r ON true
          LEFT JOIN LATERAL (
-           SELECT inv."id", inv."expires_at", inv."created_at"
+           SELECT inv."id", inv."expires_at", inv."created_at",
+                  inv."mail_state", inv."mail_error", inv."mail_attempted_at"
              FROM "invitations" inv
             WHERE inv."tenant_id" = m."tenant_id"
               AND inv."user_id" = m."user_id"
