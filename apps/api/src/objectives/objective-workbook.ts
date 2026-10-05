@@ -281,7 +281,18 @@ export class ObjectiveWorkbook {
           delete values['whoEngine'];
         }
 
-        const approval = String(values['approvalKind'] ?? '');
+        /*
+         * `approval`, not `approvalKind`.
+         *
+         * The cell is stored under the column's own key, and that key is `approval` — the same
+         * name the step carries. This read `approvalKind`, which no column writes, so the check
+         * below was always comparing an empty string: it never fired, and whatever the file said
+         * went through untouched. A step could come back approved by "Maybe".
+         *
+         * It read as working because the engine check two blocks up is identical in shape and
+         * does use the right key, so the two sat side by side looking like a matched pair.
+         */
+        const approval = String(values['approval'] ?? '');
         if (approval !== '' && !(STEP_APPROVAL_KINDS as readonly string[]).includes(approval)) {
           problems.push({
             where: `Step ${position}`,
@@ -289,7 +300,7 @@ export class ObjectiveWorkbook {
             kind: 'Invalid',
             detail: `"${approval}" is not one of: ${STEP_APPROVAL_KINDS.join(', ')}.`,
           });
-          delete values['approvalKind'];
+          delete values['approval'];
         }
 
         if (String(values['whatExactWork'] ?? '') === '') {
