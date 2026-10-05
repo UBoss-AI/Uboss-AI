@@ -26,8 +26,26 @@ const users = new UserRepository(prisma);
 const credentials = new UserCredentialRepository(prisma);
 const audit = new AuditTrailRepository(prisma);
 const passwords = new PasswordService(loadAuthConfig());
-passwords.assertAcceptable(password);
-const passwordHash = await passwords.hash(password);
+
+/*
+ * The password is checked and hashed only where it is about to be used.
+ *
+ * It used to happen here, at the top, unconditionally — and that took the whole product down.
+ * The owner already existed, so this password was going to be ignored entirely; a short value in
+ * `UBOSS_INITIAL_ADMIN_PASSWORD` still threw before the script got as far as noticing. `set -e`
+ * turned the throw into exit 1, the container crash-looped, and because the gateway will not
+ * start until the API is healthy, **every host on the VPS went dark** — including the marketing
+ * pages, which need no API at all. The log read "Password must be at least 12 characters" on a
+ * password nothing was going to read.
+ *
+ * Validating input early is usually right. It is wrong when the input is optional in the case at
+ * hand, and this one is: for an existing owner, with no reset asked for, there is nothing to
+ * validate.
+ */
+const prepareCredential = async () => {
+  passwords.assertAcceptable(password);
+  return passwords.hash(password);
+};
 
 try {
   await prisma.onModuleInit();
@@ -61,7 +79,7 @@ try {
           return 'already-configured';
         }
 
-        await credentials.setPassword(existing.id, passwordHash, new Date());
+        await credentials.setPassword(existing.id, await prepareCredential(), new Date());
         // A lockout outlives a password change otherwise, so somebody who reset *because* they
         // were locked out would still be locked out.
         await credentials.clearFailures(existing.id);
@@ -89,7 +107,7 @@ try {
       displayName,
       isPlatformActor: true,
     });
-    await credentials.setPassword(owner.id, passwordHash, new Date());
+    await credentials.setPassword(owner.id, await prepareCredential(), new Date());
     const role = await prisma.client.platformRoleAssignment.create({
       data: {
         userId: owner.id,
