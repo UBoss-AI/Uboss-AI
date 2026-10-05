@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Inter, JetBrains_Mono } from 'next/font/google';
+import localFont from 'next/font/local';
 import type { ReactNode } from 'react';
 
 // The UBoss design system stylesheet: tokens, base layer and component styles.
@@ -31,28 +31,67 @@ import { SIDEBAR_BOOT_SCRIPT, THEME_BOOT_SCRIPT } from '../lib/theme';
  *
  * ## Why `next/font`
  *
- * It downloads both faces at build time and serves them from this application's own origin, so
- * there is no third-party request at runtime and nothing to block. It also emits the
- * `size-adjust` metrics for the fallback face, which is what stops the reflow you normally see
- * when a webfont arrives.
+ * It serves both faces from this application's own origin, so there is no third-party request at
+ * runtime and nothing to block. It also emits the `size-adjust` metrics for the fallback face,
+ * which is what stops the reflow you normally see when a webfont arrives.
  *
  * `display: 'swap'` is deliberate: text is readable in the fallback immediately and re-renders in
  * Inter when it lands. The alternative hides text for up to three seconds, and a screen somebody
  * uses for eight hours a day should never start blank.
  *
+ * ## Why the files are in the repository
+ *
+ * This used to be `next/font/google`, which fetches the fonts from `fonts.gstatic.com` **during
+ * the build**. That moved the third-party dependency off the customer's browser and onto the
+ * build, where it was no better: a CI run failed with thirty-five "Module not found" errors
+ * because that fetch did not come back, and `deploy/Dockerfile.web` runs the same build on the
+ * VPS — so a bad minute at Google's CDN could equally have failed a production deployment of a
+ * product that does not otherwise need the internet to build.
+ *
+ * Committing the two files removes the dependency outright. They are 84 KB together, because both
+ * families are variable fonts: one file carries every weight, which is also why the ranges below
+ * are ranges rather than a list of five and three separate files.
+ *
  * The weights are the ones the design system actually sets — 400 through 800 for Inter, 400 to 600
- * for the mono. Listing more would ship files nothing references.
+ * for the mono. Declaring the range narrower than the file supports is what keeps a stray
+ * `font-weight: 200` somewhere from rendering in a thickness nobody designed.
+ *
+ * ## What is in the files, and what is not
+ *
+ * The latin subset, which is what the Google build was serving in practice and covers everything
+ * this product renders: ASCII, the general punctuation, the currency and arrow signs the UI uses.
+ * The rupee sign is **not** in it — and was not in the Google build either, which has no U+20B9 in
+ * any of its subsets, so it has always come from the system face and still does.
+ *
+ * Text outside that range — accented latin, Greek, Cyrillic — now renders in the fallback rather
+ * than in Inter. Nothing the product itself writes is outside it; this would only show on a name
+ * or a note somebody types with such a character in it. Covering those would mean committing six
+ * more files per family and hand-writing the `unicode-range` rules that `next/font/local` has no
+ * way to express, which is a worse trade than the one sentence this paragraph costs.
  */
-const inter = Inter({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800'],
+/*
+ * No `fallback` option on either of these.
+ *
+ * `tokens.css` already spells the chain out — `var(--uboss-font-inter, Inter), system-ui,
+ * -apple-system, 'Segoe UI', sans-serif` — so naming one here appends a second copy of it to
+ * every element's computed family. It renders the same and reads like a mistake.
+ *
+ * The metric-matched fallback is not that option: `next/font` emits it either way, as a face of
+ * its own with `size-adjust` taken from the real one, and that is what keeps the swap from
+ * reflowing the page.
+ */
+const inter = localFont({
+  src: './fonts/inter-variable.woff2',
+  weight: '400 800',
+  style: 'normal',
   display: 'swap',
   variable: '--uboss-font-inter',
 });
 
-const jetBrainsMono = JetBrains_Mono({
-  subsets: ['latin'],
-  weight: ['400', '500', '600'],
+const jetBrainsMono = localFont({
+  src: './fonts/jetbrains-mono-variable.woff2',
+  weight: '400 600',
+  style: 'normal',
   display: 'swap',
   variable: '--uboss-font-jetbrains',
 });
