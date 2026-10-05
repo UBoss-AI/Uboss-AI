@@ -7,6 +7,10 @@ docs
 index.html
 *.docx
 *.xlsx
+# …except the Skill catalogue, which is not a document somebody left lying around: the API seeds
+# four hundred platform Skills from it on a fresh database, and without it a deployment has an
+# empty catalogue and Run Objective reports "capability missing" on work it could have planned.
+!apps/api/data/skill-catalog.xlsx
 uboss-website/AGENTS.md
 uboss-website/CLAUDE.md
 uboss-website/DESIGN-V2-NOTES.md

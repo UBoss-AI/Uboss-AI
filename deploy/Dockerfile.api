@@ -17,7 +17,10 @@ COPY packages/config packages/config
 RUN npm run build:packages && npm run build --workspace @uboss/api
 
 FROM node:24-bookworm-slim AS runtime
-RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
+# `unzip` is for the Skill catalogue seed: an .xlsx is a zip, and the slim image has none, so
+# without it the seed fails at boot on a fresh database — after the point where the entrypoint has
+# already committed to running it.
+RUN apt-get update && apt-get install -y --no-install-recommends openssl unzip && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production API_HOST=0.0.0.0 API_PORT=4000
 WORKDIR /workspace
 COPY --from=build --chown=node:node /workspace/package.json ./package.json
@@ -30,6 +33,13 @@ COPY --from=build --chown=node:node /workspace/apps/api/dist ./apps/api/dist
 COPY --from=build --chown=node:node /workspace/apps/api/prisma ./apps/api/prisma
 COPY --from=build --chown=node:node /workspace/apps/api/prisma.config.ts ./apps/api/prisma.config.ts
 COPY --from=build --chown=node:node /workspace/apps/api/scripts/bootstrap-platform-owner.mjs ./apps/api/scripts/bootstrap-platform-owner.mjs
+# The model catalogue, without which ANTHROPIC_API_KEY is a credential for a call nothing knows
+# how to route — see the script's own header.
+COPY --from=build --chown=node:node /workspace/apps/api/scripts/seed-model-catalogue.mjs ./apps/api/scripts/seed-model-catalogue.mjs
+# The Skill catalogue and the workbook it is read from. A database with no Skills makes Run
+# Objective report "capability missing" on work it could have planned.
+COPY --from=build --chown=node:node /workspace/apps/api/scripts/import-skill-catalog.mjs ./apps/api/scripts/import-skill-catalog.mjs
+COPY --from=build --chown=node:node /workspace/apps/api/data ./apps/api/data
 COPY --from=build --chown=node:node /workspace/packages/types ./packages/types
 COPY deploy/api-entrypoint.sh /usr/local/bin/api-entrypoint.sh
 RUN chmod 755 /usr/local/bin/api-entrypoint.sh

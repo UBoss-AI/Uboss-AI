@@ -357,6 +357,27 @@ async function main() {
     throw new Error('No platform actor exists to attribute the publication to.');
   }
 
+  /*
+   * `--only-if-empty`, for the deployment path.
+   *
+   * This runs on every container start so a fresh database is never left with no Skills to route
+   * — an empty catalogue makes Run Objective report "capability missing" on work it could have
+   * planned. But the import is four hundred upserts inside four hundred transactions, and paying
+   * that on every restart would add tens of seconds to the API coming back.
+   *
+   * So the deployment asks for "seed it if it is empty" and a person updating the catalogue runs
+   * the script without the flag, which still updates every row as it always did.
+   */
+  if (process.argv.includes('--only-if-empty')) {
+    const [{ count }] = await prisma.$queryRaw`
+      SELECT count(*)::int AS count FROM skills WHERE tenant_id IS NULL`;
+    if (count > 0) {
+      console.log(`${count} platform Skills are already published. Leaving them as they are.`);
+      await prisma.$disconnect();
+      return;
+    }
+  }
+
   let created = 0;
   let updated = 0;
   const now = new Date();

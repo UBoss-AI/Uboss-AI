@@ -18,4 +18,12 @@ unset POSTGRES_PASSWORD APP_DB_PASSWORD
 cd /workspace/apps/api
 ../../node_modules/.bin/prisma migrate deploy
 node scripts/bootstrap-platform-owner.mjs
+# The model catalogue. A fresh database has no provider profile, no models and no routes, and no
+# migration creates them — so every AI call fails with "No model is configured for …" however
+# correct ANTHROPIC_API_KEY is. Idempotent, and a no-op when there is no key to route to.
+node scripts/seed-model-catalogue.mjs
+# The Skill catalogue, seeded only when there is none. `--only-if-empty` matters: the import is
+# four hundred transactions, and paying that on every restart would add tens of seconds to the API
+# coming back. Updating the catalogue is a deliberate run without the flag.
+node scripts/import-skill-catalog.mjs data/skill-catalog.xlsx --only-if-empty
 exec node --enable-source-maps dist/main.js
