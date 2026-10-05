@@ -90,8 +90,30 @@ async function bootstrap(): Promise<void> {
    * The route's own validation then enforces the company's configured limit against the decoded
    * length, which is the real control — this is only the ceiling on what the process will buffer
    * before that control gets to run.
+   *
+   * ## The other uploads, which this forgot about
+   *
+   * `/files` was the only upload when the rule above was written. Four more arrived after it and
+   * none of them matched the pattern, so each was silently capped at 1 MB of JSON — about 750 KB
+   * of actual file, because base64 adds a third:
+   *
+   *   * an Objective's workbook (`objectives/:id/workbook/parse`),
+   *   * the bulk people and hierarchy workbooks (`access/bulk/…`),
+   *   * an agent's job-method workbook (`job-methods/:id/import…`),
+   *   * an employee photo — whose own policy allows **2 MB**, so every photo between 750 KB and
+   *     that ceiling was refused by the parser before the policy could allow it.
+   *
+   * The failure gave nothing to go on: a 413 from the body parser, before any handler ran, so the
+   * product could not say "that file is too large" or anything else. It was reported as "upload
+   * does not work".
+   *
+   * They get 25 MB rather than 340: a spreadsheet of objectives or people is measured in
+   * kilobytes, and 25 MB is already far past any real one while staying nowhere near a limit
+   * worth buffering on an authenticated route. The knowledge collection keeps its own ceiling,
+   * because that is where a company genuinely puts a large document.
    */
   const uploadJson = json({ limit: '340mb' });
+  const workbookJson = json({ limit: '25mb' });
   const ordinaryJson = json({ limit: '1mb' });
 
   /**
@@ -112,12 +134,30 @@ async function bootstrap(): Promise<void> {
   const providerWebhook = raw({ type: '*/*', limit: '1mb' });
   const PROVIDER_WEBHOOK_PATH = '/billing/stripe/webhook';
   const UPLOAD_PATHS = /\/tenants\/[^/]+\/files\/?$/;
+  /*
+   * Every other route that receives a file as base64. Listed explicitly rather than matched by a
+   * word like "import": a pattern loose enough to catch them all is loose enough to hand a large
+   * body to a route nobody meant, and the point of the 1 MB default is that it applies to
+   * everything not named here.
+   */
+  const WORKBOOK_PATHS = [
+    /\/tenants\/[^/]+\/objectives\/[^/]+\/workbook\/parse\/?$/,
+    /\/tenants\/[^/]+\/access\/bulk\/(validate|hierarchy\/validate)\/?$/,
+    /\/tenants\/[^/]+\/job-methods\/[^/]+\/import(-workbook)?\/?$/,
+    /\/tenants\/[^/]+\/photos\/[^/]+\/?$/,
+  ];
   app.use((request: Request, response: Response, next: NextFunction) => {
     if (request.path === PROVIDER_WEBHOOK_PATH) {
       providerWebhook(request, response, next);
       return;
     }
-    const parser = UPLOAD_PATHS.test(request.path) ? uploadJson : ordinaryJson;
+    if (UPLOAD_PATHS.test(request.path)) {
+      uploadJson(request, response, next);
+      return;
+    }
+    const parser = WORKBOOK_PATHS.some((pattern) => pattern.test(request.path))
+      ? workbookJson
+      : ordinaryJson;
     parser(request, response, next);
   });
   app.use(urlencoded({ extended: true, limit: '1mb' }));
