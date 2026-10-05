@@ -541,9 +541,28 @@ function ObjectiveFormInner() {
               Download Excel
             </Button>
 
+            {/*
+              Greyed out says "not now"; it does not say why, and here that was a dead end.
+
+              Download on a new Objective offers the blank form "ready to fill in". Somebody takes
+              it, fills it in offline, comes back — and Upload is grey, with nothing on screen to
+              explain it. It reads as the upload being broken, and that is how it was reported.
+              The read-only case already has a banner; this one had neither banner nor tooltip.
+
+              An upload is read against the Objective it belongs to, so there has to be one first.
+              Saying so is the whole fix — the same sentence the Analyze button below already uses
+              for the same reason.
+            */}
             <label
               className={`uboss-btn uboss-btn--sm${busy || readOnly || objective === null ? ' uboss-btn--disabled' : ''}`}
               htmlFor="objective-workbook-file"
+              title={
+                objective === null
+                  ? 'Save the draft first — a filled-in file is read against the Objective it belongs to'
+                  : readOnly
+                    ? 'This version is published and cannot be edited'
+                    : 'Reads a filled-in file and shows what it found; nothing is saved until you agree to it'
+              }
             >
               <Icon name="arrow-up" size={16} />
               Upload Excel
