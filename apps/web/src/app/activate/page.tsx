@@ -7,6 +7,7 @@ import {
   Banner,
   Button,
   FormField,
+  PasswordInput,
   LoginPresentation,
   NoPublicSignupNotice,
   SkeletonText,
@@ -196,9 +197,8 @@ export default function ActivatePage() {
               hint="At least 12 characters. A long phrase is stronger than a short complex one."
             >
               {(props) => (
-                <input
+                <PasswordInput
                   {...props}
-                  type="password"
                   autoComplete="new-password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
@@ -209,9 +209,8 @@ export default function ActivatePage() {
 
             <FormField label="Confirm password" required>
               {(props) => (
-                <input
+                <PasswordInput
                   {...props}
-                  type="password"
                   autoComplete="new-password"
                   value={confirmation}
                   onChange={(event) => setConfirmation(event.target.value)}

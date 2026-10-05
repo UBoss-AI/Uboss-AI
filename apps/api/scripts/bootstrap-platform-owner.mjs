@@ -41,7 +41,43 @@ try {
         }),
         credentials.findByUserId(existing.id),
       ]);
-      if (existing.isPlatformActor && role && credential) return 'already-configured';
+      if (existing.isPlatformActor && role && credential) {
+        /*
+         * The owner exists, so the password in the environment is ignored — which is correct by
+         * default and was a trap the first time it mattered.
+         *
+         * Changing `UBOSS_INITIAL_ADMIN_PASSWORD` and redeploying did nothing at all: this
+         * branch returned "already configured" and the person was left locked out of the only
+         * console account, with no reset mail (`/login/reset` was a 404) and no other way in.
+         * Silently honouring a changed password instead would be worse — every redeploy would
+         * reset the owner's password to whatever a secret last said, undoing any change they had
+         * made themselves.
+         *
+         * So it is explicit. `UBOSS_INITIAL_ADMIN_PASSWORD_RESET=true` says "I mean it", once.
+         * Set it, deploy, sign in, remove it. Leaving it on resets the password on every restart,
+         * which the log below says in as many words.
+         */
+        if ((process.env['UBOSS_INITIAL_ADMIN_PASSWORD_RESET'] ?? '').trim() !== 'true') {
+          return 'already-configured';
+        }
+
+        await credentials.setPassword(existing.id, passwordHash, new Date());
+        // A lockout outlives a password change otherwise, so somebody who reset *because* they
+        // were locked out would still be locked out.
+        await credentials.clearFailures(existing.id);
+
+        await audit.appendAuditEvent({
+          tenantId: null,
+          action: 'platform_owner.password_reset',
+          resourceType: 'user',
+          resourceId: existing.id,
+          summary: 'Reset the Platform Owner password from the deployment environment.',
+          reason: 'UBOSS_INITIAL_ADMIN_PASSWORD_RESET was set for this deployment.',
+          metadata: { bootstrap: true },
+        });
+
+        return 'password-reset';
+      }
       throw new Error(
         'An account with the initial admin email already exists but is not a complete platform owner. Refusing to change it automatically.',
       );
@@ -76,11 +112,19 @@ try {
     return 'created';
   });
 
-  console.log(
-    outcome === 'created'
-      ? 'Initial platform owner created.'
-      : 'Initial platform owner already exists.',
-  );
+  if (outcome === 'created') {
+    console.log('Initial platform owner created.');
+  } else if (outcome === 'password-reset') {
+    console.log(
+      'Platform owner password RESET from UBOSS_INITIAL_ADMIN_PASSWORD, and any lockout cleared.',
+    );
+    console.log(
+      'Remove UBOSS_INITIAL_ADMIN_PASSWORD_RESET now: left set, this resets the password on ' +
+        'every restart and will undo any change made from inside the product.',
+    );
+  } else {
+    console.log('Initial platform owner already exists.');
+  }
 } finally {
   await prisma.onModuleDestroy();
 }

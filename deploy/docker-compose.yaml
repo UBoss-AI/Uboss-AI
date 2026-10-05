@@ -80,6 +80,9 @@ services:
       UBOSS_INITIAL_ADMIN_EMAIL: ${UBOSS_INITIAL_ADMIN_EMAIL:-}
       UBOSS_INITIAL_ADMIN_NAME: ${UBOSS_INITIAL_ADMIN_NAME:-}
       UBOSS_INITIAL_ADMIN_PASSWORD: ${UBOSS_INITIAL_ADMIN_PASSWORD:-}
+      # Set to `true` for one deployment to reset an existing owner password, then remove it.
+      # Without it a changed password is ignored, because the owner already exists.
+      UBOSS_INITIAL_ADMIN_PASSWORD_RESET: ${UBOSS_INITIAL_ADMIN_PASSWORD_RESET:-}
       # Mail. Without a complete set the API keeps the logging adapter, which records an email and
       # sends nothing — so an invitation, a password reset and a security alert all leave the
       # product and arrive nowhere. A *partial* set is refused at boot rather than half-working.

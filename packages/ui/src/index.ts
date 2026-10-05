@@ -74,6 +74,8 @@ export type { ConfirmDialogProps, ImpactLine } from './primitives/ConfirmDialog'
 
 export { FormField } from './primitives/FormField';
 export type { FormFieldProps } from './primitives/FormField';
+export { PasswordInput } from './primitives/PasswordInput';
+export type { PasswordInputProps } from './primitives/PasswordInput';
 
 export { EmptyState } from './primitives/EmptyState';
 export type { EmptyStateProps } from './primitives/EmptyState';

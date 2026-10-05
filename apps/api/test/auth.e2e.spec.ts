@@ -901,7 +901,17 @@ describe('authentication (e2e)', () => {
           }),
         );
         assert.ok(stored, 'no token was stored');
-        assert.match(String(sent[0]?.text), /\/login\/reset\?token=/);
+        /*
+         * `/access-help`, which was `/login/reset` — a page that has never existed. This test
+         * pinned the broken path, so it passed while the link 404ed for everybody who clicked it;
+         * it proved a link was *sent*, never that it led anywhere. Found on the production stack
+         * by somebody locked out of the console, who by definition had no other way in.
+         *
+         * The path is still asserted here because this test is about the token reaching the
+         * email. That it is a route the web app actually serves is a different claim, and
+         * `mail-links-resolve.spec.ts` makes it for every emailed link rather than this one.
+         */
+        assert.match(String(sent[0]?.text), /\/access-help\?token=/);
       } finally {
         (adapter as { send: unknown }).send = original;
       }

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
-import { Banner, Button, FormField, LoginPresentation } from '@uboss/ui';
+import { Banner, Button, FormField, LoginPresentation, PasswordInput } from '@uboss/ui';
 
 import { ApiError, authApi } from '../../lib/api-client';
 
@@ -130,9 +130,8 @@ export default function AccessHelpPage() {
             hint="At least 12 characters. A long phrase is stronger than a short complex one."
           >
             {(props) => (
-              <input
+              <PasswordInput
                 {...props}
-                type="password"
                 autoComplete="new-password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
@@ -143,9 +142,8 @@ export default function AccessHelpPage() {
 
           <FormField label="Confirm new password" required>
             {(props) => (
-              <input
+              <PasswordInput
                 {...props}
-                type="password"
                 autoComplete="new-password"
                 value={confirmation}
                 onChange={(event) => setConfirmation(event.target.value)}

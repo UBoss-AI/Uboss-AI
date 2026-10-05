@@ -24,6 +24,13 @@ const ICON_PATHS = {
   govern: 'M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7zM9 12l2 2 4-4',
   shield: 'M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z',
   close: 'M6 6l12 12M18 6L6 18',
+  /*
+   * The lid, as one stroke out and back. The pupil is a circle in `ICON_SHAPES`, because an eye
+   * drawn as a single path has to close the lid and the pupil in one line and reads as a leaf.
+   */
+  eye: 'M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6z',
+  /* The same lid with a stroke through it — the one shape everybody already reads as "hidden". */
+  'eye-off': 'M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6zM4 4l16 16',
   card: 'M3 10h18',
   key: 'M10 12l9-9 2 2-2 2 2 2-3 3-2-2-2 2z',
   play: 'M6 4l14 8-14 8z',
@@ -96,6 +103,8 @@ const ICON_PATHS = {
 const ICON_SHAPES: Partial<Record<IconName, ReactNode>> = {
   search: <circle cx="11" cy="11" r="7" />,
   clock: <circle cx="12" cy="12" r="9" />,
+  eye: <circle cx="12" cy="12" r="3" />,
+  'eye-off': <circle cx="12" cy="12" r="3" />,
   card: <rect x="3" y="5" width="18" height="14" rx="2" />,
   // Fit: a drawing brought inside a frame. The outer rect is the frame, the path is the drawing.
   frame: <rect x="3" y="5" width="18" height="14" rx="2" />,

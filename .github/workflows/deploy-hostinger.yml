@@ -75,6 +75,11 @@ jobs:
             UBOSS_INITIAL_ADMIN_EMAIL=dev@ubossai.com
             UBOSS_INITIAL_ADMIN_NAME=Chief Agent Admin
             UBOSS_INITIAL_ADMIN_PASSWORD=${{ secrets.UBOSS_INITIAL_ADMIN_PASSWORD }}
+            # A repository *variable*, not a secret — its value is the word `true` and nothing
+            # worth hiding. Set it when the owner password has to be changed and the owner already
+            # exists, which is the case a changed secret alone cannot reach: the bootstrap creates
+            # an account and never edits one. Remove it after the deployment that uses it.
+            UBOSS_INITIAL_ADMIN_PASSWORD_RESET=${{ vars.UBOSS_INITIAL_ADMIN_PASSWORD_RESET }}
             UBOSS_SMTP_HOST=${{ secrets.UBOSS_SMTP_HOST }}
             UBOSS_SMTP_PORT=${{ vars.UBOSS_SMTP_PORT || '587' }}
             UBOSS_SMTP_USERNAME=${{ secrets.UBOSS_SMTP_USERNAME }}

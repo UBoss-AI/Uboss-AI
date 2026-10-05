@@ -8479,8 +8479,22 @@ table.uboss-wfg {
  * minority who do not — and a prominent "Sign up" beside the Sign In button would ask every
  * returning person to read past an offer that is not for them.
  */
+/*
+ * "No workspace yet?" and the way to start one.
+ *
+ * It was a sentence with a link in it, under the form, and somebody looking for where to register
+ * did not find it on a screen they were already reading. The question stays small and the action
+ * became a control, separated by a rule so it reads as the other thing you might have come here
+ * to do rather than as a footnote to signing in.
+ */
 .uboss-auth-switch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
   margin: 18px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--uboss-border);
   text-align: center;
   font-size: 13px;
   color: var(--uboss-text-3);
@@ -10308,4 +10322,62 @@ tr[data-drop-target='true'] td {
 .uboss-topup-history > li {
   padding-top: 8px;
   border-top: 1px solid var(--uboss-border-2);
+}
+
+/* ---------------------------------------------------------------------------
+   A password field that can be read back
+   ---------------------------------------------------------------------------
+
+   The toggle sits inside the control rather than beside it, so the field keeps
+   its full width in the one-column forms these appear in — a button in the row
+   would make the input narrower than every other field on the same screen.
+
+   The input gets right padding equal to the button's reach, so a long password
+   scrolls under the label rather than behind the icon.
+*/
+.uboss-password {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.uboss-password .uboss-input {
+  /* The control's own height, plus the space the glyph needs beside it. */
+  padding-right: calc(var(--uboss-control-h) - 4px);
+}
+
+.uboss-password-reveal {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: grid;
+  place-items: center;
+  width: calc(var(--uboss-control-h) - 6px);
+  height: var(--uboss-control-h);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--uboss-text-3);
+  cursor: pointer;
+  transition: color var(--uboss-motion-fast) var(--uboss-ease);
+}
+
+.uboss-password-reveal:hover,
+.uboss-password-reveal[aria-pressed='true'] {
+  color: var(--uboss-text);
+}
+
+/* Reachable by click and by a screen reader, and skipped by the tab order — somebody tabbing
+   through a sign-in form is on their way to the button, not inspecting what they typed. It still
+   needs a visible ring when it does take focus, which it can via the pointer. */
+.uboss-password-reveal:focus-visible {
+  outline: var(--uboss-focus-outline);
+  outline-offset: -2px;
+  border-radius: var(--uboss-radius-control);
+}
+
+.uboss-password-reveal:disabled {
+  color: var(--uboss-text-3);
+  cursor: not-allowed;
+  opacity: 0.5;
 }

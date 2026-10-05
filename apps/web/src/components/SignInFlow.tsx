@@ -11,6 +11,7 @@ import {
   LoginPresentation,
   Modal,
   NoPublicSignupNotice,
+  PasswordInput,
   SkeletonText,
   ProviderButton,
 } from '@uboss/ui';
@@ -836,9 +837,8 @@ export function SignInFlow({ plane }: SignInFlowProps) {
           >
             {/* No default value: a password field must never carry a prefilled credential. */}
             {(props) => (
-              <input
+              <PasswordInput
                 {...props}
-                type="password"
                 autoComplete="current-password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
@@ -1033,9 +1033,32 @@ export function SignInFlow({ plane }: SignInFlowProps) {
           the server decides that — a screen that promised anything else would be promising on the
           server's behalf.
         */}
-        <p className="uboss-auth-switch">
-          No workspace yet? <Link href="/start">Start one for your company</Link>
-        </p>
+        {/*
+          A button, not a sentence.
+
+          This was a line of small text under the form, and the first person who went looking for
+          "where do I register" did not find it — on a screen they were already staring at. The
+          two things somebody arrives here to do are sign in and start a workspace, and only one
+          of them looked like something you could press.
+
+          Secondary, with a rule above it: signing in stays the primary action, because almost
+          everybody who reaches this screen already has an account. It is the one who does not
+          that this is for.
+        */}
+        <div className="uboss-auth-switch">
+          <span>No workspace yet?</span>
+          {/*
+            A `Link` wearing the button's classes rather than a `Button`.
+
+            `Button` renders a `<button>` and takes no `href`, and this is a navigation: it has to
+            be a real anchor so it can be opened in a new tab, copied, and read as a link by a
+            screen reader. Giving it the button classes is the honest way round — it looks like a
+            control because it is one, and it behaves like a link because that is what it does.
+          */}
+          <Link href="/start" className="uboss-btn uboss-btn--sm">
+            Start one for your company
+          </Link>
+        </div>
       </form>
 
       {/*

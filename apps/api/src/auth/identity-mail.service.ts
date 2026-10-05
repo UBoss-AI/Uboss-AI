@@ -120,8 +120,20 @@ export class IdentityMailService {
     fullName: string;
     companyName: string;
   }): Promise<void> {
+    /*
+     * `/start`, not `/register/confirm`.
+     *
+     * `/register/confirm` has never existed either. `/start` is the whole self-serve signup — it
+     * reads `?id=` and `?token=` on arrival, asks the server what state that registration is in,
+     * and shows whichever step the person is actually on. So somebody returning on this link
+     * lands exactly where they left off.
+     *
+     * Sent to a 404 instead, the effect was that **self-serve registration could not be
+     * completed at all** on a deployment with working mail: the first step sent its email and the
+     * second step was unreachable.
+     */
     const link =
-      `${this.config.webBaseUrl}/register/confirm` +
+      `${this.config.webBaseUrl}/start` +
       `?id=${encodeURIComponent(input.registrationId)}&token=${encodeURIComponent(input.token)}`;
 
     try {
@@ -151,7 +163,19 @@ export class IdentityMailService {
   }
 
   async sendPasswordReset(input: { to: string; token: string }): Promise<void> {
-    const link = `${this.config.webBaseUrl}/login/reset?token=${encodeURIComponent(input.token)}`;
+    /*
+     * `/access-help`, not `/login/reset`.
+     *
+     * `/login/reset` has never existed. The mail sent, the person clicked, and the product
+     * answered **404** — which is the worst place to fail, because somebody reading it has
+     * already lost their password and has no other way in. It was found on the production stack
+     * by the one person who needed it.
+     *
+     * The screen that completes a reset is `/access-help`: it reads `?token=` on mount and
+     * switches from "ask for a link" to "choose a new password". Both halves of the flow have
+     * always been there — the route in the email was simply a different name for the second one.
+     */
+    const link = `${this.config.webBaseUrl}/access-help?token=${encodeURIComponent(input.token)}`;
 
     try {
       await this.email.send({
