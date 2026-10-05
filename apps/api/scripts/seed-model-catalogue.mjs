@@ -3,48 +3,46 @@
  *
  * ## The gap this closes
  *
- * `ANTHROPIC_API_KEY` is a credential. It says *who may call the provider*; it says nothing about
- * **which model answers which kind of work**, and that is a separate decision the product keeps in
- * `provider_profiles`, `provider_models` and `logical_model_routes`. No migration seeds those, so
- * a freshly deployed database has all three empty — and every model call fails with
- * "No model is configured for OBJECTIVE_PLANNER", whatever the key is.
+ * `ANTHROPIC_API_KEY` is a credential. It says who may call the provider and nothing about
+ * **which model answers which kind of work** — that lives in `provider_profiles`,
+ * `provider_models` and `logical_model_routes`, and no migration creates them. A freshly deployed
+ * database has all three empty, and every model call fails with "No model is configured for
+ * OBJECTIVE_PLANNER" whatever the key is.
  *
- * It worked in development because development had been seeded by hand, months earlier. The
- * production deployment shipped the same code to an empty database, which is exactly the shape of
- * bug that only appears the first time something is deployed somewhere new.
+ * ## Why it does not boot the application
  *
- * ## Why this runs on every start
+ * It did, through `NestFactory.createApplicationContext(AppModule)`, so that writes could go
+ * through `ProviderService` exactly as the Providers & Models screen does. That was the better
+ * shape and the wrong thing to run at boot: `AppModule` starts the BullMQ worker, the schedulers
+ * and every other module, inside the entrypoint, *before* the API is allowed to listen. The first
+ * deployment that included it never became healthy — and because the gateway will not start until
+ * the API is healthy, **every host on the VPS went down**, including pages that need no API.
  *
- * The same reason `bootstrap-platform-owner.mjs` does: a deployment needs this to be true, and a
- * step somebody has to remember is a step that gets missed. It is idempotent — it looks for an
- * enabled Anthropic profile and does nothing if one is there, so a restart, a redeploy and a
- * rollback all leave an existing catalogue alone.
+ * So it writes with a direct Prisma client and sets `app.platform_operation` inside each
+ * transaction, which is the pattern `import-skill-catalog.mjs` already uses for the same reason.
+ * Nothing is started, nothing listens, and the process exits in about a second.
  *
- * ## Why it does nothing without a key
+ * The rows it writes are the ones the screen would write. What is lost is that service's
+ * validation, so the shapes here are kept deliberately literal and small.
  *
- * A profile with no credential behind it is a route to a guaranteed failure. With no
- * `ANTHROPIC_API_KEY` this exits quietly and the gateway reports "no model configured", which is
- * the truthful state of that deployment rather than a confusing one.
+ * ## Idempotent, and silent without a key
  *
- * ## Not a back door
- *
- * Everything goes through `ProviderService`, exactly as the Providers & Models screen does: the
- * same validation, the same audit rows, the same platform actor. Nothing is written by hand.
+ * An enabled Anthropic profile means somebody has already configured this, by hand or by an
+ * earlier run, and it is left alone. With no `ANTHROPIC_API_KEY` there is nothing to route to, so
+ * a profile would be a route to a guaranteed failure; it exits instead.
  *
  * Run:  node apps/api/scripts/seed-model-catalogue.mjs
  */
-import { NestFactory } from '@nestjs/core';
+import { createRequire } from 'node:module';
 
-import { AppModule } from '../dist/app.module.js';
-import { ProviderService } from '../dist/model-gateway/provider.service.js';
-import { PrismaService } from '../dist/persistence/prisma.service.js';
+const require = createRequire(import.meta.url);
 
 /**
  * Two models, because the five logical profiles ask for two different things.
  *
  * `capability` is the product's own word for what a model is *for* — the gateway routes on it and
- * never on a model name, so swapping `claude-sonnet-5` for its successor is a row change here and
- * no change anywhere else.
+ * never on a model name, so replacing `claude-sonnet-5` with its successor is a row change here
+ * and no change anywhere else.
  */
 const MODELS = [
   { ref: 'claude-sonnet-5', capability: 'high-reasoning-v1' },
@@ -55,9 +53,9 @@ const MODELS = [
  * Which model answers which profile, lowest `preference` first.
  *
  * `AGENT_STANDARD` lists both: the capable model first and the fast one behind it, so an agent's
- * ordinary work still completes when the first choice is rate-limited rather than failing the run.
- * The others name one model each, because a fallback that quietly produces worse reasoning on a
- * planning or executor step is worse than a refusal somebody can see.
+ * ordinary work still completes when the first choice is rate-limited rather than failing the
+ * run. The others name one model each, because a fallback that quietly produces worse reasoning
+ * on a planning or executor step is worse than a refusal somebody can see.
  */
 const ROUTES = [
   { profile: 'OBJECTIVE_PLANNER', ref: 'claude-sonnet-5', preference: 0 },
@@ -69,76 +67,85 @@ const ROUTES = [
 ];
 
 if ((process.env['ANTHROPIC_API_KEY'] ?? '').trim() === '') {
-  console.log('No ANTHROPIC_API_KEY, so no model catalogue to seed. Leaving it empty.');
+  console.log(
+    'No ANTHROPIC_API_KEY, so there is nothing to route to. Leaving the catalogue empty.',
+  );
   process.exit(0);
 }
 
-const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn'] });
-const prisma = app.get(PrismaService);
-const providers = app.get(ProviderService);
+const url = process.env['DATABASE_URL'];
+if (url === undefined) throw new Error('DATABASE_URL is not set.');
+
+const { PrismaClient } = require('../dist/generated/prisma/client.js');
+const { PrismaPg } = require('@prisma/adapter-pg');
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) });
 
 try {
-  // The platform actor this is attributed to, read rather than assumed so the audit trail names a
-  // real person. `bootstrap-platform-owner.mjs` runs before this and has created them.
-  const actor = await prisma.runAsPlatformOperation(() =>
-    prisma.client.user.findFirst({ where: { isPlatformActor: true }, select: { id: true } }),
-  );
-  if (actor === null) {
-    throw new Error('No platform actor exists yet, so there is nobody to attribute this to.');
-  }
+  const existing = await prisma.$queryRaw`
+    SELECT id FROM provider_profiles
+     WHERE tenant_id IS NULL AND kind = 'Anthropic' AND enabled = true
+     LIMIT 1`;
 
-  const existing = await prisma.runAsPlatformOperation(() =>
-    prisma.client.providerProfile.findFirst({
-      where: { tenantId: null, kind: 'Anthropic', enabled: true },
-      select: { id: true },
-    }),
-  );
-
-  if (existing !== null) {
+  if (existing.length > 0) {
     console.log('An Anthropic profile is already configured. Leaving the catalogue as it is.');
-    await app.close();
-    process.exit(0);
-  }
+  } else {
+    await prisma.$transaction(async (tx) => {
+      // Transaction-local, and it has to live in the same transaction as the writes it
+      // authorises — outside one, every Prisma call is its own and the flag is gone by the next
+      // statement, which row-level security then refuses.
+      await tx.$executeRaw`SELECT set_config('app.platform_operation', 'on', true)`;
 
-  const profile = await providers.createProfile({
-    actorUserId: actor.id,
-    tenantId: null,
-    kind: 'Anthropic',
-    mode: 'UBossManaged',
-    label: 'Anthropic (UBoss account)',
-  });
-  console.log(`Created provider profile ${profile.id}`);
+      const profile = await tx.providerProfile.create({
+        data: {
+          tenantId: null,
+          kind: 'Anthropic',
+          mode: 'UBossManaged',
+          label: 'Anthropic (UBoss account)',
+          lifecycle: 'Active',
+          enabled: true,
+        },
+        select: { id: true },
+      });
 
-  const byRef = new Map();
-  for (const model of MODELS) {
-    const added = await providers.addModel({
-      actorUserId: actor.id,
-      providerProfileId: profile.id,
-      providerModelRef: model.ref,
-      capability: model.capability,
+      const byRef = new Map();
+      for (const model of MODELS) {
+        const row = await tx.providerModel.create({
+          data: {
+            tenantId: null,
+            providerProfileId: profile.id,
+            providerModelRef: model.ref,
+            capability: model.capability,
+            lifecycle: 'Active',
+            enabled: true,
+          },
+          select: { id: true },
+        });
+        byRef.set(model.ref, row.id);
+        console.log(`  model ${model.ref} (${model.capability})`);
+      }
+
+      for (const route of ROUTES) {
+        const providerModelId = byRef.get(route.ref);
+        if (providerModelId === undefined) throw new Error(`No model id for ${route.ref}`);
+        await tx.logicalModelRoute.create({
+          data: {
+            tenantId: null,
+            profile: route.profile,
+            providerModelId,
+            preference: route.preference,
+            enabled: true,
+          },
+        });
+        console.log(`  ${route.profile} -> ${route.ref} (preference ${route.preference})`);
+      }
     });
-    byRef.set(model.ref, added.id);
-    console.log(`  model ${model.ref} (${model.capability})`);
-  }
 
-  for (const route of ROUTES) {
-    const providerModelId = byRef.get(route.ref);
-    if (providerModelId === undefined) throw new Error(`No model id for ${route.ref}`);
-    await providers.setRoute({
-      actorUserId: actor.id,
-      tenantId: null,
-      profile: route.profile,
-      providerModelId,
-      preference: route.preference,
-    });
-    console.log(`  ${route.profile} -> ${route.ref} (preference ${route.preference})`);
+    console.log('Model catalogue seeded. AI work can now be routed.');
+    console.log(
+      'Prices are deliberately not set here: a published price is a commercial decision, and ' +
+        'until one exists these calls settle at zero and are reported as unpriced, not free.',
+    );
   }
-
-  console.log('Model catalogue seeded. AI work can now be routed.');
-  console.log(
-    'Prices are deliberately not set here: a published price is a commercial decision, and ' +
-      'until one exists these calls settle at zero and are reported as unpriced rather than free.',
-  );
 } finally {
-  await app.close();
+  await prisma.$disconnect();
 }

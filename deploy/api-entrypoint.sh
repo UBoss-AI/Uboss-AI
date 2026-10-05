@@ -18,12 +18,29 @@ unset POSTGRES_PASSWORD APP_DB_PASSWORD
 cd /workspace/apps/api
 ../../node_modules/.bin/prisma migrate deploy
 node scripts/bootstrap-platform-owner.mjs
-# The model catalogue. A fresh database has no provider profile, no models and no routes, and no
-# migration creates them — so every AI call fails with "No model is configured for …" however
-# correct ANTHROPIC_API_KEY is. Idempotent, and a no-op when there is no key to route to.
-node scripts/seed-model-catalogue.mjs
-# The Skill catalogue, seeded only when there is none. `--only-if-empty` matters: the import is
-# four hundred transactions, and paying that on every restart would add tens of seconds to the API
-# coming back. Updating the catalogue is a deliberate run without the flag.
-node scripts/import-skill-catalog.mjs data/skill-catalog.xlsx --only-if-empty
+# Seeding must never stop the product from serving.
+#
+# These two fill the model and Skill catalogues, without which AI cannot be routed. They are
+# worth running on every start — but they are not worth the site for. `set -e` is on, and the
+# gateway will not start until the API reports healthy, so a seed that throws took down *every*
+# host on this VPS, including the marketing pages that need no API at all. That is what happened
+# the first time they shipped.
+#
+# So a failure here is loud and survivable: the log says what broke, the API starts anyway, and
+# the catalogue can be seeded again by hand. A product that is up with no models beats a product
+# that is down.
+seed() {
+  if node "$@"; then
+    return 0
+  fi
+  echo "WARNING: seeding failed ($*). The API is starting without it; AI routing may be" >&2
+  echo "         unavailable until this is run again. This is not fatal by design." >&2
+  return 0
+}
+
+seed scripts/seed-model-catalogue.mjs
+# `--only-if-empty`: the import is four hundred transactions, and paying that on every restart
+# would add tens of seconds to the API coming back. Updating it is a deliberate run without it.
+seed scripts/import-skill-catalog.mjs data/skill-catalog.xlsx --only-if-empty
+
 exec node --enable-source-maps dist/main.js
