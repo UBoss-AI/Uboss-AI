@@ -5,8 +5,10 @@ import type { InputHTMLAttributes } from 'react';
 
 import { Icon } from './Icon';
 
-export interface PasswordInputProps
-  extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'defaultValue'> {
+export interface PasswordInputProps extends Omit<
+  InputHTMLAttributes<HTMLInputElement>,
+  'type' | 'defaultValue'
+> {
   /**
    * What the browser should offer. `current-password` when signing in, `new-password` when
    * choosing one — the two are different hints and getting them the wrong way round is how a
