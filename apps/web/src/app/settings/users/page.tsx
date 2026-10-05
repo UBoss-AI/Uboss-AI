@@ -113,6 +113,21 @@ function activationLabel(person: AccessPerson): string {
   return person.accountState;
 }
 
+/**
+ * What still has to be done by hand before somebody can be invited.
+ *
+ * Readiness lists everything an account needs before it can activate, and a company role is one
+ * of those things — but the invite form grants the role itself, as its first action, so the role
+ * is not a reason to keep anybody out of that form. A department and a reporting manager are:
+ * nothing in the invite flow supplies either.
+ *
+ * Shared by the row's hint and the Invite button so the two can never disagree, which is how a
+ * greyed-out button ends up next to a sentence that no longer explains it.
+ */
+export function inviteBlockers(person: AccessPerson): string[] {
+  return person.readiness.missing.filter((item) => item !== 'at least one company role');
+}
+
 /** The sentence under the badge: why it failed, or what "Invited" does and does not mean. */
 function invitationHint(person: AccessPerson): string | null {
   const invitation = person.invitation;
@@ -503,12 +518,12 @@ function UsersAccessInner() {
                               <small className="uboss-muted-3">{invitationHint(person)}</small>
                             </>
                           )}
-                          {person.readiness.ready ? null : (
+                          {inviteBlockers(person).length === 0 ? null : (
                             <>
                               <br />
                               {/* Why they cannot be invited, on the row where the question arises. */}
                               <small className="uboss-muted-3">
-                                Needs {person.readiness.missing.join(', ')}
+                                Needs {inviteBlockers(person).join(', ')}
                               </small>
                             </>
                           )}
@@ -631,6 +646,30 @@ function UsersAccessInner() {
                           person.accountState !== 'Offboarded' &&
                           person.userType === 'InternalUser';
 
+                        /*
+                         * The role is not a reason to keep somebody out of the invite form.
+                         *
+                         * Readiness lists what an account needs before it can activate, and a
+                         * company role is one of those things. But the invite form **grants the
+                         * role** — it asks "this person will be Employee or Administrator" and
+                         * calls `grantRole` before it sends, exactly so the choice made there is
+                         * what clears the gate. Disabling the button on the same condition put
+                         * the only thing that supplies a role behind the requirement for one.
+                         *
+                         * What that did in practice: somebody adds a person in Hierarchy, comes
+                         * here, finds Invite greyed out, and the only control on the screen that
+                         * still opens is **Invite guest** — which asks for resource identifiers
+                         * and an access window, because a guest is an outsider rather than
+                         * somebody's new employee. People filled that in for their own staff
+                         * because it was the form that worked.
+                         *
+                         * A department and a reporting manager are different: nothing in the
+                         * invite form supplies either, so they still hold the button shut and the
+                         * tooltip names them.
+                         */
+                        const blockers = inviteBlockers(person);
+                        const mayInvite = blockers.length === 0;
+
                         return (
                           <span className="uboss-actions">
                             {/*
@@ -645,7 +684,7 @@ function UsersAccessInner() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                disabled={busy || !person.readiness.ready}
+                                disabled={busy || !mayInvite}
                                 /*
                                  * The same sentence the row already carries, on the control that
                                  * is dead because of it. The row says "Needs …" beside the status
@@ -653,9 +692,9 @@ function UsersAccessInner() {
                                  * look left, and a disabled button with no reason reads as broken.
                                  */
                                 title={
-                                  person.readiness.ready
+                                  mayInvite
                                     ? undefined
-                                    : `Needs ${person.readiness.missing.join(', ')} before an invitation can be sent.`
+                                    : `Needs ${blockers.join(', ')} before an invitation can be sent.`
                                 }
                                 onClick={() => {
                                   setInviteFor(person);
