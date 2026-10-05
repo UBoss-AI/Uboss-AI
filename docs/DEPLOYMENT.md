@@ -311,3 +311,41 @@ Closing it needs an external destination and a credential for it — object stor
 anything not on this VPS — and that is an owner's decision about where a customer's data may be
 copied to, not a configuration default anybody should pick unilaterally. Until it is made, the
 real recovery point for a lost host is **nothing**.
+
+---
+
+## Resetting the Platform Owner password
+
+The bootstrap **creates** the console owner and never edits one. Changing
+`UBOSS_INITIAL_ADMIN_PASSWORD` and redeploying therefore does nothing at all to an account that
+already exists — it is read, found, and left alone. That is correct: honouring it every time would
+mean each restart silently undoing a password somebody had changed from inside the product.
+
+It cost a production outage to learn, so the procedure is written down.
+
+1. Set the secret `UBOSS_INITIAL_ADMIN_PASSWORD` to the new password. **Twelve characters
+   minimum** — below that the bootstrap refuses it, and until this was fixed it refused *before*
+   checking whether the password was needed, which crash-looped the API and, through the gateway's
+   `depends_on`, took every host on the VPS down with it.
+2. Add the repository **variable** `UBOSS_INITIAL_ADMIN_PASSWORD_RESET` = `true`.
+   **Settings → Secrets and variables → Actions → the `Variables` tab.** Not Secrets: the workflow
+   reads `vars.`, and a value placed under Secrets is never seen.
+3. Deploy. Either push to `main`, or
+   **Actions → Deploy Chief Agent to Hostinger VPS → Run workflow**.
+4. Confirm, on the VPS:
+
+   ```
+   docker logs ubossai-api-1 2>&1 | grep -i "platform owner"
+   ```
+
+   `Platform owner password RESET…` means it applied, and any lockout was cleared with it — a
+   reset that leaves somebody locked out is not a reset. `already exists` means the variable did
+   not reach the container; check step 2.
+5. **Remove the variable.** Left set, every restart rewrites the password from the secret, undoing
+   any change made from inside the product. The deployment log says so each time it runs.
+
+### If the account is locked rather than forgotten
+
+Five failed attempts lock it for fifteen minutes, and the lock clears itself. The reset above also
+clears it, which is faster. `Access Help` sends a reset email and needs working SMTP — until that
+is configured, the procedure above is the only way back in.
