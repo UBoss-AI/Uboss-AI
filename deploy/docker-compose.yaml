@@ -168,9 +168,13 @@ services:
         NEXT_PUBLIC_API_BASE_URL: /api
         API_PROXY_TARGET: http://api:4000
     restart: unless-stopped
+    # `service_started`, not `service_healthy`, for the same reason as the gateway: the Next server
+    # renders its own pages and only *proxies* to the API. Waiting for the API to be healthy meant
+    # a sign-in page that could not even be read while the API was unwell — and, because the
+    # gateway then waited on this, it took the marketing site with it.
     depends_on:
       api:
-        condition: service_healthy
+        condition: service_started
     environment:
       NODE_ENV: production
       PORT: 3000
@@ -207,8 +211,11 @@ services:
       <<: *source
       dockerfile: deploy/Dockerfile.backup
     restart: unless-stopped
+    # Postgres, not the API. This waited on `api: service_healthy`, which meant backups stopped
+    # whenever the API was unwell — exactly when somebody is most likely to need one. It dumps the
+    # database directly, over `DATABASE_MIGRATION_URL`, and has never gone through the API at all.
     depends_on:
-      api:
+      postgres:
         condition: service_healthy
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD:?Set a strong password}
@@ -226,13 +233,23 @@ services:
       <<: *source
       dockerfile: deploy/Dockerfile.caddy
     restart: unless-stopped
+    # The gateway waits for nothing it can serve without.
+    #
+    # It used to wait for `api: service_healthy`, and that one line turned every API fault into a
+    # total blackout. An API that crash-looped meant Caddy never started, so port 443 answered
+    # nothing at all — not the marketing site, not the sign-in page, not a status page. The whole
+    # company looked gone because one container could not read a password it was never going to
+    # use. Measured on 5 October: `docker ps` showed postgres and redis healthy, marketing up,
+    # and gateway stuck in `Created`.
+    #
+    # A reverse proxy's job is to answer, including answering **502** for an upstream that is not
+    # there. That is a far better failure than a connection timeout: the site loads, the pages
+    # that need no API work, and the one that does says so.
     depends_on:
       marketing:
         condition: service_started
       web:
         condition: service_started
-      api:
-        condition: service_healthy
     ports:
       - '80:80'
       - '443:443'
