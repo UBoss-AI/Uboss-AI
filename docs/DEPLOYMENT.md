@@ -324,7 +324,7 @@ mean each restart silently undoing a password somebody had changed from inside t
 It cost a production outage to learn, so the procedure is written down.
 
 1. Set the secret `UBOSS_INITIAL_ADMIN_PASSWORD` to the new password. **Twelve characters
-   minimum** — below that the bootstrap refuses it, and until this was fixed it refused *before*
+   minimum** — below that the bootstrap refuses it, and until this was fixed it refused _before_
    checking whether the password was needed, which crash-looped the API and, through the gateway's
    `depends_on`, took every host on the VPS down with it.
 2. Add the repository **variable** `UBOSS_INITIAL_ADMIN_PASSWORD_RESET` = `true`.
@@ -341,6 +341,7 @@ It cost a production outage to learn, so the procedure is written down.
    `Platform owner password RESET…` means it applied, and any lockout was cleared with it — a
    reset that leaves somebody locked out is not a reset. `already exists` means the variable did
    not reach the container; check step 2.
+
 5. **Remove the variable.** Left set, every restart rewrites the password from the secret, undoing
    any change made from inside the product. The deployment log says so each time it runs.
 
