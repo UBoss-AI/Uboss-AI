@@ -208,7 +208,7 @@ export function HierarchyImport({
               id="hierarchy-import-file"
               type="file"
               accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              className="uboss-visually-hidden"
+              className="uboss-sr-only"
               disabled={busy}
               onChange={(event) => {
                 const file = event.target.files?.[0];

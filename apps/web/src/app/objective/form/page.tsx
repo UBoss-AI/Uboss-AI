@@ -553,25 +553,53 @@ function ObjectiveFormInner() {
               Saying so is the whole fix — the same sentence the Analyze button below already uses
               for the same reason.
             */}
-            <label
-              className={`uboss-btn uboss-btn--sm${busy || readOnly || objective === null ? ' uboss-btn--disabled' : ''}`}
-              htmlFor="objective-workbook-file"
-              title={
-                objective === null
-                  ? 'Save the draft first — a filled-in file is read against the Objective it belongs to'
-                  : readOnly
-                    ? 'This version is published and cannot be edited'
-                    : 'Reads a filled-in file and shows what it found; nothing is saved until you agree to it'
-              }
-            >
-              <Icon name="arrow-up" size={16} />
-              Upload Excel
-            </label>
+            {/*
+              When an upload is not allowed, this says so out loud rather than doing nothing.
+
+              It used to be a label pointing at a disabled input, and a disabled input cannot be
+              activated by its label — so pressing Upload Excel on a new Objective produced no
+              file dialog, no message, nothing at all. There was a `title`, but a tooltip only
+              exists for somebody already hovering and wondering; the person who has just filled
+              the file in offline presses the button and concludes the upload is broken. It was
+              reported exactly that way, twice.
+
+              So: a label when the upload can happen, and a real button that states the reason
+              when it cannot. The reason is the same sentence either way — it is now in the one
+              place somebody will actually read it.
+            */}
+            {busy || readOnly || objective === null ? (
+              <Button
+                size="sm"
+                onClick={() => {
+                  setUpload(null);
+                  setNotice(null);
+                  setError(
+                    objective === null
+                      ? 'Save the draft first. A filled-in file is read against the Objective it belongs to, so there has to be one before it can be uploaded.'
+                      : readOnly
+                        ? 'This version is published and cannot be edited, so a file cannot be uploaded into it. An authorised change creates a new draft version to upload into.'
+                        : 'Still working on the last request — try again in a moment.',
+                  );
+                }}
+              >
+                <Icon name="arrow-up" size={16} />
+                Upload Excel
+              </Button>
+            ) : (
+              <label
+                className="uboss-btn uboss-btn--sm"
+                htmlFor="objective-workbook-file"
+                title="Reads a filled-in file and shows what it found; nothing is saved until you agree to it"
+              >
+                <Icon name="arrow-up" size={16} />
+                Upload Excel
+              </label>
+            )}
             <input
               id="objective-workbook-file"
               type="file"
               accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              className="uboss-visually-hidden"
+              className="uboss-sr-only"
               disabled={busy || readOnly || objective === null}
               onChange={(event) => {
                 const file = event.target.files?.[0];
