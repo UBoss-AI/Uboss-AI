@@ -231,6 +231,22 @@ jobs:
         # Fails on high and critical only. Moderate advisories in dev-only transitive dependencies
         # would block every PR without making the product safer, and a gate that is always red is a
         # gate people learn to ignore.
+        #
+        # ## The one that stays amber, and why `npm audit fix --force` must not be run here
+        #
+        # `uuid` under `exceljs` carries GHSA-w5hq-g745-h8pq: a missing bounds check in **v3, v5
+        # and v6, and only when a `buf` is passed in**. `exceljs` calls `uuidv4()` with no
+        # arguments and nothing else in this repository calls uuid at all, so the affected code
+        # path does not exist here.
+        #
+        # The offered remedy is worse than the advisory: `--force` installs `exceljs@3.4.0`, a
+        # major downgrade, and every workbook in the product goes through that library — the
+        # Objective round trip and the Agent Builder job method, both of which are read back and
+        # checked cell by cell. Taking a breaking change to close a path that is not reachable
+        # would be trading a working feature for a number on a report.
+        #
+        # If this ever needs revisiting: the fix is `exceljs` shipping a uuid above 11.1.1, not a
+        # downgrade of exceljs.
         run: npm audit --audit-level=high
 
       - name: Secret scan
