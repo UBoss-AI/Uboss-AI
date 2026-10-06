@@ -1,6 +1,6 @@
 'use client';
 
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -318,6 +318,9 @@ function UsersAccessInner() {
   const requestedOffboard = useSearchParams().get('offboard');
   const offboardOpened = useRef(false);
 
+  /** For Add employee, which belongs to Hierarchy — see the action beside the tabs. */
+  const router = useRouter();
+
   const openOffboard = useCallback(
     (person: AccessPerson) => {
       if (!tenantId) {
@@ -423,9 +426,35 @@ function UsersAccessInner() {
                     <Button icon="file" onClick={() => setBulkOpen(true)}>
                       Bulk import
                     </Button>
-                    <Button variant="primary" icon="plus" onClick={() => setGuestOpen(true)}>
-                      Invite guest
-                    </Button>
+                    {/*
+                      The primary action follows the tab it is standing on.
+
+                      It used to be "Invite guest" on every tab, including Employees. A company
+                      whose roster is still empty therefore had exactly one thing it could press,
+                      and it invited an outsider: a guest is scoped to named resources for a fixed
+                      number of days, which is why that form asks for identifiers and a window.
+                      People filled it in for their own staff, because it was the only form that
+                      opened.
+
+                      An employee cannot be created from here, and should not be: the product's
+                      rule is that one arrives with a department, a reporting manager and a
+                      designation, which is the form Hierarchy already owns. So this sends them
+                      there rather than growing a second, thinner way to make a person.
+                    */}
+                    {tab === 'guests' ? (
+                      <Button variant="primary" icon="plus" onClick={() => setGuestOpen(true)}>
+                        Invite guest
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="primary"
+                        icon="plus"
+                        title="An employee is added on the Hierarchy screen, with their department and reporting manager"
+                        onClick={() => router.push('/hierarchy')}
+                      >
+                        Add employee
+                      </Button>
+                    )}
                   </>
                 ) : null}
               </div>
