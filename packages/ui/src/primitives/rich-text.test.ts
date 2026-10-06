@@ -44,7 +44,7 @@ describe('the browser filter', () => {
 
   it('keeps an image from this product and removes one from anywhere else', () => {
     const ours =
-      '/api/tenants/01a0a8fb-8f67-71cb-99f8-f9fdedde810d/files/01a10c00-1111-2222-3333-444455556666/content';
+      '/api/tenants/01a0a8fb-8f67-71cb-99f8-f9fdedde810d/organization/company-images/01a10c00-1111-2222-3333-444455556666';
     expect(sanitiseRichText(`<img src="${ours}" alt="chart">`)).toMatch(/<img/);
     expect(sanitiseRichText('<img src="https://evil.example/p.gif">')).not.toMatch(/img|evil/i);
     expect(sanitiseRichText('<img src="data:image/svg+xml;base64,PHN2Zz4=">')).not.toMatch(/img/i);

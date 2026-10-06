@@ -1947,6 +1947,21 @@ export const organizationApi = {
       `/tenants/${encodeURIComponent(tenantId)}/organization/identity`,
       { method: 'PUT', body: JSON.stringify(body) },
     ),
+
+  /**
+   * Store a picture for the Vision or Mission -- PRD 2.3.
+   *
+   * Comes back with the path to draw it from: relative, and through `/api`, so the same row works
+   * wherever it is read. `settings:Administer`, the same grant as editing the text it goes into.
+   */
+  uploadCompanyImage: (
+    tenantId: string,
+    body: { filename: string; contentType: string; contentBase64: string },
+  ) =>
+    call<{ fileId: string; path: string }>(
+      `/tenants/${encodeURIComponent(tenantId)}/organization/company-images`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
 };
 
 // ---------------------------------------------------------------------------

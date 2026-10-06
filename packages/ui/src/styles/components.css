@@ -10570,3 +10570,31 @@ tr[data-drop-target='true'] td {
 .uboss-orch-node--arranging:active {
   opacity: 0.6;
 }
+
+/* A tile somebody has made large — PRD 1.1.
+
+   **Large, not wide**, and the first attempt is why. Spanning two grid columns changed nothing: a
+   lane here is about 410px across and its columns are `minmax(258px, 1fr)`, so `auto-fit` only
+   ever produces one and there was nothing to span. The lanes are narrow on purpose — they flank
+   the core of a diagram — so the dimension a tile can grow in is its own.
+
+   Measured by the test rather than assumed: a tile at its ordinary size is 360px wide and 56px
+   tall here, and this has to be a change somebody can see. */
+
+.uboss-orch-node--large {
+  padding: 20px 18px;
+  gap: 16px;
+}
+
+.uboss-orch-node--large .uboss-orch-node-plate {
+  width: 44px;
+  height: 44px;
+}
+
+.uboss-orch-node--large .uboss-orch-node-label {
+  font-size: 15px;
+}
+
+.uboss-orch-node--large .uboss-orch-node-count {
+  font-size: 26px;
+}

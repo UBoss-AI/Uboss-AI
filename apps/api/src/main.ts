@@ -101,7 +101,9 @@ async function bootstrap(): Promise<void> {
    *   * the bulk people and hierarchy workbooks (`access/bulk/…`),
    *   * an agent's job-method workbook (`job-methods/:id/import…`),
    *   * an employee photo — whose own policy allows **2 MB**, so every photo between 750 KB and
-   *     that ceiling was refused by the parser before the policy could allow it.
+   *     that ceiling was refused by the parser before the policy could allow it,
+   *   * a picture for the company Vision or Mission, which has the same 2 MB policy and was added
+   *     to this list at the same time as the route, rather than after somebody reported it.
    *
    * The failure gave nothing to go on: a 413 from the body parser, before any handler ran, so the
    * product could not say "that file is too large" or anything else. It was reported as "upload
@@ -145,6 +147,7 @@ async function bootstrap(): Promise<void> {
     /\/tenants\/[^/]+\/access\/bulk\/(validate|hierarchy\/validate)\/?$/,
     /\/tenants\/[^/]+\/job-methods\/[^/]+\/import(-workbook)?\/?$/,
     /\/tenants\/[^/]+\/photos\/[^/]+\/?$/,
+    /\/tenants\/[^/]+\/organization\/company-images\/?$/,
   ];
   app.use((request: Request, response: Response, next: NextFunction) => {
     if (request.path === PROVIDER_WEBHOOK_PATH) {

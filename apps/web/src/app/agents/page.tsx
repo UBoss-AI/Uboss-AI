@@ -4,10 +4,16 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
+  AGENT_RUN_TYPE_LABELS,
+  AGENT_RUN_TYPES,
   ENGINE_AGENT_STATUS_LABELS,
   ENGINE_AGENT_STATUS_TONES,
+  MISSING_DATA_BEHAVIOUR_LABELS,
+  MISSING_DATA_BEHAVIOURS,
   WEEKDAYS,
+  type AgentRunType,
   type AgentSchedule,
+  type MissingDataBehaviour,
   type Weekday,
 } from '@uboss/types';
 import {
@@ -29,6 +35,7 @@ import {
 } from '@uboss/ui';
 
 import {
+  type AgentExecutionSetupView,
   ApiError,
   authApi,
   engineAgentsApi,
@@ -86,6 +93,33 @@ export default function EngineAgentsPage() {
   /** The standalone create form -- PRD 5.1. */
   const [creating, setCreating] = useState(false);
   const [newAgent, setNewAgent] = useState({ name: '', purpose: '' });
+
+  /**
+   * The execution setup for an agent nothing configured -- PRD 5.1.
+   *
+   * Held here rather than fetched, because an agent in Draft setup has no version to read one
+   * from. It is reset whenever a different agent is opened, so the answers for one never arrive
+   * pre-filled on another.
+   */
+  const [setup, setSetup] = useState<Partial<AgentExecutionSetupView>>({
+    runType: null,
+    triggerOrFrequency: null,
+    inputConnectionId: null,
+    whereWorkHappens: null,
+    outputDestination: null,
+    missingDataBehaviour: null,
+  });
+
+  useEffect(() => {
+    setSetup({
+      runType: null,
+      triggerOrFrequency: null,
+      inputConnectionId: null,
+      whereWorkHappens: null,
+      outputDestination: null,
+      missingDataBehaviour: null,
+    });
+  }, [selected?.id]);
 
   /*
    * The selected agent's runs, read from the run engine.
@@ -238,6 +272,28 @@ export default function EngineAgentsPage() {
         setLoading(false);
       });
   }, [includeArchived, tenantId]);
+
+  /**
+   * Refresh the agent the drawer is showing, as well as the list behind it.
+   *
+   * `load()` replaces the rows; `selected` is a snapshot taken when the drawer opened and nothing
+   * in the list touches it. Saving a version and then looking for it in `selected.versions` finds
+   * the state from before the save, which is how a control that should have appeared does not.
+   */
+  const reloadSelected = useCallback(
+    (fallback?: EngineAgentView) => {
+      load();
+      const id = fallback?.id ?? selected?.id;
+      if (tenantId === null || id === undefined) return;
+      void engineAgentsApi
+        .view(tenantId, id)
+        .then(setSelected)
+        .catch(() => {
+          // The list reloaded either way; a stale drawer is not worth an error banner.
+        });
+    },
+    [load, selected, tenantId],
+  );
 
   useEffect(load, [load]);
 
@@ -938,6 +994,162 @@ export default function EngineAgentsPage() {
               ))
             )}
 
+            {/*
+              Setting up an agent that no Objective configured -- PRD 5.1.
+
+              An agent from the builder arrives with all of this decided: the Objective's analysis
+              worked out when it runs, where the work happens, where the result goes and what to do
+              when something is missing. One created here has none of it, which is why it sits in
+              Draft setup and cannot run.
+
+              These are the same five questions the builder asks, in the same vocabulary, and they
+              go to the same endpoint. Saving them creates version 1 as a draft; activating it is
+              the second, deliberate step, with the same approval rule every other version has.
+              Nothing here skips a check the builder makes.
+            */}
+            {selected.status !== 'DraftSetup' ? null : (
+              <>
+                <div className="uboss-section-label">Set this agent up</div>
+                <p className="uboss-muted-3">
+                  It was created without an Objective, so nothing has decided how it runs. It cannot
+                  do any work until these are answered and a version is activated.
+                </p>
+
+                <FormField label="When it runs" required>
+                  {(wiring) => (
+                    <select
+                      {...wiring}
+                      className="uboss-input"
+                      value={setup.runType ?? ''}
+                      onChange={(event) =>
+                        setSetup({ ...setup, runType: event.target.value as AgentRunType })
+                      }
+                    >
+                      <option value="">Choose…</option>
+                      {AGENT_RUN_TYPES.map((kind) => (
+                        <option key={kind} value={kind}>
+                          {AGENT_RUN_TYPE_LABELS[kind]}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </FormField>
+
+                <FormField
+                  label="What starts it, or how often"
+                  hint="A trigger for event-based work, a frequency for scheduled work."
+                >
+                  {(wiring) => (
+                    <input
+                      {...wiring}
+                      className="uboss-input"
+                      maxLength={200}
+                      value={setup.triggerOrFrequency ?? ''}
+                      onChange={(event) =>
+                        setSetup({ ...setup, triggerOrFrequency: event.target.value })
+                      }
+                      placeholder="Every Monday at 09:00"
+                    />
+                  )}
+                </FormField>
+
+                <FormField label="Where the work happens" required>
+                  {(wiring) => (
+                    <input
+                      {...wiring}
+                      className="uboss-input"
+                      maxLength={200}
+                      value={setup.whereWorkHappens ?? ''}
+                      onChange={(event) =>
+                        setSetup({ ...setup, whereWorkHappens: event.target.value })
+                      }
+                      placeholder="The finance shared drive"
+                    />
+                  )}
+                </FormField>
+
+                <FormField label="Where the result goes" required>
+                  {(wiring) => (
+                    <input
+                      {...wiring}
+                      className="uboss-input"
+                      maxLength={200}
+                      value={setup.outputDestination ?? ''}
+                      onChange={(event) =>
+                        setSetup({ ...setup, outputDestination: event.target.value })
+                      }
+                      placeholder="The weekly consolidation sheet"
+                    />
+                  )}
+                </FormField>
+
+                <FormField
+                  label="When something it needs is missing"
+                  required
+                  hint="An agent that guesses at missing data is an agent that produces work nobody can trust."
+                >
+                  {(wiring) => (
+                    <select
+                      {...wiring}
+                      className="uboss-input"
+                      value={setup.missingDataBehaviour ?? ''}
+                      onChange={(event) =>
+                        setSetup({
+                          ...setup,
+                          missingDataBehaviour: event.target.value as MissingDataBehaviour,
+                        })
+                      }
+                    >
+                      <option value="">Choose…</option>
+                      {MISSING_DATA_BEHAVIOURS.map((kind) => (
+                        <option key={kind} value={kind}>
+                          {MISSING_DATA_BEHAVIOUR_LABELS[kind]}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </FormField>
+
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={
+                    busy ||
+                    tenantId === null ||
+                    setup.runType === null ||
+                    (setup.whereWorkHappens ?? '').trim() === '' ||
+                    (setup.outputDestination ?? '').trim() === '' ||
+                    setup.missingDataBehaviour === null
+                  }
+                  onClick={() => {
+                    if (tenantId === null) return;
+                    setBusy(true);
+                    setError(null);
+                    setNotice(null);
+                    engineAgentsApi
+                      .createVersion(tenantId, selected.id, { setup })
+                      .then(() => {
+                        setNotice(
+                          'Version 1 saved as a draft. Activate it below when you are ready — ' +
+                            'the agent does no work until you do.',
+                        );
+                        reloadSelected();
+                      })
+                      .catch((caught: unknown) =>
+                        setError(
+                          caught instanceof ApiError
+                            ? caught.message
+                            : 'That setup could not be saved.',
+                        ),
+                      )
+                      .finally(() => setBusy(false));
+                  }}
+                >
+                  Save setup
+                </Button>
+              </>
+            )}
+
             <div className="uboss-section-label">Versions</div>
             {selected.versions.map((version) => (
               <div className="uboss-kv" key={version.id}>
@@ -953,6 +1165,62 @@ export default function EngineAgentsPage() {
                 </span>
               </div>
             ))}
+
+            {/*
+              Activating a draft version -- the second half of PRD 5.1.
+
+              A deliberate second step, never folded into Save setup. Activation is what makes an
+              agent able to act on a company's behalf, and the approval rule that governs it is
+              the same one every other version has: a version that widens what an agent can reach
+              needs somebody else to agree, and the server refuses a self-approval.
+
+              Offered only for a version that is still a draft. A published one is immutable, and
+              a configuration change makes a new draft rather than editing it.
+            */}
+            {(() => {
+              const draft = selected.versions.find((version) => version.status !== 'Published');
+              if (draft === undefined) return null;
+              return (
+                <>
+                  <div className="uboss-section-label">Activate</div>
+                  <p className="uboss-muted-3">
+                    v{draft.versionNumber} is saved and doing nothing.
+                    {draft.approvalRequired
+                      ? ' It widens what this agent can reach, so somebody other than you has to approve it first.'
+                      : ' Activating it is what lets this agent work.'}
+                  </p>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={busy || tenantId === null}
+                    onClick={() => {
+                      if (tenantId === null) return;
+                      setBusy(true);
+                      setError(null);
+                      setNotice(null);
+                      engineAgentsApi
+                        .activateVersion(tenantId, selected.id, draft.id)
+                        .then((updated) => {
+                          setNotice(
+                            `"${updated.name}" is now ${ENGINE_AGENT_STATUS_LABELS[updated.status]}.`,
+                          );
+                          reloadSelected(updated);
+                        })
+                        .catch((caught: unknown) =>
+                          setError(
+                            caught instanceof ApiError
+                              ? caught.message
+                              : 'That version could not be activated.',
+                          ),
+                        )
+                        .finally(() => setBusy(false));
+                    }}
+                  >
+                    Activate v{draft.versionNumber}
+                  </Button>
+                </>
+              );
+            })()}
 
             {selected.openDraft?.impact === null ||
             selected.openDraft?.impact === undefined ? null : (

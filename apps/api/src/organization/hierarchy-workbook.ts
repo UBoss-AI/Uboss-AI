@@ -93,6 +93,7 @@ export const HIERARCHY_COLUMNS: readonly HierarchyColumn[] = [
 const IMPORT_SHEET = 'Employees';
 const DEPARTMENT_SHEET = 'Departments';
 const PEOPLE_SHEET = 'People';
+const PHOTO_SHEET = 'Photographs';
 
 /** What the reference sheets are filled from. Read at download time, never cached. */
 export interface HierarchyReference {
@@ -150,6 +151,36 @@ export class HierarchyWorkbook {
       ]);
     }
 
+    /*
+     * How to send a photograph -- PRD 3.1, on a sheet of its own.
+     *
+     * It was a row under the guidance first, and the importer read it as an employee: the reader
+     * drops a row whose first cell repeats the guidance text, and this was different text in a
+     * cell that was not empty. The result was a third person in a two-person import, refused for
+     * having a sentence where their department should be.
+     *
+     * A sheet cannot be mistaken for data. `findImportSheet` looks for the sheet carrying the
+     * column headings, so anything else is ignored however it is filled in -- which is also why
+     * the departments and people references are sheets rather than extra columns.
+     */
+    const photographs = workbook.addWorksheet(PHOTO_SHEET);
+    photographs.columns = [{ key: 'line', width: 96 }];
+    photographs.addRow(['Adding photographs']).font = { bold: true, size: 14 };
+    photographs.addRow([]);
+    for (const line of [
+      'Paste a picture onto the row of the person it belongs to, on the Employees sheet.',
+      'A picture in a spreadsheet is not inside a cell: it floats over the grid, anchored to the',
+      'row you dropped it on. That anchor is how each photograph is matched to a person.',
+      '',
+      'JPEG, PNG or WebP, up to 2 MB each. One per row — if a row has two, the first is used.',
+      'Rows without a picture are imported exactly as before.',
+      '',
+      'A photograph that cannot be stored does not stop the import: the person is still created,',
+      'and their picture can be set afterwards from their profile.',
+    ]) {
+      photographs.addRow([line]).alignment = { wrapText: true, vertical: 'top' };
+    }
+
     const people = workbook.addWorksheet(PEOPLE_SHEET);
     people.columns = [
       { key: 'name', width: 28 },
@@ -180,7 +211,30 @@ export class HierarchyWorkbook {
    * — all of that belongs to the importer and happens next, against the live company. This decides
    * only which sheet holds the data, which row is the header, and which rows are blank.
    */
-  static async toDelimited(buffer: Buffer): Promise<string> {
+  /**
+   * A returned workbook, as rows and as the pictures somebody pasted into them -- PRD 3.1.
+   *
+   * ## Why the pictures come out here
+   *
+   * The importer reads delimited text, and a spreadsheet's images are not in any cell: they float
+   * over the sheet, anchored to a row and column. Turning the workbook into text discards them
+   * entirely, which is why a photo pasted into the template used to vanish without a word.
+   *
+   * So the rows and the pictures are read in one pass, and each picture is reported with the
+   * **body row it sits on** rather than its sheet row. The body is the header and the guidance
+   * row removed and the blanks dropped, so a sheet row number means nothing to the importer that
+   * receives this.
+   *
+   * ## What it does not do
+   *
+   * It does not store anything, check a size, or decide a content type beyond what the file says.
+   * Those belong to whatever puts the picture somewhere, against that company's own limits.
+   */
+  static async read(buffer: Buffer): Promise<{
+    content: string;
+    /** Body row index (0-based, matching the data rows in `content`) to the picture on it. */
+    photos: Map<number, { extension: string; bytes: Buffer }>;
+  }> {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
 
@@ -192,43 +246,75 @@ export class HierarchyWorkbook {
       );
     }
 
-    const rows: string[][] = [];
-    sheet.eachRow({ includeEmpty: false }, (row) => {
+    /* Every row, with the sheet row number it came from, so the pictures can be matched to it. */
+    const rows: { sheetRow: number; values: string[] }[] = [];
+    sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
       const values: string[] = [];
       for (let column = 1; column <= HIERARCHY_COLUMNS.length; column += 1) {
         values.push(cellText(row.getCell(column)));
       }
-      rows.push(values);
+      rows.push({ sheetRow: rowNumber, values });
     });
 
-    const headerIndex = rows.findIndex((row) => looksLikeHeader(row));
+    const headerIndex = rows.findIndex((row) => looksLikeHeader(row.values));
     if (headerIndex < 0) {
       throw new Error(
         'That file has no header row. The first row must name the columns, as the template does.',
       );
     }
 
-    /*
-     * The note row is skipped by recognising it, not by counting.
-     *
-     * Somebody who deletes the guidance row — which is a reasonable thing to do — would otherwise
-     * lose their first employee, silently. A row is guidance if its first cell repeats the note
-     * the template wrote there.
-     */
     const noteText = HIERARCHY_COLUMNS[0]?.note ?? '';
     const body = rows
       .slice(headerIndex + 1)
-      .filter((row) => row.some((value) => value !== ''))
-      .filter((row) => row[0] !== noteText);
+      .filter((row) => row.values.some((value) => value !== ''))
+      .filter((row) => row.values[0] !== noteText);
 
     if (body.length === 0) {
       throw new Error('That file has a header row and no employees. Nothing to import.');
     }
 
-    // The heading cells are written back without the asterisk: it marks a required column for a
-    // reader, and the importer matches on the name.
+    /*
+     * The pictures, matched to the row each one sits on.
+     *
+     * `nativeRow` is zero-based and `eachRow` counts from one, so the sheet row is `nativeRow + 1`.
+     * A picture anchored to a row that is not a body row -- over the header, or below the last
+     * employee -- is dropped rather than guessed at: there is nobody for it to belong to.
+     */
+    const sheetRowToBody = new Map(body.map((row, index) => [row.sheetRow, index]));
+    const photos = new Map<number, { extension: string; bytes: Buffer }>();
+    for (const placed of sheet.getImages()) {
+      const sheetRow = (placed.range?.tl?.nativeRow ?? -1) + 1;
+      const bodyIndex = sheetRowToBody.get(sheetRow);
+      if (bodyIndex === undefined) continue;
+
+      const image = workbook.getImage(Number(placed.imageId));
+      if (image?.buffer === undefined) continue;
+      // One per row. A second picture on the same row is a question nobody has answered, and
+      // taking the first is at least a rule somebody can predict.
+      if (photos.has(bodyIndex)) continue;
+      photos.set(bodyIndex, {
+        extension: image.extension ?? 'png',
+        bytes: Buffer.from(image.buffer as unknown as ArrayBuffer),
+      });
+    }
+
     const header = HIERARCHY_COLUMNS.map((column) => column.heading);
-    return [header, ...body].map((row) => row.map(csvCell).join(',')).join('\n');
+    const content = [header, ...body.map((row) => row.values)]
+      .map((row) => row.map(csvCell).join(','))
+      .join(String.fromCharCode(10));
+
+    return { content, photos };
+  }
+
+  /**
+   * The rows alone, as the importer has always read them.
+   *
+   * Delegates to `read` so there is one parser rather than two that can drift: the day somebody
+   * changes how the guidance row is recognised, both callers change with it.
+   */
+  static async toDelimited(buffer: Buffer): Promise<string> {
+    const { content } = await HierarchyWorkbook.read(buffer);
+    return content;
   }
 
   /**

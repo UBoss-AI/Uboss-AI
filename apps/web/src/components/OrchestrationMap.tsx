@@ -91,6 +91,8 @@ export function OrchestrationMap({
   onSelect,
   arranging = false,
   onMove,
+  large,
+  onResize,
 }: {
   tiles: DashboardTileView[];
   meta: DashboardMeta | null;
@@ -113,6 +115,23 @@ export function OrchestrationMap({
    * only ever sees one lane at a time, so an index here would mean something different there.
    */
   onMove?: (moved: string, target: string) => void;
+  /**
+   * Which tiles are drawn larger -- PRD 1.1.
+   *
+   * Larger, not wider: a lane here is about 410px across with `minmax(258px, 1fr)` columns, so
+   * `auto-fit` gives one column and there is nothing for a tile to span. The lanes are narrow
+   * because they flank the core of a diagram, so the dimension a tile can grow in is its own.
+   */
+  large?: ReadonlySet<string>;
+  /**
+   * One tile was asked to change size.
+   *
+   * There is no button for it inside the node, because the node **is** a button and a button
+   * inside a button is not markup a browser will keep. So it is the two gestures that are left:
+   * double-click, and the up and down arrows while it has focus. The screen says so while
+   * arranging, since neither announces itself.
+   */
+  onResize?: (key: string) => void;
   /**
    * Pressing a node selects it rather than navigating.
    *
@@ -243,7 +262,9 @@ export function OrchestrationMap({
                 }}
                 className={`uboss-orch-node uboss-orch-node--${lane.key}${
                   isOpen ? ' uboss-orch-node--open' : ''
-                }${arranging ? ' uboss-orch-node--arranging' : ''}`}
+                }${arranging ? ' uboss-orch-node--arranging' : ''}${
+                  large?.has(tile.tile) === true ? ' uboss-orch-node--large' : ''
+                }`}
                 aria-expanded={arranging ? undefined : isOpen}
                 /*
                  * Arranging mode changes what a press means, so it changes what the node says it
@@ -278,6 +299,12 @@ export function OrchestrationMap({
                  */
                 onKeyDown={(event) => {
                   if (!arranging) return;
+                  // Up and down change the size; left and right change the place.
+                  if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+                    event.preventDefault();
+                    onResize?.(tile.tile);
+                    return;
+                  }
                   const step = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0;
                   if (step === 0) return;
                   event.preventDefault();
@@ -289,9 +316,13 @@ export function OrchestrationMap({
                   if (arranging) return;
                   onSelect(isOpen ? null : tile.tile);
                 }}
+                onDoubleClick={() => {
+                  if (!arranging) return;
+                  onResize?.(tile.tile);
+                }}
                 aria-label={
                   arranging
-                    ? `Move ${detail.label}. Use the left and right arrow keys, or drag it.`
+                    ? `Move or resize ${detail.label}. Left and right arrows move it, up and down change its size, and it can be dragged.`
                     : hasCount
                       ? `${detail.label}: ${tile.count}. ${detail.measures ?? ''}`
                       : `Show ${detail.label}`

@@ -7553,6 +7553,18 @@ model StoredFile {
   /// From `DATA_CLASSIFICATIONS`.
   classification String @default("Internal") @db.VarChar(20)
 
+  /// What this file was uploaded for, when it was not uploaded as a document.
+  ///
+  /// Null for everything in the knowledge collection, which is what this store is mostly for.
+  /// `CompanyIdentityImage` marks a picture placed in the company Vision or Mission, and the only
+  /// reason the column exists is that those pictures need a different door.
+  ///
+  /// Reading a knowledge document needs `settings:Export`; a picture inside the Mission has to be
+  /// readable by everybody who can open the Hierarchy, because that is who the Mission is for. A
+  /// route that served any file by its id to anybody with `hierarchy:View` would be a way to read
+  /// the company's documents, so the route asks for this mark and refuses a file without it.
+  purpose String? @db.VarChar(40)
+
   /// Retention, from `RETENTION_ACTIONS`. Null expiry means it is kept until somebody deletes it.
   retentionAction    String    @default("DeleteContent") @map("retention_action") @db.VarChar(30)
   retentionExpiresAt DateTime? @map("retention_expires_at") @db.Timestamptz(6)

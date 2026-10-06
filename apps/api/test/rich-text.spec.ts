@@ -154,7 +154,7 @@ describe('the Vision and Mission are safe to put back on a page', () => {
    */
   describe('images, and the one place they may come from', () => {
     const ours =
-      '/api/tenants/01a0a8fb-8f67-71cb-99f8-f9fdedde810d/files/01a10c00-1111-2222-3333-444455556666/content';
+      '/api/tenants/01a0a8fb-8f67-71cb-99f8-f9fdedde810d/organization/company-images/01a10c00-1111-2222-3333-444455556666';
 
     it('keeps an image uploaded to this company', () => {
       const cleaned = sanitiseRichText(`<p>Our mission</p><img src="${ours}" alt="Our chart">`);
@@ -168,7 +168,10 @@ describe('the Vision and Mission are safe to put back on a page', () => {
       { what: 'a tracking pixel on another host', src: 'https://evil.example/p.gif' },
       { what: 'a protocol-relative host', src: '//evil.example/p.gif' },
       { what: 'a data URI', src: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=' },
-      { what: 'a path that only looks like ours', src: '/api/tenants/x/files/y/content' },
+      {
+        what: 'a path that only looks like ours',
+        src: '/api/tenants/x/organization/company-images/y',
+      },
       { what: 'our path with something appended', src: `${ours}/../../evil` },
       { what: 'an empty source', src: '' },
     ];

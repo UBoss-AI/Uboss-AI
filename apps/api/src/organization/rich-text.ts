@@ -99,7 +99,7 @@ const ALLOWED_CSS = new Set([
  * environment, development and production alike.
  */
 const IMAGE_SRC = new RegExp(
-  '^/api/tenants/[0-9a-fA-F-]{16,}/files/[0-9a-fA-F-]{16,}/content([?][\\w=&.%-]*)?$',
+  '^/api/tenants/[0-9a-fA-F-]{16,}/organization/company-images/[0-9a-fA-F-]{16,}([?][\\w=&.%-]*)?$',
 );
 
 /** Only what this hook touches. The API has no DOM lib, and it does not need one for four calls. */

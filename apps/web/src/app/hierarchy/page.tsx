@@ -216,6 +216,37 @@ export default function HierarchyPage() {
   const bell = useNotificationBell(tenantId);
 
   /**
+   * Store a picture for the Vision or Mission, and hand back the path to draw it from -- PRD 2.3.
+   *
+   * It goes into the same file store as everything else, through the same scan and the same
+   * quota, and is marked `CompanyIdentityImage` by the API. That mark is what lets it be read by
+   * everybody who can open the Hierarchy: a knowledge document needs `settings:Export`, and the
+   * Mission is written for the whole company.
+   *
+   * The path that comes back is relative and goes through `/api`. An absolute one would bake in
+   * whichever host it was written on, and these rows outlive deployments.
+   */
+  const uploadIdentityImage = useCallback(
+    async (file: File): Promise<string> => {
+      if (tenantId === null) throw new Error('No workspace is active.');
+      const contentBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('That picture could not be read.'));
+        reader.onload = () => resolve(String(reader.result ?? '').split(',')[1] ?? '');
+        reader.readAsDataURL(file);
+      });
+
+      const stored = await organizationApi.uploadCompanyImage(tenantId, {
+        filename: file.name,
+        contentType: file.type || 'application/octet-stream',
+        contentBase64,
+      });
+      return stored.path;
+    },
+    [tenantId],
+  );
+
+  /**
    * Put a picture in the company's file store and hand back the path to draw it from.
    *
    * `Internal` rather than `Public`: this is drawn on a screen only members of the company can
@@ -1192,22 +1223,6 @@ export default function HierarchyPage() {
         }
       >
         {/*
-          No picture button yet — PRD 2.3.
-
-          The editor supports one, the filter accepts an image from this company's own file store,
-          and both are covered by tests. What is missing is a way to *draw* it:
-          `GET /tenants/:id/files/:id/content` answers with JSON rather than the bytes an `<img>`
-          needs, and it requires `settings:Export`, which an ordinary employee does not hold — and
-          the Mission is read by everybody.
-
-          Serving it needs a route of its own, and that route must not become a way to read any
-          file in the company by its id, because a knowledge document is in the same store. So the
-          file needs a mark saying it is an identity picture, which is a migration of its own.
-
-          When that exists, pass `uploadImage` to both editors below and the button returns. A
-          button that inserts an image nobody can see would be worse than no button.
-        */}
-        {/*
           Mission first here too, so the editor is in the order the strip draws them.
 
           A dialog that asks for the Vision first and then shows the Mission on top is a small
@@ -1221,6 +1236,7 @@ export default function HierarchyPage() {
               onChange={setMissionDraft}
               placeholder="The work this company does, and for whom."
               disabled={savingIdentity}
+              uploadImage={uploadIdentityImage}
             />
           )}
         </FormField>
@@ -1236,6 +1252,7 @@ export default function HierarchyPage() {
               onChange={setVisionDraft}
               placeholder="The company we intend to become."
               disabled={savingIdentity}
+              uploadImage={uploadIdentityImage}
             />
           )}
         </FormField>

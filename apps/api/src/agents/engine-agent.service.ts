@@ -671,6 +671,32 @@ export class EngineAgentService {
         },
       });
 
+      /*
+       * An agent that had nothing configured now has something -- PRD 5.1.
+       *
+       * `DraftSetup` means "nobody has decided how this works yet", which is exactly true of an
+       * agent created without an Objective and exactly false the moment a version exists. The
+       * status vocabulary already says so: `DraftSetup` leads only to `Ready` and `Archived`, and
+       * `Ready` is the step `Active` is reached from.
+       *
+       * Without this the agent stayed in `DraftSetup` and activation refused it -- "an agent that
+       * is DraftSetup cannot be moved to Active" -- so a setup could be saved and never used.
+       * Found by driving it from the browser rather than by reading the transition table.
+       *
+       * Only from `DraftSetup`. An agent that is Active, Paused or anything else is drafting a
+       * change to something that already runs, and its status is not this function's business.
+       */
+      if (agent.status === 'DraftSetup') {
+        await this.prisma.client.engineAgent.update({
+          where: { id: agent.id },
+          data: {
+            status: 'Ready',
+            updatedByUserId: input.actorUserId,
+            version: { increment: 1 },
+          },
+        });
+      }
+
       return this.versionViewOf(created, agent.currentVersionId);
     });
   }

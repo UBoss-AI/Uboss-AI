@@ -526,9 +526,11 @@ export class AccessController {
   @Post('bulk/hierarchy/validate')
   @RequirePermission({ module: 'hierarchy', action: 'View' })
   async validateHierarchyWorkbook(@Body() body: ValidateHierarchyWorkbookDto): Promise<unknown> {
-    let content: string;
+    let read: Awaited<ReturnType<typeof HierarchyWorkbook.read>>;
     try {
-      content = await HierarchyWorkbook.toDelimited(Buffer.from(body.file, 'base64'));
+      // `read` rather than `toDelimited`: a photograph pasted into a row is not in any cell, and
+      // turning the workbook into text would discard it without a word -- PRD 3.1.
+      read = await HierarchyWorkbook.read(Buffer.from(body.file, 'base64'));
     } catch (error) {
       // The workbook could not be read at all. A 400 with the reason, rather than a 500: the file
       // is the caller's and the message tells them what to fix.
@@ -541,7 +543,8 @@ export class AccessController {
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
       kind: 'ImportEmployees',
-      content,
+      content: read.content,
+      photos: read.photos,
       sourceFileName: body.sourceFileName,
       reason: body.reason,
     });

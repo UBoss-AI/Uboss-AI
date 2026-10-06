@@ -43,7 +43,7 @@ const ALLOWED_TAGS = [
  * what the web app proxies to the API in every environment.
  */
 const IMAGE_SRC = new RegExp(
-  '^/api/tenants/[0-9a-fA-F-]{16,}/files/[0-9a-fA-F-]{16,}/content([?][\\w=&.%-]*)?$',
+  '^/api/tenants/[0-9a-fA-F-]{16,}/organization/company-images/[0-9a-fA-F-]{16,}([?][\\w=&.%-]*)?$',
 );
 
 const ALLOWED_CSS = new Set([

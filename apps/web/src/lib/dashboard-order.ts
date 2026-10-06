@@ -102,3 +102,58 @@ export function reorderTiles(current: readonly string[], moved: string, target: 
   next.splice(to, 0, moved);
   return next;
 }
+
+/**
+ * Which tiles somebody has made large — PRD 1.1's other half.
+ *
+ * **Large, not wide.** The first attempt made a tile span two grid columns, and it changed
+ * nothing: a lane on this screen is about 410px across and its columns are `minmax(258px, 1fr)`,
+ * so `auto-fit` only ever produces one. There was nothing to span. The lanes are narrow by design
+ * — they flank the core of a diagram — so the size a tile can actually grow in is its own, not
+ * the lane's.
+ *
+ * Stored under its own key rather than folded into the order, so an arrangement written before
+ * sizes existed keeps working: an older browser's stored order is still a valid order, and this
+ * reads as "none of them are large".
+ *
+ * A set rather than a size per tile, because there are two sizes. The day there is a third, this
+ * becomes a map and the key changes with it.
+ */
+const LARGE_PREFIX = 'uboss.dashboard.large.';
+
+const largeKeyFor = (tenantId: string): string => `${LARGE_PREFIX}${tenantId}`;
+
+/** The tiles made large in this company, or an empty set when there are none. */
+export function readLargeTiles(tenantId: string | null): Set<string> {
+  if (tenantId === null) return new Set();
+  try {
+    const stored = window.localStorage.getItem(largeKeyFor(tenantId));
+    if (stored === null) return new Set();
+    const parsed: unknown = JSON.parse(stored);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((entry): entry is string => typeof entry === 'string'));
+  } catch {
+    // Unreadable store. Every tile at its ordinary size is a correct answer.
+    return new Set();
+  }
+}
+
+/** Records which are large. Failing to store it must never fail the screen. */
+export function rememberLargeTiles(tenantId: string | null, large: ReadonlySet<string>): void {
+  if (tenantId === null) return;
+  try {
+    window.localStorage.setItem(largeKeyFor(tenantId), JSON.stringify([...large]));
+  } catch {
+    // It still applies for this visit.
+  }
+}
+
+/** Forgets the sizes, so every tile is its ordinary size again. */
+export function forgetLargeTiles(tenantId: string | null): void {
+  if (tenantId === null) return;
+  try {
+    window.localStorage.removeItem(largeKeyFor(tenantId));
+  } catch {
+    // An unreadable store is also an unwritable one.
+  }
+}

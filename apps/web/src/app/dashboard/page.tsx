@@ -30,8 +30,11 @@ import { OrchestrationMap } from '../../components/OrchestrationMap';
 import {
   applyTileOrder,
   forgetTileOrder,
+  forgetLargeTiles,
   readTileOrder,
+  readLargeTiles,
   rememberTileOrder,
+  rememberLargeTiles,
   reorderTiles,
 } from '../../lib/dashboard-order';
 import { StageOverview } from '../../components/StageOverview';
@@ -93,6 +96,7 @@ export default function DashboardPage(): React.JSX.Element {
   /** Arranging the tiles, and the arrangement itself -- PRD 1.1. */
   const [arranging, setArranging] = useState(false);
   const [order, setOrder] = useState<string[] | null>(null);
+  const [large, setLarge] = useState<Set<string>>(new Set());
 
   /*
    * The selected area, resolved against what the server actually returned.
@@ -120,6 +124,7 @@ export default function DashboardPage(): React.JSX.Element {
    */
   useEffect(() => {
     setOrder(readTileOrder(tenantId));
+    setLarge(readLargeTiles(tenantId));
   }, [tenantId]);
 
   /** The server's tiles, in the order somebody arranged them. */
@@ -222,12 +227,14 @@ export default function DashboardPage(): React.JSX.Element {
             */
             counts === null || counts.tiles.length === 0 ? null : (
               <>
-                {order === null ? null : (
+                {order === null && large.size === 0 ? null : (
                   <Button
                     size="sm"
                     onClick={() => {
                       forgetTileOrder(tenantId);
+                      forgetLargeTiles(tenantId);
                       setOrder(null);
+                      setLarge(new Set());
                     }}
                   >
                     Reset layout
@@ -275,9 +282,34 @@ export default function DashboardPage(): React.JSX.Element {
               </Card>
             ) : (
               <>
+                {/*
+                  What arranging mode lets somebody do, said while they are in it.
+
+                  Dragging announces itself. Double-click and the arrow keys do not, and they are
+                  here because a node is a button -- a second button inside it, which is what a
+                  resize handle would be, is not markup a browser keeps.
+                */}
+                {arranging ? (
+                  <Banner tone="info">
+                    Drag a tile to move it, or use the arrow keys: left and right move it, up and
+                    down make it large or ordinary. Double-clicking a tile also changes its size.
+                    Press Done arranging when you have finished.
+                  </Banner>
+                ) : null}
+
                 <OrchestrationMap
                   tiles={arrangedTiles}
                   arranging={arranging}
+                  large={large}
+                  onResize={(key) => {
+                    setLarge((current) => {
+                      const next = new Set(current);
+                      if (next.has(key)) next.delete(key);
+                      else next.add(key);
+                      rememberLargeTiles(tenantId, next);
+                      return next;
+                    });
+                  }}
                   onMove={(moved, target) => {
                     /*
                      * The order is stored over the whole dashboard, not over the lane the move

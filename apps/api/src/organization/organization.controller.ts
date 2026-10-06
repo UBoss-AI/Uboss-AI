@@ -7,8 +7,10 @@ import {
   Post,
   Put,
   Query,
+  Res,
   UnauthorizedException,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { Type } from 'class-transformer';
 import {
   IsBoolean,
@@ -244,6 +246,13 @@ export class ChangeReportingManagerDto {
   reason?: string;
 }
 
+/** A picture for the company Vision or Mission -- PRD 2.3. Base64, like every upload here. */
+export class UploadCompanyImageDto {
+  @IsString() @MaxLength(260) filename!: string;
+  @IsString() @MaxLength(100) contentType!: string;
+  @IsString() contentBase64!: string;
+}
+
 /**
  * The Vision and Mission, as formatted text.
  *
@@ -470,6 +479,52 @@ export class OrganizationController {
    * here because the hierarchy is the screen that displays it and an always-empty strip would be
    * indistinguishable from a broken one.
    */
+  /**
+   * Store a picture for the Vision or Mission -- PRD 2.3.
+   *
+   * `settings:Administer`, the same grant as editing the text it goes into. The service checks it
+   * again and marks the file, which is what lets the next route serve it to everybody.
+   */
+  @Post('company-images')
+  @RequirePermission({ module: 'settings', action: 'Administer' })
+  async uploadCompanyImage(@Body() body: UploadCompanyImageDto): Promise<unknown> {
+    return this.hierarchy.uploadIdentityImage({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
+      filename: body.filename,
+      contentType: body.contentType,
+      contentBase64: body.contentBase64,
+    });
+  }
+
+  /**
+   * Serve one, as bytes, to anybody who may open the Hierarchy.
+   *
+   * No `@RequirePermission`: the rule is `hierarchy:View` **and** the file carrying the identity
+   * mark, and the second half is not something a route decorator can express. The service checks
+   * both, and a file missing either is a 404 — the caller has no business learning the id exists.
+   *
+   * `@Res()` without `passthrough`, like the employee photo route: this handler owns the response
+   * because it writes bytes and their content type rather than returning an object.
+   */
+  @Get('company-images/:fileId')
+  async companyImage(
+    @Param('fileId', new ParseUUIDPipe()) fileId: string,
+    @Res() response: Response,
+  ): Promise<void> {
+    const found = await this.hierarchy.identityImageContent({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
+      fileId,
+    });
+
+    response.setHeader('Content-Type', found.contentType);
+    // Private, because this is a company's own picture and a shared cache must not hold it.
+    response.setHeader('Cache-Control', 'private, max-age=300');
+    response.setHeader('Cross-Origin-Resource-Policy', 'same-site');
+    response.send(found.bytes);
+  }
+
   @Put('identity')
   @RequirePermission({ module: 'settings', action: 'Administer' })
   async updateIdentity(@Body() body: UpdateCompanyIdentityDto): Promise<unknown> {

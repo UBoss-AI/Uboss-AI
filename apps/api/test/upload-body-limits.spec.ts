@@ -61,6 +61,11 @@ describe('upload routes are not capped at the ordinary body limit', () => {
       atLeastMb: 20,
     },
     { what: 'an employee photo', path: '/tenants/t1/photos/u1', atLeastMb: 3 },
+    {
+      what: 'a picture for the company Vision or Mission',
+      path: '/tenants/t1/organization/company-images',
+      atLeastMb: 3,
+    },
   ];
 
   /** The patterns `main.ts` declares, read back out of it with their limits. */

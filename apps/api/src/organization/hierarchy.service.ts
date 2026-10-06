@@ -2,7 +2,9 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 
 import { AuditEventService } from '../audit/audit-event.service.js';
@@ -15,6 +17,7 @@ import {
 import { PrismaService } from '../persistence/prisma.service.js';
 import { TenantRepository } from '../persistence/tenant.repository.js';
 import type { TenantScope } from '../persistence/tenant-context.js';
+import { FileService } from '../knowledge/file.service.js';
 import { maskedAadhaar } from './aadhaar.js';
 import { plainTextOf, sanitiseRichText } from './rich-text.js';
 
@@ -140,6 +143,15 @@ export interface HierarchyView {
  * clothes. This is the product limit: long enough for a real statement of purpose, short enough
  * that the panel on the Hierarchy screen stays a panel.
  */
+/** The mark that makes a stored file readable as part of the company's identity -- PRD 2.3. */
+const IDENTITY_IMAGE_PURPOSE = 'CompanyIdentityImage';
+
+/** What a Vision or Mission picture may be. The three a browser draws without a plugin. */
+const IDENTITY_IMAGE_TYPES: readonly string[] = ['image/jpeg', 'image/png', 'image/webp'];
+
+/** Two megabytes, the same ceiling a profile photo has. A larger one is a camera file. */
+const MAX_IDENTITY_IMAGE_BYTES = 2 * 1024 * 1024;
+
 const IDENTITY_TEXT_LIMIT = 1500;
 
 @Injectable()
@@ -151,6 +163,19 @@ export class HierarchyService {
     private readonly authorization: AuthorizationService,
     private readonly auditEvents: AuditEventService,
     private readonly securityEvents: SecurityEventPublisher,
+    /*
+     * Optional, and the two methods that need it say so loudly if it is absent.
+     *
+     * Only the company-identity picture uses this. Making it required put `FileService` --
+     * and its storage adapter and its malware scanner -- into the provider list of every test
+     * that builds a module around `HierarchyService`, including two that have nothing to do with
+     * files, and they failed to construct at all.
+     *
+     * The risk of `@Optional()` is that a real misconfiguration goes unnoticed, so it does not go
+     * unnoticed: `global-guard-order.spec.ts` asserts that the real `AppModule` graph supplies
+     * this, and the methods below refuse rather than quietly doing nothing.
+     */
+    @Optional() private readonly files?: FileService,
   ) {}
 
   /**
@@ -333,6 +358,137 @@ export class HierarchyService {
    * because the hierarchy is the screen that displays it, and the client's requirement is that
    * the structure and the purpose it serves are read together.
    */
+  /**
+   * A picture for the company Vision or Mission -- PRD 2.3.
+   *
+   * ## Why this is not the ordinary file upload
+   *
+   * It stores the image in the same place every other file goes, through the same scan and the
+   * same quota, because a second way to store a file is a second place for all of that to be
+   * forgotten. What differs is the mark it leaves: `purpose = 'CompanyIdentityImage'`.
+   *
+   * That mark is what lets the picture be *read* by everybody. A knowledge document needs
+   * `settings:Export`; a picture inside the Mission has to be readable by anybody who can open
+   * the Hierarchy, because that is who the Mission is written for. Without the mark, the route
+   * that serves it would serve any file in the company by its id to anybody with `hierarchy:View`
+   * -- which is a way to read the documents.
+   *
+   * Writing it needs `settings:Administer`: the same grant as editing the Vision and Mission,
+   * because that is what this is a part of.
+   */
+  async uploadIdentityImage(input: {
+    scope: TenantScope;
+    actorUserId: string;
+    filename: string;
+    contentType: string;
+    contentBase64: string;
+  }): Promise<{ fileId: string; path: string }> {
+    const context = await this.authorization.contextFor(input.scope, input.actorUserId);
+    await this.authorization.assertCan(context, { module: 'settings', action: 'Administer' });
+
+    if (!IDENTITY_IMAGE_TYPES.includes(input.contentType)) {
+      throw new BadRequestException(
+        `A picture must be one of: ${IDENTITY_IMAGE_TYPES.join(', ')}.`,
+      );
+    }
+
+    if (this.files === undefined) {
+      throw new InternalServerErrorException(
+        'Company pictures are not available: this deployment was built without the file store. ' +
+          'OrganizationModule must import KnowledgeModule.',
+      );
+    }
+
+    const bytes = Buffer.from(input.contentBase64, 'base64');
+    // Checked on the decoded length, not the base64 string, which is a third larger.
+    if (bytes.byteLength > MAX_IDENTITY_IMAGE_BYTES) {
+      throw new BadRequestException(
+        `A picture must be ${Math.round(MAX_IDENTITY_IMAGE_BYTES / 1024)} KB or smaller. ` +
+          'Resize it and try again.',
+      );
+    }
+
+    const stored = await this.files.uploadAuthorizedElsewhere({
+      scope: input.scope,
+      actorUserId: input.actorUserId,
+      filename: input.filename,
+      contentType: input.contentType,
+      bytes,
+      // Internal, not Public: this is drawn on a screen only members of the company can open, and
+      // a classification is a statement about the data rather than about which screen shows it.
+      classification: 'Internal',
+    });
+
+    await this.prisma.runInTenantTransaction(input.scope, () =>
+      this.prisma.client.storedFile.update({
+        where: { id: stored.id },
+        data: { purpose: IDENTITY_IMAGE_PURPOSE },
+      }),
+    );
+
+    /*
+     * A relative path, and it goes through `/api`.
+     *
+     * An absolute one bakes in whichever host it was written on and breaks the moment the same
+     * row is read from another -- and these rows outlive deployments. `/api` is what the web app
+     * proxies to this API in every environment, development and production alike.
+     */
+    return {
+      fileId: stored.id,
+      path: `/api/tenants/${input.scope.tenantId}/organization/company-images/${stored.id}`,
+    };
+  }
+
+  /**
+   * The bytes of one of those pictures, for anybody who may open the Hierarchy.
+   *
+   * Four things are checked, and each one is a way this could otherwise become a file-reading
+   * hole: the file belongs to this company, it carries the identity-image mark, it has not been
+   * deleted, and its scan has cleared. A picture that fails any of them is a 404 rather than a
+   * refusal, because the caller has no business learning that the id exists.
+   */
+  async identityImageContent(input: {
+    scope: TenantScope;
+    actorUserId: string;
+    fileId: string;
+  }): Promise<{ bytes: Buffer; contentType: string }> {
+    const context = await this.authorization.contextFor(input.scope, input.actorUserId);
+    await this.authorization.assertCan(context, { module: 'hierarchy', action: 'View' });
+
+    if (this.files === undefined) {
+      throw new InternalServerErrorException(
+        'Company pictures are not available: this deployment was built without the file store. ' +
+          'OrganizationModule must import KnowledgeModule.',
+      );
+    }
+
+    const file = await this.prisma.runInTenantTransaction(input.scope, () =>
+      this.prisma.client.storedFile.findFirst({
+        where: {
+          tenantId: input.scope.tenantId,
+          id: input.fileId,
+          purpose: IDENTITY_IMAGE_PURPOSE,
+          deletedAt: null,
+        },
+        select: { contentType: true, scanState: true },
+      }),
+    );
+
+    if (file === null) {
+      throw new NotFoundException('That picture does not exist in this company.');
+    }
+    if (file.scanState !== 'Clean') {
+      // Unscanned or infected. Nothing serves it, and the reason is not the caller's business.
+      throw new NotFoundException('That picture is not available.');
+    }
+
+    const bytes = await this.files.readAuthorizedElsewhere({
+      scope: input.scope,
+      fileId: input.fileId,
+    });
+    return { bytes, contentType: file.contentType };
+  }
+
   async updateCompanyIdentity(input: {
     scope: TenantScope;
     actorUserId: string;

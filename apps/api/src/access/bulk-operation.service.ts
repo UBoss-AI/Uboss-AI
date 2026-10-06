@@ -1,6 +1,14 @@
-import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  Optional,
+} from '@nestjs/common';
 
 import { AuditEventService } from '../audit/audit-event.service.js';
+import { FileService } from '../knowledge/file.service.js';
+import { EmployeePhotoService } from '../organization/employee-photo.service.js';
 import { SECURITY_ACTIONS, SecurityEventPublisher } from '../auth/security-event.publisher.js';
 import {
   AuthorizationService,
@@ -19,6 +27,15 @@ import { OffboardingService } from './offboarding.service.js';
 import { UserAccessService } from './user-access.service.js';
 
 /** A hard ceiling on rows per operation. */
+/**
+ * The mark on a photograph that arrived inside an import spreadsheet -- PRD 3.1.
+ *
+ * Distinct from the company-identity pictures, because these are transient: they exist between a
+ * validation and the apply that consumes them, and an import that is cancelled leaves them with
+ * nothing pointing at them. The mark is what a retention sweep would find them by.
+ */
+const IMPORT_PHOTO_PURPOSE = 'ImportPhoto';
+
 export const MAX_BULK_ROWS = 5000;
 
 /** The action each bulk kind requires. One table, so no call site can pick the wrong one. */
@@ -108,6 +125,18 @@ export class BulkOperationService {
     private readonly authorization: AuthorizationService,
     private readonly auditEvents: AuditEventService,
     private readonly securityEvents: SecurityEventPublisher,
+    /*
+     * Both optional, and both for one feature: a photograph pasted into the import spreadsheet.
+     *
+     * Requiring them would put the file store, its storage adapter, its malware scanner and the
+     * photo service into the provider list of every test that builds a module around bulk
+     * operations -- none of which is about photographs. `global-guard-order.spec.ts` asserts the
+     * real graph supplies them, and the code below treats their absence as "no photographs were
+     * sent" rather than as a failure, because an import of fifty people must not fall over on a
+     * picture.
+     */
+    @Optional() private readonly files?: FileService,
+    @Optional() private readonly photos?: EmployeePhotoService,
   ) {}
 
   /**
@@ -124,6 +153,14 @@ export class BulkOperationService {
     kind: BulkOperationKind;
     /** CSV text. An XLS is exported to CSV by the browser before upload. */
     content: string;
+    /**
+     * Pictures pasted into the spreadsheet, by the body row each one sits on -- PRD 3.1.
+     *
+     * Stored now rather than carried: a row's `input` is JSON in the database and an import may
+     * be five thousand rows, so holding the images there would be gigabytes. Each is put in the
+     * file store, and the row keeps its id.
+     */
+    photos?: Map<number, { extension: string; bytes: Buffer }> | undefined;
     sourceFileName?: string | undefined;
     parameters?: Record<string, unknown> | undefined;
     reason?: string | undefined;
@@ -159,13 +196,58 @@ export class BulkOperationService {
         totalRows: parsed.length,
       });
 
+      /*
+       * The pictures, stored once and referred to by id.
+       *
+       * Done here rather than at apply, because this is the only point the file exists: apply
+       * receives an operation id and no spreadsheet. A picture that cannot be stored is dropped
+       * with a line in the log rather than failing the import -- fifty people must not be refused
+       * over one photograph, and the row says what it is about in every other way.
+       */
+      const storedPhotos = new Map<number, { photoFileId: string }>();
+      if (input.photos !== undefined && input.photos.size > 0 && this.files !== undefined) {
+        for (const [bodyIndex, picture] of input.photos) {
+          try {
+            const stored = await this.files.uploadAuthorizedElsewhere({
+              scope: input.scope,
+              actorUserId: input.actorUserId,
+              filename: `import-photo-${bodyIndex + 1}.${picture.extension}`,
+              contentType: `image/${picture.extension === 'jpg' ? 'jpeg' : picture.extension}`,
+              bytes: picture.bytes,
+              classification: 'Internal',
+            });
+            await this.prisma.client.storedFile.update({
+              where: { id: stored.id },
+              data: { purpose: IMPORT_PHOTO_PURPOSE },
+            });
+            storedPhotos.set(bodyIndex, { photoFileId: stored.id });
+          } catch (error) {
+            this.logger.warn(
+              `A photograph on row ${bodyIndex + 1} of this import could not be stored: ` +
+                (error instanceof Error ? error.message : String(error)),
+            );
+          }
+        }
+      }
+
       await this.access.createBulkRowsWithinCurrentScope(
-        validated.map((row) => ({
+        validated.map((row, bodyIndex) => ({
           bulkOperationId: operation.id,
           tenantId: input.scope.tenantId,
           rowNumber: row.rowNumber,
           state: row.errors.length === 0 ? ('Valid' as const) : ('Invalid' as const),
-          input: row.values,
+          /*
+           * Matched by position, not by `rowNumber`.
+           *
+           * `rowNumber` is what a person sees in their spreadsheet -- it counts the header, so
+           * the first employee is row 2 -- and the pictures are keyed by their place in the body,
+           * from zero. Subtracting one was off by one, and the symptom was a photograph silently
+           * attached to nobody: no error, no warning, just a person without a picture.
+           *
+           * `validated` is built from the same body in the same order, so its index *is* the key.
+           * No arithmetic, nothing to be off by.
+           */
+          input: { ...row.values, ...(storedPhotos.get(bodyIndex) ?? {}) },
           errors: row.errors,
           ...(row.subjectUserId === undefined ? {} : { subjectUserId: row.subjectUserId }),
         })),
@@ -594,7 +676,7 @@ export class BulkOperationService {
               (values['reportingManager'] ?? '').trim().toLowerCase(),
         );
 
-        await this.employment.addEmployee({
+        const added = await this.employment.addEmployee({
           scope: input.scope,
           actorUserId: input.actorUserId,
           employeeName: values['employeeName'] ?? '',
@@ -606,6 +688,44 @@ export class BulkOperationService {
           ...(values['email']?.trim() ? { workEmail: values['email'].trim() } : {}),
           ...(values['phone']?.trim() ? { workPhone: values['phone'].trim() } : {}),
         });
+
+        /*
+         * The photograph that came in on this row, now that there is somebody to attach it to --
+         * PRD 3.1.
+         *
+         * After the person exists, because a photograph belongs to a person and there was none
+         * until this line. Its failure is logged and swallowed: the row's deliverable is the
+         * employee, and refusing a correctly described person because their picture would not
+         * attach would be the tail wagging the dog. The photograph can be set afterwards from
+         * their profile; the employee cannot be re-imported without unpicking the row.
+         */
+        const photoFileId = values['photoFileId']?.trim();
+        if (photoFileId && this.files !== undefined && this.photos !== undefined) {
+          try {
+            const bytes = await this.files.readAuthorizedElsewhere({
+              scope: input.scope,
+              fileId: photoFileId,
+            });
+            const stored = await this.prisma.client.storedFile.findFirst({
+              where: { tenantId: input.scope.tenantId, id: photoFileId },
+              select: { contentType: true, filename: true },
+            });
+            await this.photos.upload({
+              scope: input.scope,
+              actorUserId: input.actorUserId,
+              subjectUserId: added.userId,
+              filename: stored?.filename ?? 'import-photo.png',
+              contentType: stored?.contentType ?? 'image/png',
+              contentBase64: bytes.toString('base64'),
+            });
+          } catch (error) {
+            this.logger.warn(
+              `${values['employeeName'] ?? 'A person'} was imported, and the photograph on their ` +
+                'row could not be attached: ' +
+                (error instanceof Error ? error.message : String(error)),
+            );
+          }
+        }
         break;
       }
 

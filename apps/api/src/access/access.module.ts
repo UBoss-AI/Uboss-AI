@@ -6,6 +6,8 @@ import { CapabilityService } from './capability.service.js';
 import { BulkOperationService } from './bulk-operation.service.js';
 import { InvitationAccessService } from './invitation-access.service.js';
 import { OffboardingService } from './offboarding.service.js';
+import { KnowledgeModule } from '../knowledge/knowledge.module.js';
+import { OrganizationModule } from '../organization/organization.module.js';
 import { ReportsModule } from '../reports/reports.module.js';
 import { UserAccessService } from './user-access.service.js';
 
@@ -30,7 +32,15 @@ import { UserAccessService } from './user-access.service.js';
  */
 @Global()
 @Module({
-  imports: [ReportsModule],
+  /*
+   * KnowledgeModule and OrganizationModule are here for one feature: a photograph pasted into the
+   * import spreadsheet -- PRD 3.1. `BulkOperationService` takes the file store and the photo
+   * service as `@Optional()` so that tests need not provide a storage adapter and a malware
+   * scanner, which means nothing fails at startup when they are absent. What fails instead is
+   * every photograph in every import, silently. `global-guard-order.spec.ts` asserts these two
+   * imports are here, so the optional marker cannot hide a real misconfiguration.
+   */
+  imports: [ReportsModule, KnowledgeModule, OrganizationModule],
   controllers: [AccessController],
   providers: [
     AccessRepository,

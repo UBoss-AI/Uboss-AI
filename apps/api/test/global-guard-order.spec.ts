@@ -125,3 +125,63 @@ describe('global guard registration order', () => {
     );
   });
 });
+
+/**
+ * What an `@Optional()` dependency must still be given in the real graph.
+ *
+ * `HierarchyService` takes `FileService` optionally, because requiring it put the file store --
+ * and its storage adapter and its malware scanner -- into the provider list of every test that
+ * builds a module around the hierarchy, including two with nothing to do with files.
+ *
+ * The risk of that marker is a real misconfiguration nobody notices: the company pictures would
+ * simply refuse, in production, with nothing failing earlier. So the marker buys the tests their
+ * freedom and this buys it back — `OrganizationModule` must actually import the module that
+ * provides the file store, and that is asserted against the real module metadata rather than
+ * against a comment.
+ */
+describe('optional dependencies the real graph still has to supply', () => {
+  const importsOf = (moduleName: string): string[] => {
+    const module = importedModules(AppModule).find(
+      (candidate) => (candidate as { name?: string }).name === moduleName,
+    );
+    assert.ok(module, `${moduleName} is no longer in the graph`);
+    return ((Reflect.getMetadata('imports', module as object) ?? []) as unknown[]).map(
+      (entry) => (entry as { name?: string }).name ?? '(unnamed)',
+    );
+  };
+
+  it('gives the hierarchy its file store, so company pictures are not refused in production', () => {
+    const names = importsOf('OrganizationModule');
+    assert.ok(
+      names.includes('KnowledgeModule'),
+      'OrganizationModule must import KnowledgeModule. HierarchyService takes FileService as an ' +
+        '@Optional() dependency so that tests need not provide a storage adapter and a malware ' +
+        'scanner — which means nothing fails at startup when it is missing. What fails instead ' +
+        'is every attempt to store or read a company picture, at the moment somebody tries it. ' +
+        `The imports are: ${names.join(', ')}.`,
+    );
+  });
+
+  /*
+   * The import photographs, and why this assertion is not paranoia.
+   *
+   * `BulkOperationService` takes the file store and the photo service optionally, and when they
+   * are absent it treats an import as having sent no photographs. That is the right behaviour for
+   * a test module and a silent disaster in production: an administrator pastes fifty faces into a
+   * spreadsheet, every person is created, and not one picture arrives. Nothing errors, nothing is
+   * logged, and the only symptom is fifty people with initials where their photograph should be.
+   */
+  it('gives bulk imports the file store and the photo service, so pasted photographs are not dropped', () => {
+    const names = importsOf('AccessModule');
+
+    for (const required of ['KnowledgeModule', 'OrganizationModule']) {
+      assert.ok(
+        names.includes(required),
+        `AccessModule must import ${required}. BulkOperationService takes FileService and ` +
+          'EmployeePhotoService as @Optional() dependencies, and when they are missing it ' +
+          'quietly imports everybody without their photographs — no error, no warning, just ' +
+          `people with no picture. The imports are: ${names.join(', ')}.`,
+      );
+    }
+  });
+});
