@@ -102,25 +102,67 @@ jobs:
 
       # Hostinger acknowledges the deploy request before Docker has finished starting. Check the
       # public services so a broken container or failed TLS setup makes this workflow red.
+      #
+      # ## Why the window is three quarters of an hour
+      #
+      # It used to be twenty minutes, and it failed a deploy that had worked. The VPS builds all
+      # four images from source — npm ci, tsc, next build, twice over — and on run #32 the API
+      # answered for the first time **one minute after** this step gave up. The site had been
+      # healthy for fifteen hours by the time anybody looked.
+      #
+      # That is the worst way for a check to be wrong. A deploy that is red when it succeeded
+      # teaches everybody to ignore the red, and the next one that is red for a real reason is
+      # ignored with it. So the window is now matched to how long a cold rebuild actually takes,
+      # with room on top, rather than to how long somebody once guessed it would.
+      #
+      # One deadline for all four rather than forty-five minutes each: the API is what takes the
+      # time, and once it answers the rest are seconds behind. That keeps the whole step bounded
+      # at forty-five minutes however many URLs are listed.
       - name: Verify live services
         shell: bash
         run: |
           set -euo pipefail
+
+          window_minutes=45
+          deadline=$(( SECONDS + window_minutes * 60 ))
+
+          # Says what it is waiting for, and says it once per change of state. Sixty identical
+          # "Connection timed out" lines told nobody whether the box was building, broken or gone.
+          wait_for() {
+            local url="$1" last='' code started=$SECONDS
+            while (( SECONDS < deadline )); do
+              # curl writes `000` itself when it never got an answer, so the `|| true` is only
+              # there to keep `set -e` from ending the job on a connection that was always going
+              # to fail for the first few minutes. Adding an `echo` here as well printed `000000`.
+              code=$(curl --location --silent --output /dev/null --write-out '%{http_code}' \
+                          --max-time 10 "$url" || true)
+              code=${code:-000}
+              case "$code" in
+                2??|3??)
+                  echo "ready after $(( SECONDS - started ))s: $url ($code)"
+                  return 0
+                  ;;
+              esac
+              if [[ "$code" != "$last" ]]; then
+                if [[ "$code" == 000 ]]; then
+                  echo "waiting: $url is not answering yet — the VPS is still building images"
+                else
+                  echo "waiting: $url answered $code"
+                fi
+                last="$code"
+              fi
+              sleep 10
+            done
+            # The last thing it answered is the useful part: nothing at all means the stack is not
+            # up yet, and an HTTP code means it is up and refusing, which are different problems.
+            echo "Service did not become healthy within ${window_minutes} minutes: $url (last answer: ${last:-none})" >&2
+            return 1
+          }
+
           for url in \
             https://api.ubossai.com/health \
             https://app.ubossai.com/login \
             https://app.ubossai.com/api/auth/social-providers \
             https://chiefagent.ubossai.com/; do
-            ready=false
-            for attempt in $(seq 1 60); do
-              if curl --fail --location --silent --show-error --max-time 10 --output /dev/null "$url"; then
-                ready=true
-                break
-              fi
-              sleep 10
-            done
-            if [[ "$ready" != true ]]; then
-              echo "Service did not become healthy: $url" >&2
-              exit 1
-            fi
+            wait_for "$url"
           done
