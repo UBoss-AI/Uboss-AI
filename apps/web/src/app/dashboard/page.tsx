@@ -292,8 +292,10 @@ export default function DashboardPage(): React.JSX.Element {
                 {arranging ? (
                   <Banner tone="info">
                     Drag a tile to move it, or use the arrow keys: left and right move it, up and
-                    down make it large or ordinary. Double-clicking a tile also changes its size.
-                    Press Done arranging when you have finished.
+                    down make it large or ordinary. Double-clicking a tile also changes its size. A
+                    tile stays in its own group — what a tile is for is not a preference — so
+                    dropping one on the other side does nothing. Press Done arranging when you have
+                    finished.
                   </Banner>
                 ) : null}
 

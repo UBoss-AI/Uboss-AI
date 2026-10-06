@@ -142,6 +142,15 @@ export function OrchestrationMap({
   onSelect: (tile: string | null) => void;
 }) {
   const frame = useRef<HTMLDivElement>(null);
+
+  /*
+   * What is being dragged, held here because `dragover` cannot read it.
+   *
+   * The browser protects `dataTransfer` while a drag is in flight -- the payload is only readable
+   * on drop -- so a target cannot ask "what is coming" in order to decide whether to accept it.
+   * The dragged key is therefore remembered on `dragstart` and read from here.
+   */
+  const dragging = useRef<string | null>(null);
   const core = useRef<HTMLSpanElement>(null);
   const nodes = useRef(new Map<string, HTMLElement>());
 
@@ -224,6 +233,7 @@ export function OrchestrationMap({
 
   if (meta === null) return null;
 
+
   const describe = (key: string) => meta.tiles.find((entry) => entry.key === key);
 
   /** The tiles the server permitted, in the order the contract lists them, per side. */
@@ -276,12 +286,32 @@ export function OrchestrationMap({
                 draggable={arranging}
                 onDragStart={(event) => {
                   if (!arranging) return;
+                  dragging.current = tile.tile;
                   event.dataTransfer.setData('text/plain', tile.tile);
                   event.dataTransfer.effectAllowed = 'move';
                 }}
+                onDragEnd={() => {
+                  dragging.current = null;
+                }}
+                /*
+                 * A tile only accepts a tile from its own lane.
+                 *
+                 * A lane is what a tile *is* -- work that is set up, or work that is reviewed --
+                 * and that is the server's answer, not a preference. So a tile cannot be dragged
+                 * into the other lane.
+                 *
+                 * What it did instead was worse than refusing: dropping Objectives onto Approvals
+                 * reordered Objectives **within its own lane**, to a position that had nothing to
+                 * do with where it was let go. From the outside that reads as the tile jumping at
+                 * random, or as nothing happening at all. Reported as "no card moves".
+                 *
+                 * Not calling `preventDefault` is how a target refuses a drop: the cursor shows
+                 * the refusal, and `onDrop` never fires.
+                 */
                 onDragOver={(event) => {
                   if (!arranging) return;
-                  // Without this the drop never fires: the default is to refuse.
+                  const from = dragging.current;
+                  if (from === null || describe(from)?.lane !== detail.lane) return;
                   event.preventDefault();
                   event.dataTransfer.dropEffect = 'move';
                 }}
@@ -289,7 +319,9 @@ export function OrchestrationMap({
                   if (!arranging) return;
                   event.preventDefault();
                   const moved = event.dataTransfer.getData('text/plain');
-                  if (moved !== '' && moved !== tile.tile) onMove?.(moved, tile.tile);
+                  if (moved === '' || moved === tile.tile) return;
+                  if (describe(moved)?.lane !== detail.lane) return;
+                  onMove?.(moved, tile.tile);
                 }}
                 /*
                  * Arranging from the keyboard, because a drag is a mouse and this is a screen
