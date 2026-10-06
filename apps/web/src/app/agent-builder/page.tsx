@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'motion/react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
@@ -10,7 +10,9 @@ import {
   Card,
   CardBody,
   ConfirmDialog,
+  FormField,
   Icon,
+  Modal,
   PageHeader,
   StatusBadge,
   transition,
@@ -24,8 +26,10 @@ import {
   type AgentExecutionSetupView,
   ApiError,
   authApi,
+  type BuilderSkillRow,
   type MeResponse,
   organizationApi,
+  skillsApi,
 } from '../../lib/api-client';
 import { useJustBecameTrue } from '../../lib/use-just-became-true';
 import { useAccountMenu } from '../../lib/use-account-menu';
@@ -90,6 +94,7 @@ function AgentBuilderInner() {
   const [people, setPeople] = useState<Record<string, string>>({});
   const params = useSearchParams();
   const assignmentId = params.get('assignmentId');
+  const router = useRouter();
 
   const [confirmingPublish, setConfirmingPublish] = useState(false);
   const [me, setMe] = useState<MeResponse | null>(null);
@@ -263,6 +268,40 @@ function AgentBuilderInner() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  /**
+   * Making an agent that no Objective asked for -- and making it **here**.
+   *
+   * It was on Engine Agents, which was the wrong screen twice over. Engine Agents is where a
+   * company looks at the agents it has and what they are doing; this is the screen called Agent
+   * Builder, and the client said as much: "agent agar banana hai to Agent Builder me hi button
+   * hona chahiye". Somebody who wanted an agent had to go to the list of agents to find out how
+   * to get one.
+   *
+   * It is also an administrator's act, not everybody's: who gets an agent and who may run it is
+   * decided for the company. That is `agent-builder: Create`, which an ordinary Employee does not
+   * hold -- the same grant that gated the button on the other screen, so nothing about who may do
+   * this has changed by moving where it is done. The server checks it again regardless.
+   */
+  const [creating, setCreating] = useState(false);
+  const [newAgent, setNewAgent] = useState({ name: '', purpose: '' });
+
+  /**
+   * The Skills this company may attach, for choosing them by hand.
+   *
+   * `setSkills` and the route that lists them both existed and neither was ever drawn: work that
+   * came from an objective had its Skills chosen by the analysis, so the screen never needed a
+   * control. An agent with no objective has no analysis — and readiness refuses to activate one
+   * with no published Skill behind it — so without this a custom agent could be built and never
+   * finished, blocked by a sentence with nothing to act on.
+   *
+   * Offered for both kinds, because the same gap exists on objective-driven work whose analysis
+   * matched nothing, and because two forms that differ are the thing this screen is undoing.
+   *
+   * `forBuilder`, not the catalogue: it is gated on Agent Builder and returns only published,
+   * entitled Skills, which is exactly the set the server will accept.
+   */
+  const [skillOptions, setSkillOptions] = useState<BuilderSkillRow[] | null>(null);
+
   const tenantId =
     resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
 
@@ -329,6 +368,19 @@ function AgentBuilderInner() {
       // A name that will not load shows as a dash rather than as an error: the import still
       // works, and the review still names the objective it landed in.
       .catch(() => undefined);
+  }, [tenantId]);
+
+  useEffect(() => {
+    if (tenantId === null) return;
+    void skillsApi
+      .forBuilder(tenantId)
+      /*
+       * An empty array rather than null on failure, so the section says "this company has no
+       * published Skill" instead of sitting on "loading" forever. The two readings are different
+       * and a reader deciding why they cannot activate deserves the right one.
+       */
+      .then((result) => setSkillOptions(result.skills))
+      .catch(() => setSkillOptions([]));
   }, [tenantId]);
 
   /** Every mutation funnels through here, so the busy flag and error handling are never skipped. */
@@ -583,10 +635,29 @@ function AgentBuilderInner() {
         description="Ask only for missing execution setup — never re-enter the whole method."
         breadcrumbs={[{ label: 'Engine Agents', href: '/agents' }, { label: 'Agent Builder' }]}
         actions={
-          selected === null ? null : selected.engineAgent !== null ? (
+          selected === null ? (
+            /*
+              The one action the list itself has -- PRD 5.1, and the client again after it.
+
+              An agent normally comes out of an Objective: the analysis decides its skills, its
+              approvals and its evidence, so what arrives is configured. That path is the list
+              below. This is the other case the client described -- somebody has an agent in mind
+              and no Objective to hang it on -- and without a button for it the only way through
+              was to invent an Objective, which puts a fiction in the record of what the company
+              is trying to do.
+
+              Drawn only for somebody who may build. Checked again by the server.
+            */
+            can(myAccess, 'agent-builder', 'Create') ? (
+              <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
+                <Icon name="plus" size={16} />
+                Create Custom Agent
+              </Button>
+            ) : null
+          ) : selected.engineAgent !== null ? (
             <Button size="sm" onClick={() => setSelected(null)}>
               <Icon name="back" size={16} />
-              This objective
+              {selected.context === null ? 'All agent work' : 'This objective'}
             </Button>
           ) : (
             <>
@@ -599,7 +670,7 @@ function AgentBuilderInner() {
               */}
               <Button size="sm" onClick={() => setSelected(null)}>
                 <Icon name="back" size={16} />
-                This objective
+                {selected.context === null ? 'All agent work' : 'This objective'}
               </Button>
               {/*
                 Save Draft first, because it is the one that loses work if it is missed.
@@ -713,6 +784,131 @@ function AgentBuilderInner() {
         cancelLabel="Not yet"
       />
 
+      {/*
+        An agent with nothing decided for it yet.
+
+        Two fields, because two are all that can honestly be asked at this point: there is no
+        Objective behind it, so there is no analysis to say what tools it needs, what has to be
+        approved, or what counts as evidence. It arrives in **Draft setup** and cannot run until
+        somebody gives it those — a row claiming to be ready would be the product saying work is
+        being done that is not.
+      */}
+      <Modal
+        open={creating}
+        title="Create Custom Agent"
+        onClose={() => setCreating(false)}
+        footer={
+          <>
+            <Button onClick={() => setCreating(false)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={
+                busy ||
+                tenantId === null ||
+                newAgent.name.trim().length < 3 ||
+                newAgent.purpose.trim().length < 10
+              }
+              onClick={() => {
+                if (tenantId === null) return;
+                setBusy(true);
+                setError(null);
+                setNotice(null);
+                agentBuilderApi
+                  .createStandalone(tenantId, {
+                    name: newAgent.name.trim(),
+                    purpose: newAgent.purpose.trim(),
+                  })
+                  .then((created) => {
+                    setCreating(false);
+                    setNewAgent({ name: '', purpose: '' });
+                    /*
+                     * Straight into the form, which is the whole point.
+                     *
+                     * The first version of this made a two-field agent and sent somebody to a
+                     * different screen to configure it on a smaller form. The client: "form sab
+                     * kuch same rahega, process same, bas objective ki jagah woh khud ek agent
+                     * ban raha hai." So what comes back is the same view every objective-driven
+                     * piece of work has, and it opens in the same builder — Job Method, Skills,
+                     * setup, test, activate.
+                     */
+                    setSelected(created);
+                    setNotice(
+                      `"${newAgent.name.trim()}" is ready to build. It has no objective behind ` +
+                        'it, so nothing has been decided for it — choose its Skills and answer ' +
+                        'the setup below, then test and activate it as you would any other.',
+                    );
+                    /*
+                     * Named in the URL, which is how this screen opens anything.
+                     *
+                     * `load()` deliberately closes whatever is open unless the URL names it —
+                     * "nothing opens itself", so that arriving here does not drop somebody into
+                     * a form they did not choose. Setting `selected` alone was undone by the
+                     * very next list refresh, and the new work's form flashed and vanished.
+                     * Asking for it by name is the mechanism that already exists for this.
+                     */
+                    router.replace(
+                      `/agent-builder?assignmentId=${encodeURIComponent(created.assignmentId)}`,
+                    );
+                  })
+                  .catch((caught: unknown) =>
+                    setError(
+                      caught instanceof ApiError
+                        ? caught.message
+                        : 'That agent could not be created.',
+                    ),
+                  )
+                  .finally(() => setBusy(false));
+              }}
+            >
+              {busy ? 'Creating…' : 'Create agent'}
+            </Button>
+          </>
+        }
+      >
+        <FormField
+          label="Name"
+          required
+          hint="How people will refer to it. Unique in this company."
+        >
+          {(wiring) => (
+            <input
+              {...wiring}
+              className="uboss-input"
+              value={newAgent.name}
+              maxLength={200}
+              onChange={(event) => setNewAgent({ ...newAgent, name: event.target.value })}
+              placeholder="Weekly branch reconciliation"
+            />
+          )}
+        </FormField>
+
+        <FormField
+          label="What is it for"
+          required
+          hint="One or two sentences. This is the only record of why it was created."
+        >
+          {(wiring) => (
+            <textarea
+              {...wiring}
+              className="uboss-input"
+              rows={3}
+              maxLength={2000}
+              value={newAgent.purpose}
+              onChange={(event) => setNewAgent({ ...newAgent, purpose: event.target.value })}
+              placeholder="Reconciles the branch cash submissions each Monday and reports the mismatches."
+            />
+          )}
+        </FormField>
+
+        <p className="uboss-muted-3">
+          It is created in <b>Draft setup</b>. An agent built from an objective below arrives
+          configured, because the analysis decided its skills and approvals; this one has none of
+          that yet. Who may run it is decided afterwards, the same way as for any other agent.
+        </p>
+      </Modal>
+
       {error === null ? null : <Banner tone="danger">{error}</Banner>}
       {notice === null ? null : <Banner tone="ok">{notice}</Banner>}
 
@@ -773,8 +969,15 @@ function AgentBuilderInner() {
                 </Banner>
               ) : askingNothing ? (
                 <Banner tone="ok">
-                  Ready to test. Only missing execution setup is requested — the job method is
-                  inherited from the objective.
+                  {/*
+                    Two sentences, because the two kinds of work are true of different things.
+                    An agent with no objective behind it inherits nothing, and telling somebody
+                    their job method came from an objective they never created is a small lie
+                    they would go looking for.
+                  */}
+                  {selected.context === null
+                    ? 'Ready to test. Its job method is whatever is written in the grid below — there is no objective behind this agent to inherit one from.'
+                    : 'Ready to test. Only missing execution setup is requested — the job method is inherited from the objective.'}
                 </Banner>
               ) : (
                 <Banner tone="info">
@@ -790,7 +993,9 @@ function AgentBuilderInner() {
                     {selected.missing.length} question
                     {selected.missing.length === 1 ? '' : 's'} left.
                   </motion.span>{' '}
-                  Everything else is inherited from the objective and policy.
+                  {selected.context === null
+                    ? 'Nothing else has been decided for this agent, because no objective asked for it.'
+                    : 'Everything else is inherited from the objective and policy.'}
                 </Banner>
               )}
 
@@ -809,26 +1014,42 @@ function AgentBuilderInner() {
               <div className="uboss-af-h">
                 <span className="uboss-tag">A</span> Skill / Job Overview
                 <span className="uboss-muted-3">
-                  prefilled from Objective · Workflow · Hierarchy · Policy — edit where allowed
+                  {selected.context === null
+                    ? 'what was said when this agent was asked for, plus Hierarchy and Policy — edit where allowed'
+                    : 'prefilled from Objective · Workflow · Hierarchy · Policy — edit where allowed'}
                 </span>
               </div>
 
               {overview === null ? (
                 <div className="uboss-row-2">
+                  {/*
+                    The chip names a record a reader can go and open, so on an agent with no
+                    objective behind it these two say where the words really came from: the
+                    person who asked for the agent. "From Objective" there would send somebody
+                    looking for an objective that was never created.
+                  */}
                   {inherited(
                     'agentName',
                     'Skill / Agent Name',
                     selected.engineAgent?.name ?? selected.prefill.suggestedAgentName,
-                    'Objective',
+                    selected.context === null ? 'CustomAgent' : 'Objective',
                     true,
                   )}
-                  {inherited(
-                    'agentObjective',
-                    'Objective',
-                    `${selected.prefill.objectiveCode} · ${selected.prefill.objectiveName}`,
-                    'Objective',
-                    true,
-                  )}
+                  {selected.context === null
+                    ? inherited(
+                        'agentObjective',
+                        'What it is for',
+                        selected.prefill.assignedWork,
+                        'CustomAgent',
+                        true,
+                      )
+                    : inherited(
+                        'agentObjective',
+                        'Objective',
+                        `${selected.prefill.objectiveCode} · ${selected.prefill.objectiveName}`,
+                        'Objective',
+                        true,
+                      )}
                 </div>
               ) : (
                 /*
@@ -848,7 +1069,17 @@ function AgentBuilderInner() {
                         field.key,
                         field.label,
                         overview[field.key] ?? '',
-                        FORM3_FIELD_SOURCE[field.key],
+                        /*
+                         * An agent with no objective behind it has no objective and no approved
+                         * workflow to cite. Those two values were typed by whoever asked for the
+                         * agent, so the chip says so; Hierarchy and Policy are still true of it,
+                         * because the company's structure and its rules apply either way.
+                         */
+                        selected.context === null &&
+                          (FORM3_FIELD_SOURCE[field.key] === 'Objective' ||
+                            FORM3_FIELD_SOURCE[field.key] === 'Workflow')
+                          ? 'CustomAgent'
+                          : FORM3_FIELD_SOURCE[field.key],
                         field.required,
                       ),
                     )}
@@ -858,9 +1089,71 @@ function AgentBuilderInner() {
 
               {selected.engineAgent !== null ? null : (
                 <>
+                  {/*
+                    The Skills this agent performs.
+
+                    An agent is a way of running a Skill; without one there is nothing for it to
+                    do, and readiness says so as a blocker. Work that came from an objective has
+                    these chosen by the analysis and normally needs nothing here — which is why
+                    the control never existed. An agent created without an objective has no
+                    analysis, so it starts with none and this is where they are chosen.
+
+                    The whole set is sent, not a delta: two people editing at once is how a delta
+                    loses one of the changes. The server re-applies every control the automatic
+                    matching goes through — published only, and entitled to this company.
+                  */}
+                  <div className="uboss-section-label">Skills this agent performs</div>
+                  {skillOptions === null ? (
+                    <p className="uboss-muted">Reading the Skills this company may use…</p>
+                  ) : skillOptions.length === 0 ? (
+                    <p className="uboss-muted">
+                      This company has no published Skill to attach yet. A Skill has to be authored,
+                      approved and published before an agent can perform it.
+                    </p>
+                  ) : (
+                    <div>
+                      {skillOptions.map((skill) => {
+                        const chosen = selected.prefill.skillVersionIds.includes(skill.versionId);
+                        return (
+                          <label className="uboss-checkbox" key={skill.versionId}>
+                            <input
+                              type="checkbox"
+                              checked={chosen}
+                              disabled={busy || !can(myAccess, 'agent-builder', 'EditDraft')}
+                              onChange={() => {
+                                const next = chosen
+                                  ? selected.prefill.skillVersionIds.filter(
+                                      (id) => id !== skill.versionId,
+                                    )
+                                  : [...selected.prefill.skillVersionIds, skill.versionId];
+                                run((tenant, assignment) =>
+                                  agentBuilderApi.setSkills(tenant, assignment, next),
+                                )();
+                              }}
+                            />
+                            <span>
+                              <b>{skill.name}</b>
+                              <span className="uboss-muted-3">
+                                {' '}
+                                — {skill.category} · v{skill.versionNumber}
+                                {skill.requiresApproval ? ' · needs approval' : ''}
+                              </span>
+                              <br />
+                              <span className="uboss-field-hint">{skill.purpose}</span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+
                   {askingNothing ? null : (
                     <>
-                      <div className="uboss-section-label">What the objective did not answer</div>
+                      <div className="uboss-section-label">
+                        {selected.context === null
+                          ? 'What has not been answered yet'
+                          : 'What the objective did not answer'}
+                      </div>
                       {selected.missing.map((entry) =>
                         controlFor(entry.field, entry.label, entry.why),
                       )}

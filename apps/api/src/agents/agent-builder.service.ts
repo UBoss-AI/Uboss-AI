@@ -171,6 +171,125 @@ export class AgentBuilderService {
     });
   }
 
+  /**
+   * An agent nobody's objective asked for — built through this same form.
+   *
+   * ## Why it is an assignment and not a shortcut
+   *
+   * Everything Agent Builder does hangs off an `AiWorkAssignment`: the Job Method grid, the Skill
+   * choice, the execution setup, the controlled test, the readiness rules and activation all read
+   * one. The row could not exist without an objective, so the only custom agent the product could
+   * make was a two-field stub created on the Engine Agents screen and configured there by a
+   * second, smaller form. Two forms for one thing, and the smaller one quietly asked less.
+   *
+   * The client: "form sab kuch same rahega, process same, bas objective ki jagah woh khud ek
+   * agent ban raha hai." So this creates the same row with the plan half left empty, and every
+   * method after it is untouched — including `activate`, which never reads the objective at all.
+   * What comes out is an Engine Agent configured exactly like one an objective produced.
+   *
+   * ## What it does not decide
+   *
+   * The Skills. An objective's analysis chooses them from the work; there is no analysis here, so
+   * this starts with none and `setSkills` is how they are chosen. That is deliberate rather than
+   * unfinished: readiness refuses to activate an agent with no published Skill behind it, and
+   * inventing one to get past that would be the product claiming an agent can do work nothing
+   * says it can do.
+   *
+   * `agent-builder: Create` — the same grant that gated the old stub, so who may do this has not
+   * changed by moving where it is done.
+   */
+  async createStandalone(input: {
+    scope: TenantScope;
+    actorUserId: string;
+    name: string;
+    purpose: string;
+  }): Promise<AgentBuilderView> {
+    const context = await this.authorization.contextFor(input.scope, input.actorUserId);
+    await this.authorization.assertCan(context, { module: 'agent-builder', action: 'Create' });
+
+    const name = input.name.trim();
+    const purpose = input.purpose.trim();
+    if (name === '') {
+      throw new BadRequestException('An agent needs a name; it is how people refer to it.');
+    }
+    if (purpose === '') {
+      throw new BadRequestException(
+        'Say what this agent is for. With no objective behind it, this sentence is the only ' +
+          'record of why it exists.',
+      );
+    }
+
+    return this.prisma.runInTenantTransaction(input.scope, async () => {
+      /*
+       * Refused against the agents that exist, not only against other drafts.
+       *
+       * Activation checks this too, but finding out at the end — after the grid, the Skills, the
+       * setup and a test — that the name was taken all along is a bad way to learn it.
+       */
+      const clash = await this.prisma.client.engineAgent.findFirst({
+        where: { tenantId: input.scope.tenantId, name },
+      });
+      if (clash) {
+        throw new ConflictException(
+          `This company already has an Engine Agent called "${name}". Two agents with one name ` +
+            'makes an operations screen unreadable — choose another, or reuse that agent.',
+        );
+      }
+
+      const prefill: AgentSetupPrefill = {
+        suggestedAgentName: name,
+        // No objective, and the view says so rather than inventing a code. The list falls back to
+        // these two when the context is null, so they carry the words somebody will recognise.
+        objectiveCode: '—',
+        objectiveName: 'Custom agent',
+        assignedWork: purpose,
+        ownerUserId: input.actorUserId,
+        // Chosen on the form. See the note above about why this is empty and not guessed.
+        skillVersionIds: [],
+        /*
+         * No tool categories, so the builder does not ask for a connection.
+         *
+         * An objective's Definition of Done records which outside systems a step touches. Nothing
+         * here has said that yet, and asking for a connection to nothing is one of the
+         * unnecessary questions the zero-question rule forbids.
+         */
+        toolCategories: [],
+        approvalRequired: false,
+        completionEvidence: '',
+      };
+
+      const assignment = await this.prisma.client.aiWorkAssignment.create({
+        data: {
+          tenantId: input.scope.tenantId,
+          objectiveId: null,
+          objectiveVersionId: null,
+          workflowDraftId: null,
+          nodeId: null,
+          title: name,
+          status: 'AwaitingAgentSetup',
+          setupPrefill: prefill as unknown as object,
+          assignedByUserId: input.actorUserId,
+        },
+      });
+
+      await this.auditEvents.appendWithinCurrentScope(input.scope.tenantId, {
+        action: 'agent-builder.standalone_work_created',
+        resourceType: 'objective-assignment',
+        resourceId: assignment.id,
+        actorUserId: input.actorUserId,
+        summary: `Custom agent work "${name}" was created with no objective behind it.`,
+        metadata: {
+          assignmentId: assignment.id,
+          purpose,
+          // The record that distinguishes this from work an objective's analysis produced.
+          standalone: true,
+        },
+      });
+
+      return this.viewOf(input.scope, assignment);
+    });
+  }
+
   /** Everything awaiting agent setup that this person may act on. */
   async list(input: {
     scope: TenantScope;
@@ -341,7 +460,19 @@ export class AgentBuilderService {
     scope: TenantScope;
     actorUserId: string;
     assignmentId: string;
-    patch: Partial<AgentExecutionSetup>;
+    /**
+     * What arrives, rather than what one would like to arrive.
+     *
+     * `Partial<AgentExecutionSetup>` under `exactOptionalPropertyTypes` means "this key is absent
+     * or it is a real value" — and that is not what the HTTP layer delivers. A DTO instance
+     * carries every declared property as an own key, so the fields nobody sent arrive **present
+     * and `undefined`**. The type said otherwise, which is why the merge below was written as a
+     * plain spread and why the only test for it passed an object literal no request ever sends.
+     *
+     * Saying it here is half the fix: the signature now describes the real shape, so the code
+     * that handles it cannot look unnecessary to the next reader.
+     */
+    patch: { [K in keyof AgentExecutionSetup]?: AgentExecutionSetup[K] | undefined };
   }): Promise<AgentBuilderView> {
     const context = await this.authorization.contextFor(input.scope, input.actorUserId);
     await this.authorization.assertCan(context, { module: 'agent-builder', action: 'EditDraft' });
@@ -358,7 +489,29 @@ export class AgentBuilderService {
       }
 
       const current = this.setupOf(assignment);
-      const next: AgentExecutionSetup = { ...current, ...input.patch };
+
+      /*
+       * A patch carries what it carries, and `undefined` is not an answer.
+       *
+       * `@Type(() => AgentSetupPatchDto)` builds an instance of the DTO class, and an instance has
+       * **every declared property as an own key** — the five nobody sent arrive as `undefined`.
+       * Spreading that over the stored setup replaced five real answers with `undefined` on every
+       * save, and the check below then refused outright: saving a Run Type on its own came back
+       * `Unknown Missing/Wrong Data behaviour "undefined"`, naming a field the person had not
+       * touched.
+       *
+       * So answering one question at a time — which is what this endpoint is for, and what the
+       * screen does — could not work at all. It surfaced the first time anything drove the whole
+       * builder through to activation: the setup questions were answered, the screen reported
+       * them still unanswered, and the agent could never become ready.
+       *
+       * `null` still travels, because null is somebody clearing an answer. Only absence is
+       * dropped.
+       */
+      const supplied = Object.fromEntries(
+        Object.entries(input.patch).filter(([, value]) => value !== undefined),
+      ) as Partial<AgentExecutionSetup>;
+      const next: AgentExecutionSetup = { ...current, ...supplied };
 
       if (next.runType !== null && !this.isRunType(next.runType)) {
         throw new BadRequestException(
@@ -394,7 +547,8 @@ export class AgentBuilderService {
         },
       });
 
-      const answered = Object.keys(input.patch);
+      // What was really answered, not what the DTO happened to declare — see the merge above.
+      const answered = Object.keys(supplied);
       await this.auditEvents.appendWithinCurrentScope(input.scope.tenantId, {
         action: 'agent.setup_recorded',
         resourceType: 'agent-builder',
@@ -402,8 +556,10 @@ export class AgentBuilderService {
         actorUserId: input.actorUserId,
         resourceVersion: saved.version,
         summary:
-          `Recorded ${answered.join(', ')} for "${assignment.title}". The job method itself is ` +
-          'inherited from the objective and was not re-entered.',
+          `Recorded ${answered.join(', ')} for "${assignment.title}". ` +
+          (assignment.objectiveVersionId === null
+            ? 'This agent has no objective behind it, so its job method is whatever was written on the form.'
+            : 'The job method itself is inherited from the objective and was not re-entered.'),
         metadata: {
           answered: answered.join(', '),
           stillMissing:
@@ -794,8 +950,27 @@ export class AgentBuilderService {
       const assignment = await this.loadAssignment(input.assignmentId);
       await this.assertMayTouch(context, assignment, 'Publish');
 
+      /*
+       * Form 3 is a **read of three records together**: Form 2's steps, the workflow the manager
+       * approved, and the execution setup. A custom agent has the third and neither of the first
+       * two, so there is no Form 3 to compose — and composing one from the setup alone would be a
+       * document whose headings were empty in a way that reads as missing data rather than as
+       * nothing to report.
+       *
+       * Refused with the reason, rather than returning a hollow document. The Job Method grid on
+       * the builder screen is a different thing and works for both.
+       */
+      const { objectiveId, objectiveVersionId, workflowDraftId } = assignment;
+      if (objectiveId === null || objectiveVersionId === null || workflowDraftId === null) {
+        throw new ConflictException(
+          'This agent was created without an objective, so there is no Form 3 to read: Form 3 ' +
+            'is Form 2 and the approved workflow set beside the execution setup, and it has ' +
+            'neither. Its Job Method and setup are on the builder screen.',
+        );
+      }
+
       const version = await this.prisma.client.objectiveVersion.findFirst({
-        where: { tenantId: input.scope.tenantId, id: assignment.objectiveVersionId },
+        where: { tenantId: input.scope.tenantId, id: objectiveVersionId },
         include: { steps: { orderBy: { position: 'asc' } } },
       });
       if (!version) {
@@ -803,7 +978,7 @@ export class AgentBuilderService {
       }
 
       const objective = await this.prisma.client.objective.findFirst({
-        where: { tenantId: input.scope.tenantId, id: assignment.objectiveId },
+        where: { tenantId: input.scope.tenantId, id: objectiveId },
       });
       const department = version.departmentId
         ? await this.prisma.client.department.findFirst({
@@ -812,7 +987,7 @@ export class AgentBuilderService {
         : null;
 
       const draft = await this.prisma.client.objectiveWorkflowDraft.findFirst({
-        where: { tenantId: input.scope.tenantId, id: assignment.workflowDraftId },
+        where: { tenantId: input.scope.tenantId, id: workflowDraftId },
       });
       const graph = (draft?.graph ?? null) as WorkflowDraft | null;
 
@@ -901,8 +1076,8 @@ export class AgentBuilderService {
         jobLevel,
         actions,
         composedFrom: {
-          objectiveVersionId: assignment.objectiveVersionId,
-          workflowDraftId: assignment.workflowDraftId,
+          objectiveVersionId,
+          workflowDraftId,
           aiWorkAssignmentId: assignment.id,
           engineAgentId: assignment.engineAgentId,
         },
@@ -954,14 +1129,25 @@ export class AgentBuilderService {
   private async objectiveContextOf(
     scope: TenantScope,
     assignment: {
-      objectiveId: string;
-      objectiveVersionId: string;
-      nodeId: string;
+      objectiveId: string | null;
+      objectiveVersionId: string | null;
+      nodeId: string | null;
       updatedAt: Date;
     },
   ): Promise<AgentObjectiveContext | null> {
+    /*
+     * A custom agent has no objective behind it, which is the same null the screen already draws
+     * for one whose objective can no longer be read: there is no step to describe.
+     *
+     * All three are checked although the database guarantees they move together, because the
+     * guarantee is a CHECK constraint and this is TypeScript — and because a reader of this
+     * function should not have to go and find the constraint to know the fields are a set.
+     */
+    const { objectiveId, objectiveVersionId, nodeId } = assignment;
+    if (objectiveId === null || objectiveVersionId === null || nodeId === null) return null;
+
     const version = await this.prisma.client.objectiveVersion.findFirst({
-      where: { tenantId: scope.tenantId, id: assignment.objectiveVersionId },
+      where: { tenantId: scope.tenantId, id: objectiveVersionId },
       select: {
         objectiveName: true,
         status: true,
@@ -987,7 +1173,7 @@ export class AgentBuilderService {
             select: { displayName: true },
           }),
       await this.prisma.client.objectiveWorkflowDraft.findFirst({
-        where: { tenantId: scope.tenantId, objectiveVersionId: assignment.objectiveVersionId },
+        where: { tenantId: scope.tenantId, objectiveVersionId },
         orderBy: { createdAt: 'desc' },
         select: { graph: true },
       }),
@@ -1003,21 +1189,21 @@ export class AgentBuilderService {
       dod: { dependencies: node.dod?.dependencies ?? [] },
     }));
 
-    const mine = nodes.find((node) => node.id === assignment.nodeId) ?? null;
+    const mine = nodes.find((node) => node.id === nodeId) ?? null;
     const labelOf = new Map(nodes.map((node) => [node.id, node.label]));
     const stages = executionStages(nodes);
 
     return {
-      objectiveId: assignment.objectiveId,
+      objectiveId,
       objectiveCode: version.objective.code,
       objectiveName: version.objectiveName,
       objectiveStatus: version.status,
       departmentName: department?.name ?? null,
       ownerName: owner?.displayName ?? null,
       expectedOutcome: version.expectedFinalResult,
-      nodeId: assignment.nodeId,
-      stepLabel: mine?.label ?? assignment.nodeId,
-      stage: stages.get(assignment.nodeId) ?? null,
+      nodeId,
+      stepLabel: mine?.label ?? nodeId,
+      stage: stages.get(nodeId) ?? null,
       comesAfter: (mine?.dod.dependencies ?? [])
         .map((id) => labelOf.get(id))
         .filter((label): label is string => label !== undefined),
@@ -1056,7 +1242,7 @@ export class AgentBuilderService {
       setupPrefill: unknown;
       engineAgentId: string | null;
       id: string;
-      objectiveVersionId: string;
+      objectiveVersionId: string | null;
     },
     connectionId: string,
   ): Promise<void> {
@@ -1090,7 +1276,7 @@ export class AgentBuilderService {
       setupPrefill: unknown;
       engineAgentId: string | null;
       id: string;
-      objectiveVersionId: string;
+      objectiveVersionId: string | null;
       lastTestPassed: boolean | null;
       lastTestedAt: Date | null;
     },
@@ -1279,7 +1465,7 @@ export class AgentBuilderService {
    */
   private async mayTouch(
     context: Awaited<ReturnType<AuthorizationService['contextFor']>>,
-    assignment: { id: string; setupPrefill: unknown; objectiveVersionId: string },
+    assignment: { id: string; setupPrefill: unknown; objectiveVersionId: string | null },
     action: 'View' | 'EditDraft' | 'Run' | 'Publish',
     departmentId: string | null,
   ): Promise<boolean> {
@@ -1299,7 +1485,7 @@ export class AgentBuilderService {
 
   private async assertMayTouch(
     context: Awaited<ReturnType<AuthorizationService['contextFor']>>,
-    assignment: { id: string; setupPrefill: unknown; objectiveVersionId: string },
+    assignment: { id: string; setupPrefill: unknown; objectiveVersionId: string | null },
     action: 'View' | 'EditDraft' | 'Run' | 'Publish',
   ): Promise<void> {
     const departmentId = await this.departmentOf(assignment);
@@ -1317,7 +1503,19 @@ export class AgentBuilderService {
    * objective's fact, and a stale copy here would decide access from something that had since
    * changed.
    */
-  private async departmentOf(assignment: { objectiveVersionId: string }): Promise<string | null> {
+  private async departmentOf(assignment: {
+    objectiveVersionId: string | null;
+  }): Promise<string | null> {
+    /*
+     * No objective, no department — and that is an answer, not a failure.
+     *
+     * A custom agent belongs to no department, so the scope decision falls to the rest of
+     * `mayTouch`: the person's own scope and the work's owner. Passing a null id into the query
+     * would match the first row with a null `id`, which is no row, but saying so here keeps the
+     * reason legible instead of relying on that.
+     */
+    if (assignment.objectiveVersionId === null) return null;
+
     const version = await this.prisma.client.objectiveVersion.findFirst({
       where: { id: assignment.objectiveVersionId },
       select: { departmentId: true },

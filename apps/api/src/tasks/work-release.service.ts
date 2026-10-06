@@ -155,6 +155,9 @@ export class WorkReleaseService {
       if (task.status === 'Completed' || task.status === 'Cancelled') finished.add(task.nodeId);
     }
     for (const assignment of aiAssignments) {
+      // Not part of this plan: a custom agent is in no workflow, so it is neither planned work
+      // nor work the plan is waiting on.
+      if (assignment.nodeId === null) continue;
       planned.add(assignment.nodeId);
       if (assignment.status === 'Cancelled' || completedAssignmentIds.has(assignment.id)) {
         finished.add(assignment.nodeId);

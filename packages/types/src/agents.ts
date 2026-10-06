@@ -562,8 +562,22 @@ export interface AgentObjectiveContext {
   updatedAt: string;
 }
 
-/** Where a prefilled value came from. The four records Form 3 is composed of. */
-export const FIELD_SOURCES = ['Objective', 'Workflow', 'Hierarchy', 'Policy'] as const;
+/**
+ * Where a prefilled value came from. The four records Form 3 is composed of, and one that is not.
+ *
+ * `CustomAgent` is the fifth, and it exists because an agent may be built with no objective behind
+ * it. The other four name a record somebody can go and read; for that agent there is no such
+ * record, and the two fields the objective would have filled were instead typed by whoever asked
+ * for the agent. Labelling those "From Objective" sends a reader looking for an objective that
+ * was never created — the one thing the source chip exists to prevent.
+ */
+export const FIELD_SOURCES = [
+  'Objective',
+  'Workflow',
+  'Hierarchy',
+  'Policy',
+  'CustomAgent',
+] as const;
 export type FieldSource = (typeof FIELD_SOURCES)[number];
 
 export const FIELD_SOURCE_LABELS: Record<FieldSource, string> = {
@@ -571,6 +585,7 @@ export const FIELD_SOURCE_LABELS: Record<FieldSource, string> = {
   Workflow: 'From Workflow',
   Hierarchy: 'From Hierarchy',
   Policy: 'From Policy',
+  CustomAgent: 'Set when created',
 };
 
 /**

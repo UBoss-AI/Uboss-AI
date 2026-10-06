@@ -491,6 +491,29 @@ export class ObjectiveController {
     response.send(buffer);
   }
 
+  /**
+   * The blank steps grid, for an Objective that has not been saved yet.
+   *
+   * The same reasoning as the blank Objective template above: the grid's Download is supposed to
+   * work before anything is stored, and a route that needs an id cannot serve a form that has no
+   * id yet. **Declared above `:objectiveId`** for the same routing reason.
+   */
+  @Get('workbook-template/steps')
+  @RequirePermission({ module: 'objective', action: 'View' })
+  async downloadStepsTemplate(@Res() response: Response): Promise<void> {
+    const buffer = await ObjectiveWorkbook.stepsOnly(undefined);
+
+    response.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    response.setHeader(
+      'Content-Disposition',
+      'attachment; filename="workflow steps template.xlsx"',
+    );
+    response.send(buffer);
+  }
+
   @Get(':objectiveId')
   @RequirePermission({ module: 'objective', action: 'View' })
   async view(@Param('objectiveId', ParseUUIDPipe) objectiveId: string): Promise<unknown> {
@@ -551,6 +574,78 @@ export class ObjectiveController {
     );
     response.setHeader('Content-Disposition', `attachment; filename="${view.code} objective.xlsx"`);
     response.send(buffer);
+  }
+
+  /**
+   * The workflow steps alone, as a spreadsheet -- the grid's own download.
+   *
+   * The whole-Objective download above stays where it is. This one exists because the two halves
+   * of the form are usually filled in by two people: an administrator writes the Objective, and
+   * whoever does the job writes the steps. Sending the second person the whole workbook made the
+   * Objective sheet theirs to edit by accident.
+   *
+   * Same permission and same draft-first rule as the whole download, because it is the same
+   * information in a narrower shape.
+   */
+  @Get(':objectiveId/workbook/steps')
+  @RequirePermission({ module: 'objective', action: 'View' })
+  async downloadStepsWorkbook(
+    @Param('objectiveId', ParseUUIDPipe) objectiveId: string,
+    @Res() response: Response,
+  ): Promise<void> {
+    const scope = this.tenantContext.requireScope();
+    const view = await this.objectives.view({
+      scope,
+      actorUserId: this.currentUserId(),
+      objectiveId,
+    });
+
+    const version = view.openDraft ?? view.activeVersion;
+    const buffer = await ObjectiveWorkbook.stepsOnly(version?.steps);
+
+    response.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    response.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${view.code} workflow steps.xlsx"`,
+    );
+    response.send(buffer);
+  }
+
+  /**
+   * The same read, for an Objective that does not exist yet.
+   *
+   * The client: "Naya Objective banate waqt upload karne par kuch nahi hota." It was not nothing —
+   * the screen said "Save the draft first", because the only reader took an objective id. Which
+   * asks somebody to type the form in order to upload the file they were going to fill the form
+   * from. The template exists so that the form can be filled offline; refusing to read it back
+   * until the form is filled online closes the loop on itself.
+   *
+   * It reads a file and returns what it says. No id, because there is nothing to read it against
+   * and nothing to write it to: the caller puts the values on screen, a person looks at them, and
+   * the ordinary create is the next step and their decision.
+   *
+   * `objective:Create`, not `EditDraft` — the only reason to read a file with no objective behind
+   * it is to make one, and that is the grant the create itself checks.
+   *
+   * **Declared above the `:objectiveId` routes**, so the router does not read "workbook" as an id.
+   */
+  @Post('workbook/parse')
+  @RequirePermission({ module: 'objective', action: 'Create' })
+  async parseNewWorkbook(@Body() body: ParseObjectiveWorkbookDto): Promise<unknown> {
+    // Named rather than used: the scope has to be present for this to be a company request at
+    // all, and asking for it is how that is enforced on a route with no other tenant-bound work.
+    this.tenantContext.requireScope();
+
+    try {
+      return await ObjectiveWorkbook.parse(Buffer.from(body.file, 'base64'));
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : 'That file could not be read as a spreadsheet.',
+      );
+    }
   }
 
   /**

@@ -233,4 +233,104 @@ describe('the Objective workbook', () => {
 
     await assert.rejects(() => ObjectiveWorkbook.parse(bytes), /Objective/);
   });
+
+  /**
+   * The steps on their own — the client's second report.
+   *
+   * "Download button par click karne par poore Objective ki jagah sirf Workflow Steps ka Excel
+   * download hona chahiye." The button above the grid handed back the whole workbook, so the
+   * person who was sent the steps to fill in received the Objective's own fields as well, theirs
+   * to edit by accident. These assert the two halves of it: the file has one sheet, and that file
+   * can come back through the same reader.
+   */
+  describe('the steps on their own', () => {
+    it('writes one sheet, and it is the steps', async () => {
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(
+        (await ObjectiveWorkbook.stepsOnly(undefined)) as unknown as ArrayBuffer,
+      );
+
+      assert.deepEqual(
+        workbook.worksheets.map((sheet) => sheet.name),
+        ['Steps'],
+        'the steps download carried more than the steps',
+      );
+    });
+
+    it('carries the steps that are filled in, and a blank grid when none are', async () => {
+      const blank = new ExcelJS.Workbook();
+      await blank.xlsx.load((await ObjectiveWorkbook.stepsOnly([])) as unknown as ArrayBuffer);
+      const blankSheet = blank.getWorksheet('Steps');
+      assert.ok(blankSheet, 'no Steps sheet');
+      // Heading, legend, and one empty row to fill in.
+      assert.equal(blankSheet.rowCount, 3, 'an empty grid is not fillable');
+
+      const filled = new ExcelJS.Workbook();
+      await filled.xlsx.load(
+        (await ObjectiveWorkbook.stepsOnly([
+          {
+            position: 1,
+            whoPersonName: 'Aman Singh',
+            whoDesignation: null,
+            whoEngine: 'Human',
+            whenTrigger: null,
+            whenFrequency: null,
+            whatExactWork: 'Pull the ageing report.',
+            inputWhatIsUsed: null,
+            inputReceivedFrom: null,
+            whereWorkIsDone: null,
+            outputWhatIsProduced: null,
+            outputSentTo: null,
+            timeTaken: null,
+            currentProblem: null,
+            approval: 'NotRequired',
+          },
+        ])) as unknown as ArrayBuffer,
+      );
+      const text = JSON.stringify(filled.getWorksheet('Steps')?.getRow(3).values ?? []);
+      assert.match(text, /Pull the ageing report\./);
+      assert.match(text, /Aman Singh/);
+    });
+
+    it('can be read back, which is the half that was refused', async () => {
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(
+        (await ObjectiveWorkbook.stepsOnly(undefined)) as unknown as ArrayBuffer,
+      );
+      const sheet = workbook.getWorksheet('Steps');
+      assert.ok(sheet);
+
+      const headings: string[] = [];
+      sheet.getRow(1).eachCell((cell, index) => {
+        headings[index] = String(cell.value ?? '').trim();
+      });
+      const columnOf = (label: string): number => headings.findIndex((h) => h === label);
+      const row = sheet.getRow(3);
+      row.getCell(columnOf('Step')).value = 1;
+      row.getCell(columnOf('Exact Work')).value = 'Reconcile the branch sheets.';
+      row.commit();
+
+      const parsed = await ObjectiveWorkbook.parse(Buffer.from(await workbook.xlsx.writeBuffer()));
+
+      assert.equal(parsed.steps.length, 1);
+      assert.equal(parsed.steps[0]?.whatExactWork, 'Reconcile the branch sheets.');
+      /*
+       * And it does not invent complaints about an Objective the file never claimed to carry.
+       * Before this, a steps-only file was refused outright — "that file has no Objective sheet" —
+       * on a file the product had just produced.
+       */
+      assert.equal(
+        parsed.problems.filter((problem) => problem.kind === 'Missing').length,
+        0,
+        'a steps-only file was marked as missing the Objective fields it never carried',
+      );
+    });
+
+    it('still refuses a file that carries neither sheet', async () => {
+      const other = new ExcelJS.Workbook();
+      other.addWorksheet('Sheet1').addRow(['nothing', 'to', 'do with it']);
+      const bytes = Buffer.from(await other.xlsx.writeBuffer());
+      await assert.rejects(() => ObjectiveWorkbook.parse(bytes), /Steps/);
+    });
+  });
 });

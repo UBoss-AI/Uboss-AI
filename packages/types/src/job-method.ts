@@ -182,8 +182,15 @@ export const NEVER_IN_AN_EXPORTED_FORM: readonly string[] = [
 /** Context written into a downloaded form. Exactly `EXPORTABLE_CONTEXT_FIELDS`, nothing more. */
 export interface JobMethodFormContext {
   formVersion: number;
-  objectiveId: string;
-  objectiveVersionId: string;
+  /**
+   * The objective this work came from, or null for a custom agent.
+   *
+   * An agent may be built without an objective behind it — somebody asks for one directly rather
+   * than an objective's analysis producing it. That work has a Job Method like any other, and
+   * these three say so honestly rather than naming an objective that does not exist.
+   */
+  objectiveId: string | null;
+  objectiveVersionId: string | null;
   objectiveName: string;
   aiWorkAssignmentId: string;
   assignmentTitle: string;
@@ -361,7 +368,15 @@ export function validateFormEnvelope(input: {
   formVersion: unknown;
   objectiveVersionId: unknown;
   aiWorkAssignmentId: unknown;
-  expected: { objectiveVersionId: string; aiWorkAssignmentId: string };
+  /**
+   * `objectiveVersionId` is null for work with no objective behind it.
+   *
+   * The linkage check below is unchanged by that and still does its job: a form downloaded for
+   * custom work carries null and matches null, one from an objective carries its version, and
+   * any disagreement is still refused. What it stops doing is comparing a real version against a
+   * null and rejecting every custom agent's own form as "an earlier version of the Objective".
+   */
+  expected: { objectiveVersionId: string | null; aiWorkAssignmentId: string };
 }): { ok: true } | { ok: false; stage: ImportStage; reason: string } {
   if (!formVersionIsReadable(input.formVersion)) {
     return {

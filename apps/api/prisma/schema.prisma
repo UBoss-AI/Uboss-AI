@@ -5754,10 +5754,20 @@ model AiWorkAssignment {
 
   tenantId String @map("tenant_id") @db.Uuid
 
-  objectiveId        String @map("objective_id") @db.Uuid
-  objectiveVersionId String @map("objective_version_id") @db.Uuid
-  workflowDraftId    String @map("workflow_draft_id") @db.Uuid
-  nodeId             String @map("node_id") @db.VarChar(80)
+  /// The plan this work came from — all four together, or all four null.
+  ///
+  /// Null is a **standalone** agent: one somebody asked for directly rather than one an
+  /// objective's analysis produced. The row is otherwise identical, and that is the point — the
+  /// builder's form, its readiness rules and its activation all read this row, and none of them
+  /// know the difference. Without this, a custom agent could only be a stub made on another
+  /// screen and configured by a second, smaller form that had to be kept in step with this one.
+  ///
+  /// `nodeId` names a node inside `workflowDraftId`, so it is meaningless without one and moves
+  /// with the set. `assignment_is_planned_or_standalone` enforces all-or-nothing.
+  objectiveId        String? @map("objective_id") @db.Uuid
+  objectiveVersionId String? @map("objective_version_id") @db.Uuid
+  workflowDraftId    String? @map("workflow_draft_id") @db.Uuid
+  nodeId             String? @map("node_id") @db.VarChar(80)
 
   title String @db.VarChar(300)
 
@@ -5794,10 +5804,10 @@ model AiWorkAssignment {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
   version   Int      @default(1) @map("row_version")
 
-  tenant           Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  objective        Objective              @relation(fields: [tenantId, objectiveId], references: [tenantId, id], onDelete: Cascade)
-  objectiveVersion ObjectiveVersion       @relation(fields: [tenantId, objectiveVersionId], references: [tenantId, id], onDelete: Cascade)
-  workflowDraft    ObjectiveWorkflowDraft @relation(fields: [tenantId, workflowDraftId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  tenant           Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  objective        Objective?              @relation(fields: [tenantId, objectiveId], references: [tenantId, id], onDelete: Cascade)
+  objectiveVersion ObjectiveVersion?       @relation(fields: [tenantId, objectiveVersionId], references: [tenantId, id], onDelete: Cascade)
+  workflowDraft    ObjectiveWorkflowDraft? @relation(fields: [tenantId, workflowDraftId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
   engineAgent      EngineAgent?           @relation(fields: [tenantId, engineAgentId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
   testRuns         AgentBuilderTestRun[]
 
@@ -8174,7 +8184,10 @@ model JobMethod {
 
   /// The Objective version the form was aligned to. An import from an older version is refused
   /// rather than mapped, because the workflow it described has since changed.
-  objectiveVersionId String @map("objective_version_id") @db.Uuid
+  ///
+  /// Null when the work it describes is standalone — there is no plan to drift from, so there is
+  /// nothing to align to. It is null exactly when `aiWorkAssignment.objectiveVersionId` is.
+  objectiveVersionId String? @map("objective_version_id") @db.Uuid
 
   /// From `JOB_METHOD_FORM_VERSION`. The shape of the form, not the content.
   formVersion Int @default(1) @map("form_version")

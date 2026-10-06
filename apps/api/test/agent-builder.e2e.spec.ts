@@ -755,6 +755,75 @@ describe('agent builder and engine agent activation (e2e)', () => {
       assert.equal(patched.setup.missingDataBehaviour, answered.setup.missingDataBehaviour);
     });
 
+    /**
+     * The shape the **HTTP layer** actually delivers, which the test above does not.
+     *
+     * `@Type(() => AgentSetupPatchDto)` builds an instance of the DTO class, and an instance
+     * carries every declared property as an own key — so the five nobody sent arrive as
+     * `undefined`, not absent. The test above passes a plain object literal with one key, which
+     * is the one shape no real request ever has, so it agreed with itself while the endpoint was
+     * broken for every single-field save made from the screen.
+     *
+     * What it was: spreading those `undefined`s replaced the stored answers, and the vocabulary
+     * check then refused the request naming a field nobody had touched —
+     * `Unknown Missing/Wrong Data behaviour "undefined"`. Answering one question at a time, which
+     * is the entire purpose of this endpoint, could not be done.
+     */
+    it('ignores the undefined keys a DTO instance carries for fields nobody sent', async () => {
+      const { assignmentId } = await assignedAiWork();
+      const answered = await answerEverything(assignmentId);
+
+      const asTheDtoArrives = {
+        runType: undefined,
+        triggerOrFrequency: undefined,
+        inputConnectionId: undefined,
+        whereWorkHappens: undefined,
+        outputDestination: 'The regulatory evidence folder',
+        missingDataBehaviour: undefined,
+      };
+
+      const patched = await builder().saveSetup({
+        scope: scope(),
+        actorUserId: workerUserId,
+        assignmentId,
+        patch: asTheDtoArrives,
+      });
+
+      assert.equal(patched.setup.outputDestination, 'The regulatory evidence folder');
+      assert.equal(patched.setup.runType, answered.setup.runType);
+      assert.equal(patched.setup.whereWorkHappens, answered.setup.whereWorkHappens);
+      assert.equal(patched.setup.missingDataBehaviour, answered.setup.missingDataBehaviour);
+    });
+
+    /**
+     * The first answer on work where nothing has been answered yet.
+     *
+     * The same defect, at the point it was actually hit: a brand-new piece of work has no stored
+     * setup at all, so every field starts null, and the first save carries one answer and five
+     * `undefined`s. It came back as a 400 about a field the person had not reached yet.
+     */
+    it('accepts the very first answer, with every other field still unanswered', async () => {
+      const { assignmentId } = await assignedAiWork();
+
+      const first = await builder().saveSetup({
+        scope: scope(),
+        actorUserId: workerUserId,
+        assignmentId,
+        patch: {
+          runType: 'Scheduled',
+          triggerOrFrequency: undefined,
+          inputConnectionId: undefined,
+          whereWorkHappens: undefined,
+          outputDestination: undefined,
+          missingDataBehaviour: undefined,
+        },
+      });
+
+      assert.equal(first.setup.runType, 'Scheduled');
+      assert.equal(first.setup.whereWorkHappens, null);
+      assert.equal(first.setup.missingDataBehaviour, null);
+    });
+
     it('refuses a run type or behaviour outside the client’s vocabulary', async () => {
       const { assignmentId } = await assignedAiWork();
 

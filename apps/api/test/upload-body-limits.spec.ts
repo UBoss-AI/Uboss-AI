@@ -49,6 +49,14 @@ describe('upload routes are not capped at the ordinary body limit', () => {
       path: '/tenants/t1/objectives/o1/workbook/parse',
       atLeastMb: 20,
     },
+    {
+      // The same file, uploaded before the objective exists. A separate route, so a separate
+      // entry: the id-bearing pattern above does not match a path with no id in it, and the
+      // consequence of missing it is the one this whole file is about.
+      what: 'a workbook uploaded onto a new objective',
+      path: '/tenants/t1/objectives/workbook/parse',
+      atLeastMb: 20,
+    },
     { what: 'the bulk people workbook', path: '/tenants/t1/access/bulk/validate', atLeastMb: 20 },
     {
       what: 'the hierarchy workbook',

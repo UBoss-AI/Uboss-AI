@@ -233,7 +233,6 @@ export function OrchestrationMap({
 
   if (meta === null) return null;
 
-
   const describe = (key: string) => meta.tiles.find((entry) => entry.key === key);
 
   /** The tiles the server permitted, in the order the contract lists them, per side. */

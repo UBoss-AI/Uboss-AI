@@ -1136,6 +1136,8 @@ export class HumanTaskService {
       }
     }
     for (const row of assignments) {
+      // Work with no node sits in no workflow: it names no step and blocks no step.
+      if (row.nodeId === null) continue;
       named.set(row.nodeId, row.title);
       // An assignment that has not run is unfinished. Whether it *has* run is a question about
       // runs, and this is a label rather than a gate — the gate is in WorkReleaseService.

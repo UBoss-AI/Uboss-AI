@@ -588,7 +588,13 @@ export class JobMethodService {
   private async ensureJobMethod(
     scope: TenantScope,
     actorUserId: string,
-    assignment: { id: string; objectiveVersionId: string },
+    /*
+     * `objectiveVersionId` records which version of the plan the form was aligned to, so that an
+     * import from an older one is refused rather than silently mapped. Work with no objective
+     * behind it has no plan to drift from, so it carries null — and the column it is written to
+     * is null exactly when this one is.
+     */
+    assignment: { id: string; objectiveVersionId: string | null },
   ): Promise<{ id: string }> {
     return this.prisma.runInTenantTransaction(scope, async () => {
       const existing = await this.prisma.client.jobMethod.findFirst({
@@ -616,8 +622,9 @@ export class JobMethodService {
   ): Promise<{
     id: string;
     title: string;
-    objectiveId: string;
-    objectiveVersionId: string;
+    /** Null for a custom agent — work nobody's objective asked for. */
+    objectiveId: string | null;
+    objectiveVersionId: string | null;
     objectiveName: string;
     assignedToEmployeeRef: string | null;
     steps: { position: number; content: Record<string, unknown> }[];
@@ -635,13 +642,23 @@ export class JobMethodService {
       });
       if (row === null) return null;
 
-      const version = await this.prisma.client.objectiveVersion.findFirst({
-        where: { tenantId: scope.tenantId, id: row.objectiveVersionId },
-        select: {
-          objectiveName: true,
-          steps: { orderBy: { position: 'asc' } },
-        },
-      });
+      /*
+       * Work with no objective behind it has no Form 2 steps to read.
+       *
+       * A custom agent's Job Method is written from scratch rather than seeded from an approved
+       * workflow, so there is no version here and the seeding below finds nothing — which is the
+       * correct result, not a missing one.
+       */
+      const version =
+        row.objectiveVersionId === null
+          ? null
+          : await this.prisma.client.objectiveVersion.findFirst({
+              where: { tenantId: scope.tenantId, id: row.objectiveVersionId },
+              select: {
+                objectiveName: true,
+                steps: { orderBy: { position: 'asc' } },
+              },
+            });
 
       /**
        * The employee reference, and what it deliberately is not.

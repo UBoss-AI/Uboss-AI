@@ -96,6 +96,21 @@ export class TestAgentDto {
   @IsOptional() @IsString() @MaxLength(MAX_AGENT_TEST_EXPECTATION) expectedOutcome?: string;
 }
 
+/**
+ * The two things a custom agent is created from.
+ *
+ * Two, because two are all that can honestly be asked before the form opens. Everything else —
+ * the Job Method, the Skills, when it runs, where the work happens — is the same form every other
+ * agent is built through, and asking any of it twice would be the duplicate entry this model
+ * exists to remove.
+ */
+export class CreateStandaloneWorkDto {
+  @IsString() @MinLength(3) @MaxLength(200) name!: string;
+
+  /** With no objective behind it, this sentence is the only record of why the agent exists. */
+  @IsString() @MinLength(10) @MaxLength(2000) purpose!: string;
+}
+
 export class ActivateAgentDto {
   /** Rename at activation where policy permits. Omit to take the suggested name. */
   @IsOptional() @IsString() @MinLength(1) @MaxLength(200) agentName?: string;
@@ -172,6 +187,29 @@ export class AgentBuilderController {
     return this.builder.list({
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
+    });
+  }
+
+  /**
+   * Start a custom agent — one no objective asked for.
+   *
+   * It creates the same piece of work an objective's analysis creates, with the plan half left
+   * empty, and hands back the same view. Everything after this is the routes below, unchanged:
+   * the Skills, the setup, the test and activation are shared, so a custom agent cannot quietly
+   * be held to a lower standard than one an objective produced.
+   *
+   * **Declared above `:assignmentId`** is not needed — this is a POST to the collection and the
+   * reads below are GETs on a path segment — but it is written here, beside them, because this is
+   * where the thing it creates is then read from.
+   */
+  @Post()
+  @RequirePermission({ module: 'agent-builder', action: 'Create' })
+  async createStandalone(@Body() body: CreateStandaloneWorkDto): Promise<unknown> {
+    return this.builder.createStandalone({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
+      name: body.name,
+      purpose: body.purpose,
     });
   }
 

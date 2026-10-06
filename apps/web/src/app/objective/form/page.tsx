@@ -11,6 +11,8 @@ import {
   REWARD_TYPES,
   TIME_UNIT_LABELS,
   TIME_UNITS,
+  validateForm2Objective,
+  validateForm2WorkflowSteps,
   type Form2Objective,
   type Form2WorkflowStep,
   type ObjectiveRewardPanel,
@@ -305,6 +307,37 @@ function ObjectiveFormInner() {
   }, [objective, tenantId]);
 
   /**
+   * The workflow steps alone -- the grid's own download.
+   *
+   * It used to call the one above, so the button over the steps grid handed back the whole
+   * Objective: four sheets, of which the steps were one. The client asked for the steps, and the
+   * reason is the division of work -- an administrator writes the Objective and whoever does the
+   * job writes the steps, so the file that goes out to the second person should not carry the
+   * first person's fields for them to edit by accident.
+   *
+   * Same two halves as the whole download: the blank grid when nothing is saved, the filled grid
+   * when something is.
+   */
+  const downloadSteps = useCallback(() => {
+    if (!tenantId) return;
+    setBusy(true);
+    setError(null);
+    void (
+      objective === null
+        ? objectivesApi.downloadStepsTemplate(tenantId)
+        : objectivesApi.downloadStepsWorkbook(tenantId, objective.id, objective.code)
+    )
+      .catch((caught: unknown) =>
+        setError(
+          caught instanceof ApiError
+            ? caught.message
+            : 'Those workflow steps could not be downloaded.',
+        ),
+      )
+      .finally(() => setBusy(false));
+  }, [objective, tenantId]);
+
+  /**
    * How much of the form an upload is allowed to fill -- PRD 4.2.
    *
    * The file has two sheets and the screen has two parts, and the client asked for the steps to
@@ -317,11 +350,22 @@ function ObjectiveFormInner() {
    */
   const [uploadScope, setUploadScope] = useState<'all' | 'steps'>('all');
 
-  /** Read a returned workbook. Applies nothing — it opens the review below. */
+  /**
+   * Read a returned workbook. Applies nothing — it opens the review below.
+   *
+   * **Including on an objective that has not been saved yet.** It used to refuse there and say
+   * "Save the draft first", which is the product asking somebody to type the form in order to
+   * upload the file they were going to fill the form from. The client reported it as the upload
+   * doing nothing on a new Objective, and that is a fair description of being handed a template
+   * that cannot be handed back.
+   *
+   * Reading decides nothing either way — the values land in the form and a person presses Save
+   * Draft — so the only difference is which reader is called.
+   */
   const uploadWorkbook = useCallback(
     (file: File, scope: 'all' | 'steps' = 'all') => {
       setUploadScope(scope);
-      if (!tenantId || objective === null) return;
+      if (!tenantId) return;
       setBusy(true);
       setError(null);
       setNotice(null);
@@ -333,8 +377,11 @@ function ObjectiveFormInner() {
       };
       reader.onload = () => {
         const encoded = String(reader.result ?? '').split(',')[1] ?? '';
-        void objectivesApi
-          .parseWorkbook(tenantId, objective.id, encoded)
+        void (
+          objective === null
+            ? objectivesApi.parseNewWorkbook(tenantId, encoded)
+            : objectivesApi.parseWorkbook(tenantId, objective.id, encoded)
+        )
           .then(setUpload)
           .catch((caught: unknown) =>
             setError(caught instanceof ApiError ? caught.message : 'That file could not be read.'),
@@ -352,54 +399,121 @@ function ObjectiveFormInner() {
    * Into the form, not into the database: the draft is saved by Save Draft as it always was, so an
    * upload is reviewed on screen exactly like typing would be. Fields the file did not carry keep
    * what they had — an absent cell is "not filled in", never "clear this".
+   *
+   * **Except on an Objective that does not exist yet**, where the client asked for one of two
+   * things and the screen did neither: "draft auto-save ho jaana chahiye, ya phir clear validation
+   * message aana chahiye". So the merged form is checked here, against the same rules the server
+   * checks, and either it is saved or the missing fields are named one by one. A file is usually
+   * uploaded as the first act on a blank form, and leaving somebody with values on screen and no
+   * row behind them is how uploaded work gets lost by navigating away.
    */
   const applyUpload = useCallback(() => {
     if (upload === null) return;
 
+    /*
+     * Computed rather than read back from state.
+     *
+     * `setContent` does not take effect until the next render, so the auto-save below would send
+     * the form as it was before the file was applied — the upload would appear to do nothing,
+     * which is the complaint this is fixing.
+     */
     // A steps-only upload leaves the Objective's own fields exactly as they are -- PRD 4.2.
+    const nextContent = { ...content };
     if (uploadScope === 'all') {
-      setContent((current) => {
-        const next = { ...current };
-        for (const [key, value] of Object.entries(upload.objective)) {
-          if (value === undefined || value === '') continue;
-          /*
-           * The three fields the file carries as names rather than ids are skipped.
-           *
-           * Resolving "Regulatory Affairs" to a department id is a question about the company, and
-           * guessing it here would silently point the objective at the wrong department. They stay
-           * as they are and the review says so.
-           */
-          if (
-            key === 'departmentId' ||
-            key === 'objectiveOwnerUserId' ||
-            key === 'responsibleOwnerUserId'
-          ) {
-            continue;
-          }
-          const numeric = key === 'currentWorkload' || key === 'targetCompletionTime';
-          (next as Record<string, unknown>)[key] = numeric ? Number(value) : value;
+      for (const [key, value] of Object.entries(upload.objective)) {
+        if (value === undefined || value === '') continue;
+        /*
+         * The three fields the file carries as names rather than ids are skipped.
+         *
+         * Resolving "Regulatory Affairs" to a department id is a question about the company, and
+         * guessing it here would silently point the objective at the wrong department. They stay
+         * as they are and the review says so.
+         */
+        if (
+          key === 'departmentId' ||
+          key === 'objectiveOwnerUserId' ||
+          key === 'responsibleOwnerUserId'
+        ) {
+          continue;
         }
-        return next;
-      });
+        const numeric = key === 'currentWorkload' || key === 'targetCompletionTime';
+        (nextContent as Record<string, unknown>)[key] = numeric ? Number(value) : value;
+      }
+      setContent(nextContent);
     }
 
-    if (upload.steps.length > 0) {
-      setSteps(
-        upload.steps.map((row, index) => ({
-          ...blankWorkflowStep(index + 1),
-          ...(row as Partial<Form2WorkflowStep>),
-          position: index + 1,
-        })),
-      );
-    }
+    /*
+     * A blank cell keeps the blank step's own value, rather than replacing it with nothing.
+     *
+     * The reader returns every unfilled cell as `null`, and spreading that over the blank step
+     * overwrote its defaults: `approval` went from "NotRequired" to null, which the shared
+     * validator then refused as `Step 1: unknown Approval` — on a file the product had just
+     * produced, with that column left empty as it is in every template. The draft could not be
+     * saved and the sentence explaining why named a column nobody had touched.
+     *
+     * The comment above this function has said "an absent cell is 'not filled in', never 'clear
+     * this'" since it was written. This is the steps half of it, which was never done.
+     */
+    const nextSteps =
+      upload.steps.length > 0
+        ? upload.steps.map((row, index) => {
+            const filled = Object.fromEntries(
+              Object.entries(row).filter(([, value]) => value !== null && value !== undefined),
+            ) as Partial<Form2WorkflowStep>;
+            return { ...blankWorkflowStep(index + 1), ...filled, position: index + 1 };
+          })
+        : steps;
+    if (upload.steps.length > 0) setSteps(nextSteps);
 
     setUpload(null);
-    setNotice(
-      uploadScope === 'steps'
-        ? 'The workflow steps have been replaced from the file. The Objective fields above are unchanged, and nothing is stored until you press Save Draft.'
-        : 'The file has been put into the form. Nothing is stored until you press Save Draft.',
-    );
-  }, [upload, uploadScope]);
+
+    if (objective !== null || !tenantId) {
+      setNotice(
+        uploadScope === 'steps'
+          ? 'The workflow steps have been replaced from the file. The Objective fields above are unchanged, and nothing is stored until you press Save Draft.'
+          : 'The file has been put into the form. Nothing is stored until you press Save Draft.',
+      );
+      return;
+    }
+
+    /*
+     * Nothing is stored yet, so this is the moment to store it — or to say why it cannot be.
+     *
+     * The same validator the server runs, so the sentence somebody reads here is the sentence the
+     * server would have produced. The three id fields above are the usual answer: a file carries
+     * a department by name and the form needs the department itself, so they are chosen on screen
+     * and the message says exactly that rather than "could not save".
+     */
+    const problems = [
+      ...validateForm2Objective(nextContent),
+      ...validateForm2WorkflowSteps(nextSteps),
+    ];
+    if (problems.length > 0) {
+      setNotice(
+        'The file has been put into the form. The draft was not saved yet, because it is not ' +
+          'complete — fill in what is listed below and press Save Draft.',
+      );
+      setError(problems.join(' '));
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    void objectivesApi
+      .create(tenantId, { content: nextContent, steps: nextSteps })
+      .then((saved) => {
+        setObjective(saved);
+        setNotice(`The file has been put into the form and saved as draft ${saved.code}.`);
+      })
+      .catch((caught: unknown) => {
+        setNotice(
+          'The file has been put into the form. It was not saved — the reason is below, and ' +
+            'Save Draft will try again once it is dealt with.',
+        );
+        setError(caught instanceof ApiError ? caught.message : 'Could not save this draft.');
+      })
+      .finally(() => setBusy(false));
+  }, [content, objective, steps, tenantId, upload, uploadScope]);
 
   const save = useCallback(() => {
     if (!tenantId) return;
@@ -588,18 +702,25 @@ function ObjectiveFormInner() {
               when it cannot. The reason is the same sentence either way — it is now in the one
               place somebody will actually read it.
             */}
-            {busy || readOnly || objective === null ? (
+            {/*
+              A new Objective is no longer one of the reasons.
+
+              It used to be: the only reader took an objective id, so the button said "Save the
+              draft first". A blank form is exactly where the downloaded template is most likely
+              to come back, and that sentence sent somebody to type the form they were uploading.
+              The file is read against nothing now, the values land on screen, and the draft is
+              saved from them — or the missing fields are named. The other two reasons stand.
+            */}
+            {busy || readOnly ? (
               <Button
                 size="sm"
                 onClick={() => {
                   setUpload(null);
                   setNotice(null);
                   setError(
-                    objective === null
-                      ? 'Save the draft first. A filled-in file is read against the Objective it belongs to, so there has to be one before it can be uploaded.'
-                      : readOnly
-                        ? 'This version is published and cannot be edited, so a file cannot be uploaded into it. An authorised change creates a new draft version to upload into.'
-                        : 'Still working on the last request — try again in a moment.',
+                    readOnly
+                      ? 'This version is published and cannot be edited, so a file cannot be uploaded into it. An authorised change creates a new draft version to upload into.'
+                      : 'Still working on the last request — try again in a moment.',
                   );
                 }}
               >
@@ -621,7 +742,7 @@ function ObjectiveFormInner() {
               type="file"
               accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               className="uboss-sr-only"
-              disabled={busy || readOnly || objective === null}
+              disabled={busy || readOnly}
               onChange={(event) => {
                 const file = event.target.files?.[0];
                 if (file !== undefined) uploadWorkbook(file);
@@ -946,33 +1067,31 @@ function ObjectiveFormInner() {
             job writes the steps. Sending them the whole form so they can fill in one sheet means
             whatever a spreadsheet did to the other sheet comes back with it.
 
-            Download is the same file either way -- one workbook, two sheets -- and it carries
-            whatever is stored: filled if the steps are filled, the blank grid if they are not.
-            Upload is what differs: this one replaces the steps and leaves everything above them
-            untouched, and the review says so before it does anything.
+            Download is one sheet, the steps, and it carries whatever is stored: filled if the
+            steps are filled, the blank grid if they are not. Upload replaces the steps and leaves
+            everything above them untouched, and the review says so before it does anything.
           */}
           <Button
             size="sm"
-            onClick={downloadWorkbook}
+            onClick={downloadSteps}
             disabled={busy}
-            title="The same workbook as above — it carries whatever is stored, and the blank grid when nothing is"
+            title="The workflow steps only — filled if they are filled, the blank grid when they are not"
           >
             <Icon name="arrow-down" size={15} />
             Download steps
           </Button>
 
-          {busy || readOnly || objective === null ? (
+          {/* Open on a new Objective too, for the same reason as the pair above it. */}
+          {busy || readOnly ? (
             <Button
               size="sm"
               onClick={() => {
                 setUpload(null);
                 setNotice(null);
                 setError(
-                  objective === null
-                    ? 'Save the draft first. A filled-in file is read against the Objective it belongs to, so there has to be one before it can be uploaded.'
-                    : readOnly
-                      ? 'This version is published and cannot be edited, so a file cannot be uploaded into it. An authorised change creates a new draft version to upload into.'
-                      : 'Still working on the last request — try again in a moment.',
+                  readOnly
+                    ? 'This version is published and cannot be edited, so a file cannot be uploaded into it. An authorised change creates a new draft version to upload into.'
+                    : 'Still working on the last request — try again in a moment.',
                 );
               }}
             >
@@ -994,7 +1113,7 @@ function ObjectiveFormInner() {
             type="file"
             accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             className="uboss-sr-only"
-            disabled={busy || readOnly || objective === null}
+            disabled={busy || readOnly}
             onChange={(event) => {
               const file = event.target.files?.[0];
               if (file !== undefined) uploadWorkbook(file, 'steps');

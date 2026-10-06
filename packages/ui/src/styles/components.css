@@ -6505,6 +6505,17 @@ table.uboss-wfg {
 }
 
 /*
+  An agent nobody's objective asked for: the value was typed by whoever created it.
+
+  Deliberately the plainest of the five. The other four point at a record a reader can go and
+  open; this one points at a person's own words, so it should not look like a citation.
+*/
+.uboss-srcchip--customagent {
+  border-color: var(--uboss-border-control);
+  color: var(--uboss-text-3);
+}
+
+/*
   Where a dragged row would land.
 
   A line at the top edge rather than a filled row: the row being hovered is not the thing changing,

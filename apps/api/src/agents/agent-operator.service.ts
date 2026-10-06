@@ -554,12 +554,19 @@ export class AgentOperatorService {
        * work", and a person running work is entitled to know what it is for. What they do not get
        * is the Objective *screen*: one name, resolved server-side, is not the form.
        */
+      /*
+       * Null covers both "no assignment" and "an agent built without an objective".
+       *
+       * A custom agent is linked to no plan, so there is no linked Objective to name. Saying
+       * nothing is the honest answer; the operator still sees the work's own title.
+       */
+      const linkedObjectiveId = assignment?.objectiveId ?? null;
       const objectiveName =
-        assignment?.objectiveId === undefined
+        linkedObjectiveId === null
           ? null
           : await (async () => {
               const objective = await this.prisma.client.objective.findFirst({
-                where: { tenantId: scope.tenantId, id: assignment.objectiveId },
+                where: { tenantId: scope.tenantId, id: linkedObjectiveId },
                 select: { code: true, activeVersionId: true },
               });
               if (objective === null) return null;

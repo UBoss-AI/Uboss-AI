@@ -244,7 +244,10 @@ export class ReportsService {
         }
       }
       for (const row of siblingAi) {
-        if (row.status !== 'Cancelled') unfinished.set(row.nodeId, row.title);
+        // Work with no node is in no workflow, so nothing is waiting on it.
+        if (row.status !== 'Cancelled' && row.nodeId !== null) {
+          unfinished.set(row.nodeId, row.title);
+        }
       }
 
       const people = await this.prisma.client.user.findMany({

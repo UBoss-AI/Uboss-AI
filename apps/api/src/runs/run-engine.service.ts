@@ -560,7 +560,19 @@ export class RunEngineService implements OnModuleInit {
                 where: { tenantId: job.tenantId, id: run.aiWorkAssignmentId },
                 select: { objectiveVersionId: true, nodeId: true },
               });
-        if (assignment !== null) {
+        /*
+         * Only work that sits in a workflow releases anything when it finishes.
+         *
+         * Releasing means telling the steps that were waiting on this node that it is done. A
+         * custom agent is in no workflow and no node waits on it, so there is nothing to
+         * release — and asking for the successors of a null node would be a question about a
+         * plan that does not exist.
+         */
+        if (
+          assignment !== null &&
+          assignment.objectiveVersionId !== null &&
+          assignment.nodeId !== null
+        ) {
           released = await this.workRelease.releaseWithinTransaction({
             tenantId: job.tenantId,
             objectiveVersionId: assignment.objectiveVersionId,

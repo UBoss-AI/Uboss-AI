@@ -3154,10 +3154,77 @@ export const objectivesApi = {
     setTimeout(() => URL.revokeObjectURL(url), 0);
   },
 
+  /**
+   * The workflow steps on their own.
+   *
+   * The button above the steps grid used to hand back the whole Objective — four sheets, of which
+   * one was the steps. Somebody editing a workflow then had to find the right sheet inside a file
+   * that also carried the Objective's own fields, and uploading it back risked overwriting those
+   * fields with whatever the copy happened to hold. This is the steps and nothing else, so the
+   * round trip touches only what the grid shows.
+   */
+  downloadStepsTemplate: async (tenantId: string): Promise<void> => {
+    const response = await fetch(
+      `${API_BASE_URL}/tenants/${encodeURIComponent(tenantId)}/objectives/workbook-template/steps`,
+      { credentials: 'include' },
+    );
+    if (!response.ok) {
+      throw new ApiError('The blank workflow steps grid could not be prepared.', response.status);
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'workflow steps template.xlsx';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  },
+
+  downloadStepsWorkbook: async (
+    tenantId: string,
+    objectiveId: string,
+    code: string,
+  ): Promise<void> => {
+    const response = await fetch(
+      `${API_BASE_URL}/tenants/${encodeURIComponent(tenantId)}/objectives/${encodeURIComponent(objectiveId)}/workbook/steps`,
+      { credentials: 'include' },
+    );
+    if (!response.ok) {
+      throw new ApiError(
+        'Those workflow steps could not be prepared as a spreadsheet.',
+        response.status,
+      );
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${code} workflow steps.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  },
+
   /** Read a filled-in workbook. **Saves nothing** — the caller shows it and a person confirms. */
   parseWorkbook: (tenantId: string, objectiveId: string, file: string) =>
     call<ParsedObjectiveWorkbook>(
       `/tenants/${encodeURIComponent(tenantId)}/objectives/${encodeURIComponent(objectiveId)}/workbook/parse`,
+      { method: 'POST', body: JSON.stringify({ file }) },
+    ),
+
+  /**
+   * The same read, before the Objective exists.
+   *
+   * A blank form is where the downloaded template is most likely to be uploaded — somebody took
+   * it away, filled it in, and came back. Reading it needs no objective, because reading decides
+   * nothing: what comes back goes on screen and the person presses Save Draft.
+   */
+  parseNewWorkbook: (tenantId: string, file: string) =>
+    call<ParsedObjectiveWorkbook>(
+      `/tenants/${encodeURIComponent(tenantId)}/objectives/workbook/parse`,
       { method: 'POST', body: JSON.stringify({ file }) },
     ),
 
@@ -3883,6 +3950,19 @@ export const agentBuilderApi = {
     call<AgentBuilderView>(
       `/tenants/${encodeURIComponent(tenantId)}/agent-builder/${encodeURIComponent(assignmentId)}`,
     ),
+
+  /**
+   * Start a custom agent — one no objective asked for.
+   *
+   * Hands back the same view every other piece of work has, so the caller opens the same form on
+   * it. There is no second builder: the Skills, the setup, the test and activation are the calls
+   * below, and a custom agent goes through all of them.
+   */
+  createStandalone: (tenantId: string, body: { name: string; purpose: string }) =>
+    call<AgentBuilderView>(`/tenants/${encodeURIComponent(tenantId)}/agent-builder`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 
   /**
    * Add or replace the Skills attached to this work.

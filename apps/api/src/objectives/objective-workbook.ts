@@ -168,6 +168,73 @@ export class ObjectiveWorkbook {
   }
 
   /**
+   * The workflow steps alone -- the grid's own download.
+   *
+   * ## Why a second file rather than the same one
+   *
+   * The pair at the top of the screen takes the whole Objective away and brings it back. The pair
+   * beside the grid is for the person who writes the steps, which is usually not the person who
+   * wrote the Objective: an administrator describes what is wanted, and whoever does the job
+   * describes how.
+   *
+   * Sending them the whole workbook made the Objective sheet theirs to edit by accident, and the
+   * client said so: "download par click karne par Workflow Steps ki jagah pura Objective download
+   * ho raha hai". A file with one sheet cannot be edited in the wrong place.
+   *
+   * Filled when the steps are filled and the bare grid when they are not, which is the same rule
+   * the whole-Objective download follows -- two downloads on one screen behaving differently
+   * would be its own small confusion.
+   */
+  static async stepsOnly(steps: readonly Form2WorkflowStep[] | undefined): Promise<Buffer> {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'UBoss';
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet(STEPS_SHEET);
+    sheet.columns = FORM2_WORKFLOW_COLUMNS.map((column) => ({
+      width: Math.max(14, Math.round(column.width / 7)),
+    }));
+
+    const heading = sheet.addRow(FORM2_WORKFLOW_COLUMNS.map((column) => column.label));
+    heading.font = { bold: true };
+    heading.alignment = { wrapText: true, vertical: 'middle' };
+    heading.height = 30;
+
+    // The accepted words, under the heading they are typed below. Somebody filling this in
+    // offline has no other way to know them, and a wrong word is a refused row.
+    const legend = sheet.addRow(
+      FORM2_WORKFLOW_COLUMNS.map((column) =>
+        column.kind === 'engine'
+          ? `One of: ${STEP_ENGINE_KINDS.join(', ')}`
+          : column.kind === 'approval'
+            ? `One of: ${STEP_APPROVAL_KINDS.join(', ')}`
+            : '',
+      ),
+    );
+    legend.font = { italic: true, size: 9, color: { argb: 'FF767676' } };
+    legend.alignment = { wrapText: true, vertical: 'top' };
+
+    for (const step of steps ?? []) {
+      sheet.addRow(
+        FORM2_WORKFLOW_COLUMNS.map((column) => {
+          if (column.kind === 'step') return step.position;
+          const value = (step as unknown as Record<string, unknown>)[column.key];
+          return value === null || value === undefined ? '' : String(value);
+        }),
+      );
+    }
+
+    // One empty row when there are none, so the sheet is fillable rather than a bare header.
+    if ((steps ?? []).length === 0) {
+      sheet.addRow(FORM2_WORKFLOW_COLUMNS.map((column) => (column.kind === 'step' ? 1 : '')));
+    }
+
+    sheet.views = [{ state: 'frozen', xSplit: 1, ySplit: 2 }];
+
+    return Buffer.from(await workbook.xlsx.writeBuffer());
+  }
+
+  /**
    * Read a returned file. **Writes nothing and decides nothing.**
    *
    * Values come back as text. Whether a department exists, whether an owner works here and whether
@@ -181,17 +248,31 @@ export class ObjectiveWorkbook {
     const problems: WorkbookProblem[] = [];
     const objective: Partial<Record<string, string>> = {};
 
-    // ---- the objective sheet ----
+    /*
+     * ---- the objective sheet, which a steps-only file does not have ----
+     *
+     * `stepsOnly` writes one sheet, because the grid's Download is supposed to hand back the
+     * steps and nothing else. That file then came straight back through this reader and was
+     * refused — "no Objective sheet" — so the half of the round trip the client asked for could
+     * be produced but never returned. A file that carries the steps is a valid file; it simply
+     * says nothing about the Objective's own fields, and saying nothing is not the same as
+     * leaving them blank, so the required-field check below is skipped rather than failed.
+     *
+     * A file with neither sheet is still refused, and now names both so the message points at
+     * whichever download the person meant to use.
+     */
     const sheet = workbook.getWorksheet(OBJECTIVE_SHEET);
-    if (sheet === undefined) {
+    const stepsOnlyFile = sheet === undefined && workbook.getWorksheet(STEPS_SHEET) !== undefined;
+    if (sheet === undefined && !stepsOnlyFile) {
       throw new Error(
-        `That file has no "${OBJECTIVE_SHEET}" sheet. Download the Objective Excel and fill that in.`,
+        `That file has no "${OBJECTIVE_SHEET}" sheet and no "${STEPS_SHEET}" sheet. Download the ` +
+          'Objective Excel, or the workflow steps, and fill that in.',
       );
     }
 
     const byLabel = new Map(FORM2_OBJECTIVE_FIELDS.map((field) => [normalise(field.label), field]));
 
-    sheet.eachRow((row, index) => {
+    sheet?.eachRow((row, index) => {
       if (index === 1) return;
       const label = text(row.getCell(1));
       const value = text(row.getCell(2));
@@ -214,14 +295,16 @@ export class ObjectiveWorkbook {
       if (value !== '') objective[field.key] = value;
     });
 
-    for (const field of FORM2_OBJECTIVE_FIELDS) {
-      if (field.required === true && (objective[field.key] ?? '') === '') {
-        problems.push({
-          where: 'Objective',
-          field: field.label,
-          kind: 'Missing',
-          detail: 'Required, and the file left it blank.',
-        });
+    if (!stepsOnlyFile) {
+      for (const field of FORM2_OBJECTIVE_FIELDS) {
+        if (field.required === true && (objective[field.key] ?? '') === '') {
+          problems.push({
+            where: 'Objective',
+            field: field.label,
+            kind: 'Missing',
+            detail: 'Required, and the file left it blank.',
+          });
+        }
       }
     }
 

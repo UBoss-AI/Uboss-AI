@@ -156,11 +156,20 @@ export class OrchestrationService {
         }
       }
 
+      /*
+       * Only work that came from a plan has a stage.
+       *
+       * An execution stage — Engine, Sub-Engine, Executor — is a position in a workflow graph. A
+       * custom agent sits in no graph, so it has no stage, and passing its null here would ask
+       * for the stages of a version that does not exist.
+       */
       const stageOf = await this.stagesByVersion(tenantId, [
-        ...new Set([
-          ...tasks.map((row) => row.objectiveVersionId),
-          ...aiWork.map((row) => row.objectiveVersionId),
-        ]),
+        ...new Set(
+          [
+            ...tasks.map((row) => row.objectiveVersionId),
+            ...aiWork.map((row) => row.objectiveVersionId),
+          ].filter((id): id is string => id !== null),
+        ),
       ]);
 
       const rows: OrchestrationStageRow[] = EXECUTION_STAGE_ORDER.map((stage) => ({
@@ -211,10 +220,22 @@ export class OrchestrationService {
         const state = agentState(work.status, latestRun.get(work.id) ?? null);
         if (state === null) continue;
 
-        const stage = stageOf.get(work.objectiveVersionId)?.get(work.nodeId);
+        /*
+         * Work with no plan behind it belongs to no stage and no department.
+         *
+         * A custom agent sits in no workflow graph, so it is counted in neither the stage rows
+         * nor the department breakdown. Putting it in one would be the report inventing a place
+         * for it, which is worse than its absence: both numbers are read as the plan's shape.
+         */
+        const stage =
+          work.objectiveVersionId === null || work.nodeId === null
+            ? undefined
+            : stageOf.get(work.objectiveVersionId)?.get(work.nodeId);
         if (stage !== undefined) rowFor.get(stage)!.agent[state] += 1;
 
-        if (state === 'completed') bump(work.objective.departmentId, 'completed');
+        if (state === 'completed' && work.objective !== null) {
+          bump(work.objective.departmentId, 'completed');
+        }
       }
 
       const departments = await this.departmentRows(tenantId, byDepartment, input.reportScope);

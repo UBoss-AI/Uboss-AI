@@ -1111,7 +1111,18 @@ export class EngineAgentService {
       where: { tenantId: scope.tenantId, engineAgentId: agentId },
       select: { objectiveId: true },
     });
-    return [...new Set(assignments.map((row) => row.objectiveId))];
+    /*
+     * Work with no objective behind it contributes no objective id.
+     *
+     * A custom agent is linked to no plan, so it belongs to no objective. Letting a null through
+     * would put one in a list of ids that callers scope and count by, where it would read as an
+     * objective nobody can see rather than as the absence of one.
+     */
+    return [
+      ...new Set(
+        assignments.map((row) => row.objectiveId).filter((id): id is string => id !== null),
+      ),
+    ];
   }
 
   private async load(scope: TenantScope, agentId: string) {
@@ -1480,7 +1491,9 @@ export class EngineAgentService {
       where: { engineAgentId: agentId },
       select: { objectiveVersionId: true },
     });
-    if (!assignment) return null;
+    // No assignment, or one with no objective behind it: either way there is no department to
+    // resolve. A custom agent belongs to the company rather than to a department.
+    if (!assignment || assignment.objectiveVersionId === null) return null;
 
     const version = await this.prisma.client.objectiveVersion.findFirst({
       where: { id: assignment.objectiveVersionId },

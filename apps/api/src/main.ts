@@ -143,7 +143,11 @@ async function bootstrap(): Promise<void> {
    * everything not named here.
    */
   const WORKBOOK_PATHS = [
-    /\/tenants\/[^/]+\/objectives\/[^/]+\/workbook\/parse\/?$/,
+    // Both readers: the one that reads a file against an objective, and the one that reads it
+    // before there is an objective to read it against. The optional segment is the id — without
+    // it, the second route would be capped at 1 MB and fail in the body parser, which is the
+    // exact failure this whole list exists because of.
+    /\/tenants\/[^/]+\/objectives\/([^/]+\/)?workbook\/parse\/?$/,
     /\/tenants\/[^/]+\/access\/bulk\/(validate|hierarchy\/validate)\/?$/,
     /\/tenants\/[^/]+\/job-methods\/[^/]+\/import(-workbook)?\/?$/,
     /\/tenants\/[^/]+\/photos\/[^/]+\/?$/,

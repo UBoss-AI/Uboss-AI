@@ -24,7 +24,6 @@ import {
   DataTable,
   Drawer,
   Icon,
-  Modal,
   PageHeader,
   FormField,
   SearchField,
@@ -47,6 +46,7 @@ import {
 import { useAccountMenu } from '../../lib/use-account-menu';
 import { useSignedInUser } from '../../lib/use-signed-in-user';
 import { RoutedAppShell } from '../../components/RoutedAppShell';
+import { RunAgentPanel } from '../../components/RunAgentPanel';
 import {
   forgetWorkspace,
   readRememberedWorkspace,
@@ -90,9 +90,14 @@ export default function EngineAgentsPage() {
   const [agents, setAgents] = useState<EngineAgentView[]>([]);
   const [selected, setSelected] = useState<EngineAgentView | null>(null);
 
-  /** The standalone create form -- PRD 5.1. */
-  const [creating, setCreating] = useState(false);
-  const [newAgent, setNewAgent] = useState({ name: '', purpose: '' });
+  /**
+   * The agent somebody is starting, if any.
+   *
+   * Separate from `selected`, which is the agent being looked at. Opening the configuration card
+   * and starting a run are different acts by different people — an operator starts an agent
+   * without wanting to read how it was built — so one does not imply the other.
+   */
+  const [running, setRunning] = useState<EngineAgentView | null>(null);
 
   /**
    * The execution setup for an agent nothing configured -- PRD 5.1.
@@ -391,31 +396,26 @@ export default function EngineAgentsPage() {
               and deciding what gets released are different acts, and the toolbar should say so.
             */}
             {/*
-              Two ways to make an agent, because there are two ways companies need one -- PRD 5.1.
+              One way out of this screen, and it is the builder -- the client's correction.
 
-              **Build agent** goes to the Objective-driven builder, which is the normal path and
-              the better one: the analysis decides the agent's skills, approvals and evidence from
-              work that already exists, so what comes out is configured and active.
+              There used to be two buttons here: **New agent**, which opened the create dialog on
+              this screen, and **Build agent**, which went to Agent Builder. The client said
+              agents are made in one place: "agent agar banana hai to Agent Builder me hi button
+              hona chahiye ... agent builder me hi agent banenge". This screen is where the
+              company's agents are looked at, configured and given out; it is not where they come
+              from.
 
-              **New agent** is for the case the client described: somebody has an agent in mind
-              and no Objective to hang it on. Without this the only way through was to invent an
-              Objective in order to reach the builder, which puts a fiction in the record of what
-              the company is trying to do. It arrives in DraftSetup, because nothing has been
-              decided for it yet.
+              So the dialog moved to Agent Builder, behind the same `agent-builder: Create` grant
+              it was always behind, and what is left here is the way to get there. The route that
+              creates a standalone agent is untouched — it is the same one the moved dialog calls.
             */}
             {can(access, 'agent-builder', 'Create') ? (
-              <>
-                <Button size="sm" onClick={() => setCreating(true)}>
-                  <Icon name="plus" size={16} />
-                  New agent
+              <Link href="/agent-builder">
+                <Button variant="primary" size="sm">
+                  <Icon name="build" size={16} />
+                  Build agent
                 </Button>
-                <Link href="/agent-builder">
-                  <Button variant="primary" size="sm">
-                    <Icon name="build" size={16} />
-                    Build agent
-                  </Button>
-                </Link>
-              </>
+              </Link>
             ) : null}
           </>
         }
@@ -600,9 +600,43 @@ export default function EngineAgentsPage() {
                 key: 'open',
                 header: '',
                 render: (row) => (
-                  <Button size="sm" onClick={() => setSelected(row)}>
-                    View
-                  </Button>
+                  /*
+                   * `uboss-actions`, not `uboss-row-actions`.
+                   *
+                   * The second one is used in three other places and defined in no stylesheet —
+                   * the class-coverage test lists it as known-unstyled. Two buttons under it sit
+                   * against each other with no gap. This one is real: inline-flex, a gap,
+                   * aligned.
+                   */
+                  <span className="uboss-actions">
+                    {/*
+                      Running the agent — the employee's whole involvement with AI work.
+
+                      `RunAgentPanel` and the two routes behind it were built and then drawn
+                      nowhere: there was no Run control anywhere in the product, so a published
+                      agent could be looked at, scheduled and audited, but not started by the
+                      person it was published for. The only way to run one was a schedule or a
+                      workflow step, which is not what "Run" means on an operations screen.
+
+                      Offered on the row rather than only inside the card, because starting a
+                      known agent is the commonest thing done here and should not need two clicks
+                      through a drawer of configuration the operator does not change.
+
+                      `agents: Run` — the grant a standard Employee holds, and the one the server
+                      checks again. Only an Active agent: the engine refuses anything else, and a
+                      button that is always there and sometimes refuses teaches people to ignore
+                      it.
+                    */}
+                    {can(access, 'agents', 'Run') && row.status === 'Active' ? (
+                      <Button size="sm" variant="primary" onClick={() => setRunning(row)}>
+                        <Icon name="bolt" size={15} />
+                        Run
+                      </Button>
+                    ) : null}
+                    <Button size="sm" onClick={() => setSelected(row)}>
+                      View
+                    </Button>
+                  </span>
                 ),
               },
             ]}
@@ -612,115 +646,51 @@ export default function EngineAgentsPage() {
         </CardBody>
       </Card>
 
-      {/* ---- Detail drawer: the reference's agentDetail(), as far as this prompt reaches ---- */}
       {/*
-        A new agent with no Objective behind it -- PRD 5.1.
+        Starting a run, and the few things it still has to be told.
 
-        Two fields, and the second one is not a formality. This agent arrives with no skills, no
-        tools, no approval rule and no evidence, because nothing has analysed any work for it. The
-        sentence somebody writes is the only record of why it exists, and it is what the next
-        person reads when they find it sitting in Draft setup weeks later.
+        The panel asks the server which questions apply — they come from the agent's own published
+        configuration, so an agent whose builder named a destination is not asked for one. A list
+        decided here would be a second opinion about the same thing, and the server refuses a run
+        with the answers missing using the very function that produced the questions.
 
-        It is created in Draft setup, not active. Saying otherwise would be a row claiming to run
-        work it has not been given.
+        The run history on the card is reloaded afterwards, so a run that was just started appears
+        where somebody will look for it rather than after the next manual refresh.
       */}
-      <Modal
-        open={creating}
-        title="New agent"
-        onClose={() => setCreating(false)}
-        footer={
-          <>
-            <Button onClick={() => setCreating(false)} disabled={busy}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              disabled={
-                busy ||
-                tenantId === null ||
-                newAgent.name.trim().length < 3 ||
-                newAgent.purpose.trim().length < 10
-              }
-              onClick={() => {
-                if (tenantId === null) return;
-                setBusy(true);
-                setError(null);
-                setNotice(null);
-                engineAgentsApi
-                  .createStandalone(tenantId, {
-                    name: newAgent.name.trim(),
-                    purpose: newAgent.purpose.trim(),
-                  })
-                  .then((created) => {
-                    setCreating(false);
-                    setNewAgent({ name: '', purpose: '' });
-                    setNotice(
-                      `"${created.name}" was created in Draft setup. It has no skills or approval ` +
-                        'rule yet, so it cannot run until somebody configures it.',
-                    );
-                    load();
-                  })
-                  .catch((caught: unknown) =>
-                    setError(
-                      caught instanceof ApiError
-                        ? caught.message
-                        : 'That agent could not be created.',
-                    ),
-                  )
-                  .finally(() => setBusy(false));
-              }}
-            >
-              {busy ? 'Creating…' : 'Create agent'}
-            </Button>
-          </>
-        }
-      >
-        <FormField
-          label="Name"
-          required
-          hint="How people will refer to it. Unique in this company."
-        >
-          {(wiring) => (
-            <input
-              {...wiring}
-              className="uboss-input"
-              value={newAgent.name}
-              maxLength={200}
-              onChange={(event) => setNewAgent({ ...newAgent, name: event.target.value })}
-              placeholder="Weekly branch reconciliation"
-            />
-          )}
-        </FormField>
+      {tenantId === null ? null : (
+        <RunAgentPanel
+          tenantId={tenantId}
+          agent={running}
+          onClose={() => setRunning(null)}
+          onStarted={(message) => {
+            setNotice(message);
+            setError(null);
+            // Reloads the list and, when one is open, the card — so the new run appears in both.
+            reloadSelected();
+          }}
+        />
+      )}
 
-        <FormField
-          label="What is it for"
-          required
-          hint="One or two sentences. This is the only record of why it was created."
-        >
-          {(wiring) => (
-            <textarea
-              {...wiring}
-              className="uboss-input"
-              rows={3}
-              maxLength={2000}
-              value={newAgent.purpose}
-              onChange={(event) => setNewAgent({ ...newAgent, purpose: event.target.value })}
-              placeholder="Reconciles the branch cash submissions each Monday and reports the mismatches."
-            />
-          )}
-        </FormField>
-
-        <p className="uboss-muted-3">
-          It is created in <b>Draft setup</b>. An agent built from an Objective arrives configured
-          and active because the analysis decided its skills and approvals; this one has none of
-          that yet, so it cannot run until somebody gives it some.
-        </p>
-      </Modal>
+      {/* ---- Detail drawer: the reference's agentDetail(), as far as this prompt reaches ---- */}
       <Drawer
         open={selected !== null}
         onClose={() => setSelected(null)}
         title={selected?.name ?? ''}
-        footer={<Button onClick={() => setSelected(null)}>Close</Button>}
+        footer={
+          <>
+            <Button onClick={() => setSelected(null)}>Close</Button>
+            {/*
+              And here too, because somebody who opened the card to check what an agent does is
+              then in the place where they decide to run it. Same grant, same rule about Active.
+            */}
+            {selected !== null && can(access, 'agents', 'Run') && selected.status === 'Active' ? (
+              <Button variant="primary" onClick={() => setRunning(selected)}>
+                <Icon name="bolt" size={16} />
+                Run it
+              </Button>
+            ) : null}
+          </>
+        }
       >
         {selected === null ? null : (
           <>
