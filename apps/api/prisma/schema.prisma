@@ -90,10 +90,20 @@ model Tenant {
   /// Company data rather than a settings string: the client's requirement is that the hierarchy
   /// *displays* the active company Vision and Mission, so the structure and the purpose it
   /// serves are read together rather than on separate screens.
-  vision String? @db.VarChar(1000)
+  /// Holds formatted text, so it is `Text` rather than a thousand characters.
+  ///
+  /// The client asked for a Vision somebody can set in their own fonts, sizes, colours and
+  /// lists. That is markup, and markup is mostly markup: a single coloured, sized span costs
+  /// around fifty characters before a word is typed, so the old thousand-character column would
+  /// have refused a Vision of three sentences. The length that matters is the one a person can
+  /// perceive, and that is enforced on the **text** in the DTO, after the tags are taken off.
+  ///
+  /// What goes in here is sanitised before it is stored — see `sanitiseRichText`. Nothing reads
+  /// it back out and trusts it.
+  vision String? @db.Text
 
   /// The company's Mission. See `vision`.
-  mission String? @db.VarChar(1000)
+  mission String? @db.Text
 
   /// Current lifecycle state. New companies start in `Provisioning`; the Master Console moves
   /// them onward. The guard reads this on every tenant-scoped request.

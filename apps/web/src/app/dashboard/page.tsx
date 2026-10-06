@@ -3,7 +3,16 @@
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { Banner, Card, CardBody, DashboardAmbience, PageHeader, SkeletonText } from '@uboss/ui';
+import {
+  Banner,
+  Button,
+  Card,
+  CardBody,
+  DashboardAmbience,
+  Icon,
+  PageHeader,
+  SkeletonText,
+} from '@uboss/ui';
 
 import {
   ApiError,
@@ -18,6 +27,13 @@ import { useSignedInUser } from '../../lib/use-signed-in-user';
 import { RoutedAppShell } from '../../components/RoutedAppShell';
 import type { OrchestrationView } from '@uboss/types';
 import { OrchestrationMap } from '../../components/OrchestrationMap';
+import {
+  applyTileOrder,
+  forgetTileOrder,
+  readTileOrder,
+  rememberTileOrder,
+  reorderTiles,
+} from '../../lib/dashboard-order';
 import { StageOverview } from '../../components/StageOverview';
 import { TileDetail } from '../../components/TileDetail';
 import {
@@ -74,6 +90,10 @@ export default function DashboardPage(): React.JSX.Element {
    */
   const [selected, setSelected] = useState<string | null>(null);
 
+  /** Arranging the tiles, and the arrangement itself -- PRD 1.1. */
+  const [arranging, setArranging] = useState(false);
+  const [order, setOrder] = useState<string[] | null>(null);
+
   /*
    * The selected area, resolved against what the server actually returned.
    *
@@ -92,6 +112,21 @@ export default function DashboardPage(): React.JSX.Element {
 
   const tenantId =
     resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
+
+  /*
+   * Read once the company is known, because the arrangement is per company: the tiles somebody is
+   * shown differ between them, so one shared order would be an order over a set that does not
+   * exist in the other.
+   */
+  useEffect(() => {
+    setOrder(readTileOrder(tenantId));
+  }, [tenantId]);
+
+  /** The server's tiles, in the order somebody arranged them. */
+  const arrangedTiles = useMemo(
+    () => applyTileOrder(counts?.tiles ?? [], (tile) => tile.tile, order),
+    [counts, order],
+  );
 
   const signedInUser = useSignedInUser(me);
 
@@ -171,7 +206,46 @@ export default function DashboardPage(): React.JSX.Element {
       <div className="uboss-dash-stage">
         <DashboardAmbience />
 
-        <PageHeader title="Dashboard" breadcrumbs={[{ label: 'Dashboard' }]} />
+        <PageHeader
+          title="Dashboard"
+          breadcrumbs={[{ label: 'Dashboard' }]}
+          actions={
+            /*
+              Arranging the tiles -- PRD 1.1.
+
+              A mode rather than always-on dragging: these nodes are buttons that open a card, and
+              a button that both opens something and moves when pulled is one that sometimes does
+              neither. Turning it on says which of the two a press means.
+
+              Reset is beside it rather than hidden, because an arrangement somebody cannot undo
+              is one they will be reluctant to try.
+            */
+            counts === null || counts.tiles.length === 0 ? null : (
+              <>
+                {order === null ? null : (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      forgetTileOrder(tenantId);
+                      setOrder(null);
+                    }}
+                  >
+                    Reset layout
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant={arranging ? 'primary' : 'default'}
+                  aria-pressed={arranging}
+                  onClick={() => setArranging((current) => !current)}
+                >
+                  <Icon name={arranging ? 'check' : 'panel'} size={15} />
+                  {arranging ? 'Done arranging' : 'Arrange'}
+                </Button>
+              </>
+            )
+          }
+        />
 
         {error !== null ? <Banner tone="danger">{error}</Banner> : null}
 
@@ -202,7 +276,20 @@ export default function DashboardPage(): React.JSX.Element {
             ) : (
               <>
                 <OrchestrationMap
-                  tiles={counts.tiles}
+                  tiles={arrangedTiles}
+                  arranging={arranging}
+                  onMove={(moved, target) => {
+                    /*
+                     * The order is stored over the whole dashboard, not over the lane the move
+                     * happened in. A lane's order is a slice of it, so writing back only the
+                     * slice would drop every tile in the other lanes from the stored list and
+                     * silently send them to the end on the next load.
+                     */
+                    const current = arrangedTiles.map((tile) => tile.tile);
+                    const next = reorderTiles(current, moved, target);
+                    setOrder(next);
+                    rememberTileOrder(tenantId, next);
+                  }}
                   meta={meta}
                   scope={counts.scope}
                   selected={selected}

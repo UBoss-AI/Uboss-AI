@@ -16,6 +16,7 @@ import { PrismaService } from '../persistence/prisma.service.js';
 import { TenantRepository } from '../persistence/tenant.repository.js';
 import type { TenantScope } from '../persistence/tenant-context.js';
 import { maskedAadhaar } from './aadhaar.js';
+import { plainTextOf, sanitiseRichText } from './rich-text.js';
 
 /** The hard ceiling the database trigger also enforces. See the migration. */
 export const MAX_REPORTING_DEPTH = 64;
@@ -132,6 +133,15 @@ export interface HierarchyView {
  * (the same foreign key — this is the tenant-isolation case, and it is the one worth having a
  * database guarantee for).
  */
+/**
+ * How much Vision or Mission a person may write, counted in words rather than markup.
+ *
+ * A thousand was the old column width, and it was a storage limit wearing a product limit's
+ * clothes. This is the product limit: long enough for a real statement of purpose, short enough
+ * that the panel on the Hierarchy screen stays a panel.
+ */
+const IDENTITY_TEXT_LIMIT = 1500;
+
 @Injectable()
 export class HierarchyService {
   constructor(
@@ -341,12 +351,41 @@ export class HierarchyService {
       throw new NotFoundException('No such company.');
     }
 
+    /*
+     * Stripped before it is stored, and measured on the words.
+     *
+     * Both of these are drawn on the Hierarchy screen, which is the first screen every employee
+     * of the company opens. Markup written by one person and rendered in another's browser is
+     * the oldest hole there is, so nothing reaches the column until `sanitiseRichText` has taken
+     * out everything that is not formatting.
+     *
+     * The length is then checked on the text with the tags removed. A Vision of forty words is
+     * forty words whether it is plain or set in three faces; counting the markup would refuse
+     * the formatting rather than the length, which is the feature the client asked for.
+     */
+    const clean = (value: string | undefined, field: 'Vision' | 'Mission'): string | null => {
+      if (value === undefined) return null;
+      const html = sanitiseRichText(value);
+      if (html === null) return null;
+      const words = plainTextOf(html).trim();
+      if (words.length > IDENTITY_TEXT_LIMIT) {
+        throw new BadRequestException(
+          `The ${field} is ${words.length} characters of text, and the limit is ` +
+            `${IDENTITY_TEXT_LIMIT}. Formatting does not count towards it.`,
+        );
+      }
+      return html;
+    };
+
+    const vision = clean(input.vision, 'Vision');
+    const mission = clean(input.mission, 'Mission');
+
     await this.prisma.runInTenantTransaction(input.scope, async () => {
       await this.prisma.client.tenant.update({
         where: { id: input.scope.tenantId },
         data: {
-          ...(input.vision === undefined ? {} : { vision: input.vision.trim() || null }),
-          ...(input.mission === undefined ? {} : { mission: input.mission.trim() || null }),
+          ...(input.vision === undefined ? {} : { vision }),
+          ...(input.mission === undefined ? {} : { mission }),
           version: { increment: 1 },
         },
       });

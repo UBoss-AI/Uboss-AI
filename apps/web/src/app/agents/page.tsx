@@ -18,7 +18,9 @@ import {
   DataTable,
   Drawer,
   Icon,
+  Modal,
   PageHeader,
+  FormField,
   SearchField,
   StatusBadge,
   type StatusTone,
@@ -80,6 +82,10 @@ export default function EngineAgentsPage() {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [agents, setAgents] = useState<EngineAgentView[]>([]);
   const [selected, setSelected] = useState<EngineAgentView | null>(null);
+
+  /** The standalone create form -- PRD 5.1. */
+  const [creating, setCreating] = useState(false);
+  const [newAgent, setNewAgent] = useState({ name: '', purpose: '' });
 
   /*
    * The selected agent's runs, read from the run engine.
@@ -328,13 +334,32 @@ export default function EngineAgentsPage() {
               button used to send them to a screen their role cannot use. Running a released agent
               and deciding what gets released are different acts, and the toolbar should say so.
             */}
+            {/*
+              Two ways to make an agent, because there are two ways companies need one -- PRD 5.1.
+
+              **Build agent** goes to the Objective-driven builder, which is the normal path and
+              the better one: the analysis decides the agent's skills, approvals and evidence from
+              work that already exists, so what comes out is configured and active.
+
+              **New agent** is for the case the client described: somebody has an agent in mind
+              and no Objective to hang it on. Without this the only way through was to invent an
+              Objective in order to reach the builder, which puts a fiction in the record of what
+              the company is trying to do. It arrives in DraftSetup, because nothing has been
+              decided for it yet.
+            */}
             {can(access, 'agent-builder', 'Create') ? (
-              <Link href="/agent-builder">
-                <Button variant="primary" size="sm">
+              <>
+                <Button size="sm" onClick={() => setCreating(true)}>
                   <Icon name="plus" size={16} />
-                  Build agent
+                  New agent
                 </Button>
-              </Link>
+                <Link href="/agent-builder">
+                  <Button variant="primary" size="sm">
+                    <Icon name="build" size={16} />
+                    Build agent
+                  </Button>
+                </Link>
+              </>
             ) : null}
           </>
         }
@@ -532,6 +557,109 @@ export default function EngineAgentsPage() {
       </Card>
 
       {/* ---- Detail drawer: the reference's agentDetail(), as far as this prompt reaches ---- */}
+      {/*
+        A new agent with no Objective behind it -- PRD 5.1.
+
+        Two fields, and the second one is not a formality. This agent arrives with no skills, no
+        tools, no approval rule and no evidence, because nothing has analysed any work for it. The
+        sentence somebody writes is the only record of why it exists, and it is what the next
+        person reads when they find it sitting in Draft setup weeks later.
+
+        It is created in Draft setup, not active. Saying otherwise would be a row claiming to run
+        work it has not been given.
+      */}
+      <Modal
+        open={creating}
+        title="New agent"
+        onClose={() => setCreating(false)}
+        footer={
+          <>
+            <Button onClick={() => setCreating(false)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={
+                busy ||
+                tenantId === null ||
+                newAgent.name.trim().length < 3 ||
+                newAgent.purpose.trim().length < 10
+              }
+              onClick={() => {
+                if (tenantId === null) return;
+                setBusy(true);
+                setError(null);
+                setNotice(null);
+                engineAgentsApi
+                  .createStandalone(tenantId, {
+                    name: newAgent.name.trim(),
+                    purpose: newAgent.purpose.trim(),
+                  })
+                  .then((created) => {
+                    setCreating(false);
+                    setNewAgent({ name: '', purpose: '' });
+                    setNotice(
+                      `"${created.name}" was created in Draft setup. It has no skills or approval ` +
+                        'rule yet, so it cannot run until somebody configures it.',
+                    );
+                    load();
+                  })
+                  .catch((caught: unknown) =>
+                    setError(
+                      caught instanceof ApiError
+                        ? caught.message
+                        : 'That agent could not be created.',
+                    ),
+                  )
+                  .finally(() => setBusy(false));
+              }}
+            >
+              {busy ? 'Creating…' : 'Create agent'}
+            </Button>
+          </>
+        }
+      >
+        <FormField
+          label="Name"
+          required
+          hint="How people will refer to it. Unique in this company."
+        >
+          {(wiring) => (
+            <input
+              {...wiring}
+              className="uboss-input"
+              value={newAgent.name}
+              maxLength={200}
+              onChange={(event) => setNewAgent({ ...newAgent, name: event.target.value })}
+              placeholder="Weekly branch reconciliation"
+            />
+          )}
+        </FormField>
+
+        <FormField
+          label="What is it for"
+          required
+          hint="One or two sentences. This is the only record of why it was created."
+        >
+          {(wiring) => (
+            <textarea
+              {...wiring}
+              className="uboss-input"
+              rows={3}
+              maxLength={2000}
+              value={newAgent.purpose}
+              onChange={(event) => setNewAgent({ ...newAgent, purpose: event.target.value })}
+              placeholder="Reconciles the branch cash submissions each Monday and reports the mismatches."
+            />
+          )}
+        </FormField>
+
+        <p className="uboss-muted-3">
+          It is created in <b>Draft setup</b>. An agent built from an Objective arrives configured
+          and active because the analysis decided its skills and approvals; this one has none of
+          that yet, so it cannot run until somebody gives it some.
+        </p>
+      </Modal>
       <Drawer
         open={selected !== null}
         onClose={() => setSelected(null)}

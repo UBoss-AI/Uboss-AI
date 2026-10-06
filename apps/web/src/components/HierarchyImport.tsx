@@ -192,7 +192,9 @@ export function HierarchyImport({
             exactly what would be.
           </p>
 
-          <div className="uboss-row-actions">
+          {/* `uboss-actions` — `uboss-row-actions` is not a class any stylesheet defines, so
+              these two buttons were never laid out as a row at all. */}
+          <div className="uboss-actions">
             <Button icon="arrow-down" onClick={download} disabled={busy}>
               Download Excel template
             </Button>

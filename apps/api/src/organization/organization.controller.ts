@@ -244,15 +244,33 @@ export class ChangeReportingManagerDto {
   reason?: string;
 }
 
+/**
+ * The Vision and Mission, as formatted text.
+ *
+ * ## Two limits, measuring two different things
+ *
+ * `@MaxLength` here is the ceiling on the **document**, and it is generous because markup is
+ * mostly markup: one coloured, sized span costs about fifty characters before a word is typed.
+ * It is a guard against somebody posting a megabyte, not a limit anybody writing a Vision will
+ * meet.
+ *
+ * The limit that a person can perceive is on the **words**, and it is checked in the service
+ * after the tags have been removed — because a Vision of forty words is forty words whether it
+ * is plain or set in three faces, and refusing the formatted one would be refusing the
+ * formatting rather than the length.
+ *
+ * Neither is a security control. What makes this safe to put back on a page is
+ * `sanitiseRichText`, which the service runs before anything is stored.
+ */
 export class UpdateCompanyIdentityDto {
   @IsOptional()
   @IsString()
-  @MaxLength(1000)
+  @MaxLength(20_000)
   vision?: string;
 
   @IsOptional()
   @IsString()
-  @MaxLength(1000)
+  @MaxLength(20_000)
   mission?: string;
 }
 

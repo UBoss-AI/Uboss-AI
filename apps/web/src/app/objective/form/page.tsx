@@ -304,9 +304,23 @@ function ObjectiveFormInner() {
       .finally(() => setBusy(false));
   }, [objective, tenantId]);
 
+  /**
+   * How much of the form an upload is allowed to fill -- PRD 4.2.
+   *
+   * The file has two sheets and the screen has two parts, and the client asked for the steps to
+   * be fillable on their own: somebody sends the grid out to the person who does the work, gets
+   * it back, and wants the steps replaced without the Objective's own fields being touched by
+   * whatever was in the top sheet of a file that has been round-tripped through a spreadsheet.
+   *
+   * One parse either way -- the same endpoint reads the same file. This only decides which half
+   * of what it found is applied, and the review says which before anything is.
+   */
+  const [uploadScope, setUploadScope] = useState<'all' | 'steps'>('all');
+
   /** Read a returned workbook. Applies nothing — it opens the review below. */
   const uploadWorkbook = useCallback(
-    (file: File) => {
+    (file: File, scope: 'all' | 'steps' = 'all') => {
+      setUploadScope(scope);
       if (!tenantId || objective === null) return;
       setBusy(true);
       setError(null);
@@ -342,29 +356,32 @@ function ObjectiveFormInner() {
   const applyUpload = useCallback(() => {
     if (upload === null) return;
 
-    setContent((current) => {
-      const next = { ...current };
-      for (const [key, value] of Object.entries(upload.objective)) {
-        if (value === undefined || value === '') continue;
-        /*
-         * The three fields the file carries as names rather than ids are skipped.
-         *
-         * Resolving "Regulatory Affairs" to a department id is a question about the company, and
-         * guessing it here would silently point the objective at the wrong department. They stay
-         * as they are and the review says so.
-         */
-        if (
-          key === 'departmentId' ||
-          key === 'objectiveOwnerUserId' ||
-          key === 'responsibleOwnerUserId'
-        ) {
-          continue;
+    // A steps-only upload leaves the Objective's own fields exactly as they are -- PRD 4.2.
+    if (uploadScope === 'all') {
+      setContent((current) => {
+        const next = { ...current };
+        for (const [key, value] of Object.entries(upload.objective)) {
+          if (value === undefined || value === '') continue;
+          /*
+           * The three fields the file carries as names rather than ids are skipped.
+           *
+           * Resolving "Regulatory Affairs" to a department id is a question about the company, and
+           * guessing it here would silently point the objective at the wrong department. They stay
+           * as they are and the review says so.
+           */
+          if (
+            key === 'departmentId' ||
+            key === 'objectiveOwnerUserId' ||
+            key === 'responsibleOwnerUserId'
+          ) {
+            continue;
+          }
+          const numeric = key === 'currentWorkload' || key === 'targetCompletionTime';
+          (next as Record<string, unknown>)[key] = numeric ? Number(value) : value;
         }
-        const numeric = key === 'currentWorkload' || key === 'targetCompletionTime';
-        (next as Record<string, unknown>)[key] = numeric ? Number(value) : value;
-      }
-      return next;
-    });
+        return next;
+      });
+    }
 
     if (upload.steps.length > 0) {
       setSteps(
@@ -377,8 +394,12 @@ function ObjectiveFormInner() {
     }
 
     setUpload(null);
-    setNotice('The file has been put into the form. Nothing is stored until you press Save Draft.');
-  }, [upload]);
+    setNotice(
+      uploadScope === 'steps'
+        ? 'The workflow steps have been replaced from the file. The Objective fields above are unchanged, and nothing is stored until you press Save Draft.'
+        : 'The file has been put into the form. Nothing is stored until you press Save Draft.',
+    );
+  }, [upload, uploadScope]);
 
   const save = useCallback(() => {
     if (!tenantId) return;
@@ -915,6 +936,71 @@ function ObjectiveFormInner() {
           >
             {expanded ? 'Collapse long text' : 'Expand long text'}
           </Button>
+
+          {/*
+            The grid's own file controls -- PRD 4.2.
+
+            The pair at the top of the screen takes the whole Objective away and brings the whole
+            Objective back. These do the same for the steps alone, because that is how the work
+            actually divides: an administrator writes the Objective, and the person who does the
+            job writes the steps. Sending them the whole form so they can fill in one sheet means
+            whatever a spreadsheet did to the other sheet comes back with it.
+
+            Download is the same file either way -- one workbook, two sheets -- and it carries
+            whatever is stored: filled if the steps are filled, the blank grid if they are not.
+            Upload is what differs: this one replaces the steps and leaves everything above them
+            untouched, and the review says so before it does anything.
+          */}
+          <Button
+            size="sm"
+            onClick={downloadWorkbook}
+            disabled={busy}
+            title="The same workbook as above — it carries whatever is stored, and the blank grid when nothing is"
+          >
+            <Icon name="arrow-down" size={15} />
+            Download steps
+          </Button>
+
+          {busy || readOnly || objective === null ? (
+            <Button
+              size="sm"
+              onClick={() => {
+                setUpload(null);
+                setNotice(null);
+                setError(
+                  objective === null
+                    ? 'Save the draft first. A filled-in file is read against the Objective it belongs to, so there has to be one before it can be uploaded.'
+                    : readOnly
+                      ? 'This version is published and cannot be edited, so a file cannot be uploaded into it. An authorised change creates a new draft version to upload into.'
+                      : 'Still working on the last request — try again in a moment.',
+                );
+              }}
+            >
+              <Icon name="arrow-up" size={15} />
+              Upload steps
+            </Button>
+          ) : (
+            <label
+              className="uboss-btn uboss-btn--sm"
+              htmlFor="objective-steps-file"
+              title="Replaces the steps below. The Objective fields above are left alone."
+            >
+              <Icon name="arrow-up" size={15} />
+              Upload steps
+            </label>
+          )}
+          <input
+            id="objective-steps-file"
+            type="file"
+            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            className="uboss-sr-only"
+            disabled={busy || readOnly || objective === null}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file !== undefined) uploadWorkbook(file, 'steps');
+              event.target.value = '';
+            }}
+          />
         </div>
       </div>
 
@@ -1085,26 +1171,39 @@ function ObjectiveFormInner() {
       */}
       <Modal
         open={upload !== null}
-        title="Review the uploaded Objective"
+        title={
+          uploadScope === 'steps'
+            ? 'Review the uploaded workflow steps'
+            : 'Review the uploaded Objective'
+        }
         wide
         onClose={() => setUpload(null)}
         footer={
           <>
             <Button onClick={() => setUpload(null)}>Discard</Button>
             <Button variant="primary" onClick={applyUpload}>
-              Put it into the form
+              {uploadScope === 'steps' ? 'Replace the steps' : 'Put it into the form'}
             </Button>
           </>
         }
       >
         {upload === null ? null : (
           <>
+            {/*
+              What the file holds, and what will be taken from it.
+
+              A steps-only upload is read from the same file and the same two sheets, so saying
+              only how many steps it found would hide the fact that the Objective sheet was read
+              and deliberately ignored. Somebody who filled in both and sees only one applied
+              should be told why here, not left to notice later.
+            */}
             <p className="uboss-muted">
               The file carries {Object.keys(upload.objective).length} Objective field
               {Object.keys(upload.objective).length === 1 ? '' : 's'} and {upload.steps.length} step
-              {upload.steps.length === 1 ? '' : 's'}. Nothing is saved: pressing the button below
-              puts these values into the form, and the draft is stored only when you press Save
-              Draft.
+              {upload.steps.length === 1 ? '' : 's'}.{' '}
+              {uploadScope === 'steps'
+                ? 'This was uploaded from the steps grid, so only the steps will be taken — the Objective fields above are left exactly as they are.'
+                : 'Nothing is saved: pressing the button below puts these values into the form, and the draft is stored only when you press Save Draft.'}
             </p>
 
             {/*
@@ -1113,24 +1212,26 @@ function ObjectiveFormInner() {
               Computed here rather than by the server, because the server has no idea what is
               currently typed into this form — the conflict is between the file and the screen.
             */}
-            {(() => {
-              const conflicts = Object.entries(upload.objective).filter(([key, value]) => {
-                if (value === undefined || value === '') return false;
-                const existing = (content as unknown as Record<string, unknown>)[key];
-                return (
-                  existing !== null &&
-                  existing !== undefined &&
-                  String(existing) !== '' &&
-                  String(existing) !== value
-                );
-              });
-              return conflicts.length === 0 ? null : (
-                <Banner tone="warn">
-                  {conflicts.length} field{conflicts.length === 1 ? '' : 's'} already filled in
-                  would be replaced: {conflicts.map(([key]) => key).join(', ')}.
-                </Banner>
-              );
-            })()}
+            {uploadScope === 'steps'
+              ? null
+              : (() => {
+                  const conflicts = Object.entries(upload.objective).filter(([key, value]) => {
+                    if (value === undefined || value === '') return false;
+                    const existing = (content as unknown as Record<string, unknown>)[key];
+                    return (
+                      existing !== null &&
+                      existing !== undefined &&
+                      String(existing) !== '' &&
+                      String(existing) !== value
+                    );
+                  });
+                  return conflicts.length === 0 ? null : (
+                    <Banner tone="warn">
+                      {conflicts.length} field{conflicts.length === 1 ? '' : 's'} already filled in
+                      would be replaced: {conflicts.map(([key]) => key).join(', ')}.
+                    </Banner>
+                  );
+                })()}
 
             {upload.steps.length > 0 ? (
               <Banner tone="info">

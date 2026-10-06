@@ -31,6 +31,22 @@ const ICON_PATHS = {
   eye: 'M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6z',
   /* The same lid with a stroke through it — the one shape everybody already reads as "hidden". */
   'eye-off': 'M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6zM4 4l16 16',
+  /*
+   * The formatting toolbar.
+   *
+   * Drawn as strokes like every other icon here rather than as letterforms: a glyph `B` would
+   * take the page's own font and change shape with it, and at fifteen pixels these have to read
+   * at a glance. The bold and italic marks are the shapes of the letters, not the letters.
+   */
+  bold: 'M7 5h6a3.5 3.5 0 0 1 0 7H7zM7 12h7a3.5 3.5 0 0 1 0 7H7z',
+  italic: 'M15 5h-5M14 19H9M13 5l-2 14',
+  underline: 'M7 4v6a5 5 0 0 0 10 0V4M5 20h14',
+  'list-bullet': 'M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01',
+  'list-numbered': 'M9 6h11M9 12h11M9 18h11M4 5h1v3M4 11h2l-2 2h2M4 16h2v1.5H4.5V19H6',
+  // A picture: a horizon inside the frame the shape map draws.
+  image: 'M3 16l5-5 4 4 3-3 6 6',
+  palette:
+    'M12 3a9 9 0 1 0 0 18c1 0 1.6-.7 1.6-1.5 0-.9-.8-1.3-.8-2.1 0-.8.7-1.4 1.5-1.4H16a5 5 0 0 0 5-5c0-4.4-4-8-9-8z',
   card: 'M3 10h18',
   key: 'M10 12l9-9 2 2-2 2 2 2-3 3-2-2-2 2z',
   play: 'M6 4l14 8-14 8z',
@@ -105,6 +121,15 @@ const ICON_SHAPES: Partial<Record<IconName, ReactNode>> = {
   clock: <circle cx="12" cy="12" r="9" />,
   eye: <circle cx="12" cy="12" r="3" />,
   'eye-off': <circle cx="12" cy="12" r="3" />,
+  // The palette's three wells, so the icon reads as colour rather than as a blob.
+  image: <rect x="3" y="5" width="18" height="14" rx="2" />,
+  palette: (
+    <>
+      <circle cx="9" cy="9" r="1.1" />
+      <circle cx="13.5" cy="7.5" r="1.1" />
+      <circle cx="16.5" cy="11" r="1.1" />
+    </>
+  ),
   card: <rect x="3" y="5" width="18" height="14" rx="2" />,
   // Fit: a drawing brought inside a frame. The outer rect is the frame, the path is the drawing.
   frame: <rect x="3" y="5" width="18" height="14" rx="2" />,

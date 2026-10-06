@@ -53,7 +53,12 @@ export interface OrgChartProps {
    * collect the reason the server requires.
    */
   onArchiveDepartment?: (id: string) => void;
-  /** Shown instead of the chart when a company has departments but nobody recorded. */
+  /**
+   * A hint drawn **under** the chart when nobody is recorded yet.
+   *
+   * Under, not instead of: the company card is what tells a new administrator the workspace is
+   * theirs, and replacing it with a sentence made their first screen look empty.
+   */
   emptyMessage?: string;
   /**
    * Put the chart in a frame with zoom, pan, fit and full screen.
@@ -704,15 +709,20 @@ export function OrgChart({
     return () => frameEl.removeEventListener('wheel', onWheel);
   }, []);
 
+  /*
+   * An empty company still gets drawn.
+   *
+   * This used to return the message **instead of** the chart, and it swallowed more than it meant
+   * to. A company with departments and nobody in them was the case it was written for; a company
+   * with no departments at all hits it too, and that is every company on its first day. A new
+   * administrator signed in, opened Hierarchy, and found a sentence where their company should
+   * have been — reported as the screen being blank, and it is the first screen they see.
+   *
+   * The card is the thing that tells them the workspace is theirs and real, so it is drawn
+   * whatever is or is not inside it, and the message moves underneath as the hint it always was.
+   */
   const hasPeople = root.children.some((department) => department.children.length > 0);
-
-  if (!hasPeople && emptyMessage !== undefined) {
-    return (
-      <div className={cn('uboss-org', className)}>
-        <p className="uboss-org-empty">{emptyMessage}</p>
-      </div>
-    );
-  }
+  const emptyNote = !hasPeople && emptyMessage !== undefined ? emptyMessage : null;
 
   const { placed, width, height } = layout(root);
   const paths = connectors(placed);
@@ -772,7 +782,12 @@ export function OrgChart({
   );
 
   if (controls !== true) {
-    return <div className={cn('uboss-org', className)}>{chart}</div>;
+    return (
+      <div className={cn('uboss-org', className)}>
+        {chart}
+        {emptyNote === null ? null : <p className="uboss-org-empty">{emptyNote}</p>}
+      </div>
+    );
   }
 
   const percent = Math.round(zoom * 100);
@@ -978,6 +993,8 @@ export function OrgChart({
           </div>
         </div>
       </div>
+      {/* Under the frame, so the company card above it stays the first thing anybody sees. */}
+      {emptyNote === null ? null : <p className="uboss-org-empty">{emptyNote}</p>}
     </div>
   );
 }

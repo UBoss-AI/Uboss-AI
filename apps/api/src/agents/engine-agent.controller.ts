@@ -60,6 +60,19 @@ export class ArchiveAgentDto {
   @Allow() _?: unknown;
 }
 
+/**
+ * A new Engine Agent that no Objective asked for -- PRD 5.1.
+ *
+ * Two fields, and the second is not a formality. An agent created this way arrives with no
+ * skills, no tools, no approval rule and no evidence, because nothing has analysed any work for
+ * it. The sentence somebody writes here is the only record of why it exists, and it is what the
+ * next person reads when they find it in `DraftSetup` weeks later.
+ */
+export class CreateStandaloneAgentDto {
+  @IsString() @MaxLength(200) name!: string;
+  @IsString() @MaxLength(2000) purpose!: string;
+}
+
 /** A new name for an agent. The only field, because a rename changes nothing else. */
 export class RenameAgentDto {
   @IsString() @MaxLength(200) name!: string;
@@ -188,6 +201,28 @@ export class EngineAgentController {
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
       agentId,
+    });
+  }
+
+  /**
+   * Create an Engine Agent directly -- PRD 5.1.
+   *
+   * `agent-builder: EditDraft`, the same grant the builder needs: this decides what an agent is,
+   * which is a different authority from running one. The service checks it again.
+   *
+   * It arrives in `DraftSetup`, never `Active`. The builder's agents are born active because the
+   * Objective's analysis has already decided their skills, approvals and evidence; this one has
+   * none of that yet, and an active agent with an empty configuration is a row claiming to run
+   * work it cannot do.
+   */
+  @Post()
+  @RequirePermission({ module: 'agent-builder', action: 'EditDraft' })
+  async createStandalone(@Body() body: CreateStandaloneAgentDto): Promise<unknown> {
+    return this.agents.createStandalone({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
+      name: body.name,
+      purpose: body.purpose,
     });
   }
 

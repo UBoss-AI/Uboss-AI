@@ -21,12 +21,14 @@ import {
   SkeletonText,
   StatusBadge,
   type StatusTone,
+  RichTextEditor,
   VisionMission,
 } from '@uboss/ui';
 
 import {
   type AddEmployeeResult,
   ApiError,
+  accessApi,
   authApi,
   type DepartmentRow,
   type HierarchyView,
@@ -153,6 +155,9 @@ export default function HierarchyPage() {
 
   const [departmentOpen, setDepartmentOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  /** Its own flag rather than a shared one: nothing else on this screen should grey out while a
+   *  blank spreadsheet is being fetched. */
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
 
   /*
    * Who the side panel is showing, or null.
@@ -209,6 +214,20 @@ export default function HierarchyPage() {
 
   const accountMenu = useAccountMenu(me);
   const bell = useNotificationBell(tenantId);
+
+  /**
+   * Put a picture in the company's file store and hand back the path to draw it from.
+   *
+   * `Internal` rather than `Public`: this is drawn on a screen only members of the company can
+   * open, and a classification is a statement about the data, not about which screen happens to
+   * show it. The upload is scanned on arrival like every other file here — the same pipeline, the
+   * same quota, the same audit trail — because a second way to store a file would be a second
+   * place for all of that to be forgotten.
+   *
+   * The path returned is relative and goes through `/api`, which the web app proxies to the API
+   * in every environment. An absolute one would bake in whichever host it was written on and
+   * break the moment the same row is read from another, and these rows outlive deployments.
+   */
 
   useEffect(() => {
     authApi
@@ -555,6 +574,39 @@ export default function HierarchyPage() {
                 />
                 {mayAdminister ? (
                   <>
+                    {/*
+                      Download sits beside Import, not inside it.
+
+                      It used to be one click deep: press Import, and the dialog that opens offers
+                      the template. Somebody who came here to fetch the blank file had to open
+                      something called Import to find it, which reads as the wrong door — reported
+                      by the client in those words. The two belong side by side because they are
+                      the two halves of one job: take the file away, bring it back.
+
+                      The dialog keeps its own copy, for anybody who opened Import first and then
+                      realised they needed the file.
+                    */}
+                    <Button
+                      icon="arrow-down"
+                      disabled={downloadingTemplate || tenantId === null}
+                      onClick={() => {
+                        if (tenantId === null) return;
+                        setError(null);
+                        setDownloadingTemplate(true);
+                        accessApi
+                          .downloadHierarchyTemplate(tenantId)
+                          .catch((caught: unknown) =>
+                            setError(
+                              caught instanceof ApiError
+                                ? caught.message
+                                : 'The template could not be downloaded.',
+                            ),
+                          )
+                          .finally(() => setDownloadingTemplate(false));
+                      }}
+                    >
+                      Download template
+                    </Button>
                     <Button icon="arrow-up" onClick={() => setImportOpen(true)}>
                       Import
                     </Button>
@@ -1116,8 +1168,9 @@ export default function HierarchyPage() {
                 setError(null);
                 organizationApi
                   .updateIdentity(tenantId, {
-                    vision: visionDraft.trim(),
-                    mission: missionDraft.trim(),
+                    // Markup now, not a sentence: the API sanitises it and measures its words.
+                    vision: visionDraft,
+                    mission: missionDraft,
                   })
                   .then(() => {
                     setIdentityOpen(false);
@@ -1138,33 +1191,51 @@ export default function HierarchyPage() {
           </>
         }
       >
-        <FormField
-          label="Company Vision"
-          hint="Where this company is going. Shown above the chart to everybody."
-        >
-          {(field) => (
-            <textarea
-              {...field}
-              className="uboss-textarea"
-              rows={4}
-              maxLength={1000}
-              value={visionDraft}
-              onChange={(event) => setVisionDraft(event.target.value)}
-              placeholder="The company we intend to become."
+        {/*
+          No picture button yet — PRD 2.3.
+
+          The editor supports one, the filter accepts an image from this company's own file store,
+          and both are covered by tests. What is missing is a way to *draw* it:
+          `GET /tenants/:id/files/:id/content` answers with JSON rather than the bytes an `<img>`
+          needs, and it requires `settings:Export`, which an ordinary employee does not hold — and
+          the Mission is read by everybody.
+
+          Serving it needs a route of its own, and that route must not become a way to read any
+          file in the company by its id, because a knowledge document is in the same store. So the
+          file needs a mark saying it is an identity picture, which is a migration of its own.
+
+          When that exists, pass `uploadImage` to both editors below and the button returns. A
+          button that inserts an image nobody can see would be worse than no button.
+        */}
+        {/*
+          Mission first here too, so the editor is in the order the strip draws them.
+
+          A dialog that asks for the Vision first and then shows the Mission on top is a small
+          thing that makes somebody check whether they typed them the wrong way round.
+        */}
+        <FormField label="Company Mission" hint="What it does every day to get there.">
+          {() => (
+            <RichTextEditor
+              label="Company Mission"
+              value={missionDraft}
+              onChange={setMissionDraft}
+              placeholder="The work this company does, and for whom."
+              disabled={savingIdentity}
             />
           )}
         </FormField>
 
-        <FormField label="Company Mission" hint="What it does every day to get there.">
-          {(field) => (
-            <textarea
-              {...field}
-              className="uboss-textarea"
-              rows={4}
-              maxLength={1000}
-              value={missionDraft}
-              onChange={(event) => setMissionDraft(event.target.value)}
-              placeholder="The work this company does, and for whom."
+        <FormField
+          label="Company Vision"
+          hint="Where this company is going. Shown above the chart to everybody."
+        >
+          {() => (
+            <RichTextEditor
+              label="Company Vision"
+              value={visionDraft}
+              onChange={setVisionDraft}
+              placeholder="The company we intend to become."
+              disabled={savingIdentity}
             />
           )}
         </FormField>

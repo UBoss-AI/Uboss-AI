@@ -3767,9 +3767,21 @@ tr:hover .uboss-row-name .uboss-btn,
    hierarchy *displays* the active company Vision and Mission — the structure
    and the purpose it serves are read together. */
 
+/*
+ * Stacked, not side by side.
+ *
+ * These were two equal columns, and the two things in them are not equal: a Mission is a sentence
+ * and a Vision is a paragraph. Side by side, the grid gives both the same width and the row gives
+ * both the height of the taller one — so the short one sat in a half-empty box the size of the
+ * long one, which is what the client saw and called awkward.
+ *
+ * Stacking lets each be its own height, and puts Mission first because it is the shorter of the
+ * two and the one somebody reads at a glance. Full width also suits the longer text: a Vision set
+ * in half a screen wraps into a narrow column of many short lines.
+ */
 .uboss-vm-strip {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 16px;
   margin-bottom: 18px;
 }
@@ -3820,12 +3832,6 @@ tr:hover .uboss-row-name .uboss-btn,
   border-radius: 50%;
   background: radial-gradient(circle, rgba(14, 165, 233, 0.4), transparent 70%);
   pointer-events: none;
-}
-
-@media (max-width: 900px) {
-  .uboss-vm-strip {
-    grid-template-columns: 1fr;
-  }
 }
 
 /* --- Segmented control ----------------------------------------------------
@@ -10380,4 +10386,187 @@ tr[data-drop-target='true'] td {
   color: var(--uboss-text-3);
   cursor: not-allowed;
   opacity: 0.5;
+}
+
+/* ============================================================
+   Rich text editor — the company Vision and Mission
+   ============================================================
+
+   A toolbar above an editable area. Deliberately small: these are two statements of purpose, set
+   once and read every day, not a document. The area grows with its content rather than scrolling,
+   because a Vision that needs a scrollbar is a Vision nobody will read.
+
+   The surface matches a form field rather than a card, so it reads as something to type in. */
+
+.uboss-rte {
+  border: 1px solid var(--uboss-border);
+  border-radius: 10px;
+  background: var(--uboss-surface);
+  overflow: hidden;
+}
+
+.uboss-rte--disabled {
+  opacity: 0.6;
+}
+
+.uboss-rte-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--uboss-border);
+  background: var(--uboss-surface-raised);
+}
+
+.uboss-rte-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  color: var(--uboss-text-2);
+  cursor: pointer;
+}
+
+.uboss-rte-tool:hover:not(:disabled) {
+  border-color: var(--uboss-border);
+  background: var(--uboss-surface);
+  color: var(--uboss-text);
+}
+
+.uboss-rte-tool:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.uboss-rte-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 5px;
+  background: var(--uboss-border);
+}
+
+.uboss-rte-pick {
+  height: 28px;
+  max-width: 110px;
+  padding: 0 6px;
+  border: 1px solid var(--uboss-border);
+  border-radius: 7px;
+  background: var(--uboss-surface);
+  color: var(--uboss-text-2);
+  font-size: 12px;
+}
+
+.uboss-rte-colour {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  color: var(--uboss-text-2);
+  cursor: pointer;
+}
+
+.uboss-rte-colour:hover {
+  background: var(--uboss-surface);
+}
+
+/* The native swatch sits over the icon at zero opacity: it keeps the picker reachable from the
+   keyboard, while what is drawn is the palette mark beside every other tool. */
+.uboss-rte-colour input[type='color'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.uboss-rte-area-wrap {
+  position: relative;
+}
+
+.uboss-rte-area {
+  min-height: 108px;
+  padding: 10px 12px;
+  color: var(--uboss-text);
+  font-size: 14px;
+  line-height: 1.55;
+  outline: none;
+}
+
+.uboss-rte-area:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--uboss-ai-bright);
+}
+
+/* The lists the toolbar inserts need their markers back: the base layer strips them everywhere
+   else, where a `ul` is a menu rather than prose. */
+.uboss-rte-area ul,
+.uboss-rte-area ol {
+  margin: 6px 0;
+  padding-left: 22px;
+  list-style: revert;
+}
+
+.uboss-rte-area li {
+  list-style: inherit;
+}
+
+.uboss-rte-area p {
+  margin: 0 0 6px;
+}
+
+.uboss-rte-placeholder {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  margin: 0;
+  color: var(--uboss-text-3);
+  font-size: 14px;
+  pointer-events: none;
+}
+
+/* The same list treatment where the saved text is drawn, so what somebody formatted is what they
+   see afterwards. */
+.uboss-vm-rich ul,
+.uboss-vm-rich ol {
+  margin: 6px 0;
+  padding-left: 20px;
+  list-style: revert;
+}
+
+.uboss-vm-rich li {
+  list-style: inherit;
+}
+
+.uboss-vm-rich p {
+  margin: 0 0 6px;
+}
+
+.uboss-vm-rich p:last-child {
+  margin-bottom: 0;
+}
+
+/* Arranging the Dashboard tiles — PRD 1.1.
+   A node being arranged says so: the cursor is a move, and the dashed outline marks it as
+   something to pick up rather than something to press. Without it the mode is invisible, and an
+   invisible mode is one somebody leaves on and then wonders why nothing opens. */
+
+.uboss-orch-node--arranging {
+  cursor: move;
+  outline: 1px dashed var(--uboss-ai-bright);
+  outline-offset: 3px;
+}
+
+.uboss-orch-node--arranging:active {
+  opacity: 0.6;
 }

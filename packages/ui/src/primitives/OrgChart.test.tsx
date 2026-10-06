@@ -553,4 +553,61 @@ describe('OrgChart — the frame', () => {
 
     expect(onSelectPerson).toHaveBeenCalledWith('user-2');
   });
+  /*
+   * A new company's first screen.
+   *
+   * The empty message used to be returned **instead of** the chart, so a company with no
+   * departments — which is every company on its first day — showed a sentence where its own card
+   * should have been. The administrator who had just been given the workspace opened Hierarchy
+   * and found it blank. The card is what says the workspace is theirs; the message is a hint
+   * about what to do next, and a hint does not replace the thing it is about.
+   */
+  describe('a company with nothing in it yet', () => {
+    const brandNew: OrgChartNode = {
+      kind: 'company',
+      id: 'company-1',
+      name: 'SPM Medicare',
+      subtitle: 'Company · 0 departments',
+      children: [],
+    };
+
+    it('still draws the company card, with the hint underneath', () => {
+      const { container } = render(
+        <OrgChart root={brandNew} controls emptyMessage="No employees recorded yet." />,
+      );
+
+      expect(screen.getByLabelText('SPM Medicare. Company · 0 departments')).toBeTruthy();
+      expect(container.querySelector('.uboss-org-empty')?.textContent).toBe(
+        'No employees recorded yet.',
+      );
+    });
+
+    it('draws it without the frame too', () => {
+      render(<OrgChart root={brandNew} emptyMessage="No employees recorded yet." />);
+      expect(screen.getByLabelText('SPM Medicare. Company · 0 departments')).toBeTruthy();
+    });
+
+    it('draws the departments when they exist but hold nobody', () => {
+      const departmentsOnly: OrgChartNode = {
+        ...brandNew,
+        subtitle: 'Company · 1 department',
+        children: [
+          {
+            kind: 'department',
+            id: 'dept-ops',
+            name: 'Operations',
+            subtitle: 'Department · 0 people',
+            children: [],
+          },
+        ],
+      };
+
+      render(
+        <OrgChart root={departmentsOnly} controls emptyMessage="No employees recorded yet." />,
+      );
+
+      expect(screen.getByLabelText('SPM Medicare. Company · 1 department')).toBeTruthy();
+      expect(screen.getByLabelText('Operations. Department · 0 people')).toBeTruthy();
+    });
+  });
 });

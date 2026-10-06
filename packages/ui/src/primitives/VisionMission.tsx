@@ -1,4 +1,5 @@
 import { cn } from '../lib/class-names';
+import { hasWords, sanitiseRichText } from './rich-text';
 import { Icon } from './Icon';
 
 export interface VisionMissionProps {
@@ -50,16 +51,47 @@ export function VisionMission({ vision, mission, onEdit, className }: VisionMiss
           {vision === null && mission === null ? 'Set Vision & Mission' : 'Edit'}
         </button>
       )}
-      <div className={cn('uboss-vm', vision === null && 'uboss-vm--empty')}>
-        <div className="uboss-vm-glow" aria-hidden="true" />
-        <div className="uboss-vm-label">Company Vision</div>
-        <p>{vision ?? 'No Vision recorded yet.'}</p>
-      </div>
-      <div className={cn('uboss-vm', 'uboss-vm--mission', mission === null && 'uboss-vm--empty')}>
-        <div className="uboss-vm-glow" aria-hidden="true" />
-        <div className="uboss-vm-label">Company Mission</div>
-        <p>{mission ?? 'No Mission recorded yet.'}</p>
-      </div>
+      <Panel label="Company Mission" value={mission} mission />
+      <Panel label="Company Vision" value={vision} />
+    </div>
+  );
+}
+
+/**
+ * One panel, and the only place in the product that draws markup somebody typed.
+ *
+ * The API sanitises before it stores, so nothing dangerous should arrive here. It is sanitised
+ * again anyway: a row written before the API knew how, a restore from an old backup, or a future
+ * endpoint that forgets, each puts unfiltered markup on the first screen every employee opens.
+ * Checking twice costs a parse and removes a whole class of "the other end already did it".
+ *
+ * `hasWords` rather than a null check, because a Vision that has been cleared in the editor comes
+ * back as empty markup — `<p></p>` would draw a blank panel, and a blank panel reads as a failed
+ * load, which is the one thing this must never do.
+ */
+function Panel({
+  label,
+  value,
+  mission = false,
+}: {
+  label: string;
+  value: string | null;
+  mission?: boolean;
+}) {
+  const written = hasWords(value);
+  return (
+    <div className={cn('uboss-vm', mission && 'uboss-vm--mission', !written && 'uboss-vm--empty')}>
+      <div className="uboss-vm-glow" aria-hidden="true" />
+      <div className="uboss-vm-label">{label}</div>
+      {written ? (
+        <div
+          className="uboss-vm-rich"
+          // Sanitised on the line above, against the same list the API enforces.
+          dangerouslySetInnerHTML={{ __html: sanitiseRichText(value as string) }}
+        />
+      ) : (
+        <p>{`No ${label.replace('Company ', '')} recorded yet.`}</p>
+      )}
     </div>
   );
 }

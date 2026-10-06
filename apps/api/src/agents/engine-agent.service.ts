@@ -307,6 +307,103 @@ export class EngineAgentService {
    * decide what an agent *is* may decide what it is called; somebody who may only run one may not
    * rename it out from under the person who built it.
    */
+  /**
+   * Create an Engine Agent that no Objective asked for -- PRD 5.1.
+   *
+   * ## Why this did not exist
+   *
+   * Every agent in the product is born from an Objective: the workflow is analysed, a node is
+   * marked as agent work, and the builder turns that node into an agent with its skills, its
+   * approvals and its evidence already decided. That is the right default and it stays.
+   *
+   * It is not the only case. The client's words: somebody has an agent in mind and no Objective
+   * to hang it on. Today the only answer is to invent an Objective in order to reach the builder,
+   * which puts a fiction in the one place the product keeps its record of what the company is
+   * trying to do.
+   *
+   * ## Why it is born in DraftSetup and not Active
+   *
+   * Because nothing has been decided yet. An agent created here has a name, an owner and a
+   * sentence about what it is for -- no skills, no tools, no approval rule, no evidence. The
+   * builder's agents arrive `Active` because the analysis supplied all of that; this one has
+   * supplied none of it, and an `Active` agent with an empty configuration would be a row that
+   * says it is running work it cannot do.
+   *
+   * `DraftSetup` is the status the vocabulary already has for exactly this, and its only
+   * transitions are to `Ready` and `Archived` -- so the path out is the same one the builder's
+   * agents take, through the same checks.
+   */
+  async createStandalone(input: {
+    scope: TenantScope;
+    actorUserId: string;
+    name: string;
+    purpose: string;
+  }): Promise<EngineAgentView> {
+    const context = await this.authorization.contextFor(input.scope, input.actorUserId);
+    // The same grant the builder needs: deciding what an agent is, rather than running one.
+    await this.authorization.assertCan(context, { module: 'agent-builder', action: 'EditDraft' });
+
+    const name = input.name.trim();
+    if (name.length < 3) {
+      throw new BadRequestException('An agent needs a name of at least three characters.');
+    }
+    if (name.length > 200) {
+      throw new BadRequestException(`That name is ${name.length} characters. Keep it under 200.`);
+    }
+
+    const purpose = input.purpose.trim();
+    if (purpose.length < 10) {
+      throw new BadRequestException(
+        'Say what this agent is for, in a sentence. An agent nobody can describe is one nobody ' +
+          'can review, and this is the only record of why it was created.',
+      );
+    }
+    if (purpose.length > 2000) {
+      throw new BadRequestException(`That is ${purpose.length} characters. Keep it under 2000.`);
+    }
+
+    return this.prisma.runInTenantTransaction(input.scope, async () => {
+      // Checked here so the refusal is a sentence rather than a unique-constraint error; the
+      // `@@unique([tenantId, name])` is still what guarantees it.
+      const taken = await this.prisma.client.engineAgent.findFirst({
+        where: { tenantId: input.scope.tenantId, name },
+        select: { id: true },
+      });
+      if (taken !== null) {
+        throw new ConflictException(
+          `This company already has an Engine Agent called "${name}". Agent names are unique so ` +
+            'a run can be traced to one of them.',
+        );
+      }
+
+      const created = await this.prisma.client.engineAgent.create({
+        data: {
+          tenantId: input.scope.tenantId,
+          name,
+          ownerUserId: input.actorUserId,
+          status: 'DraftSetup',
+          createdByUserId: input.actorUserId,
+          updatedByUserId: input.actorUserId,
+        },
+      });
+
+      await this.auditEvents.appendWithinCurrentScope(input.scope.tenantId, {
+        action: 'agent.created_standalone',
+        resourceType: 'engine-agent',
+        resourceId: created.id,
+        actorUserId: input.actorUserId,
+        resourceRef: name,
+        resourceVersion: created.version,
+        summary: `Created the Engine Agent "${name}" without an Objective.`,
+        // The sentence somebody wrote is the only statement of why this exists, so the trail
+        // keeps it rather than only the fact that something was created.
+        metadata: { purpose, origin: 'Standalone' },
+      });
+
+      return this.viewOf(input.scope, created);
+    });
+  }
+
   async rename(input: {
     scope: TenantScope;
     actorUserId: string;

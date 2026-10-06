@@ -106,6 +106,9 @@ export type { SecurityLevel, SecurityMetricProps } from './primitives/SecurityMe
 export { DonutDashboard } from './primitives/DonutDashboard';
 
 // Prompt 12 — the Organization Hierarchy pieces, from the approved reference.
+export { RichTextEditor } from './primitives/RichTextEditor';
+export type { RichTextEditorProps } from './primitives/RichTextEditor';
+export { hasWords, sanitiseRichText } from './primitives/rich-text';
 export { VisionMission } from './primitives/VisionMission';
 export type { VisionMissionProps } from './primitives/VisionMission';
 

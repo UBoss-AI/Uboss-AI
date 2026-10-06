@@ -4028,6 +4028,18 @@ export const engineAgentsApi = {
    * machinery would create a draft and possibly an approval. The rename is written to the audit
    * trail with both names.
    */
+  /**
+   * Create an Engine Agent with no Objective behind it -- PRD 5.1.
+   *
+   * It comes back in `DraftSetup`: nothing has decided its skills, approvals or evidence yet, so
+   * there is nothing for it to run. The caller sends somebody to configure it.
+   */
+  createStandalone: (tenantId: string, body: { name: string; purpose: string }) =>
+    call<EngineAgentView>(`/tenants/${encodeURIComponent(tenantId)}/agents`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
   rename: (tenantId: string, agentId: string, name: string) =>
     call<EngineAgentView>(
       `/tenants/${encodeURIComponent(tenantId)}/agents/${encodeURIComponent(agentId)}/name`,

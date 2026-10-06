@@ -89,12 +89,30 @@ export function OrchestrationMap({
   scope,
   selected,
   onSelect,
+  arranging = false,
+  onMove,
 }: {
   tiles: DashboardTileView[];
   meta: DashboardMeta | null;
   scope: string;
   /** Which area's card is open beneath the map, if any. */
   selected: string | null;
+  /**
+   * Arranging mode -- PRD 1.1.
+   *
+   * A mode rather than always-on dragging, because these nodes are buttons that open a card. A
+   * button that both opens something and moves when pulled is a button that sometimes does
+   * neither: a small drag before the release swallows the press, and the person cannot tell why
+   * the card did not open. So pressing opens, and arranging is something somebody turns on.
+   */
+  arranging?: boolean;
+  /**
+   * One node was dropped on another. The caller owns the order and stores it.
+   *
+   * Both keys rather than indices: the caller's list is the whole dashboard and this component
+   * only ever sees one lane at a time, so an index here would mean something different there.
+   */
+  onMove?: (moved: string, target: string) => void;
   /**
    * Pressing a node selects it rather than navigating.
    *
@@ -225,13 +243,58 @@ export function OrchestrationMap({
                 }}
                 className={`uboss-orch-node uboss-orch-node--${lane.key}${
                   isOpen ? ' uboss-orch-node--open' : ''
-                }`}
-                aria-expanded={isOpen}
-                onClick={() => onSelect(isOpen ? null : tile.tile)}
+                }${arranging ? ' uboss-orch-node--arranging' : ''}`}
+                aria-expanded={arranging ? undefined : isOpen}
+                /*
+                 * Arranging mode changes what a press means, so it changes what the node says it
+                 * is. `aria-expanded` is removed because nothing expands while arranging, and the
+                 * label says "Move" rather than "Show" for the same reason: a control whose
+                 * behaviour changes without its description changing is one that reads correctly
+                 * and acts differently.
+                 */
+                draggable={arranging}
+                onDragStart={(event) => {
+                  if (!arranging) return;
+                  event.dataTransfer.setData('text/plain', tile.tile);
+                  event.dataTransfer.effectAllowed = 'move';
+                }}
+                onDragOver={(event) => {
+                  if (!arranging) return;
+                  // Without this the drop never fires: the default is to refuse.
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = 'move';
+                }}
+                onDrop={(event) => {
+                  if (!arranging) return;
+                  event.preventDefault();
+                  const moved = event.dataTransfer.getData('text/plain');
+                  if (moved !== '' && moved !== tile.tile) onMove?.(moved, tile.tile);
+                }}
+                /*
+                 * Arranging from the keyboard, because a drag is a mouse and this is a screen
+                 * somebody may only have a keyboard for. Left and right move the node one place
+                 * within its lane — the same thing the drag does, by the only other means there
+                 * is.
+                 */
+                onKeyDown={(event) => {
+                  if (!arranging) return;
+                  const step = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0;
+                  if (step === 0) return;
+                  event.preventDefault();
+                  const here = inLane.findIndex((entry) => entry.tile === tile.tile);
+                  const neighbour = inLane[here + step];
+                  if (neighbour !== undefined) onMove?.(tile.tile, neighbour.tile);
+                }}
+                onClick={() => {
+                  if (arranging) return;
+                  onSelect(isOpen ? null : tile.tile);
+                }}
                 aria-label={
-                  hasCount
-                    ? `${detail.label}: ${tile.count}. ${detail.measures ?? ''}`
-                    : `Show ${detail.label}`
+                  arranging
+                    ? `Move ${detail.label}. Use the left and right arrow keys, or drag it.`
+                    : hasCount
+                      ? `${detail.label}: ${tile.count}. ${detail.measures ?? ''}`
+                      : `Show ${detail.label}`
                 }
               >
                 <span className="uboss-orch-node-plate" aria-hidden="true">
