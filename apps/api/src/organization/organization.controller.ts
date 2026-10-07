@@ -177,6 +177,19 @@ export class AddEmployeeDto {
   @IsString()
   @MaxLength(60)
   employmentType?: string;
+
+  /**
+   * What they cover, beyond the title — sub-departments, areas, disciplines.
+   *
+   * `@IsOptional()` although the form marks it required. The form is where a person is asked and
+   * is therefore where the asking is enforced; the importer does not demand it, and a record
+   * written before this column existed has none. A DTO that refused the field's absence would
+   * break both.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  specialization?: string;
 }
 
 export class UpdateEmploymentDto {
@@ -227,6 +240,19 @@ export class UpdateEmploymentDto {
   @IsString()
   @MaxLength(60)
   employmentType?: string;
+
+  /**
+   * What they cover, beyond the title — sub-departments, areas, disciplines.
+   *
+   * `@IsOptional()` although the form marks it required. The form is where a person is asked and
+   * is therefore where the asking is enforced; the importer does not demand it, and a record
+   * written before this column existed has none. A DTO that refused the field's absence would
+   * break both.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  specialization?: string;
 }
 
 export class ChangeReportingManagerDto {
@@ -417,6 +443,7 @@ export class OrganizationController {
       workPhone: body.workPhone,
       ...(body.joinedOn === undefined ? {} : { joinedOn: new Date(body.joinedOn) }),
       employmentType: body.employmentType,
+      specialization: body.specialization,
     });
   }
 
@@ -450,6 +477,7 @@ export class OrganizationController {
       workPhone: body.workPhone,
       ...(body.joinedOn === undefined ? {} : { joinedOn: new Date(body.joinedOn) }),
       employmentType: body.employmentType,
+      specialization: body.specialization,
     });
     return { userId, updated: true };
   }

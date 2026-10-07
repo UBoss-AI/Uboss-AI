@@ -528,6 +528,11 @@ export default function EmployeeProfilePage() {
                     <span className="uboss-kv-key">Phone</span>
                     <span className="uboss-kv-value">{profile.workPhone ?? '—'}</span>
                   </div>
+                  {/* What they cover, beside the rest of the employment detail. */}
+                  <div className="uboss-kv">
+                    <span className="uboss-kv-key">Specialization</span>
+                    <span className="uboss-kv-value">{profile.specialization ?? '—'}</span>
+                  </div>
                   <div className="uboss-kv">
                     <span className="uboss-kv-key">Joined</span>
                     <span className="uboss-kv-value">

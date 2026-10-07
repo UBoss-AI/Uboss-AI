@@ -3354,6 +3354,21 @@ model EmploymentRecord {
   /// Job title, e.g. "Regulatory Associate". Mandatory field 3.
   designation String @db.VarChar(160)
 
+  /// What this person actually covers — areas, sub-departments, disciplines.
+  ///
+  /// A designation says what somebody is called; this says which ground they hold. The client's
+  /// example: a manager over two or three sub-departments writes them here, because the title
+  /// alone cannot tell them apart from a manager over one.
+  ///
+  /// Free text, because the shape of it differs by company: one writes sub-departments, another
+  /// writes disciplines, a third writes product lines. A closed list would be wrong for most of
+  /// them and would send people looking for an "Other" that means nothing.
+  ///
+  /// Nullable although the Add Employee form marks it required. Records that already exist were
+  /// created without it and cannot be made wrong in hindsight, and the import leaves it optional
+  /// so that spreadsheets which were correct yesterday are not refused today.
+  specialization String? @db.VarChar(300)
+
   /// Mandatory field 4. A department that must exist, now that departments do.
   departmentId String @map("department_id") @db.Uuid
 

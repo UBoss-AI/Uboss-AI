@@ -1379,6 +1379,40 @@ describe('organization hierarchy (e2e)', () => {
       assert.equal(record?.departmentId, departmentId);
     });
 
+    /**
+     * What somebody covers, beyond what they are called.
+     *
+     * The client's reason for it: a manager over two or three sub-departments and a manager over
+     * one carry the same designation, so the title alone cannot tell them apart.
+     *
+     * Stored and read back rather than merely accepted — a field the API takes and quietly drops
+     * looks identical to one that works until somebody reopens the record.
+     */
+    it('stores what a person specialises in, and gives it back', async () => {
+      await buildChain();
+      await employment().updateEmployment({
+        scope: scope(),
+        actorUserId: adminId,
+        subjectUserId: employeeId,
+        specialization: 'Quality, Packaging and Dispatch',
+      });
+
+      const record = await organization().findEmployment(scope(), employeeId);
+      assert.equal(record?.specialization, 'Quality, Packaging and Dispatch');
+    });
+
+    /**
+     * Null, not an empty string, on a record written before the column existed.
+     *
+     * The two look alike on screen and are not the same thing: one is "nobody has said", the
+     * other is "somebody said nothing". Only the first is true of history.
+     */
+    it('leaves it unset on a record created without it', async () => {
+      await buildChain();
+      const record = await organization().findEmployment(scope(), employeeId);
+      assert.equal(record?.specialization, null);
+    });
+
     it('cannot change the person’s portable identity', async () => {
       await buildChain();
       // There is no field for it in the DTO, so the request layer rejects an attempt outright.

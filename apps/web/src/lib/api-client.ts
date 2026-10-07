@@ -1862,6 +1862,8 @@ export interface EmployeeProfile {
   reportingManagerName: string | null;
   employmentState: string;
   accountState: string | null;
+  /** What they cover beyond the title. Null on records written before the field existed. */
+  specialization: string | null;
   joinedOn: string | null;
   employmentType: string | null;
   workEmail: string | null;

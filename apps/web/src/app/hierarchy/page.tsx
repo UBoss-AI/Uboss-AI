@@ -77,6 +77,7 @@ interface EmployeeForm {
   employeeName: string;
   employeeId: string;
   designation: string;
+  specialization: string;
   departmentId: string;
   reportingManagerUserId: string;
   aadhaarNumber: string;
@@ -89,6 +90,7 @@ const EMPTY_FORM: EmployeeForm = {
   employeeName: '',
   employeeId: '',
   designation: '',
+  specialization: '',
   departmentId: '',
   reportingManagerUserId: '',
   aadhaarNumber: '',
@@ -395,6 +397,7 @@ export default function HierarchyPage() {
         employeeName: form.employeeName,
         employeeId: form.employeeId,
         designation: form.designation,
+        specialization: form.specialization,
         departmentId: form.departmentId,
         ...(form.reportingManagerUserId === ''
           ? {}
@@ -522,7 +525,24 @@ export default function HierarchyPage() {
     form.employeeName.trim() !== '' &&
     form.employeeId.trim() !== '' &&
     form.designation.trim() !== '' &&
+    form.specialization.trim() !== '' &&
     form.departmentId !== '' &&
+    // CR-04, which the service enforces and this form did not: a hierarchy of people nobody can
+    // contact is what being lax here produced.
+    form.workEmail.trim() !== '' &&
+    form.workPhone.trim() !== '' &&
+    /*
+     * The same condition the asterisk beside the field already uses.
+     *
+     * The star was conditional and correct — required once this company has somebody to report
+     * to — and this check simply did not include it, so Save Employee was enabled and the server
+     * refused afterwards with "Reporting Manager is required. This company already has somebody
+     * at the top of the reporting tree". The rule was right in two places out of three.
+     *
+     * Still conditional: the very first employee has nobody to pick, and demanding a manager
+     * there would make a new company's first person impossible to add.
+     */
+    (managerOptions.length === 0 || form.reportingManagerUserId !== '') &&
     form.aadhaarNumber.replace(/\D/g, '').length === 12;
 
   const activeWorkspace = me?.workspaces.find((workspace) => workspace.tenantId === tenantId);
@@ -1059,6 +1079,35 @@ export default function HierarchyPage() {
               )}
             </FormField>
 
+            {/*
+              What this person covers, beyond the title.
+
+              The client's example is the one that explains it: a manager over two or three
+              sub-departments and a manager over one carry the same designation, and the chart
+              could not tell them apart. Asked here, next to the title it qualifies.
+
+              Marked required, which is the client's call and a change from the six-asterisk rule
+              recorded on the employment record. It is enforced here and not in the importer: a
+              spreadsheet of people who already work here was correct before this field existed,
+              and refusing it now would be this screen's decision applied to somebody else's data.
+            */}
+            <FormField
+              label="Specialization"
+              required
+              hint="Areas or sub-departments they cover — e.g. Quality, Packaging and Dispatch."
+            >
+              {(wiring) => (
+                <input
+                  {...wiring}
+                  className="uboss-input"
+                  value={form.specialization}
+                  maxLength={300}
+                  onChange={(event) => set('specialization', event.target.value)}
+                  placeholder="Quality, Packaging and Dispatch"
+                />
+              )}
+            </FormField>
+
             <FormField label="Department" required>
               {(wiring) => (
                 <select
@@ -1131,7 +1180,15 @@ export default function HierarchyPage() {
             */}
             <div className="uboss-section-label">Optional details</div>
 
-            <FormField label="Email">
+            {/*
+              Starred, because the server has refused an employee without one since CR-04.
+
+              The form asked for neither and blocked on neither, so pressing Add employee without
+              an email produced a refusal from the API after everything else had been typed —
+              the rule existed, and the only place it was not stated was the place people fill in.
+              The service keeps the rule; this stops the screen hiding it.
+            */}
+            <FormField label="Email" required>
               {(wiring) => (
                 <input
                   {...wiring}
@@ -1143,7 +1200,7 @@ export default function HierarchyPage() {
               )}
             </FormField>
 
-            <FormField label="Phone">
+            <FormField label="Phone" required>
               {(wiring) => (
                 <input
                   {...wiring}

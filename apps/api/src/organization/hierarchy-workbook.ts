@@ -64,6 +64,12 @@ export const HIERARCHY_COLUMNS: readonly HierarchyColumn[] = [
     width: 26,
   },
   {
+    heading: 'Specialization',
+    required: false,
+    note: 'What they cover beyond the title — sub-departments, areas, disciplines. A manager over two or three sub-departments writes them here.',
+    width: 34,
+  },
+  {
     heading: 'Department',
     required: true,
     note: 'Must already exist. Copy it exactly from the Departments sheet.',
@@ -81,13 +87,21 @@ export const HIERARCHY_COLUMNS: readonly HierarchyColumn[] = [
     note: 'Their name, copied from the People sheet. Leave blank for the top of a department.',
     width: 26,
   },
+  /*
+   * Starred, because the importer has refused a row without them since CR-04.
+   *
+   * They were marked optional here while `BulkOperationService` required both, so the template
+   * promised something the server would not honour: somebody who left them blank — as the file
+   * told them they could — had every row refused. That is the exact failure the note above this
+   * list warns about, sitting two entries below it.
+   */
   {
     heading: 'Email',
-    required: false,
-    note: 'Work email. Not an invitation — inviting stays in Users & Access.',
+    required: true,
+    note: 'Work email. Required. Not an invitation — inviting stays in Users & Access.',
     width: 30,
   },
-  { heading: 'Phone', required: false, note: 'Work contact number.', width: 18 },
+  { heading: 'Phone', required: true, note: 'Work contact number. Required.', width: 18 },
 ];
 
 const IMPORT_SHEET = 'Employees';

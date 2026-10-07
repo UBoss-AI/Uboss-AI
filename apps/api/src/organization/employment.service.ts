@@ -113,6 +113,14 @@ export class EmploymentService {
     /** Null only for the top of the tree — see the class comment. */
     reportingManagerUserId: string | null;
     aadhaarNumber: string;
+    /**
+     * What this person covers, beyond their job title.
+     *
+     * The Add Employee form asks for it and marks it required; it is optional here because the
+     * importer does not demand it and a record created before the column existed does not have
+     * one. The surface that asks is the surface that enforces.
+     */
+    specialization?: string | undefined;
     /** Optional, and unmarked in the UI. */
     workEmail?: string | undefined;
     workPhone?: string | undefined;
@@ -255,6 +263,9 @@ export class EmploymentService {
         userId: person.userId,
         employeeId,
         designation,
+        ...(input.specialization === undefined
+          ? {}
+          : { specialization: input.specialization.trim() }),
         departmentId: input.departmentId,
         ...(input.reportingManagerUserId === null
           ? {}
@@ -328,6 +339,7 @@ export class EmploymentService {
     employeeId?: string | undefined;
     designation?: string | undefined;
     departmentId?: string | undefined;
+    specialization?: string | undefined;
     workEmail?: string | undefined;
     workPhone?: string | undefined;
     joinedOn?: Date | undefined;
@@ -385,6 +397,7 @@ export class EmploymentService {
       ['employeeId', input.employeeId?.trim()],
       ['designation', input.designation?.trim()],
       ['departmentId', input.departmentId],
+      ['specialization', input.specialization?.trim()],
       ['employmentType', input.employmentType?.trim()],
       ['workEmail', input.workEmail?.trim()],
       ['workPhone', input.workPhone?.trim()],
@@ -489,6 +502,7 @@ export class EmploymentService {
       employmentState: row.state,
       accountState: row.accountState,
       joinedOn: employment?.joinedOn?.toISOString() ?? null,
+      specialization: employment?.specialization ?? null,
       employmentType: employment?.employmentType ?? null,
       workEmail: employment?.workEmail ?? null,
       workPhone: employment?.workPhone ?? null,

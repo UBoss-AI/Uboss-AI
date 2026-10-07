@@ -147,6 +147,7 @@ export function EmployeeDrawer({
     displayName: string;
     employeeId: string;
     designation: string;
+    specialization: string;
     workEmail: string;
     workPhone: string;
     reportingManagerUserId: string;
@@ -218,6 +219,7 @@ export function EmployeeDrawer({
             displayName: loaded.displayName,
             employeeId: loaded.employeeId,
             designation: loaded.designation,
+            specialization: loaded.specialization ?? '',
             workEmail: loaded.workEmail ?? '',
             workPhone: loaded.workPhone ?? '',
             reportingManagerUserId: loaded.reportingManagerUserId ?? '',
@@ -372,6 +374,7 @@ export function EmployeeDrawer({
         displayName: draft.displayName.trim(),
         employeeId: draft.employeeId.trim(),
         designation: draft.designation.trim(),
+        specialization: draft.specialization.trim(),
         workEmail: draft.workEmail.trim(),
         workPhone: draft.workPhone.trim(),
       });
@@ -708,6 +711,27 @@ export function EmployeeDrawer({
                     />
                   </label>
 
+                  {/*
+                    Not starred here, and starred on Add Employee.
+
+                    Every record written before this field existed has none, and a drawer that
+                    refused to save until somebody invented one would make editing a phone number
+                    conditional on answering a question about sub-departments. Asked of new
+                    people; offered to existing ones.
+                  */}
+                  <label className="uboss-field">
+                    <span className="uboss-field-label">Specialization</span>
+                    <input
+                      className="uboss-input"
+                      value={draft.specialization}
+                      maxLength={300}
+                      placeholder="Quality, Packaging and Dispatch"
+                      onChange={(event) =>
+                        setDraft({ ...draft, specialization: event.target.value })
+                      }
+                    />
+                  </label>
+
                   <label className="uboss-field">
                     <span className="uboss-field-label">Work email *</span>
                     <input
@@ -850,6 +874,7 @@ export function EmployeeDrawer({
                             displayName: profile.displayName,
                             employeeId: profile.employeeId,
                             designation: profile.designation,
+                            specialization: profile.specialization ?? '',
                             workEmail: profile.workEmail ?? '',
                             workPhone: profile.workPhone ?? '',
                             reportingManagerUserId: profile.reportingManagerUserId ?? '',

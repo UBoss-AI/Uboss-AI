@@ -165,6 +165,8 @@ export class OrganizationRepository {
       userId: string;
       employeeId: string;
       designation: string;
+      /** What they cover, beyond the title. Optional here; the Add Employee form asks for it. */
+      specialization?: string | undefined;
       departmentId: string;
       reportingManagerUserId?: string | undefined;
       joinedOn?: Date | undefined;
@@ -180,6 +182,7 @@ export class OrganizationRepository {
           userId: input.userId,
           employeeId: input.employeeId,
           designation: input.designation,
+          ...(input.specialization === undefined ? {} : { specialization: input.specialization }),
           departmentId: input.departmentId,
           ...(input.reportingManagerUserId === undefined
             ? {}

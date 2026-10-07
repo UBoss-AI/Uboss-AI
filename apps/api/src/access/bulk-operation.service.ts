@@ -685,6 +685,11 @@ export class BulkOperationService {
           departmentId: department?.id ?? '',
           reportingManagerUserId: manager?.userId ?? null,
           aadhaarNumber: values['aadhaarNumber'] ?? '',
+          // Carried when the sheet has it. Left out entirely when blank, so an empty cell stores
+          // nothing rather than an empty string that later reads as an answer somebody gave.
+          ...(values['specialization']?.trim()
+            ? { specialization: values['specialization'].trim() }
+            : {}),
           ...(values['email']?.trim() ? { workEmail: values['email'].trim() } : {}),
           ...(values['phone']?.trim() ? { workPhone: values['phone'].trim() } : {}),
         });
@@ -953,6 +958,12 @@ export class BulkOperationService {
     designation: 'designation',
     jobtitle: 'designation',
     title: 'designation',
+    specialization: 'specialization',
+    specialisation: 'specialization',
+    specialty: 'specialization',
+    speciality: 'specialization',
+    subdepartments: 'specialization',
+    areascovered: 'specialization',
     department: 'department',
     dept: 'department',
     reportingmanager: 'reportingManager',
