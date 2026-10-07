@@ -40,6 +40,8 @@
   "overrides": {
     "multer": "^2.3.0",
     "mysql2": "^3.24.4",
-    "deepmerge-ts": "^8.0.2"
+    "deepmerge-ts": "^8.0.2",
+    "sharp": "^0.35.5",
+    "shell-quote": "^1.12.0"
   }
 }
