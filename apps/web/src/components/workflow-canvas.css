@@ -196,6 +196,52 @@
   animation: wfc-pulse 2s ease-in-out infinite;
 }
 
+/*
+ * Add a step after this one.
+ *
+ * Faint until the node is pointed at, so a plan of thirty nodes is a plan and not thirty buttons.
+ * It is on the lower edge, which is where the step it creates will appear, so the control is at
+ * the place it acts on rather than in a list somewhere else.
+ */
+.wfc__add {
+  opacity: 0;
+  transition: opacity var(--uboss-motion-small, 160ms) ease;
+}
+
+.wfc__node:hover .wfc__add,
+.wfc__node:focus-within .wfc__add,
+.wfc__add:hover {
+  opacity: 1;
+}
+
+.wfc__add-dot {
+  fill: var(--uboss-surface, #fff);
+  stroke: var(--uboss-border-control, #94a3b8);
+  stroke-width: 1.5;
+}
+
+.wfc__add:hover .wfc__add-dot {
+  stroke: var(--uboss-blue, #2563eb);
+  fill: var(--uboss-blue-050, #eff6ff);
+}
+
+.wfc__add-mark {
+  stroke: var(--uboss-text-2, #475569);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.wfc__add:hover .wfc__add-mark {
+  stroke: var(--uboss-blue, #2563eb);
+}
+
+/* Without a pointer there is no hover, so the control is simply always there. */
+@media (hover: none) {
+  .wfc__add {
+    opacity: 1;
+  }
+}
+
 @keyframes wfc-pulse {
   0%,
   100% {

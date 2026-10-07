@@ -46,6 +46,94 @@ import {
 import { useNotificationBell } from '../../../lib/use-notification-bell';
 import { useCompanyNavigation } from '../../../lib/use-company-navigation';
 
+interface GapGroup {
+  key: string;
+  summary: string;
+  count: number;
+  /** The step numbers this covers, so a reader can go straight to them. */
+  steps: number[];
+  /** Who was named, for the group that is about unmatched names. Empty otherwise. */
+  subjects: string[];
+  examples: string[];
+}
+
+/**
+ * The analysis's gaps, gathered by what is actually wrong.
+ *
+ * ## Why this is grouping and not filtering
+ *
+ * Every gap is kept — an analysis that hid what it could not do would look complete and be wrong,
+ * and that rule has not changed. What changed is that a 25-step objective produces 25 of them, and
+ * printed flat they are a wall of sentences differing by one number. The reader's question is not
+ * "which steps" but "what do I have to go and do", and there were only ever two answers in that
+ * wall: fill in the names, or put those people in the owner's team.
+ *
+ * ## Why the shapes are matched rather than a kind being read off the gap
+ *
+ * Gaps are free text produced by the service; they carry no kind. Matching the two sentences it
+ * actually writes is narrow on purpose — anything else falls through to its own group and is shown
+ * whole, so a gap this does not recognise is never swallowed. If the service ever grows a kind
+ * field, this should read it instead.
+ */
+function groupGaps(gaps: readonly string[]): GapGroup[] {
+  const NAMES_NOBODY = /^Step (\d+) names nobody/;
+  const NOT_IN_TEAM = /^Step (\d+) names "([^"]+)", who is not in the objective owner/;
+
+  const groups = new Map<string, GapGroup>();
+  const add = (
+    key: string,
+    summary: string,
+    step: number | null,
+    subject: string | null,
+    text: string,
+  ) => {
+    const existing = groups.get(key) ?? {
+      key,
+      summary,
+      count: 0,
+      steps: [],
+      subjects: [],
+      examples: [],
+    };
+    existing.count += 1;
+    if (step !== null) existing.steps.push(step);
+    if (subject !== null && !existing.subjects.includes(subject)) existing.subjects.push(subject);
+    if (existing.examples.length < 3) existing.examples.push(text);
+    groups.set(key, existing);
+  };
+
+  for (const gap of gaps) {
+    const nobody = NAMES_NOBODY.exec(gap);
+    if (nobody) {
+      add(
+        'nobody',
+        'name nobody, so no owner could be assigned. An AI step names the person accountable for it, not the one performing it.',
+        Number(nobody[1]),
+        null,
+        gap,
+      );
+      continue;
+    }
+
+    const outside = NOT_IN_TEAM.exec(gap);
+    if (outside) {
+      add(
+        'outside-team',
+        "name somebody who is not in the objective owner's team, so the owner was left unassigned rather than guessed at.",
+        Number(outside[1]),
+        outside[2] ?? null,
+        gap,
+      );
+      continue;
+    }
+
+    // Anything this does not recognise stands on its own, whole.
+    add(gap, gap, null, null, gap);
+  }
+
+  return [...groups.values()].sort((a, b) => b.count - a.count);
+}
+
 /**
  * One node, drawn in the shape its kind requires.
  *
@@ -187,6 +275,15 @@ function ObjectiveAnalyzeInner() {
   const [usesRealModel, setUsesRealModel] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  /**
+   * A clock, so the panel can say how long the wait has been.
+   *
+   * Its own second-by-second state rather than a value folded into the run, because the run is
+   * polled far less often than once a second and a counter that jumped in five-second steps would
+   * look like a stall. It drives the elapsed figure and nothing else — no stage advances from it.
+   */
+  const [tick, setTick] = useState(() => Date.now());
   /** Owner ids resolved to names. A step's owner is a person, and an id is not a person. */
   const [people, setPeople] = useState<Map<string, string>>(new Map());
 
@@ -331,7 +428,31 @@ function ObjectiveAnalyzeInner() {
   const shown = objective?.openDraft ?? objective?.versions[0] ?? null;
   const inFlight = run !== null && (run.status === 'Queued' || run.status === 'Running');
 
-  const stages: ProgressStepItem[] =
+  // Only while something is actually running: a finished run's elapsed figure is fixed, and a
+  // timer left going on an idle screen is the thing the motion rules are most explicit about.
+  useEffect(() => {
+    if (!inFlight) return undefined;
+    const handle = setInterval(() => setTick(Date.now()), 1000);
+    return () => clearInterval(handle);
+  }, [inFlight]);
+
+  /**
+   * One stage at a time: the next appears when the one before it is finished.
+   *
+   * The whole list used to be drawn the moment the run started, so a panel that had done nothing
+   * yet already showed its ending. Seven rows sitting there waiting is a form wizard — "you are
+   * here in a sequence" — and this is the opposite situation: somebody is waiting and wants to
+   * see that something is happening.
+   *
+   * Cut at the stage that is running, so the list grows as the work does. **Nothing here decides
+   * when that is.** A row appears because the server reported the stage before it done; no timer
+   * advances anything, and a run that stalls stops growing, which is the truth and is the whole
+   * reason not to fake it.
+   *
+   * Finished and failed runs show everything, because then the question has changed from "what is
+   * happening" to "what happened".
+   */
+  const allStages: ProgressStepItem[] =
     run === null
       ? []
       : run.stages.map((entry) => ({
@@ -339,6 +460,25 @@ function ObjectiveAnalyzeInner() {
           label: entry.label,
           state: entry.state,
         }));
+
+  const runningAt = allStages.findIndex((entry) => entry.state === 'running');
+  const stages = inFlight && runningAt >= 0 ? allStages.slice(0, runningAt + 1) : allStages;
+
+  /**
+   * How long this run has taken, as a sentence rather than a timestamp.
+   *
+   * From `startedAt` to `completedAt`, or to now while it is still going — `tick` is what moves
+   * it, and it moves nothing else. A clock that keeps counting is the cheapest honest way to say
+   * "this has not hung"; it reports the wait, never progress through it.
+   */
+  const elapsed = (() => {
+    if (run?.startedAt == null) return null;
+    const from = new Date(run.startedAt).getTime();
+    const to = run.completedAt === null ? tick : new Date(run.completedAt).getTime();
+    const seconds = Math.max(0, Math.round((to - from) / 1000));
+    if (seconds < 60) return `${seconds}s`;
+    return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`;
+  })();
 
   return (
     <RoutedAppShell
@@ -448,7 +588,24 @@ function ObjectiveAnalyzeInner() {
         <Card>
           <CardBody>
             <div className="uboss-spread" style={{ marginBottom: 14 }}>
-              <b>AI analysis</b>
+              <span>
+                <b>AI analysis</b>
+                {/*
+                  How far, and how long — both read off the run.
+
+                  "Running" alone looks identical after ten seconds and after two minutes, which is
+                  the state somebody stares at wondering whether it has hung. The count is the
+                  server's own `stagesCompleted`; the clock is the gap since `startedAt` and stops
+                  at `completedAt`. Neither invents anything: there is no percentage here because
+                  the run reports stages and not fractions.
+                */}
+                {run === null ? null : (
+                  <span className="uboss-muted-3" style={{ marginLeft: 8, fontSize: 12.5 }}>
+                    {run.stagesCompleted} of {run.stages.length}
+                    {elapsed === null ? '' : ` · ${elapsed}`}
+                  </span>
+                )}
+              </span>
               {run === null ? null : (
                 <StatusBadge
                   tone={ANALYSIS_RUN_STATUS_TONES[run.status] as StatusTone}
@@ -488,7 +645,36 @@ function ObjectiveAnalyzeInner() {
 
                 {run.draft === null ? null : (
                   <>
-                    <div className="uboss-section-label">Draft workflow</div>
+                    {/*
+                      The way on, which this screen did not have.
+
+                      A full workflow editor exists — Add node, an edit panel per node, and
+                      Pre-Publish — and the only link to it in the whole product was on the
+                      Pre-Publish screen. So the analysis finished, the draft was drawn, and the
+                      one thing somebody wants next, correcting what the analysis got wrong, had
+                      no route to it unless they already knew the URL.
+
+                      Here rather than in the page header, because it only means anything once
+                      there is a draft to edit: a header button that is disabled for the whole
+                      run is a button nobody reads by the time it matters.
+                    */}
+                    <div className="uboss-spread" style={{ marginBottom: 10 }}>
+                      <div className="uboss-section-label" style={{ margin: 0, border: 0 }}>
+                        Draft workflow
+                      </div>
+                      <div className="uboss-actions">
+                        <Link
+                          href={`/objective/workflow?objectiveId=${encodeURIComponent(
+                            objectiveId ?? '',
+                          )}`}
+                        >
+                          <Button size="sm">
+                            <Icon name="wrench" size={15} />
+                            Edit the workflow
+                          </Button>
+                        </Link>
+                      </div>
+                    </div>
 
                     <div className="uboss-legend-nodes" style={{ marginBottom: 14 }}>
                       <div className="uboss-legend-item">
@@ -584,15 +770,59 @@ function ObjectiveAnalyzeInner() {
 
                     {run.draft.gaps.length === 0 ? null : (
                       <>
-                        {/* Shown, not hidden. An analysis that concealed its blind spots would
-                            look complete and be wrong. */}
+                        {/*
+                          Shown, not hidden. An analysis that concealed its blind spots would look
+                          complete and be wrong.
+
+                          Grouped, though, because showing them all flat defeated the point. A
+                          25-step objective produced twenty-five of these, printed one under
+                          another, nearly all identical bar a number:
+
+                              Step 2 names nobody, so no owner could be assigned to it.
+                              Step 3 names nobody, so no owner could be assigned to it.
+                              …
+
+                          Two different problems were mixed into that wall — steps that named
+                          nobody, and steps that named somebody outside the owner's team — and
+                          they need different things done about them. One line per kind, with the
+                          steps it covers, says the same thing in a form somebody can act on; the
+                          full list is one click away for whoever wants it.
+                        */}
                         <div className="uboss-section-label">What the analysis could not do</div>
-                        {run.draft.gaps.map((gap, index) => (
-                          <p className="uboss-notice-min" key={index}>
+                        {groupGaps(run.draft.gaps).map((group) => (
+                          <p className="uboss-notice-min" key={group.key}>
                             <Icon name="alert" size={14} />
-                            {gap}
+                            <span>
+                              {group.count > 1 ? (
+                                <>
+                                  <b>
+                                    {group.count} steps — {group.summary}
+                                  </b>
+                                  <br />
+                                  <span className="uboss-muted-3">
+                                    {group.subjects.length > 0
+                                      ? group.subjects.join(', ') + '. '
+                                      : ''}
+                                    Steps {group.steps.join(', ')}.
+                                  </span>
+                                </>
+                              ) : (
+                                group.examples[0]
+                              )}
+                            </span>
                           </p>
                         ))}
+                        <details style={{ marginTop: 6 }}>
+                          <summary className="uboss-muted-3" style={{ cursor: 'pointer' }}>
+                            All {run.draft.gaps.length} in full
+                          </summary>
+                          {run.draft.gaps.map((gap, index) => (
+                            <p className="uboss-notice-min" key={index}>
+                              <Icon name="alert" size={14} />
+                              {gap}
+                            </p>
+                          ))}
+                        </details>
                       </>
                     )}
 

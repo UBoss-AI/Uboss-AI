@@ -5,6 +5,7 @@ import {
   FORM2_WORKFLOW_COLUMNS,
   STEP_APPROVAL_KINDS,
   STEP_ENGINE_KINDS,
+  TIME_UNITS,
   type Form2Objective,
   type Form2WorkflowStep,
 } from '@uboss/types';
@@ -65,6 +66,28 @@ export interface ObjectiveSnapshot {
   responsibleOwnerName?: string | undefined;
 }
 
+/**
+ * What the legend says under each heading.
+ *
+ * Two of these are closed lists -- a wrong word is a refused row, and somebody filling the file
+ * offline has no other way to learn them.
+ *
+ * The third is not a vocabulary but a misreading that costs just as much. **Person Name is filled
+ * in on an AI step too.** The analysis assigns an accountable owner to AI nodes as well as human
+ * ones, so a blank there is not "nobody performs this" -- it is "nobody is accountable for this",
+ * and the agent's setup then falls back to the objective owner. A 25-step objective filled in by
+ * somebody reading the heading as "the person doing the work" left fifteen AI steps blank and
+ * would have put every one of those agents in front of the manager.
+ */
+function legendFor(column: (typeof FORM2_WORKFLOW_COLUMNS)[number]): string {
+  if (column.kind === 'engine') return `One of: ${STEP_ENGINE_KINDS.join(', ')}`;
+  if (column.kind === 'approval') return `One of: ${STEP_APPROVAL_KINDS.join(', ')}`;
+  if (column.key === 'whoPersonName') {
+    return 'Fill this in on every step, including the AI ones — on an AI step it is who is accountable for it, not who performs it.';
+  }
+  return '';
+}
+
 export class ObjectiveWorkbook {
   /**
    * The file to send out: the objective's current values, or a template when there are none.
@@ -106,12 +129,27 @@ export class ObjectiveWorkbook {
               ? (snapshot.responsibleOwnerName ?? '')
               : ((objective as Record<string, unknown>)[field.key] ?? '');
 
+      /*
+       * The accepted words, for the one field on this sheet that has a closed list.
+       *
+       * The Steps sheet writes its vocabularies into a legend row under the headings, because
+       * somebody filling a file offline has no other way to learn them and a wrong word is a
+       * refused row. This sheet has a Notes column and used it only to mark two routing fields —
+       * so Time Unit, the single closed list here, went out with nothing beside it.
+       *
+       * Found by filling the template the way a person would: "Days" is the obvious word, and it
+       * is not one of them. The whole form was filled in before the save came back with
+       * "Time unit must be one of: WorkingDays, CalendarDays, Hours, Weeks" — a list the file
+       * could have carried from the start.
+       */
+      const vocabulary = field.key === 'timeUnit' ? `One of: ${TIME_UNITS.join(', ')}.` : '';
+
       sheet.addRow([
         field.label + (field.required === true ? ' *' : ''),
         value === null ? '' : String(value),
         field.section === 'UbossRouting'
           ? 'UBoss routing — separate from the source Form 2 fields.'
-          : '',
+          : vocabulary,
       ]);
     }
 
@@ -135,15 +173,7 @@ export class ObjectiveWorkbook {
      * this offline has no way to know them, and a wrong word is a refused row — so the accepted
      * values are stated under the heading rather than left to be guessed.
      */
-    const legend = steps.addRow(
-      FORM2_WORKFLOW_COLUMNS.map((column) =>
-        column.kind === 'engine'
-          ? `One of: ${STEP_ENGINE_KINDS.join(', ')}`
-          : column.kind === 'approval'
-            ? `One of: ${STEP_APPROVAL_KINDS.join(', ')}`
-            : '',
-      ),
-    );
+    const legend = steps.addRow(FORM2_WORKFLOW_COLUMNS.map((column) => legendFor(column)));
     legend.font = { italic: true, size: 9, color: { argb: 'FF767676' } };
     legend.alignment = { wrapText: true, vertical: 'top' };
 
@@ -202,15 +232,7 @@ export class ObjectiveWorkbook {
 
     // The accepted words, under the heading they are typed below. Somebody filling this in
     // offline has no other way to know them, and a wrong word is a refused row.
-    const legend = sheet.addRow(
-      FORM2_WORKFLOW_COLUMNS.map((column) =>
-        column.kind === 'engine'
-          ? `One of: ${STEP_ENGINE_KINDS.join(', ')}`
-          : column.kind === 'approval'
-            ? `One of: ${STEP_APPROVAL_KINDS.join(', ')}`
-            : '',
-      ),
-    );
+    const legend = sheet.addRow(FORM2_WORKFLOW_COLUMNS.map((column) => legendFor(column)));
     legend.font = { italic: true, size: 9, color: { argb: 'FF767676' } };
     legend.alignment = { wrapText: true, vertical: 'top' };
 

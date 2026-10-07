@@ -68,6 +68,15 @@ export interface WorkflowCanvasProps {
   live?: boolean | undefined;
   /** Opens a node's editor. Omitted where the plan is read-only or not editable here. */
   onOpenNode?: ((nodeId: string) => void) | undefined;
+  /**
+   * Add a step after this one.
+   *
+   * A plus on the node itself rather than a position chosen from a list. A 32-node plan makes a
+   * dropdown of every step something to read through and match against the picture already on
+   * screen; pointing at the place is the answer the picture is for. Omitted where the plan is not
+   * editable, which is also what hides the control.
+   */
+  onAddAfter?: ((nodeId: string) => void) | undefined;
 }
 
 const NODE_W = 196;
@@ -199,7 +208,14 @@ function returnPath(from: Placed, to: Placed, width: number): string {
  * it; where it reports null — meaning the work cannot say honestly — the node shows an
  * indeterminate pulse instead of a bar inventing a number.
  */
-export function WorkflowCanvas({ nodes, edges, activity, live, onOpenNode }: WorkflowCanvasProps) {
+export function WorkflowCanvas({
+  nodes,
+  edges,
+  activity,
+  live,
+  onOpenNode,
+  onAddAfter,
+}: WorkflowCanvasProps) {
   const { placed, width, height } = useMemo(() => layout(nodes, edges), [nodes, edges]);
 
   const drawn = useMemo(
@@ -362,6 +378,32 @@ export function WorkflowCanvas({ nodes, edges, activity, live, onOpenNode }: Wor
                 {state.state === 'working' ? (
                   <rect className="wfc__pulse" width={NODE_W} height={NODE_H} rx="10" />
                 ) : null}
+
+                {/*
+                  Add a step here, said by pointing rather than by choosing from a list.
+
+                  On the lower edge, where the next step will go, so the control sits at the place
+                  it acts on. It stops the click reaching the node underneath — the two mean
+                  different things and the plus is the smaller target of the two.
+
+                  Drawn for every node including the Goal, because a plan may legitimately start a
+                  new branch straight off it.
+                */}
+                {onAddAfter === undefined ? null : (
+                  <g
+                    className="wfc__add"
+                    transform={`translate(${NODE_W / 2} ${NODE_H})`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onAddAfter(node.id);
+                    }}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <title>Add a step after “{node.label}”</title>
+                    <circle className="wfc__add-dot" r="11" />
+                    <path className="wfc__add-mark" d="M -5 0 H 5 M 0 -5 V 5" />
+                  </g>
+                )}
               </g>
             );
           })}

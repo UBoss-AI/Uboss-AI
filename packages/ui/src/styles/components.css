@@ -2245,11 +2245,30 @@ textarea.uboss-input,
   gap: 2px;
 }
 
+/*
+  Presentation only. Which step is which, and when one changes, is the server's answer and is not
+  touched here — these rules decide how that answer looks.
+*/
 .uboss-step {
   display: flex;
   gap: 13px;
-  padding: 4px 0;
+  padding: 7px 10px;
   position: relative;
+  border-radius: 9px;
+  /* So the active row can take a background without the list jumping when it moves. */
+  transition:
+    background var(--uboss-motion-small) var(--uboss-ease-standard),
+    color var(--uboss-motion-small) var(--uboss-ease-standard);
+}
+
+/*
+  The step being worked on is the one thing somebody is looking for on this panel, so it is the
+  one row that is not plain: a tinted panel and a left edge in the accent, the same way the rest
+  of the product marks "here".
+*/
+.uboss-step--running {
+  background: var(--uboss-blue-050);
+  box-shadow: inset 2px 0 0 var(--uboss-blue);
 }
 
 .uboss-step-marker {
@@ -2270,22 +2289,122 @@ textarea.uboss-input,
 
 .uboss-step-line {
   position: absolute;
-  left: 12px;
-  top: 30px;
-  bottom: -6px;
+  left: 22px;
+  top: 36px;
+  bottom: -4px;
   width: 2px;
   background: var(--uboss-border-2);
+  border-radius: 1px;
+}
+
+/*
+  The thread behind a finished step is finished too.
+
+  A single grey line the whole way down says nothing; coloured as far as the work has got, the
+  column itself reports progress at a glance, before any of the markers are read.
+*/
+/*
+  The thread behind a finished step is finished too, and it is the brand's colour, not green.
+
+  Green is the product's "this succeeded" signal, and a column of seven green discs reads as a
+  completed form rather than as a machine working. The accent makes the panel the product's own
+  moment while the run is in flight; success green is kept for the end, where it means something.
+*/
+.uboss-step--done .uboss-step-line {
+  background: var(--uboss-success);
+  opacity: 0.45;
 }
 
 .uboss-step--done .uboss-step-marker {
   background: var(--uboss-success);
   border-color: var(--uboss-success);
   color: #fff;
+  /* A soft halo rather than a flat disc, so a column of ticks reads as marks and not as buttons. */
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--uboss-success) 16%, transparent);
+}
+
+/* The accent treatment, for a run in flight only -- see the note on the class. */
+.uboss-step--live.uboss-step--done .uboss-step-line {
+  background: var(--uboss-blue);
+  opacity: 0.4;
+}
+
+.uboss-step--live.uboss-step--done .uboss-step-marker {
+  background: var(--uboss-blue);
+  border-color: var(--uboss-blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--uboss-blue) 16%, transparent);
+}
+
+/*
+  The one it is working on, reading rather than waiting.
+
+  A ring that pulsed once and stopped left the active row looking the same as a finished one after
+  a second. This sweeps across the label for as long as the stage is in flight — the gesture
+  everything else uses for "being read" — and it says nothing about how far along it is, because
+  the run reports stages and not fractions.
+
+  Only under `--live`: a wizard marking position must not have anything moving on it.
+*/
+.uboss-step--running.uboss-step--live .uboss-step-label {
+  background: linear-gradient(
+    100deg,
+    var(--uboss-text) 0%,
+    var(--uboss-text) 38%,
+    var(--uboss-blue) 50%,
+    var(--uboss-text) 62%,
+    var(--uboss-text) 100%
+  );
+  background-size: 260% 100%;
+  background-clip: text;
+  color: transparent;
+  /*
+    The skeleton's own token, reused rather than a new one invented.
+
+    It names the gesture this is -- a sweep across something being read, at 1300ms -- so a second
+    token at a slightly different speed would be the drift the scale exists to stop.
+  */
+  animation: uboss-shimmer var(--uboss-motion-loop-shimmer) linear infinite;
+}
+
+/*
+  Painting text with a gradient means the text itself has no colour.
+
+  If the clip does not take -- forced colours, a print stylesheet, an engine that does not support
+  it -- a transparent label is an invisible one, and the row somebody is waiting on is the worst
+  one to lose. Both fallbacks put the colour back and drop only the sweep.
+*/
+@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  .uboss-step--running.uboss-step--live .uboss-step-label {
+    animation: none;
+    background: none;
+    background-clip: border-box;
+    color: var(--uboss-text);
+  }
+}
+
+@supports not ((background-clip: text) or (-webkit-background-clip: text)) {
+  .uboss-step--running.uboss-step--live .uboss-step-label {
+    background: none;
+    color: var(--uboss-text);
+  }
+}
+
+/* Settled, not shouting: the finished ones recede so the active one is what the eye lands on. */
+.uboss-step--done .uboss-step-label {
+  color: var(--uboss-text-2);
+  font-weight: 500;
 }
 
 .uboss-step--running .uboss-step-marker {
   border-color: var(--uboss-blue);
   color: var(--uboss-blue);
+  background: var(--uboss-surface);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--uboss-blue) 14%, transparent);
+}
+
+.uboss-step--running .uboss-step-label {
+  color: var(--uboss-text);
+  font-weight: 700;
 }
 
 /*
@@ -2332,11 +2451,20 @@ textarea.uboss-input,
 .uboss-step-label {
   font-weight: 600;
   font-size: var(--uboss-font-size-sm);
-  padding-top: 3px;
+  padding-top: 4px;
+  transition:
+    color var(--uboss-motion-small) var(--uboss-ease-standard),
+    font-weight var(--uboss-motion-small) var(--uboss-ease-standard);
 }
 
+/* Not reached yet — present, so the length of the job is visible, but quiet. */
 .uboss-step--todo .uboss-step-label {
   color: var(--uboss-text-3);
+  font-weight: 500;
+}
+
+.uboss-step--todo .uboss-step-marker {
+  border-style: dashed;
 }
 
 .uboss-step-sub {
@@ -4773,12 +4901,21 @@ table.uboss-wfg {
 }
 
 /* Human work: a rectangle. */
+/*
+  Wide enough for a step as people actually write one.
+
+  186px put "Pull the branch cash submission file for the month" onto five lines inside a box
+  taller than it was wide, and a 29-node plan became a column of those. The widths here are
+  measured against real steps from a month-end reconciliation rather than against the short
+  labels a fixture produces: 300px holds that sentence in two lines, and the diamond is sized to
+  match so a Human step and an AI step beside each other read as the same size of thing.
+*/
 .uboss-wf-node {
   background: var(--uboss-surface);
   border: 1.5px solid var(--uboss-border);
   border-radius: 10px;
   box-shadow: var(--uboss-shadow-1);
-  width: 186px;
+  width: 300px;
 }
 
 .uboss-wf-node-head {
@@ -4862,8 +4999,8 @@ table.uboss-wfg {
 /* AI work: a diamond. A rotated square, so the label stays upright inside it. */
 .uboss-wf-ai {
   position: relative;
-  width: 150px;
-  height: 150px;
+  width: 240px;
+  height: 240px;
 }
 
 .uboss-wf-ai-diamond {
@@ -4875,6 +5012,14 @@ table.uboss-wfg {
   border-radius: 14px;
 }
 
+/*
+  Inset far enough that the words stay inside the diamond.
+
+  A diamond is a square turned 45°, so its usable width at the middle is the full span but narrows
+  to nothing at the points. Text laid out across the whole box therefore runs past the edges at the
+  top and bottom lines. `inset` here is the padding that keeps a two or three line label within the
+  shape at this size.
+*/
 .uboss-wf-ai-label {
   position: absolute;
   inset: 0;
@@ -4883,7 +5028,7 @@ table.uboss-wfg {
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 14px;
+  padding: 46px;
 }
 
 .uboss-wf-ai-label b {

@@ -4,8 +4,25 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { WORKFLOW_EDGE_KIND_LABELS, WORKFLOW_EDGE_KINDS, type AnalysisNode } from '@uboss/types';
-import { Banner, Button, Card, CardBody, Drawer, Icon, PageHeader, StatusBadge } from '@uboss/ui';
+import {
+  ANALYSIS_NODE_KINDS,
+  WORKFLOW_EDGE_KIND_LABELS,
+  WORKFLOW_EDGE_KINDS,
+  type AnalysisNode,
+  type AnalysisNodeKind,
+} from '@uboss/types';
+import {
+  Banner,
+  Button,
+  Card,
+  CardBody,
+  Drawer,
+  FormField,
+  Icon,
+  Modal,
+  PageHeader,
+  StatusBadge,
+} from '@uboss/ui';
 
 import { WorkflowCanvas, type NodeActivity } from '../../../components/WorkflowCanvas';
 import { useRunStream } from '../../../lib/use-run-stream';
@@ -71,6 +88,26 @@ function WorkflowEditorInner() {
   const [people, setPeople] = useState<{ userId: string; label: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  /**
+   * What a new node is, what it is called, and where it goes.
+   *
+   * Add node used to send `{ kind: 'Human', label: 'New human step' }` and nothing else — so every
+   * press produced the same human step with the same name, dropped wherever the server puts a node
+   * with no predecessor. The three things somebody adding a step actually wants to say were all
+   * absent, and all three were already accepted by the endpoint: `AddNodeDto` takes `kind`, a
+   * 1–300 character `label`, and `afterNodeId`, "wire a sequential edge from this node to the new
+   * one".
+   *
+   * So this asks for them. `Goal` is not offered: a plan has one goal, it is the thing every other
+   * node leads to, and a second would be a second plan.
+   */
+  const [adding, setAdding] = useState(false);
+  const [newNode, setNewNode] = useState<{
+    kind: AnalysisNodeKind;
+    label: string;
+    afterNodeId: string;
+  }>({ kind: 'Human', label: '', afterNodeId: '' });
 
   const tenantId =
     resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
@@ -241,13 +278,13 @@ function WorkflowEditorInner() {
             <Button
               size="sm"
               disabled={busy || draft === null || !draft.editable}
-              onClick={edit((tenant, objectiveKey, revision) =>
-                workflowEditorApi.addNode(tenant, objectiveKey, {
-                  revision,
-                  kind: 'Human',
-                  label: 'New human step',
-                }),
-              )}
+              onClick={() => {
+                // Defaulted to the end of the plan, which is where a step is most often added,
+                // and changeable to any node in it.
+                const last = (draft?.graph.nodes ?? []).at(-1);
+                setNewNode({ kind: 'Human', label: '', afterNodeId: last?.id ?? '' });
+                setAdding(true);
+              }}
             >
               <Icon name="plus" size={16} />
               Add node
@@ -391,7 +428,21 @@ function WorkflowEditorInner() {
                   edges={draft.graph.edges}
                   activity={activity}
                   live={runStream.live}
-                  {...(draft.editable ? { onOpenNode: setSelected } : {})}
+                  {...(draft.editable
+                    ? {
+                        onOpenNode: setSelected,
+                        /*
+                         * The plus on each node opens the same dialog with the position already
+                         * answered, so the one question the picture can answer better than a list
+                         * is not asked at all. The dropdown stays for the keyboard and for the
+                         * case of adding a step with nothing before it.
+                         */
+                        onAddAfter: (nodeId: string) => {
+                          setNewNode({ kind: 'Human', label: '', afterNodeId: nodeId });
+                          setAdding(true);
+                        },
+                      }
+                    : {})}
                 />
               </div>
             )}
@@ -439,6 +490,112 @@ function WorkflowEditorInner() {
           )}
         </div>
       </div>
+
+      {/*
+        Adding a step: what it is, what it is called, and where it sits.
+
+        All three go to the endpoint that already accepted them. Before this the button sent one
+        fixed human step called "New human step" with no position, so a plan could only ever grow
+        the same anonymous node at the same place.
+      */}
+      <Modal
+        open={adding}
+        title="Add a step to this workflow"
+        onClose={() => setAdding(false)}
+        footer={
+          <>
+            <Button onClick={() => setAdding(false)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={busy || newNode.label.trim() === ''}
+              onClick={() => {
+                const { kind, label, afterNodeId } = newNode;
+                setAdding(false);
+                edit((tenant, objectiveKey, revision) =>
+                  workflowEditorApi.addNode(tenant, objectiveKey, {
+                    revision,
+                    kind,
+                    label: label.trim(),
+                    // Omitted rather than sent empty: no predecessor is a real answer, and an
+                    // empty string is not a node id.
+                    ...(afterNodeId === '' ? {} : { afterNodeId }),
+                  }),
+                )();
+              }}
+            >
+              <Icon name="plus" size={16} />
+              Add it
+            </Button>
+          </>
+        }
+      >
+        <FormField
+          label="What kind of step"
+          required
+          hint="Human work, AI work, an approval, a condition, or an event that starts something."
+        >
+          {(wiring) => (
+            <select
+              {...wiring}
+              className="uboss-input"
+              value={newNode.kind}
+              onChange={(event) =>
+                setNewNode({ ...newNode, kind: event.target.value as AnalysisNodeKind })
+              }
+            >
+              {/*
+                Every kind the plan has, except Goal: a plan has one goal, every other node leads
+                to it, and a second would be a second plan.
+              */}
+              {ANALYSIS_NODE_KINDS.filter((kind) => kind !== 'Goal').map((kind) => (
+                <option key={kind} value={kind}>
+                  {kind === 'Ai' ? 'AI work' : kind === 'Human' ? 'Human work' : kind}
+                </option>
+              ))}
+            </select>
+          )}
+        </FormField>
+
+        <FormField
+          label="What happens in it"
+          required
+          hint="The words that will appear on the node. This is what the next person reads."
+        >
+          {(wiring) => (
+            <input
+              {...wiring}
+              className="uboss-input"
+              value={newNode.label}
+              maxLength={300}
+              onChange={(event) => setNewNode({ ...newNode, label: event.target.value })}
+              placeholder="Check the branch totals against the ledger"
+            />
+          )}
+        </FormField>
+
+        <FormField
+          label="After which step"
+          hint="The new step is wired to run after this one. Leave it at the top of the list to add it with nothing before it."
+        >
+          {(wiring) => (
+            <select
+              {...wiring}
+              className="uboss-input"
+              value={newNode.afterNodeId}
+              onChange={(event) => setNewNode({ ...newNode, afterNodeId: event.target.value })}
+            >
+              <option value="">Nothing — it starts on its own</option>
+              {(draft?.graph.nodes ?? []).map((candidate) => (
+                <option key={candidate.id} value={candidate.id}>
+                  {candidate.label}
+                </option>
+              ))}
+            </select>
+          )}
+        </FormField>
+      </Modal>
 
       {/* ---- The node drawer: all of the manager's per-node actions ---- */}
       <Drawer
