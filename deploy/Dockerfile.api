@@ -36,6 +36,10 @@ COPY --from=build --chown=node:node /workspace/apps/api/scripts/bootstrap-platfo
 # The model catalogue, without which ANTHROPIC_API_KEY is a credential for a call nothing knows
 # how to route — see the script's own header.
 COPY --from=build --chown=node:node /workspace/apps/api/scripts/seed-model-catalogue.mjs ./apps/api/scripts/seed-model-catalogue.mjs
+# And the one that sends Objective analysis to OpenAI, which the client asked for by name. It
+# runs after the catalogue above and repoints a single route; without OPENAI_API_KEY it does
+# nothing at all.
+COPY --from=build --chown=node:node /workspace/apps/api/scripts/seed-openai-planner.mjs ./apps/api/scripts/seed-openai-planner.mjs
 # The Skill catalogue and the workbook it is read from. A database with no Skills makes Run
 # Objective report "capability missing" on work it could have planned.
 COPY --from=build --chown=node:node /workspace/apps/api/scripts/import-skill-catalog.mjs ./apps/api/scripts/import-skill-catalog.mjs

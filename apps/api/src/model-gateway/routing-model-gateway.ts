@@ -515,6 +515,8 @@ export class RoutingModelGateway extends ModelGateway {
       timeoutMs: route.timeoutMs,
       custom: route.custom === null ? null : { ...route.custom, modelId: route.providerModelRef },
       credential,
+      // The profile's own declaration, not a guess from the wording of the instruction.
+      schemaConstrained: LOGICAL_MODEL_PROFILE_SPEC[request.profile].schemaConstrained,
     };
 
     return adapter.complete(call);

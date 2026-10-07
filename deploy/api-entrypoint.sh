@@ -39,6 +39,10 @@ seed() {
 }
 
 seed scripts/seed-model-catalogue.mjs
+# After the catalogue, because it repoints a route the catalogue creates. Objective analysis goes
+# to OpenAI; Engine Agents, Agent Builder and the Executor stay where they are. Silent and
+# harmless without OPENAI_API_KEY.
+seed scripts/seed-openai-planner.mjs
 # `--only-if-empty`: the import is four hundred transactions, and paying that on every restart
 # would add tens of seconds to the API coming back. Updating it is a deliberate run without it.
 seed scripts/import-skill-catalog.mjs data/skill-catalog.xlsx --only-if-empty

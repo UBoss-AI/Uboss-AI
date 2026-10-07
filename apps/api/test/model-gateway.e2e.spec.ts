@@ -341,6 +341,7 @@ describe('provider profiles and the model gateway (e2e)', () => {
             timeoutMs: 1000,
             custom: null,
             credential: null,
+            schemaConstrained: false,
           }),
         (error: unknown) =>
           error instanceof ProviderNotConfiguredError &&
@@ -361,6 +362,7 @@ describe('provider profiles and the model gateway (e2e)', () => {
             timeoutMs: 1000,
             custom: null,
             credential: null,
+            schemaConstrained: false,
           }),
         ProviderNotConfiguredError,
       );

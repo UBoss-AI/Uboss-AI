@@ -21,6 +21,21 @@ export interface ProviderCall {
   custom: CustomProviderConfig | null;
   /** Resolved at the moment of use, never earlier, and never logged. */
   credential: string | null;
+  /**
+   * Whether this call's answer has to be machine-readable.
+   *
+   * Taken from the logical profile's own `schemaConstrained` flag rather than guessed from the
+   * wording of what is being asked. `OBJECTIVE_PLANNER` is declared schema-constrained because
+   * its answer is parsed into a workflow graph, and a provider that can be *told* to return JSON
+   * should be told rather than asked nicely. An adapter whose provider has no such setting
+   * simply ignores it.
+   *
+   * Worth knowing when editing this comment: the prompt-injection guard scans every line for the
+   * word that names this field followed by a colon, and it does not strip comments first. Prose
+   * shaped like an assignment is therefore read as one and fails the test. The crudeness is the
+   * point — it would rather stop a comment than miss a real interpolation.
+   */
+  schemaConstrained: boolean;
 }
 
 /** What a provider actually returned. */
@@ -269,6 +284,20 @@ export class OpenAiProviderAdapter extends ProviderAdapter {
       body: {
         model: call.providerModelRef,
         max_completion_tokens: call.maxTokens,
+        /*
+         * Asked for JSON rather than hoped for.
+         *
+         * The planner's answer is parsed into a workflow graph, and this provider has a setting
+         * that makes the model return a JSON object instead of prose that happens to contain one.
+         * Without it the only thing holding the shape is the wording of the instruction, which is
+         * the arrangement that produces an unreadable run at the worst possible moment — after
+         * seven stages and a minute of waiting.
+         *
+         * `json_object` and not a schema: the planner's seven calls each answer a different
+         * question, so there is no one schema to pin here. The service validates what comes back
+         * either way; this removes the commonest way it fails.
+         */
+        ...(call.schemaConstrained ? { response_format: { type: 'json_object' } } : {}),
         messages: [
           { role: 'system', content: call.instruction },
           { role: 'user', content: userTurnFor(call.context) },

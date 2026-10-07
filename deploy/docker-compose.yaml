@@ -137,6 +137,10 @@ services:
       # is a valid deployment: every company then brings its own connection, and one that has not
       # is told its provider is unreachable rather than being quietly run on somebody else's key.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # The same thing for OpenAI, which Objective analysis runs on. Empty means the planner is
+      # left on whatever the catalogue already routes it to, rather than pointed at a provider
+      # that cannot be reached.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # Where uploaded files' bytes go. Without it the API keeps the in-memory store, so every
       # chat attachment, knowledge document and piece of completion evidence would live in the
       # process and vanish on the next restart — the record surviving and the bytes not, which

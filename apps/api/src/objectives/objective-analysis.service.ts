@@ -998,7 +998,19 @@ export class ObjectiveAnalysisService {
       purpose,
       instruction,
       context: context.join('\n'),
-      maxTokens: 2000,
+      /*
+       * Room for the answer **and** for whatever the model spends getting to it.
+       *
+       * 2000 was measured against a provider that returns only the answer. On a reasoning model
+       * the thinking is charged to this same ceiling, so a planner given 2000 can spend most of
+       * it reasoning and return an empty string — a run that fails after seven stages with
+       * nothing to show for it, and no obvious cause.
+       *
+       * A real 25-step objective produced about 5,900 completion tokens across its seven calls.
+       * 8000 leaves the largest single call room to think and still answer; it is a ceiling, not
+       * a target, and an analysis that needs less is billed for less.
+       */
+      maxTokens: 8000,
       tenantId: state.scope.tenantId,
       // Prompt 30: an analysis has an objective and no run, so it is checked against the
       // company and objective budgets and not against an agent's per-run limit.

@@ -763,6 +763,9 @@ export class ProviderService {
           timeoutMs: Math.min(profile.timeoutMs ?? 15_000, 15_000),
           custom: null,
           credential,
+          // A connection test asks for the word OK. Demanding a JSON object back would make the
+          // test fail on a provider that is working perfectly well.
+          schemaConstrained: false,
         });
 
         result = {
