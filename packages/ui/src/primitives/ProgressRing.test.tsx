@@ -28,11 +28,15 @@ describe('ProgressRing', () => {
     const { container, rerender } = render(
       <ProgressRing label="AI analysis progress" completed={3} total={7} live />,
     );
-    expect(container.querySelector('.uboss-ring')?.className).toContain('uboss-ring--live');
+    expect(container.querySelector('.uboss-progress-ring')?.className).toContain(
+      'uboss-progress-ring--live',
+    );
 
     // A run cancelled at stage three is also three of seven. The number stays; the motion stops.
     rerender(<ProgressRing label="AI analysis progress" completed={3} total={7} />);
-    expect(container.querySelector('.uboss-ring')?.className).not.toContain('uboss-ring--live');
+    expect(container.querySelector('.uboss-progress-ring')?.className).not.toContain(
+      'uboss-progress-ring--live',
+    );
   });
 
   it('draws an empty ring rather than dividing by zero', () => {

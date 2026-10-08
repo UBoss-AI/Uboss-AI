@@ -10774,18 +10774,18 @@ tr[data-drop-target='true'] td {
  * halo turns only while work is in flight, on the ambient ring duration that already exists;
  * a loop that invents its own timing is how one idea ends up with four speeds.
  * ------------------------------------------------------------------------ */
-.uboss-ring {
+.uboss-progress-ring {
   position: relative;
   display: inline-grid;
   place-items: center;
   flex: none;
 }
 
-.uboss-ring svg {
+.uboss-progress-ring svg {
   display: block;
 }
 
-.uboss-ring-track {
+.uboss-progress-ring-track {
   stroke: var(--uboss-border);
 }
 
@@ -10795,7 +10795,7 @@ tr[data-drop-target='true'] td {
  * Invisible unless the ring is live, so a finished or cancelled run is still — the ring must
  * never suggest something is happening when nothing is.
  */
-.uboss-ring-halo {
+.uboss-progress-ring-halo {
   stroke: var(--uboss-purple);
   opacity: 0;
   transform-origin: 50% 50%;
@@ -10808,13 +10808,13 @@ tr[data-drop-target='true'] td {
  * circuit underneath the fill, and the part on the bare track was the same hue as the thing it
  * was supposed to be distinguishable from.
  */
-.uboss-ring--live .uboss-ring-halo {
+.uboss-progress-ring--live .uboss-progress-ring-halo {
   stroke: var(--uboss-purple-050);
   opacity: 1;
-  animation: uboss-ring-turn var(--uboss-motion-ambient-ring) linear infinite;
+  animation: uboss-progress-ring-turn var(--uboss-motion-ambient-ring) linear infinite;
 }
 
-@keyframes uboss-ring-turn {
+@keyframes uboss-progress-ring-turn {
   from {
     transform: rotate(0deg);
   }
@@ -10823,12 +10823,12 @@ tr[data-drop-target='true'] td {
   }
 }
 
-.uboss-ring-fill {
+.uboss-progress-ring-fill {
   stroke: var(--uboss-purple);
   transition: stroke-dashoffset var(--uboss-motion-signature) var(--uboss-ease-enter);
 }
 
-.uboss-ring-centre {
+.uboss-progress-ring-centre {
   position: absolute;
   display: flex;
   flex-direction: column;
@@ -10836,7 +10836,7 @@ tr[data-drop-target='true'] td {
   line-height: 1.1;
 }
 
-.uboss-ring-percent {
+.uboss-progress-ring-percent {
   font-size: 30px;
   font-weight: 700;
   color: var(--uboss-text);
@@ -10844,7 +10844,7 @@ tr[data-drop-target='true'] td {
 }
 
 /* Smaller and lighter: the unit is not the number, and at the same weight it competes with it. */
-.uboss-ring-percent small {
+.uboss-progress-ring-percent small {
   font-size: 15px;
   font-weight: 600;
   color: var(--uboss-text-3);
@@ -10858,7 +10858,7 @@ tr[data-drop-target='true'] td {
  * read "2 OF 7", which looks like a heading rather than a count and is the kind of detail that
  * makes a careful screen look careless.
  */
-.uboss-ring-caption {
+.uboss-progress-ring-caption {
   margin-top: 3px;
   font-size: 11.5px;
   color: var(--uboss-text-3);

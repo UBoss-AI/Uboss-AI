@@ -88,7 +88,7 @@ export function ProgressRing({
 
   return (
     <div
-      className={cn('uboss-ring', live && 'uboss-ring--live', className)}
+      className={cn('uboss-progress-ring', live && 'uboss-progress-ring--live', className)}
       style={{ width: size, height: size }}
       role="progressbar"
       aria-valuemin={0}
@@ -102,7 +102,7 @@ export function ProgressRing({
         {/* Rotated so the arc starts at the top, where people read a dial from. */}
         <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
           <circle
-            className="uboss-ring-track"
+            className="uboss-progress-ring-track"
             cx={size / 2}
             cy={size / 2}
             r={radius}
@@ -110,7 +110,7 @@ export function ProgressRing({
             fill="none"
           />
           <circle
-            className="uboss-ring-halo"
+            className="uboss-progress-ring-halo"
             cx={size / 2}
             cy={size / 2}
             r={radius}
@@ -120,7 +120,7 @@ export function ProgressRing({
             strokeDasharray={`${circumference * 0.18} ${circumference}`}
           />
           <circle
-            className="uboss-ring-fill"
+            className="uboss-progress-ring-fill"
             cx={size / 2}
             cy={size / 2}
             r={radius}
@@ -133,12 +133,14 @@ export function ProgressRing({
         </g>
       </svg>
 
-      <div className="uboss-ring-centre">
-        <span className="uboss-ring-percent">
+      <div className="uboss-progress-ring-centre">
+        <span className="uboss-progress-ring-percent">
           {percent}
           <small>%</small>
         </span>
-        {caption === undefined ? null : <span className="uboss-ring-caption">{caption}</span>}
+        {caption === undefined ? null : (
+          <span className="uboss-progress-ring-caption">{caption}</span>
+        )}
       </div>
     </div>
   );
