@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
 import type { AnalysisNodeKind, NodeShape, WorkflowEdgeKind } from '@uboss/types';
 
@@ -52,6 +52,82 @@ export interface CanvasEdge {
   toNodeId: string;
   kind: WorkflowEdgeKind;
   condition?: string | null;
+}
+
+/*
+ * The zoom range.
+ *
+ * Half size shows roughly a twenty-five step plan end to end, which is the point of zooming out
+ * at all; double is where a label stops being small rather than where it stops being readable.
+ * Tenths, because a finer step is a button somebody presses eight times.
+ */
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 2;
+const ZOOM_STEP = 0.1;
+
+/** Tenths accumulate floating-point dust, and `0.7000000000000001` reaches the label. */
+const round = (value: number) => Math.round(value * 10) / 10;
+
+/** One line of a node's text, cut to what fits rather than to what reads well. */
+const clip = (value: string, max: number) =>
+  value.length > max ? `${value.slice(0, max - 1).trimEnd()}…` : value;
+
+/**
+ * Where a node's three lines of text go, and how much of each fits.
+ *
+ * ## Why this is not one answer for every node
+ *
+ * Every node drew its text at `x=14`, left-aligned, whatever shape it was. A box 196 wide and 68
+ * tall has room at x=14. A **diamond** of the same bounds has its corners at (98,0), (196,34),
+ * (98,68) and (0,34), so at the kind line — y=20 — the shape only spans x≈40 to x≈156. The text
+ * started 26px outside its own node and ran past the far edge, over the connector beneath it.
+ *
+ * The widths below come from the geometry rather than from taste. At a height `dy` from the
+ * centre a diamond is `196 × (1 − dy/34)` wide, so the three lines have about 115px, 161px and
+ * 69px to work in; the hexagonal gate loses 14px at each end and keeps the rest. Divided by the
+ * character widths of the three type sizes — 10px bold, 13px semibold, 11px regular — those come
+ * to the limits here.
+ *
+ * Centred rather than inset, for the two shapes that narrow: a left inset on a diamond has to be
+ * the inset of its *narrowest* line or it escapes, and that wastes the width the middle line has.
+ */
+function textMetricsFor(shape: NodeShape): {
+  x: number;
+  anchor: 'start' | 'middle';
+  centred: boolean;
+  className: string;
+  whoClassName: string;
+  chars: { label: number; who: number };
+} {
+  if (shape === 'diamond') {
+    return {
+      x: NODE_W / 2,
+      anchor: 'middle',
+      centred: true,
+      className: 'wfc__kind',
+      whoClassName: 'wfc__who',
+      // The label line is the widest part of the shape; the subtitle sits near the bottom point.
+      chars: { label: 24, who: 12 },
+    };
+  }
+  if (shape === 'gate') {
+    return {
+      x: NODE_W / 2,
+      anchor: 'middle',
+      centred: true,
+      className: 'wfc__kind',
+      whoClassName: 'wfc__who',
+      chars: { label: 24, who: 22 },
+    };
+  }
+  return {
+    x: 14,
+    anchor: 'start',
+    centred: false,
+    className: 'wfc__kind',
+    whoClassName: 'wfc__who',
+    chars: { label: 26, who: 26 },
+  };
 }
 
 export interface WorkflowCanvasProps {
@@ -218,6 +294,14 @@ export function WorkflowCanvas({
 }: WorkflowCanvasProps) {
   const { placed, width, height } = useMemo(() => layout(nodes, edges), [nodes, edges]);
 
+  /*
+   * How large the plan is drawn.
+   *
+   * Not persisted. A zoom is about the thing somebody is reading right now, and a remembered one
+   * means opening a different objective at a size chosen for another.
+   */
+  const [zoom, setZoom] = useState(1);
+
   const drawn = useMemo(
     () =>
       edges
@@ -243,15 +327,66 @@ export function WorkflowCanvas({
 
   return (
     <div className="wfc">
-      {live === undefined ? null : (
-        <p className={`wfc__live${live ? ' wfc__live--on' : ''}`}>
-          {live ? 'Live' : 'Not live — reload to reconnect'}
-        </p>
-      )}
+      <div className="wfc__bar">
+        {live === undefined ? null : (
+          <p className={`wfc__live${live ? ' wfc__live--on' : ''}`}>
+            {live ? 'Live' : 'Not live — reload to reconnect'}
+          </p>
+        )}
+
+        {/*
+          Zoom.
+
+          A plan is as tall as the company's process is long, and this drew it at one size in a
+          box that scrolled sideways — so a twenty-five step objective could be read a node at a
+          time or not at all. Out to see the shape, in to read a label.
+
+          Buttons rather than a wheel handler: a wheel over a page that also scrolls is a fight
+          between the two, and this canvas sits inside a scrolling screen.
+        */}
+        <div className="wfc__zoom">
+          <button
+            type="button"
+            className="wfc__zoom-btn"
+            onClick={() => setZoom((current) => Math.max(MIN_ZOOM, round(current - ZOOM_STEP)))}
+            disabled={zoom <= MIN_ZOOM}
+            aria-label="Zoom out"
+          >
+            −
+          </button>
+          {/* The figure is a button: pressing it is the way back to actual size. */}
+          <button
+            type="button"
+            className="wfc__zoom-value"
+            onClick={() => setZoom(1)}
+            aria-label={`Zoom ${Math.round(zoom * 100)} percent. Press to reset to 100 percent.`}
+          >
+            {Math.round(zoom * 100)}%
+          </button>
+          <button
+            type="button"
+            className="wfc__zoom-btn"
+            onClick={() => setZoom((current) => Math.min(MAX_ZOOM, round(current + ZOOM_STEP)))}
+            disabled={zoom >= MAX_ZOOM}
+            aria-label="Zoom in"
+          >
+            +
+          </button>
+        </div>
+      </div>
 
       <svg
         className="wfc__svg"
         viewBox={`0 0 ${width} ${height}`}
+        /*
+         * Drawn size, not the viewBox.
+         *
+         * The viewBox is the plan's own coordinates and never changes; giving the element a width
+         * in pixels is what makes the same drawing bigger or smaller, and the wrapper scrolls to
+         * whatever that comes to.
+         */
+        width={Math.round(width * zoom)}
+        height={Math.round(height * zoom)}
         role="img"
         aria-label="The workflow for this objective, and what each step is doing"
       >
@@ -310,6 +445,7 @@ export function WorkflowCanvas({
         <g className="wfc__nodes">
           {[...placed.values()].map(({ node, x, y }) => {
             const state = activity?.get(node.id) ?? { state: 'idle' as const };
+            const text = textMetricsFor(node.shape);
             return (
               <g
                 key={node.id}
@@ -345,33 +481,41 @@ export function WorkflowCanvas({
                   />
                 )}
 
-                <text className="wfc__kind" x="14" y="20">
+                <text className={text.className} x={text.x} y="20" textAnchor={text.anchor}>
                   {node.kind === 'Ai' ? 'AI' : node.kind}
                 </text>
 
-                <text className="wfc__label" x="14" y="40">
-                  {node.label.length > 26 ? `${node.label.slice(0, 25)}…` : node.label}
+                <text
+                  className={`wfc__label${text.centred ? ' wfc__label--centred' : ''}`}
+                  x={text.x}
+                  y="40"
+                  textAnchor={text.anchor}
+                >
+                  {clip(node.label, text.chars.label)}
                 </text>
 
-                <text className="wfc__who" x="14" y="56">
-                  {state.state === 'working'
-                    ? /*
-                       * The fraction only where there is one.
-                       *
-                       * Null means the work cannot report a fraction honestly, so the node says it
-                       * is working and nothing more. Rendering "0%" or a crawling bar there would
-                       * be inventing the one number the type exists to withhold.
-                       */
-                      state.percent === null
-                      ? 'working…'
-                      : `working — ${state.percent}%`
-                    : state.state === 'waiting'
-                      ? (state.message ?? 'waiting')
-                      : state.state === 'failed'
-                        ? (state.message ?? 'failed')
-                        : state.state === 'done'
-                          ? 'done'
-                          : (node.subtitle ?? '')}
+                <text className={text.whoClassName} x={text.x} y="56" textAnchor={text.anchor}>
+                  {clip(
+                    state.state === 'working'
+                      ? /*
+                         * The fraction only where there is one.
+                         *
+                         * Null means the work cannot report a fraction honestly, so the node says it
+                         * is working and nothing more. Rendering "0%" or a crawling bar there would
+                         * be inventing the one number the type exists to withhold.
+                         */
+                        state.percent === null
+                        ? 'working…'
+                        : `working — ${state.percent}%`
+                      : state.state === 'waiting'
+                        ? (state.message ?? 'waiting')
+                        : state.state === 'failed'
+                          ? (state.message ?? 'failed')
+                          : state.state === 'done'
+                            ? 'done'
+                            : (node.subtitle ?? ''),
+                    text.chars.who,
+                  )}
                 </text>
 
                 {/* A quiet pulse on the edge of whatever is working. Bound to state, not to a clock. */}

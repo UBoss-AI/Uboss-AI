@@ -86,6 +86,33 @@ class SteerableModelGateway extends ModelGateway {
   onCall: ((purpose: string) => Promise<void>) | null = null;
   calls: string[] = [];
 
+  /**
+   * How this stub splits each step between an agent and a person.
+   *
+   * The analysis asks a model which part of a step needs a person and refuses to build anything
+   * without a usable answer — so a gateway that cannot answer that question fails every run, and
+   * the pipeline below it becomes untestable. This is the seam that answers it.
+   *
+   * It is on the **test** gateway and deliberately not on `MockModelGateway`. The shipped mock
+   * answering this would mean a deployment with no provider configured quietly producing
+   * workflows whose human/AI split nothing decided — the fabrication the client's rules forbid,
+   * and the exact outcome the refusal exists to prevent.
+   *
+   * Default: the whole step is the agent's. Tests that need human work say so.
+   */
+  classifyBy:
+    | ((
+        position: number,
+        work: string,
+      ) => {
+        aiWork: string | null;
+        humanWork: string | null;
+      })
+    | null = null;
+
+  /** Set to make the classification call come back as something unusable. */
+  classificationAnswer: string | null = null;
+
   private readonly inner = new MockModelGateway();
 
   async complete(modelRequest: ModelRequest): Promise<ModelResponse> {
@@ -101,7 +128,32 @@ class SteerableModelGateway extends ModelGateway {
     }
 
     const response = await this.inner.complete(modelRequest);
+
+    if (modelRequest.purpose === 'objective.analysis.human-work') {
+      return {
+        ...response,
+        output: this.classificationAnswer ?? this.classify(modelRequest.context),
+        producedByRealModel: this.pretendReal,
+      };
+    }
+
     return { ...response, producedByRealModel: this.pretendReal };
+  }
+
+  /** The context arrives as `1. Collect DHF…` lines — one per step, in position order. */
+  private classify(context: string): string {
+    const steps = context
+      .split('\n')
+      .map((line) => /^(\d+)\.\s*(.*)$/.exec(line.trim()))
+      .filter((match): match is RegExpExecArray => match !== null)
+      .map((match) => {
+        const position = Number(match[1]);
+        const work = match[2] ?? '';
+        const split = this.classifyBy?.(position, work) ?? { aiWork: work, humanWork: null };
+        return { position, ...split, why: 'stubbed by the test gateway' };
+      });
+
+    return JSON.stringify({ steps });
   }
 }
 
@@ -153,6 +205,19 @@ describe('objective AI analysis (e2e)', () => {
       `test:${Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64')}`;
 
     gateway = new SteerableModelGateway();
+    /*
+     * The split the fixtures were always written around.
+     *
+     * `mixedSteps` describes itself as "a human step, a machine step and an approval gate", and
+     * before the analysis asked a model that shape came from the grid's own `whoEngine` column.
+     * Now it comes from the classification, so the stub has to state it — position 2 is the
+     * machine step in every fixture that has one, including the Executor case.
+     *
+     * Setting it here rather than in each test keeps those tests testing what they were written
+     * to test: shapes, owners, gaps and Skills, not the stub's opinion of who does the work.
+     */
+    gateway.classifyBy = (position, work) =>
+      position === 2 ? { aiWork: work, humanWork: null } : { aiWork: null, humanWork: work };
 
     const moduleRef = await Test.createTestingModule({
       controllers: [ObjectiveController],
@@ -225,6 +290,15 @@ describe('objective AI analysis (e2e)', () => {
     gateway.usesRealModel = false;
     gateway.failNextWith = null;
     gateway.onCall = null;
+    /*
+     * The gateway is built once in `before`, so anything a test steers has to be put back here.
+     *
+     * Left out, the two tests that make the classification unusable did so for every test that
+     * ran after them — sixteen failures whose cause was three tests earlier.
+     */
+    gateway.classificationAnswer = null;
+    gateway.classifyBy = (position, work) =>
+      position === 2 ? { aiWork: work, humanWork: null } : { aiWork: null, humanWork: work };
 
     const provisioned = await ctx.provisioning.provision({
       slug: 'ana-co',
@@ -514,6 +588,102 @@ describe('objective AI analysis (e2e)', () => {
       const ai = run.draft.nodes.find((node) => node.kind === 'Ai');
       assert.equal(human?.shape, 'rectangle');
       assert.equal(ai?.shape, 'diamond');
+    });
+
+    /*
+     * The client's instruction, in one test.
+     *
+     * Somebody writing a step says which machine layer it belongs to; the analysis says which
+     * part of it a model can do and which part the person still has to. A step that divides
+     * produces both nodes, each labelled with its own half, and the person's half is what reaches
+     * their to-do.
+     *
+     * Before this, `whoEngine` decided it: a step marked Engine was wholly AI and a step marked
+     * Human was wholly a person's, whatever the work actually said.
+     */
+    it('splits one step into an agent’s part and a person’s part', async () => {
+      gateway.classifyBy = (position) =>
+        position === 1
+          ? {
+              aiWork: 'Reconcile the ledger against the statement and list the mismatches',
+              humanWork: 'Call the branch about each mismatch and record what they said',
+            }
+          : { aiWork: 'Draft the summary', humanWork: null };
+
+      const objective = await draftObjective([step({ position: 1 }), step({ position: 2 })]);
+      const run = await analysis().start({
+        scope: scope(),
+        actorUserId: ownerUserId,
+        objectiveId: objective.id,
+      });
+      assert.ok(run.draft);
+
+      const fromStepOne = run.draft.nodes.filter((node) => node.fromStepPosition === 1);
+      assert.equal(fromStepOne.length, 2, 'a divided step produces both nodes');
+
+      const ai = fromStepOne.find((node) => node.kind === 'Ai');
+      const human = fromStepOne.find((node) => node.kind === 'Human');
+      assert.ok(ai && human, 'one of each kind');
+
+      // Each half carries its own words, not the original row repeated on both.
+      assert.match(ai!.label, /Reconcile the ledger/);
+      assert.match(human!.label, /Call the branch/);
+      assert.notEqual(ai!.label, human!.label);
+
+      // Two nodes from one step must not share an id, or the chain points at one of them twice.
+      assert.notEqual(ai!.id, human!.id);
+
+      // The agent's part leads into the person's, and the plan says that order was assumed.
+      assert.ok(
+        run.draft.edges.some((edge) => edge.fromNodeId === ai!.id && edge.toNodeId === human!.id),
+        'the agent’s part should lead into the person’s',
+      );
+      assert.ok(
+        run.draft.gaps.some((gap) => /assumption about order/i.test(gap)),
+        `the split should be declared as an assumption: ${JSON.stringify(run.draft.gaps)}`,
+      );
+    });
+
+    /*
+     * The client's decision about what happens when the model cannot answer.
+     *
+     * The alternatives were to fall back on the grid column — reinstating the behaviour this
+     * replaced, under a screen claiming the AI had decided — or to call everything human, handing
+     * a company a 25-step objective their team now owns because a provider was down.
+     */
+    it('fails the run rather than deciding for itself when the classification is unusable', async () => {
+      gateway.classificationAnswer = 'I am afraid I cannot help with that.';
+
+      const objective = await draftObjective();
+      const run = await analysis().start({
+        scope: scope(),
+        actorUserId: ownerUserId,
+        objectiveId: objective.id,
+      });
+
+      assert.equal(run.status, 'Failed');
+      assert.equal(run.draft, null, 'nothing is built from an answer that was not understood');
+      assert.match(run.failureReason ?? '', /did not return a usable classification/i);
+    });
+
+    it('fails the run when the model classifies only some of the steps', async () => {
+      // The dangerous partial answer: six steps nobody decided would otherwise become AI work
+      // silently, and the objective that gets approved is not the objective that was written.
+      gateway.classificationAnswer = JSON.stringify({
+        steps: [{ position: 1, aiWork: 'Do the first one', humanWork: null, why: 'short' }],
+      });
+
+      const objective = await draftObjective();
+      const run = await analysis().start({
+        scope: scope(),
+        actorUserId: ownerUserId,
+        objectiveId: objective.id,
+      });
+
+      assert.equal(run.status, 'Failed');
+      assert.equal(run.draft, null);
+      // Named by position, so somebody can see which rows were left out.
+      assert.match(run.failureReason ?? '', /2, 3/);
     });
 
     it('produces exactly one Goal, visually distinct', async () => {

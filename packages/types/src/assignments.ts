@@ -1,3 +1,5 @@
+import type { StatusTone } from './status-tone.js';
+
 /**
  * Assignment vocabulary — what a published workflow turns into.
  *
@@ -68,10 +70,10 @@ export const HUMAN_TASK_STATUS_LABELS: Record<HumanTaskStatus, string> = {
 };
 
 /** Tones from the shared `StatusTone` set, so two screens cannot colour one status differently. */
-export const HUMAN_TASK_STATUS_TONES: Record<HumanTaskStatus, string> = {
+export const HUMAN_TASK_STATUS_TONES: Record<HumanTaskStatus, StatusTone> = {
   Waiting: 'grey',
   Assigned: 'blue',
-  InProgress: 'cyan',
+  InProgress: 'teal',
   Blocked: 'danger',
   NeedsInput: 'warn',
   WaitingApproval: 'purple',
@@ -409,7 +411,7 @@ export const APPROVAL_REQUEST_STATUS_LABELS: Record<ApprovalRequestStatus, strin
   Cancelled: 'Cancelled',
 };
 
-export const APPROVAL_REQUEST_STATUS_TONES: Record<ApprovalRequestStatus, string> = {
+export const APPROVAL_REQUEST_STATUS_TONES: Record<ApprovalRequestStatus, StatusTone> = {
   Pending: 'warn',
   Approved: 'success',
   Rejected: 'danger',

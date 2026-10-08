@@ -1,7 +1,7 @@
 'use client';
 
 import { Banner, Button, DataTable, Modal, SkeletonText, StatusBadge } from '@uboss/ui';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import { accessApi, ApiError, type BulkPreview } from '../lib/api-client';
 
@@ -26,9 +26,10 @@ import { accessApi, ApiError, type BulkPreview } from '../lib/api-client';
  *
  * ## Why the template is downloaded rather than described
  *
- * It arrives carrying this company's own departments and people on two reference sheets, because
- * the two things that get an import rejected are a department that does not exist and a manager's
- * name spelt differently from the record. Both are unavoidable if somebody is typing from memory.
+ * The two things that get an import rejected are a department that does not exist and a manager's
+ * name spelt differently from the record. Both are unavoidable if somebody is typing from memory,
+ * so the file arrives with this company's own departments and people already in it — as dropdowns
+ * on the cells, built the moment it is downloaded, so a value is picked rather than recalled.
  */
 export function HierarchyImport({
   tenantId,
@@ -42,22 +43,20 @@ export function HierarchyImport({
   /** Called after rows were applied, so the chart can be reloaded. */
   onImported: () => void;
 }) {
-  const [columns, setColumns] = useState<
-    { heading: string; required: boolean; note: string }[] | null
-  >(null);
   const [preview, setPreview] = useState<BulkPreview | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [applied, setApplied] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!open || columns !== null) return;
-    accessApi
-      .hierarchyTemplateColumns(tenantId)
-      .then((result) => setColumns(result.columns))
-      .catch(() => setColumns([]));
-  }, [open, columns, tenantId]);
+  /*
+   * The column list used to be fetched here to print nine bullets in the dialog.
+   *
+   * The bullets are gone — the workbook carries the same text on its own headings — so the
+   * request went with them: a round trip on every open to render something nobody needed twice.
+   * `hierarchyTemplateColumns` is untouched on the server and still describes the template to
+   * anything that asks.
+   */
 
   const reset = useCallback(() => {
     setPreview(null);
@@ -188,23 +187,26 @@ export function HierarchyImport({
       {preview === null ? (
         <>
           <p className="uboss-muted">
-            Download the template, fill it in, and upload it. Nothing is created until you have seen
-            exactly what would be.
+            Choose the filled template. Nothing is created until you have seen exactly what would
+            be.
           </p>
 
-          {/* `uboss-actions` — `uboss-row-actions` is not a class any stylesheet defines, so
-              these two buttons were never laid out as a row at all. */}
-          <div className="uboss-actions">
-            <Button icon="arrow-down" onClick={download} disabled={busy}>
-              Download Excel template
-            </Button>
+          {/*
+            One action, because this dialog does one thing.
 
+            It offered a second primary button that downloaded the template — the same download the
+            toolbar behind this dialog already offers, so opening Import to find a Download was two
+            ways to the same file and a moment deciding which one was meant. The way back is still
+            here, as a line of text rather than a second button, for somebody who opened this
+            without the file.
+          */}
+          <div className="uboss-actions">
             {/*
               A real file input, dressed as a button. A drag-and-drop zone with no input behind it
               is unreachable from a keyboard, and this is an administrator's screen.
             */}
-            <label className="uboss-btn" htmlFor="hierarchy-import-file">
-              Upload filled template
+            <label className="uboss-btn uboss-btn--primary" htmlFor="hierarchy-import-file">
+              Choose filled template
             </label>
             <input
               id="hierarchy-import-file"
@@ -223,22 +225,23 @@ export function HierarchyImport({
 
           {busy ? <SkeletonText lines={2} /> : null}
 
-          {columns === null ? null : columns.length === 0 ? null : (
-            <>
-              <p className="uboss-muted-3">
-                The template carries these columns, plus two reference sheets listing this company’s
-                departments and people — copy the values from those rather than typing them.
-              </p>
-              <ul className="uboss-muted-3">
-                {columns.map((column) => (
-                  <li key={column.heading}>
-                    <b>{column.heading}</b>
-                    {column.required ? ' *' : ''} — {column.note}
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
+          {/*
+            What this said, until the file started saying it itself.
+
+            Every column was listed here with its note — nine bullets, the longest thing in the
+            dialog, and now a word-for-word copy of the comments sitting on the headings in the
+            workbook. Guidance in two places is guidance that disagrees with itself eventually, and
+            the copy worth keeping is the one in front of somebody while they type.
+          */}
+          <p className="uboss-muted-3">
+            A starred column is one the import refuses the row without; each heading carries a note
+            saying what it wants. Department and Reporting Manager are dropdowns of this company’s
+            own departments and people — pick from them rather than typing.{' '}
+            <button type="button" className="uboss-link-button uboss-link" onClick={download}>
+              Download the template
+            </button>{' '}
+            if you have not got it.
+          </p>
         </>
       ) : (
         <>

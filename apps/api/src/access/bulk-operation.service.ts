@@ -486,16 +486,36 @@ export class BulkOperationService {
       require('employeeName', 'Employee Name');
       require('employeeId', 'Employee ID');
       require('designation', 'Designation');
+      /*
+       * Required here as well as on the form, at the client's instruction.
+       *
+       * It was deliberately split before — asked for on the form, accepted blank on import — on
+       * the reasoning that an import is somebody's existing spreadsheet and refusing it today
+       * would apply this screen's decision to their data. The client's answer is that a star
+       * belongs on every heading, and a star on this template means the server refuses the row.
+       * One rule in both places is the only way that stays true.
+       *
+       * It changes nothing about records already stored: the column is still nullable, because a
+       * question nobody was asked has no honest answer but "we do not know".
+       */
+      require('specialization', 'Specialization');
       const departmentName = require('department', 'Department');
       /*
-       * Required since CR-04, on the same footing as the rest.
+       * Phone is required on an import; **email is not**, at the client's instruction.
        *
-       * An import is the fastest way to build a hierarchy of people nobody can contact, so the
-       * rule has to be here as well as on the form — the row is refused with the reason rather
-       * than imported and left half-useful.
+       * Both were, since CR-04, on the reasoning that an import is the fastest way to build a
+       * hierarchy of people nobody can contact. The client's answer is that a company importing
+       * its existing roster often does not have a work address for everybody yet — refusing those
+       * rows refuses the import, and the person is reachable by phone meanwhile.
+       *
+       * The **form** still asks for it. That is not a contradiction: somebody filling a form has
+       * the person in front of them and can answer, where a spreadsheet of people who already
+       * work there was correct before this screen existed. The template agrees with this file —
+       * no star on Email — which is the only thing that must stay true.
        */
-      const rowEmail = require('email', 'Work Email');
+      const rowEmail = values['email']?.trim() ?? '';
       const rowPhone = require('phone', 'Work Phone');
+      // Checked when given, so a typo is still caught; absence is simply not an error.
       if (rowEmail !== '' && !rowEmail.includes('@')) {
         errors.push('Work Email: that does not look like an email address.');
       }
@@ -850,12 +870,12 @@ export class BulkOperationService {
   }
 
   /**
-   * What the import template's reference sheets are filled from.
+   * What the import template's dropdowns are filled from.
    *
    * The same two sources the validator checks a row against — this company's departments and its
-   * roster — so the values offered for copying are exactly the values that will be accepted. Read
-   * at download time rather than cached: a department added five minutes ago has to be in the file
-   * somebody downloads now.
+   * roster — so the values offered are exactly the values that will be accepted. Read at download
+   * time rather than cached: a department added five minutes ago has to be in the file somebody
+   * downloads now.
    */
   async hierarchyReference(scope: TenantScope, actorUserId: string): Promise<HierarchyReference> {
     await this.assertMayRun(scope, actorUserId, 'ImportEmployees');

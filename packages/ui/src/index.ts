@@ -91,6 +91,8 @@ export type {
 export { Skeleton, SkeletonText } from './primitives/Skeleton';
 export type { SkeletonProps, SkeletonTextProps } from './primitives/Skeleton';
 
+export { ProgressRing } from './primitives/ProgressRing';
+export type { ProgressRingProps } from './primitives/ProgressRing';
 export { ProgressStep } from './primitives/ProgressStep';
 export type { ProgressStepItem, ProgressStepProps, StepState } from './primitives/ProgressStep';
 

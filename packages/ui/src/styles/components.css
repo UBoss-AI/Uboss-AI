@@ -1090,11 +1090,23 @@
 /* ============================================================
    Search field
    ============================================================ */
+/*
+  Wide enough for its own placeholder, whatever else is in the row.
+
+  `min-width: 0` let it shrink without limit, so on the Hierarchy toolbar — seven other controls
+  on one line — the box ended up narrower than the words inside it and read `Search peop`. A
+  control that cannot fit its own label looks unfinished on the screen that lists a company's
+  whole staff.
+
+  190px holds "Search people" past the 34px the icon occupies. The rows this sits in wrap
+  (`.uboss-actions`), so when there is genuinely no room the field moves to its own line instead
+  of being cut in half.
+*/
 .uboss-search {
   position: relative;
   flex: 1;
   max-width: 420px;
-  min-width: 0;
+  min-width: 190px;
 }
 
 .uboss-search input {
@@ -10753,4 +10765,130 @@ tr[data-drop-target='true'] td {
 
 .uboss-orch-node--large .uboss-orch-node-count {
   font-size: 26px;
+}
+
+/* ---------------------------------------------------------------------------
+ * ProgressRing — a percentage with its own number in the middle.
+ *
+ * The arc grows on the signature duration, whose token comment names this exact gesture. The
+ * halo turns only while work is in flight, on the ambient ring duration that already exists;
+ * a loop that invents its own timing is how one idea ends up with four speeds.
+ * ------------------------------------------------------------------------ */
+.uboss-ring {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+}
+
+.uboss-ring svg {
+  display: block;
+}
+
+.uboss-ring-track {
+  stroke: var(--uboss-border);
+}
+
+/*
+ * The halo: a short arc that turns behind the fill while the job runs.
+ *
+ * Invisible unless the ring is live, so a finished or cancelled run is still — the ring must
+ * never suggest something is happening when nothing is.
+ */
+.uboss-ring-halo {
+  stroke: var(--uboss-purple);
+  opacity: 0;
+  transform-origin: 50% 50%;
+}
+
+/*
+ * Lighter than the fill, so it reads against the track it travels over.
+ *
+ * In the brand purple at a low opacity it was all but invisible: the arc spends most of its
+ * circuit underneath the fill, and the part on the bare track was the same hue as the thing it
+ * was supposed to be distinguishable from.
+ */
+.uboss-ring--live .uboss-ring-halo {
+  stroke: var(--uboss-purple-050);
+  opacity: 1;
+  animation: uboss-ring-turn var(--uboss-motion-ambient-ring) linear infinite;
+}
+
+@keyframes uboss-ring-turn {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.uboss-ring-fill {
+  stroke: var(--uboss-purple);
+  transition: stroke-dashoffset var(--uboss-motion-signature) var(--uboss-ease-enter);
+}
+
+.uboss-ring-centre {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+}
+
+.uboss-ring-percent {
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--uboss-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Smaller and lighter: the unit is not the number, and at the same weight it competes with it. */
+.uboss-ring-percent small {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--uboss-text-3);
+  margin-left: 1px;
+}
+
+/*
+ * `text-transform: none`, said out loud.
+ *
+ * The panel this sits in puts its labels in capitals, and the caption inherited it — so the ring
+ * read "2 OF 7", which looks like a heading rather than a count and is the kind of detail that
+ * makes a careful screen look careless.
+ */
+.uboss-ring-caption {
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--uboss-text-3);
+  text-transform: none;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The analysis panel's progress: the ring beside the stage list.
+ *
+ * Wraps rather than shrinking. In a narrow panel the ring would be squeezed to the size of the
+ * number inside it, and the list's own labels would start breaking mid-word — so below the
+ * breakpoint they stack, which is the one arrangement where both stay readable.
+ */
+.uboss-analysis-progress {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+/*
+ * 170, not 220.
+ *
+ * The panel this sits in is about 346px wide. At a 220px basis the list could not fit beside a
+ * 112px ring, so it wrapped underneath and left the ring stranded against a column of empty
+ * space — the arrangement the wrap exists to avoid, reached at the width it was meant for.
+ */
+.uboss-analysis-progress-steps {
+  flex: 1 1 170px;
+  min-width: 0;
 }

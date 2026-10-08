@@ -28,7 +28,8 @@ import {
   HIERARCHY_RESOLVER,
 } from '../src/authorization/authorization.service.js';
 import { PermissionGuard } from '../src/authorization/permission.guard.js';
-import { MockModelGateway, ModelGateway } from '../src/model-gateway/model-gateway.js';
+import { ModelGateway } from '../src/model-gateway/model-gateway.js';
+import { ClassifyingModelGateway } from './support/classifying-model-gateway.js';
 import { NotificationService } from '../src/notifications/notification.service.js';
 import { AssignmentService } from '../src/objectives/assignment.service.js';
 import { WorkReleaseService } from '../src/tasks/work-release.service.js';
@@ -130,7 +131,7 @@ describe('workflow graph editor and pre-publish readiness (e2e)', () => {
         { provide: PrismaService, useValue: ctx.prisma },
         { provide: AUTH_CONFIG, useFactory: loadAuthConfig },
         // The real mock gateway: it is what ships, and the analysis only has to complete here.
-        { provide: ModelGateway, useClass: MockModelGateway },
+        { provide: ModelGateway, useClass: ClassifyingModelGateway },
         UserRepository,
         TenantRepository,
         AuditEventRepository,

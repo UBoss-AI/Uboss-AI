@@ -1,3 +1,5 @@
+import type { StatusTone } from './status-tone.js';
+
 /**
  * The Executor Agent and the Exception Center — Prompt 27.
  *
@@ -163,7 +165,7 @@ export function exceptionClearsItself(kind: ExceptionKind): boolean {
 export const EXCEPTION_SEVERITIES = ['Low', 'Medium', 'High'] as const;
 export type ExceptionSeverity = (typeof EXCEPTION_SEVERITIES)[number];
 
-export const EXCEPTION_SEVERITY_TONES: Record<ExceptionSeverity, string> = {
+export const EXCEPTION_SEVERITY_TONES: Record<ExceptionSeverity, StatusTone> = {
   Low: 'grey',
   Medium: 'warn',
   High: 'danger',
@@ -211,7 +213,7 @@ export const EXCEPTION_STATE_LABELS: Record<ExceptionState, string> = {
   Dismissed: 'Dismissed',
 };
 
-export const EXCEPTION_STATE_TONES: Record<ExceptionState, string> = {
+export const EXCEPTION_STATE_TONES: Record<ExceptionState, StatusTone> = {
   Open: 'danger',
   Acknowledged: 'warn',
   Escalated: 'purple',

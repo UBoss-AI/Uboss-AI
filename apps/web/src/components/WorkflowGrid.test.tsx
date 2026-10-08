@@ -93,9 +93,41 @@ describe('WorkflowGrid', () => {
     expect((work as HTMLTextAreaElement).value).toBe('Collect DHF');
   });
 
-  it('offers Human plus the three machine kinds on the engine column', () => {
+  /*
+   * The three machine layers, and no `Human`.
+   *
+   * This asserted four options. The client's instruction is that somebody writing a step says
+   * which machine layer it belongs to and the analysis works out which part of the work still
+   * needs a person — asked here, before anybody knows what a model can do, the honest answer is
+   * always "a person", which is how a workflow ends up with no AI in it.
+   */
+  it('offers only the three machine kinds on the engine column', () => {
     render(<Harness initial={[blankWorkflowStep(1)]} />);
     const select = screen.getByLabelText('Step 1 Engine / Sub-Engine / Executor');
+    const options = within(select as HTMLElement)
+      .getAllByRole('option')
+      .map((option) => option.textContent);
+    expect(options).toEqual(['Engine', 'Sub-Engine', 'Executor']);
+  });
+
+  it('starts a new step on Engine rather than on a value it does not offer', () => {
+    // A select whose options exclude its own value renders blank, and the row then looks
+    // unfilled and saves as something nobody chose.
+    render(<Harness initial={[blankWorkflowStep(1)]} />);
+    const select = screen.getByLabelText('Step 1 Engine / Sub-Engine / Executor');
+    expect((select as HTMLSelectElement).value).toBe('Engine');
+  });
+
+  it('still shows Human on a step written before it was withdrawn', () => {
+    /*
+     * Objectives written earlier carry `whoEngine: 'Human'`, and a version history, an export and
+     * an edit all have to keep reading them. Dropping the option from a row that holds it would
+     * blank that row the moment somebody opened it.
+     */
+    render(<Harness initial={[{ ...blankWorkflowStep(1), whoEngine: 'Human' as const }]} />);
+    const select = screen.getByLabelText('Step 1 Engine / Sub-Engine / Executor');
+    expect((select as HTMLSelectElement).value).toBe('Human');
+
     const options = within(select as HTMLElement)
       .getAllByRole('option')
       .map((option) => option.textContent);

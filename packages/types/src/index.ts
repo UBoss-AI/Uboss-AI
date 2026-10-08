@@ -286,6 +286,7 @@ export {
   OBJECTIVE_STATUSES,
   REWARD_TYPE_LABELS,
   REWARD_TYPES,
+  SELECTABLE_STEP_ENGINE_KINDS,
   STEP_APPROVAL_KINDS,
   STEP_APPROVAL_LABELS,
   STEP_ENGINE_KINDS,
@@ -307,6 +308,7 @@ export type {
   ObjectiveRewardPanel,
   ObjectiveStatus,
   RewardType,
+  SelectableStepEngineKind,
   StepApprovalKind,
   StepEngineKind,
   TimeUnit,
@@ -1621,3 +1623,10 @@ export {
   validateRegistrationAddress,
   type RegistrationState,
 } from './registration.js';
+
+// ---- Status colours ----
+//
+// Closed here so every `*_TONES` map is checked against it. A tone becomes a class name, so a
+// word no stylesheet defines renders as an unstyled badge rather than failing anywhere visible.
+export { STATUS_TONE_NAMES } from './status-tone.js';
+export type { StatusTone } from './status-tone.js';

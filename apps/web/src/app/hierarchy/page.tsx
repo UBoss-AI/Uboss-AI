@@ -1175,18 +1175,10 @@ export default function HierarchyPage() {
             </FormField>
 
             {/*
-              The client's rule in both directions: exactly six fields are mandatory, and every
-              other profile field is optional and must not show an asterisk.
-            */}
-            <div className="uboss-section-label">Optional details</div>
-
-            {/*
-              Starred, because the server has refused an employee without one since CR-04.
-
-              The form asked for neither and blocked on neither, so pressing Add employee without
-              an email produced a refusal from the API after everything else had been typed —
-              the rule existed, and the only place it was not stated was the place people fill in.
-              The service keeps the rule; this stops the screen hiding it.
+              Required, and here rather than below, because the service has refused an employee
+              without them since CR-04 — a hierarchy of people nobody can contact is what being
+              lax about it produced. They sat under "Optional details" wearing asterisks, which
+              made that heading untrue three lines above them.
             */}
             <FormField label="Email" required>
               {(wiring) => (
@@ -1211,6 +1203,17 @@ export default function HierarchyPage() {
                 />
               )}
             </FormField>
+
+            {/*
+              The client's rule in both directions: a field under this heading is optional and
+              must not show an asterisk.
+
+              Email and Phone used to sit here carrying asterisks, which made the heading above
+              them untrue — the screen said optional and the fields said required, three lines
+              apart. They are required, by the service, since CR-04, so they moved up with the
+              rest of the required fields rather than being quietly unstarred to match a heading.
+            */}
+            <div className="uboss-section-label">Optional details</div>
 
             <FormField label="Joining Date">
               {(wiring) => (
@@ -1280,24 +1283,11 @@ export default function HierarchyPage() {
         }
       >
         {/*
-          Mission first here too, so the editor is in the order the strip draws them.
+          Vision first here too, so the editor is in the order the strip draws them.
 
-          A dialog that asks for the Vision first and then shows the Mission on top is a small
+          A dialog that asks for the Mission first and then shows the Vision on top is a small
           thing that makes somebody check whether they typed them the wrong way round.
         */}
-        <FormField label="Company Mission" hint="What it does every day to get there.">
-          {() => (
-            <RichTextEditor
-              label="Company Mission"
-              value={missionDraft}
-              onChange={setMissionDraft}
-              placeholder="The work this company does, and for whom."
-              disabled={savingIdentity}
-              uploadImage={uploadIdentityImage}
-            />
-          )}
-        </FormField>
-
         <FormField
           label="Company Vision"
           hint="Where this company is going. Shown above the chart to everybody."
@@ -1308,6 +1298,19 @@ export default function HierarchyPage() {
               value={visionDraft}
               onChange={setVisionDraft}
               placeholder="The company we intend to become."
+              disabled={savingIdentity}
+              uploadImage={uploadIdentityImage}
+            />
+          )}
+        </FormField>
+
+        <FormField label="Company Mission" hint="What it does every day to get there.">
+          {() => (
+            <RichTextEditor
+              label="Company Mission"
+              value={missionDraft}
+              onChange={setMissionDraft}
+              placeholder="The work this company does, and for whom."
               disabled={savingIdentity}
               uploadImage={uploadIdentityImage}
             />

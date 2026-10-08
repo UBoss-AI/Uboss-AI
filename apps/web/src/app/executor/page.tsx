@@ -21,7 +21,6 @@ import {
   Icon,
   PageHeader,
   StatusBadge,
-  type StatusTone,
 } from '@uboss/ui';
 
 import {
@@ -309,7 +308,7 @@ export default function ExecutorPage() {
                     header: 'Severity',
                     render: (row) => (
                       <StatusBadge
-                        tone={EXCEPTION_SEVERITY_TONES[row.severity] as StatusTone}
+                        tone={EXCEPTION_SEVERITY_TONES[row.severity]}
                         status={row.severity}
                       />
                     ),
@@ -331,7 +330,7 @@ export default function ExecutorPage() {
                     header: 'State',
                     render: (row) => (
                       <StatusBadge
-                        tone={EXCEPTION_STATE_TONES[row.state] as StatusTone}
+                        tone={EXCEPTION_STATE_TONES[row.state]}
                         status={EXCEPTION_STATE_LABELS[row.state]}
                       />
                     ),
@@ -365,7 +364,7 @@ export default function ExecutorPage() {
                   <span className="uboss-kv-key">Severity</span>
                   <span className="uboss-kv-value">
                     <StatusBadge
-                      tone={EXCEPTION_SEVERITY_TONES[selected.severity] as StatusTone}
+                      tone={EXCEPTION_SEVERITY_TONES[selected.severity]}
                       status={selected.severity}
                     />
                   </span>
@@ -374,7 +373,7 @@ export default function ExecutorPage() {
                   <span className="uboss-kv-key">State</span>
                   <span className="uboss-kv-value">
                     <StatusBadge
-                      tone={EXCEPTION_STATE_TONES[selected.state] as StatusTone}
+                      tone={EXCEPTION_STATE_TONES[selected.state]}
                       status={EXCEPTION_STATE_LABELS[selected.state]}
                     />
                   </span>

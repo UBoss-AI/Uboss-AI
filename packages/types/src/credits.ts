@@ -1,3 +1,5 @@
+import type { StatusTone } from './status-tone.js';
+
 /**
  * Credit top-up, reallocation and the commercial edge cases — Prompt 31.
  *
@@ -51,7 +53,7 @@ export const CREDIT_REQUEST_STATE_LABELS: Record<CreditRequestState, string> = {
   Cancelled: 'Cancelled',
 };
 
-export const CREDIT_REQUEST_STATE_TONES: Record<CreditRequestState, string> = {
+export const CREDIT_REQUEST_STATE_TONES: Record<CreditRequestState, StatusTone> = {
   Submitted: 'warn',
   Approved: 'success',
   Rejected: 'danger',

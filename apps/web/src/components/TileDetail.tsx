@@ -181,7 +181,7 @@ async function loadRows(tile: DashboardTile, tenantId: string): Promise<DetailRo
         primary: row.objectiveName,
         secondary: `${row.code} · ${row.departmentName ?? '—'}`,
         status: row.statusLabel,
-        tone: OBJECTIVE_STATUS_TONES[row.status] as StatusTone,
+        tone: OBJECTIVE_STATUS_TONES[row.status],
       }));
     }
 
@@ -192,7 +192,7 @@ async function loadRows(tile: DashboardTile, tenantId: string): Promise<DetailRo
         primary: row.title,
         secondary: row.objectiveName ?? null,
         status: row.displayStatus,
-        tone: HUMAN_TASK_STATUS_TONES[row.status] as StatusTone,
+        tone: HUMAN_TASK_STATUS_TONES[row.status],
       }));
     }
 
@@ -203,7 +203,7 @@ async function loadRows(tile: DashboardTile, tenantId: string): Promise<DetailRo
         primary: row.name,
         secondary: row.pausedReason ?? null,
         status: row.status,
-        tone: ENGINE_AGENT_STATUS_TONES[row.status] as StatusTone,
+        tone: ENGINE_AGENT_STATUS_TONES[row.status],
       }));
     }
 
@@ -239,7 +239,7 @@ async function loadRows(tile: DashboardTile, tenantId: string): Promise<DetailRo
         primary: row.kindLabel,
         secondary: row.detail,
         status: row.severity,
-        tone: EXCEPTION_SEVERITY_TONES[row.severity] as StatusTone,
+        tone: EXCEPTION_SEVERITY_TONES[row.severity],
       }));
     }
 

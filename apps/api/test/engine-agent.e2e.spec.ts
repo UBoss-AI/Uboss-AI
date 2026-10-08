@@ -38,7 +38,8 @@ import { PermissionGuard } from '../src/authorization/permission.guard.js';
 import { ConnectionService } from '../src/connections/connection.service.js';
 import { ConnectorAdapter, MockConnectorAdapter } from '../src/connections/connector-adapter.js';
 import { LocalSealedSecretsVault, SecretsVault } from '../src/connections/secrets-vault.js';
-import { MockModelGateway, ModelGateway } from '../src/model-gateway/model-gateway.js';
+import { ModelGateway } from '../src/model-gateway/model-gateway.js';
+import { ClassifyingModelGateway } from './support/classifying-model-gateway.js';
 import { NotificationService } from '../src/notifications/notification.service.js';
 import { AssignmentService } from '../src/objectives/assignment.service.js';
 import { ObjectiveController } from '../src/objectives/objective.controller.js';
@@ -148,7 +149,7 @@ describe('engine agent registry and versioning (e2e)', () => {
         { provide: AUTH_CONFIG, useFactory: loadAuthConfig },
         // The real mock gateway: it is what ships, and its `producedByRealModel: false` is the
         // property several of these tests turn on.
-        { provide: ModelGateway, useClass: MockModelGateway },
+        { provide: ModelGateway, useClass: ClassifyingModelGateway },
         {
           provide: SecretBox,
           useFactory: () => new SecretBox(keyProviderFromEnv(process.env['AUTH_ENCRYPTION_KEYS'])),

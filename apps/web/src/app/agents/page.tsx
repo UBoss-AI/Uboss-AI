@@ -28,7 +28,6 @@ import {
   FormField,
   SearchField,
   StatusBadge,
-  type StatusTone,
   RunState,
   EmptyState,
 } from '@uboss/ui';
@@ -547,7 +546,7 @@ export default function EngineAgentsPage() {
                 header: 'Status',
                 render: (row) => (
                   <StatusBadge
-                    tone={ENGINE_AGENT_STATUS_TONES[row.status] as StatusTone}
+                    tone={ENGINE_AGENT_STATUS_TONES[row.status]}
                     status={ENGINE_AGENT_STATUS_LABELS[row.status]}
                   />
                 ),
@@ -765,7 +764,7 @@ export default function EngineAgentsPage() {
               <span className="uboss-kv-key">Status</span>
               <span className="uboss-kv-value">
                 <StatusBadge
-                  tone={ENGINE_AGENT_STATUS_TONES[selected.status] as StatusTone}
+                  tone={ENGINE_AGENT_STATUS_TONES[selected.status]}
                   status={ENGINE_AGENT_STATUS_LABELS[selected.status]}
                 />
               </span>

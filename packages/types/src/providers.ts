@@ -1,3 +1,5 @@
+import type { StatusTone } from './status-tone.js';
+
 /**
  * AI Provider Profiles and the Model Gateway — Prompt 29.
  *
@@ -241,7 +243,7 @@ export const PROVIDER_LIFECYCLE_LABELS: Record<ProviderLifecycleState, string> =
   MigrationRequired: 'Migration required',
 };
 
-export const PROVIDER_LIFECYCLE_TONES: Record<ProviderLifecycleState, string> = {
+export const PROVIDER_LIFECYCLE_TONES: Record<ProviderLifecycleState, StatusTone> = {
   Active: 'success',
   Deprecated: 'warn',
   MigrationRequired: 'danger',

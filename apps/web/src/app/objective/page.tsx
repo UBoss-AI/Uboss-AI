@@ -20,7 +20,6 @@ import {
   PageHeader,
   SearchField,
   StatusBadge,
-  type StatusTone,
 } from '@uboss/ui';
 
 import {
@@ -298,7 +297,7 @@ export default function ObjectivesPage() {
                   width: '160px',
                   render: (row: ObjectiveListRow) => (
                     <StatusBadge
-                      tone={OBJECTIVE_STATUS_TONES[row.status] as StatusTone}
+                      tone={OBJECTIVE_STATUS_TONES[row.status]}
                       status={row.statusLabel}
                     />
                   ),

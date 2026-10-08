@@ -23,7 +23,6 @@ import {
   ProgressStep,
   StatusBadge,
   type ProgressStepItem,
-  type StatusTone,
 } from '@uboss/ui';
 
 import {
@@ -415,7 +414,7 @@ function ObjectiveVersionsInner() {
                 <span className="uboss-kv-key">
                   V{entry.versionNumber}{' '}
                   <StatusBadge
-                    tone={OBJECTIVE_STATUS_TONES[entry.status as ObjectiveStatus] as StatusTone}
+                    tone={OBJECTIVE_STATUS_TONES[entry.status as ObjectiveStatus]}
                     status={entry.reviewStage}
                   />
                 </span>

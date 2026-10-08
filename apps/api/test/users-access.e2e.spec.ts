@@ -1581,9 +1581,11 @@ describe('users & access (e2e)', () => {
   describe('bulk operations', () => {
     const csv = (rows: string[]) =>
       [
-        // Work Email and Work Phone are required columns since CR-04: an import is the fastest
-        // way to build a hierarchy of people nobody can contact.
-        'Employee Name,Employee ID,Designation,Department,Reporting Manager,Work Email,Work Phone,Aadhaar Number',
+        // These are the template's columns in its own order. All are required except Work Email,
+        // which the client asked to be taken when given and not insisted on — a company importing
+        // its existing roster often has no work address for everybody. Work Phone stays required,
+        // so an imported person is always contactable by something.
+        'Employee Name,Employee ID,Designation,Specialization,Department,Reporting Manager,Work Email,Work Phone,Aadhaar Number',
         ...rows,
       ].join('\n');
 
@@ -1610,7 +1612,7 @@ describe('users & access (e2e)', () => {
         actorUserId: adminId,
         kind: 'ImportEmployees',
         content: csv([
-          `Kavya Reddy,E-501,Associate,General,Access Admin,e-501@uboss.local,+91 90000 00001,${aadhaar('40218837551')}`,
+          `Kavya Reddy,E-501,Associate,Client Accounts,General,Access Admin,e-501@uboss.local,+91 90000 00001,${aadhaar('40218837551')}`,
         ]),
         sourceFileName: 'joiners.csv',
       });
@@ -1626,6 +1628,85 @@ describe('users & access (e2e)', () => {
       assert.match(preview.note, /Nothing has been applied/);
     });
 
+    /*
+     * The template stars Specialization, and a star on it promises the server refuses the row.
+     *
+     * Asserted on its own rather than left to the multi-error row above, because that row is
+     * missing six things and would pass this test while the rule was absent.
+     */
+    /*
+     * Email is taken when given and not insisted on — the client's instruction.
+     *
+     * It was required from CR-04 until now. A company importing its existing roster often has no
+     * work address for everybody, and refusing those rows refuses the import; the person is still
+     * reachable by phone, which **is** required. The template carries no star on Email, and this
+     * is the half of that promise the server has to keep.
+     */
+    it('imports a row with no email, because the template no longer stars it', async () => {
+      await ensureAdminIsEmployed();
+      const preview = await bulk().validate({
+        scope: scope(),
+        actorUserId: adminId,
+        kind: 'ImportEmployees',
+        content: csv([
+          `No Email,E-521,Associate,Client Accounts,General,Access Admin,,+91 90000 00021,${aadhaar('40218837551')}`,
+        ]),
+      });
+
+      assert.equal(
+        preview.invalidRows,
+        0,
+        `expected the row to pass, got ${JSON.stringify(preview.rows[0]?.errors)}`,
+      );
+
+      const result = await bulk().apply({
+        scope: scope(),
+        actorUserId: adminId,
+        operationId: preview.operationId,
+      });
+      assert.equal(result.applied, 1);
+    });
+
+    it('still refuses an email that is given and malformed', async () => {
+      // Not insisting on one is not the same as not checking it. A typo in a column somebody did
+      // fill in is still a typo, and silently storing it is how a person becomes uncontactable.
+      await ensureAdminIsEmployed();
+      const preview = await bulk().validate({
+        scope: scope(),
+        actorUserId: adminId,
+        kind: 'ImportEmployees',
+        content: csv([
+          `Bad Email,E-522,Associate,Client Accounts,General,Access Admin,not-an-address,+91 90000 00022,${aadhaar('40218837551')}`,
+        ]),
+      });
+
+      assert.equal(preview.invalidRows, 1);
+      assert.ok(
+        preview.rows[0]?.errors.some((error) => /does not look like an email/i.test(error)),
+        JSON.stringify(preview.rows[0]?.errors),
+      );
+    });
+
+    it('refuses a row with no specialization, because the template stars it', async () => {
+      await ensureAdminIsEmployed();
+      const preview = await bulk().validate({
+        scope: scope(),
+        actorUserId: adminId,
+        kind: 'ImportEmployees',
+        content: csv([
+          `No Specialism,E-511,Associate,,General,Access Admin,e-511@uboss.local,+91 90000 00011,${aadhaar('40218837551')}`,
+        ]),
+      });
+
+      assert.equal(preview.invalidRows, 1);
+      const row = preview.rows[0];
+      assert.ok(row);
+      assert.ok(
+        row!.errors.some((error) => /Specialization is required/.test(error)),
+        `expected a specialization error, got ${JSON.stringify(row!.errors)}`,
+      );
+    });
+
     it('reports errors per row, with every problem in one pass', async () => {
       await ensureAdminIsEmployed();
       const preview = await bulk().validate({
@@ -1633,8 +1714,8 @@ describe('users & access (e2e)', () => {
         actorUserId: adminId,
         kind: 'ImportEmployees',
         content: csv([
-          `Good Row,E-502,Associate,General,Access Admin,e-502@uboss.local,+91 90000 00002,${aadhaar('40218837551')}`,
-          ',,,Nonexistent Department,Nobody At All,123',
+          `Good Row,E-502,Associate,Client Accounts,General,Access Admin,e-502@uboss.local,+91 90000 00002,${aadhaar('40218837551')}`,
+          ',,,,Nonexistent Department,Nobody At All,123',
         ]),
       });
 
@@ -1657,9 +1738,9 @@ describe('users & access (e2e)', () => {
         actorUserId: adminId,
         kind: 'ImportEmployees',
         content: csv([
-          `Kavya Reddy,E-601,Associate,General,Access Admin,e-601@uboss.local,+91 90000 00003,${aadhaar('40218837551')}`,
-          `Arun Mehta,E-602,Analyst,General,Access Admin,e-602@uboss.local,+91 90000 00004,${aadhaar('29876543210')}`,
-          ',,,Nonexistent,Nobody,999',
+          `Kavya Reddy,E-601,Associate,Client Accounts,General,Access Admin,e-601@uboss.local,+91 90000 00003,${aadhaar('40218837551')}`,
+          `Arun Mehta,E-602,Analyst,Client Accounts,General,Access Admin,e-602@uboss.local,+91 90000 00004,${aadhaar('29876543210')}`,
+          ',,,,Nonexistent,Nobody,999',
         ]),
       });
 
@@ -1692,7 +1773,7 @@ describe('users & access (e2e)', () => {
         actorUserId: adminId,
         kind: 'ImportEmployees',
         content: csv([
-          `Kavya Reddy,E-701,Associate,General,Access Admin,e-701@uboss.local,+91 90000 00005,${aadhaar('40218837551')}`,
+          `Kavya Reddy,E-701,Associate,Client Accounts,General,Access Admin,e-701@uboss.local,+91 90000 00005,${aadhaar('40218837551')}`,
         ]),
       });
       await bulk().apply({
@@ -1719,7 +1800,7 @@ describe('users & access (e2e)', () => {
         actorUserId: adminId,
         kind: 'ImportEmployees',
         content: csv([
-          `Kavya Reddy,E-801,Associate,General,Access Admin,e-801@uboss.local,+91 90000 00006,${aadhaar('40218837551')}`,
+          `Kavya Reddy,E-801,Associate,Client Accounts,General,Access Admin,e-801@uboss.local,+91 90000 00006,${aadhaar('40218837551')}`,
         ]),
       });
 
@@ -1851,7 +1932,7 @@ describe('users & access (e2e)', () => {
         actorUserId: adminId,
         kind: 'ImportEmployees',
         content: csv([
-          `Kavya Reddy,E-950,Associate,General,Access Admin,e-950@uboss.local,+91 90000 00007,${aadhaar('40218837551')}`,
+          `Kavya Reddy,E-950,Associate,Client Accounts,General,Access Admin,e-950@uboss.local,+91 90000 00007,${aadhaar('40218837551')}`,
         ]),
       });
 
@@ -1876,7 +1957,7 @@ describe('users & access (e2e)', () => {
         actorUserId: adminId,
         kind: 'ImportEmployees',
         content: csv([
-          `Kavya Reddy,E-960,Associate,General,Access Admin,e-960@uboss.local,+91 90000 00008,${aadhaar('40218837551')}`,
+          `Kavya Reddy,E-960,Associate,Client Accounts,General,Access Admin,e-960@uboss.local,+91 90000 00008,${aadhaar('40218837551')}`,
         ]),
       });
 

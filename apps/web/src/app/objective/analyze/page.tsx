@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   ANALYSIS_RUN_STATUS_TONES,
@@ -20,10 +20,10 @@ import {
   CardBody,
   Icon,
   PageHeader,
+  ProgressRing,
   ProgressStep,
   StatusBadge,
   type ProgressStepItem,
-  type StatusTone,
 } from '@uboss/ui';
 
 import {
@@ -267,6 +267,7 @@ function ObjectiveAnalyzeInner() {
   // Prompt 40A (CR-03): the sidebar follows this person's real grants, never a role label.
   const navGroups = useCompanyNavigation();
   const params = useSearchParams();
+  const router = useRouter();
   const objectiveId = params.get('objectiveId');
 
   const [me, setMe] = useState<MeResponse | null>(null);
@@ -427,6 +428,37 @@ function ObjectiveAnalyzeInner() {
 
   const shown = objective?.openDraft ?? objective?.versions[0] ?? null;
   const inFlight = run !== null && (run.status === 'Queued' || run.status === 'Running');
+
+  /*
+   * When the seven stages finish, open the workflow editor.
+   *
+   * The client's instruction, and the honest answer to what this screen was doing. It drew the
+   * finished workflow itself, read-only, in a panel beside the stage list — nodes at a fixed size
+   * with no zoom, no way to add a step, and labels that now come from a model and are longer than
+   * the shape can hold. A full editor already existed, with the per-node "add a step here" control
+   * and the edit panel, and the only route to it was a small button underneath the cramped copy.
+   *
+   * So the copy is no longer where somebody lands: the run finishes and the editor opens.
+   *
+   * ## Only on the transition
+   *
+   * `watched` records that this screen saw the run while it was still going. Without it, opening
+   * the analyze screen for a run that finished last week would bounce somebody straight out of the
+   * page they asked for — the summary, the usage estimate and the gaps all live here, and they
+   * have to stay reachable.
+   */
+  const watched = useRef(false);
+  const navigated = useRef(false);
+  if (inFlight) watched.current = true;
+
+  useEffect(() => {
+    if (!watched.current || navigated.current) return;
+    if (run?.status !== 'Completed' || run.draft === null) return;
+    if (objectiveId === null) return;
+
+    navigated.current = true;
+    router.push(`/objective/workflow?objectiveId=${encodeURIComponent(objectiveId)}`);
+  }, [run, objectiveId, router]);
 
   // Only while something is actually running: a finished run's elapsed figure is fixed, and a
   // timer left going on an idle screen is the thing the motion rules are most explicit about.
@@ -608,7 +640,7 @@ function ObjectiveAnalyzeInner() {
               </span>
               {run === null ? null : (
                 <StatusBadge
-                  tone={ANALYSIS_RUN_STATUS_TONES[run.status] as StatusTone}
+                  tone={ANALYSIS_RUN_STATUS_TONES[run.status]}
                   status={run.statusLabel}
                 />
               )}
@@ -621,13 +653,34 @@ function ObjectiveAnalyzeInner() {
               </p>
             ) : (
               <>
-                <ProgressStep
-                  label="AI analysis stages"
-                  items={stages}
-                  // A stage marked running here means a durable job really is working, so its
-                  // indicator keeps moving. See the prop: a wizard marking position does not.
-                  live={inFlight}
-                />
+                {/*
+                  The ring and the stage list, side by side.
+
+                  The list alone was the whole answer, and it reads as seven identical rows that
+                  slowly change colour — the client's word for it was "generic". It is still the
+                  thing that says *what* is happening, which no percentage can; the ring is the
+                  thing that says *how far*, which a list of seven names cannot.
+                */}
+                <div className="uboss-analysis-progress">
+                  <ProgressRing
+                    label="AI analysis progress"
+                    completed={run.stagesCompleted}
+                    total={run.stages.length}
+                    caption={`${run.stagesCompleted} of ${run.stages.length}`}
+                    // Only a run genuinely in flight turns the halo. A run cancelled at stage
+                    // three is also three of seven, and a ring still turning would say work is
+                    // happening when none is.
+                    live={inFlight}
+                  />
+                  <ProgressStep
+                    label="AI analysis stages"
+                    items={stages}
+                    // A stage marked running here means a durable job really is working, so its
+                    // indicator keeps moving. See the prop: a wizard marking position does not.
+                    live={inFlight}
+                    className="uboss-analysis-progress-steps"
+                  />
+                </div>
 
                 {run.failureReason === null ? null : (
                   <Banner tone="danger">{run.failureReason}</Banner>

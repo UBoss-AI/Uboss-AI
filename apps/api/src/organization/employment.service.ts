@@ -31,8 +31,15 @@ export const MANDATORY_EMPLOYEE_FIELDS = [
    *
    * They were optional, and the consequence was a hierarchy full of people nobody could contact:
    * work is handed over by email and chased by phone, and a record that names neither describes
-   * an employee the company cannot actually reach. Required here rather than marked required on
-   * the form, because a rule a screen enforces is a rule the API does not have.
+   * an employee the company cannot actually reach.
+   *
+   * **Where each is enforced is no longer the same**, and this list is what the single-employee
+   * route promises, so both belong here. `workPhone` is refused by `addEmployee` itself, so every
+   * path including a bulk import must carry one. `workEmail` is refused by `AddEmployeeDto` — the
+   * door this list describes — and not by the service, because the client asked that a company
+   * importing its existing roster not have the whole file refused for the addresses it does not
+   * have yet. A spreadsheet reaches the service without passing that DTO, which is why the two
+   * can differ without either being a lie.
    */
   { key: 'workEmail', label: 'Work Email' },
   { key: 'workPhone', label: 'Work Phone' },
@@ -141,22 +148,40 @@ export class EmploymentService {
     }
 
     /*
-     * A work email and a work phone, both required.
+     * A work phone is required. A work email is taken when given.
+     *
+     * Both were required until the client asked otherwise: a company importing its existing
+     * roster often has no work address for everybody, and refusing those rows refuses the whole
+     * import. The rule it leaves behind is still the one that mattered — a company must be able
+     * to reach an employee — and a phone number satisfies it.
+     *
+     * Relaxed **here** rather than only in the importer, deliberately. Every bulk row is applied
+     * through this method, which is what stops a bulk path from becoming a way around the gates;
+     * a flag that let an import skip a rule the form still enforced would be exactly that way
+     * around, and the next rule would follow it.
+     *
+     * The Add Employee form still asks for an email and will not submit without one. That is the
+     * form's own rule, and honest: its asterisk means "this screen needs it", which is true.
      *
      * Checked for shape rather than validated hard: an address is proven by sending to it and a
-     * number by calling it, and neither happens here. What this refuses is the blank and the
-     * obviously-not-one, which is the difference between a record somebody can act on and a
-     * record that merely has the field filled.
+     * number by calling it, and neither happens here. What this refuses is the obviously-not-one,
+     * which is the difference between a record somebody can act on and a record that merely has
+     * the field filled.
      */
     const workEmail = (input.workEmail ?? '').trim();
     const workPhone = (input.workPhone ?? '').trim();
-    if (!workEmail || !workPhone) {
+    if (!workPhone) {
       throw new BadRequestException(
-        'Work Email and Work Phone are required. Work is handed over by email and chased by ' +
-          'phone, and an employee the company cannot reach is not a record worth keeping.',
+        'Work Phone is required. Work is chased by phone, and an employee the company cannot ' +
+          'reach is not a record worth keeping.',
       );
     }
-    if (!workEmail.includes('@') || workEmail.startsWith('@') || workEmail.endsWith('@')) {
+    // Only when one was given. Without the guard, dropping the blank check above would leave the
+    // shape check refusing every blank anyway — the rule removed in one line and kept in the next.
+    if (
+      workEmail !== '' &&
+      (!workEmail.includes('@') || workEmail.startsWith('@') || workEmail.endsWith('@'))
+    ) {
       throw new BadRequestException('That does not look like an email address.');
     }
     if (workPhone.replace(/[^0-9]/g, '').length < 7) {

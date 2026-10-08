@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   Banner,
@@ -106,6 +106,19 @@ export default function DashboardPage(): React.JSX.Element {
    * there is no path, including a stale value left behind by a permission change, that opens a
    * card for something this person may not see.
    */
+  /*
+   * The opened card, so it can be scrolled to.
+   *
+   * `selected` changing is the only trigger: closing one sets it to null and scrolls nothing, and
+   * re-rendering for any other reason leaves the page where the person put it.
+   */
+  const cardRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (selected === null) return;
+    cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [selected]);
+
   const selectedTile = useMemo(() => {
     if (selected === null || meta === null) return null;
     const entry = meta.tiles.find((tile) => tile.key === selected);
@@ -354,21 +367,32 @@ export default function DashboardPage(): React.JSX.Element {
                   orchestration table of zeroes would read it as "the company has nothing on",
                   which is a claim about everybody else's work they are not entitled to make.
                 */}
-                {selectedTile?.key === 'stage' ? (
-                  orchestration === null ? null : (
-                    <StageOverview view={orchestration} onClose={() => setSelected(null)} />
-                  )
-                ) : selectedTile === null || tenantId === null ? null : (
-                  <TileDetail
-                    tile={selectedTile.key}
-                    label={selectedTile.label}
-                    measure={selectedTile.measures}
-                    href={selectedTile.href}
-                    tenantId={tenantId}
-                    onOpen={(href) => router.push(href)}
-                    onClose={() => setSelected(null)}
-                  />
-                )}
+                {/*
+                  Brought into view, because it opens below everything that is already on screen.
+
+                  The card renders under the tile grid and the orchestration diagram, which at an
+                  ordinary window height puts it a screen or more below the tile that was pressed.
+                  The page did not move, so pressing a tile produced no visible change at all and
+                  the tile read as broken — the feature was finished and its result was simply out
+                  of sight.
+                */}
+                <div ref={cardRef}>
+                  {selectedTile?.key === 'stage' ? (
+                    orchestration === null ? null : (
+                      <StageOverview view={orchestration} onClose={() => setSelected(null)} />
+                    )
+                  ) : selectedTile === null || tenantId === null ? null : (
+                    <TileDetail
+                      tile={selectedTile.key}
+                      label={selectedTile.label}
+                      measure={selectedTile.measures}
+                      href={selectedTile.href}
+                      tenantId={tenantId}
+                      onOpen={(href) => router.push(href)}
+                      onClose={() => setSelected(null)}
+                    />
+                  )}
+                </div>
               </>
             )}
           </>

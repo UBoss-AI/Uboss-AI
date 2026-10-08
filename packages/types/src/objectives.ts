@@ -1,3 +1,5 @@
+import type { StatusTone } from './status-tone.js';
+
 /**
  * Objective Builder — the approved **Form 2**, as data.
  *
@@ -81,11 +83,11 @@ export const OBJECTIVE_STATUS_LABELS: Record<ObjectiveStatus, string> = {
  * Tones for `StatusBadge`. `Active` is the only success tone: an objective that is live and being
  * worked is the good state, and a draft is neither good nor bad.
  */
-export const OBJECTIVE_STATUS_TONES: Record<ObjectiveStatus, string> = {
+export const OBJECTIVE_STATUS_TONES: Record<ObjectiveStatus, StatusTone> = {
   Draft: 'grey',
   UnderReview: 'warn',
   AiAnalysis: 'purple',
-  WorkflowDraft: 'cyan',
+  WorkflowDraft: 'teal',
   ReadyForApproval: 'warn',
   Active: 'success',
   // `warn`, not `grey`: a paused objective is live work that has stopped, and a company should
@@ -497,15 +499,41 @@ export const FORM2_WORKFLOW_COLUMNS: readonly WorkflowColumnDefinition[] = [
 export const FORM2_WORKFLOW_COLUMN_COUNT = FORM2_WORKFLOW_COLUMNS.length;
 
 /**
- * Who or what performs a step.
+ * Which machine layer a step belongs to.
  *
- * `Human` and three machine kinds. The locked naming rule applies: an **Engine Agent** is the
- * reusable AI worker and an **Executor Agent** is the monitoring / validation / escalation layer,
- * so a step marked `Executor` is a checking step, never a doing-the-work step. `SubEngine` is a
- * component the source form distinguishes and we keep.
+ * The locked naming rule applies: an **Engine Agent** is the reusable AI worker and an **Executor
+ * Agent** is the monitoring / validation / escalation layer, so a step marked `Executor` is a
+ * checking step, never a doing-the-work step. `SubEngine` is a component the source form
+ * distinguishes and we keep.
+ *
+ * `Human` is in this list and **not** in the one below it, which is the whole point of there
+ * being two: the value is still stored, still read, and still carried by every objective written
+ * before the change — it is simply no longer something a person is asked to choose.
  */
 export const STEP_ENGINE_KINDS = ['Human', 'Engine', 'SubEngine', 'Executor'] as const;
 export type StepEngineKind = (typeof STEP_ENGINE_KINDS)[number];
+
+/**
+ * What a person may choose when writing a step.
+ *
+ * ## Why `Human` is not here
+ *
+ * The client's instruction: somebody writing an objective says which machine layer a step belongs
+ * to, and the analysis decides which parts of that work actually need a person. Asking at the
+ * form means asking before anybody knows what a model can do, and the honest answer at that
+ * moment is always "a person, probably" — which is how a workflow ends up with no AI in it.
+ *
+ * The decision moved to `ObjectiveAnalysisService.classifyWork`, where a model is given the step
+ * and answers, and where a run that cannot get an answer fails instead of guessing.
+ *
+ * ## Why the value did not disappear
+ *
+ * Objectives written before this carry `whoEngine: 'Human'`, and an analysis, a version history
+ * and an export all have to keep reading them. Removing the value would turn every one of those
+ * rows into an unknown kind — history rewritten to match a decision taken after it.
+ */
+export const SELECTABLE_STEP_ENGINE_KINDS = ['Engine', 'SubEngine', 'Executor'] as const;
+export type SelectableStepEngineKind = (typeof SELECTABLE_STEP_ENGINE_KINDS)[number];
 
 export const STEP_ENGINE_LABELS: Record<StepEngineKind, string> = {
   Human: 'Human',

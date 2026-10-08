@@ -6,6 +6,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 
 import {
   ANALYSIS_NODE_KINDS,
+  STEP_ENGINE_LABELS,
   WORKFLOW_EDGE_KIND_LABELS,
   WORKFLOW_EDGE_KINDS,
   type AnalysisNode,
@@ -389,8 +390,17 @@ function WorkflowEditorInner() {
                 </div>
                 {shownVersion.steps.map((step) => (
                   <div className="uboss-kv" key={step.id}>
+                    {/*
+                      The layer the step was written against, not a claim about who does it.
+
+                      This read `whoEngine === 'Human' ? 'Human' : 'AI'`, and since `Human` stopped
+                      being something anybody can choose, every source step printed "AI" — beside a
+                      plan showing human nodes, on the same screen. The source says which machine
+                      layer the step belongs to; what a person still has to do is the analysis's
+                      answer and it is already drawn two inches to the right.
+                    */}
                     <span className="uboss-kv-key">
-                      {step.position}. {step.whoEngine === 'Human' ? 'Human' : 'AI'}
+                      {step.position}. {STEP_ENGINE_LABELS[step.whoEngine] ?? step.whoEngine}
                     </span>
                     <span className="uboss-kv-value" style={{ textAlign: 'left' }}>
                       {step.whatExactWork}

@@ -24,7 +24,8 @@ import {
   HIERARCHY_RESOLVER,
 } from '../src/authorization/authorization.service.js';
 import { PermissionGuard } from '../src/authorization/permission.guard.js';
-import { MockModelGateway, ModelGateway } from '../src/model-gateway/model-gateway.js';
+import { ModelGateway } from '../src/model-gateway/model-gateway.js';
+import { ClassifyingModelGateway } from './support/classifying-model-gateway.js';
 import { NotificationService } from '../src/notifications/notification.service.js';
 import { AssignmentService } from '../src/objectives/assignment.service.js';
 import { ObjectiveController } from '../src/objectives/objective.controller.js';
@@ -139,7 +140,7 @@ describe('approve & assign and the human to-do list (e2e)', () => {
       providers: [
         { provide: PrismaService, useValue: ctx.prisma },
         { provide: AUTH_CONFIG, useFactory: loadAuthConfig },
-        { provide: ModelGateway, useClass: MockModelGateway },
+        { provide: ModelGateway, useClass: ClassifyingModelGateway },
         UserRepository,
         TenantRepository,
         AuditEventRepository,
@@ -560,6 +561,25 @@ describe('approve & assign and the human to-do list (e2e)', () => {
     steps?: Form2WorkflowStep[];
   } = {}): Promise<{ objectiveId: string; versionId: string; graph: WorkflowDraft }> => {
     if (withSkill) await publishSkill();
+
+    /*
+     * Tell the stub gateway what this fixture means by its steps.
+     *
+     * The analysis asks a model which part of each step needs a person, and the real one never
+     * sees `whoEngine` — that the column no longer decides is the point of the change. A fixture
+     * is the other way round: it *declares* the shape it wants to test against, and this suite
+     * uses two of them. `mixedSteps` is one human step, one machine step and a gate;
+     * `threeHumanSteps` is a chain of three people, and the shared default — position 2 is the
+     * agent's — turned its middle link into AI work and left the chain two long.
+     *
+     * So the stub is driven by the steps this call was given. It reads as the grid deciding, and
+     * it is not: it is the fixture stating its own intent in the one place that has it.
+     */
+    const gateway = app.get(ModelGateway) as ClassifyingModelGateway;
+    gateway.classifyBy = (position, work) =>
+      steps.find((candidate) => candidate.position === position)?.whoEngine === 'Human'
+        ? { aiWork: null, humanWork: work }
+        : { aiWork: work, humanWork: null };
 
     const created = await objectives().create({
       scope: scope(),

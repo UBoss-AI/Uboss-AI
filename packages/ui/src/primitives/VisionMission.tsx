@@ -18,9 +18,13 @@ export interface VisionMissionProps {
 /**
  * The Company Vision and Mission strip that sits above the Organization Hierarchy.
  *
- * Taken from the client's approved reference (`vmStrip`): two panels, 1fr/1fr, the navy gradient
- * on the left and the darker one on the right, an uppercase label and a soft glow in each
- * top-right corner. The labels are **"Company Vision"** and **"Company Mission"**, verbatim.
+ * Taken from the client's approved reference (`vmStrip`): two panels, 1fr/1fr, each with its own
+ * gradient, an uppercase label and a soft glow in the top-right corner. The labels are **"Company
+ * Vision"** and **"Company Mission"**, verbatim.
+ *
+ * Vision is drawn first — the client's later correction to the reference, which had them the other
+ * way round. The gradient belongs to the panel rather than to the position, so the Mission keeps
+ * the darker one wherever it sits.
  *
  * ## Why it belongs above the tree rather than in Settings
  *
@@ -51,8 +55,15 @@ export function VisionMission({ vision, mission, onEdit, className }: VisionMiss
           {vision === null && mission === null ? 'Set Vision & Mission' : 'Edit'}
         </button>
       )}
-      <Panel label="Company Mission" value={mission} mission />
+      {/*
+       * Vision first, at the client's instruction.
+       *
+       * It is the order the two sentences are read in: a Vision is where the company is going and
+       * a Mission is what it does every day to get there, so the Mission under it is the answer to
+       * the line above rather than a statement that arrives before its own question.
+       */}
       <Panel label="Company Vision" value={vision} />
+      <Panel label="Company Mission" value={mission} mission />
     </div>
   );
 }

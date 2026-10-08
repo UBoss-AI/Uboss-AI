@@ -7,7 +7,7 @@ import {
   FORM2_OBJECTIVE_FIELDS,
   FORM2_WORKFLOW_COLUMNS,
   STEP_APPROVAL_KINDS,
-  STEP_ENGINE_KINDS,
+  SELECTABLE_STEP_ENGINE_KINDS,
 } from '@uboss/types';
 
 import { ObjectiveWorkbook } from '../src/objectives/objective-workbook.js';
@@ -149,8 +149,28 @@ describe('the Objective workbook', () => {
     const problem = parsed.problems.find((entry) => entry.kind === 'Invalid');
     assert.ok(problem, 'nothing said "Robot" is not an engine');
     assert.match(problem.detail, /Robot/);
-    for (const kind of STEP_ENGINE_KINDS) assert.match(problem.detail, new RegExp(kind));
+    // The three a person may choose. `Human` is accepted but not offered, so naming it here
+    // would tell somebody to write the one value the form and the template no longer have.
+    for (const kind of SELECTABLE_STEP_ENGINE_KINDS) assert.match(problem.detail, new RegExp(kind));
+    assert.doesNotMatch(problem.detail, /Human/);
     assert.equal(parsed.steps[0]!.whoEngine, undefined, 'the refused word was kept anyway');
+  });
+
+  /*
+   * A workbook downloaded before `Human` stopped being offered is one somebody is entitled to
+   * upload today, and refusing it would be this release's decision applied to their file.
+   */
+  it('still accepts "Human" from a workbook saved before it was withdrawn', async () => {
+    const parsed = await ObjectiveWorkbook.parse(
+      await fill(COMPLETE, [{ ...STEP, 'Engine / Sub-Engine / Executor': 'Human' }]),
+    );
+
+    assert.equal(parsed.steps[0]!.whoEngine, 'Human');
+    assert.equal(
+      parsed.problems.find((entry) => entry.field === 'Engine / Sub-Engine / Executor'),
+      undefined,
+      'an older file should import without being told its own value is wrong',
+    );
   });
 
   /**

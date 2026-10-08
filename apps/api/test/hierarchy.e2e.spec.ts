@@ -522,12 +522,27 @@ describe('organization hierarchy (e2e)', () => {
   describe('Add Employee — six mandatory fields, no invitation', () => {
     it('refuses an employee the company cannot reach', async () => {
       /*
-       * CR-04: a work email and a work phone are required.
+       * CR-04 required both. **A work phone still is; a work email no longer is.**
        *
-       * They were optional, and the consequence was a hierarchy of people nobody could contact —
-       * work is handed over by email and chased by phone. Enforced in the service rather than on
-       * the form, because a rule only the screen applies is a rule the API does not have: the
-       * same payload over HTTP would have been accepted.
+       * The reason either was required: a hierarchy of people nobody could contact is a directory
+       * of names, and work is handed over by email and chased by phone. Enforced in the service
+       * rather than on the form, because a rule only the screen applies is a rule the API does not
+       * have — the same payload over HTTP would have been accepted.
+       *
+       * The client's later instruction is that a company importing its existing roster often has
+       * no work address for everybody, and refusing those rows refuses the import. The rule that
+       * mattered survives in the phone: an imported person is always reachable by something. The
+       * Add Employee **form** still asks for an email, and `AddEmployeeDto` still refuses a
+       * payload without one — a spreadsheet reaches this service without passing that DTO.
+       */
+      /*
+       * No manager, because this company has nobody in it yet.
+       *
+       * It said `adminId`, and the administrator is not employed here — `addEmployee` refuses a
+       * manager who is not. That never showed, because the email check threw first and the test
+       * only ever asserted that *something* was refused. Removing the email rule moved the
+       * failure one check along, which is the useful kind of test breakage: it was passing for a
+       * reason nobody had chosen.
        */
       const base = {
         scope: scope(),
@@ -535,19 +550,24 @@ describe('organization hierarchy (e2e)', () => {
         employeeName: 'Unreachable Person',
         designation: 'Associate',
         departmentId: secondDepartmentId,
-        reportingManagerUserId: adminId,
+        reportingManagerUserId: null,
       };
 
-      await assert.rejects(
-        () =>
-          employment().addEmployee({
-            ...base,
-            employeeId: 'E-NOEMAIL',
-            workPhone: '+91 90000 11111',
-            aadhaarNumber: aadhaar('410000000000'),
-          }),
-        /required/i,
-      );
+      /*
+       * No email: accepted now, and the person is created.
+       *
+       * `AADHAAR.top` rather than `aadhaar('410000000000')`, which the three refusals below still
+       * use. That body is twelve digits and the helper appends a thirteenth, so it has never been
+       * a valid number — and it never mattered, because each of those calls was expected to throw
+       * and threw for an earlier reason. A call that must *succeed* has no such cover.
+       */
+      const noEmail = await employment().addEmployee({
+        ...base,
+        employeeId: 'E-NOEMAIL',
+        workPhone: '+91 90000 11111',
+        aadhaarNumber: AADHAAR.top,
+      });
+      assert.ok(noEmail.userId, 'a person reachable by phone is a person worth keeping');
 
       await assert.rejects(
         () =>

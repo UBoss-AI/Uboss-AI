@@ -1,3 +1,5 @@
+import type { StatusTone } from './status-tone.js';
+
 /**
  * Agent Builder and Engine Agent identity — Prompt 24.
  *
@@ -134,7 +136,7 @@ export const ENGINE_AGENT_STATUS_LABELS: Record<EngineAgentStatus, string> = {
   Archived: 'Archived',
 };
 
-export const ENGINE_AGENT_STATUS_TONES: Record<EngineAgentStatus, string> = {
+export const ENGINE_AGENT_STATUS_TONES: Record<EngineAgentStatus, StatusTone> = {
   DraftSetup: 'grey',
   Ready: 'blue',
   Active: 'success',

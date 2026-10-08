@@ -1,8 +1,8 @@
 import {
   FORM2_WORKFLOW_COLUMNS,
+  SELECTABLE_STEP_ENGINE_KINDS,
   STEP_APPROVAL_KINDS,
   STEP_APPROVAL_LABELS,
-  STEP_ENGINE_KINDS,
   STEP_ENGINE_LABELS,
   type Form2WorkflowStep,
   type WorkflowColumnDefinition,
@@ -23,13 +23,22 @@ export interface WorkflowGridProps {
   className?: string;
 }
 
-/** A blank row. `Human` and `Not required` are the reference's defaults for a new step. */
+/**
+ * A blank row.
+ *
+ * `Engine`, not the reference's `Human`. A new step's layer defaults to the ordinary AI worker
+ * because that is now the only kind of answer this column gives — whether a person is needed is
+ * decided by the analysis, from the work itself, and leaving `Human` here would have put a value
+ * in every new row that the picker no longer offers.
+ *
+ * `Not required` is unchanged, and is the reference's default for approval.
+ */
 export function blankWorkflowStep(position: number): Form2WorkflowStep {
   return {
     position,
     whoPersonName: null,
     whoDesignation: null,
-    whoEngine: 'Human',
+    whoEngine: 'Engine',
     whenTrigger: null,
     whenFrequency: null,
     whatExactWork: '',
@@ -341,7 +350,21 @@ export function WorkflowGrid({
               })
             }
           >
-            {STEP_ENGINE_KINDS.map((kind) => (
+            {/*
+              The three machine layers, and not `Human`.
+
+              Who does the work is the analysis's answer, not this form's: somebody writing a step
+              cannot know what a model can do, and asked at this moment the honest reply is always
+              "a person", which is how a workflow ends up with no AI in it.
+
+              A step written before the change still reads `Human`, so the value is offered when
+              it is already the one stored — a select whose options exclude its own value shows
+              blank, and the row would then look unfilled and save as something nobody chose.
+            */}
+            {(step.whoEngine === 'Human'
+              ? (['Human', ...SELECTABLE_STEP_ENGINE_KINDS] as const)
+              : SELECTABLE_STEP_ENGINE_KINDS
+            ).map((kind) => (
               <option key={kind} value={kind}>
                 {STEP_ENGINE_LABELS[kind]}
               </option>

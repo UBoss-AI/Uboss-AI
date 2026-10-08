@@ -83,6 +83,22 @@ interface PipelineState {
   steps: ObjectiveWorkflowStep[];
   /** Who is in the objective owner's reporting subtree, for owner assignment. */
   teamUserIds: string[];
+  /**
+   * How each step divides between a model and a person — the analysis's answer, not the grid's.
+   *
+   * Both halves are nullable and **a step may have both**. That is the point: the client's
+   * example is a step somebody assigned to the Engine where part of the work is something a model
+   * does and part is something only the person can, and the plan has to say which is which rather
+   * than round the whole step to one or the other.
+   *
+   * Each side holds the model's own words for that portion, which become the node's label — so
+   * the workflow reads "reconcile the ledger against the statement" and "call the branch about
+   * each mismatch" rather than repeating the original row twice.
+   *
+   * Empty until `classifyWork` fills it, and the run fails rather than continuing if it cannot.
+   * Keyed by position, which is what the grid and the nodes already agree on.
+   */
+  classification: Map<number, { aiWork: string | null; humanWork: string | null; why: string }>;
   nodes: AnalysisNode[];
   edges: AnalysisEdge[];
   risks: AnalysisRisk[];
@@ -341,6 +357,7 @@ export class ObjectiveAnalysisService {
     const state: PipelineState = {
       ...seed,
       teamUserIds: [],
+      classification: new Map(),
       nodes: [],
       edges: [],
       risks: [],
@@ -463,22 +480,59 @@ export class ObjectiveAnalysisService {
     }
   }
 
-  /** Human rows of the grid become rectangle nodes. */
+  /**
+   * **The model decides which steps need a person**, and the rows it names become rectangles.
+   *
+   * ## What this used to do
+   *
+   * `state.steps.filter((step) => step.whoEngine === 'Human')` — it partitioned on a column
+   * somebody had chosen in the grid, after asking a model the same question and discarding the
+   * answer. The screen said the AI was classifying the work; the AI's reply reached nothing, and
+   * the company was billed for seven calls whose output was read by no line of code.
+   *
+   * ## Why the person no longer picks it
+   *
+   * The client's instruction: somebody writing an objective says which machine layer a step
+   * belongs to — Engine, Sub-Engine or Executor — and the analysis works out which parts of that
+   * work a model can actually do and which parts need a person. Deciding that at the moment the
+   * form is filled in means deciding it before anybody knows what the AI can do, which is how
+   * every step ends up marked Human.
+   *
+   * `whoEngine` still means something: it is the layer, and `Executor` still marks a checking
+   * step. What it no longer decides is who does the work.
+   *
+   * ## Why an unusable answer stops the run
+   *
+   * The client's decision, and the only safe one. The alternatives were to fall back on the grid
+   * column — which would quietly reinstate the behaviour this replaces, under a screen claiming
+   * the AI had decided — or to call everything human, which hands a company a 25-step objective
+   * their team now owns because a provider was down. A refusal says what happened; both of the
+   * others are a wrong answer wearing a right one's clothes.
+   *
+   * It also means an analysis cannot complete without a real model, including against the mock
+   * adapter, whose output does not parse as a classification. That is the honest consequence of
+   * the screen's own promise.
+   */
   private async detectHumanWork(state: PipelineState): Promise<void> {
-    const human = state.steps.filter((step) => step.whoEngine === 'Human');
+    await this.classifyWork(state);
 
-    await this.ask(
-      state,
-      'objective.analysis.human-work',
-      'Classify which steps are human work.',
-      human.map((step) => step.whatExactWork),
+    const human = state.steps.filter(
+      (step) => state.classification.get(step.position)?.humanWork !== null,
     );
 
     for (const step of human) {
+      const part = state.classification.get(step.position);
       state.nodes.push({
-        id: `step-${step.position}`,
+        id: workNodeId(state, step.position, 'Human'),
         kind: 'Human',
-        label: step.whatExactWork,
+        /*
+         * The person's own portion, in the analysis's words — not the whole grid row.
+         *
+         * On a step that divides, labelling both nodes with the original row would put the same
+         * sentence on a diamond and a rectangle and leave somebody reading the plan to guess
+         * which half each one meant.
+         */
+        label: part?.humanWork ?? step.whatExactWork,
         shape: nodeShapeFor('Human'),
         fromStepPosition: step.position,
         ownerUserId: null,
@@ -510,10 +564,20 @@ export class ObjectiveAnalysisService {
     }
   }
 
-  /** Engine, Sub-Engine and Executor rows become diamond nodes. */
+  /** The steps the classification left to a model become diamond nodes. */
   private async identifyAiWork(state: PipelineState): Promise<void> {
-    const machine = state.steps.filter((step) => step.whoEngine !== 'Human');
+    const machine = state.steps.filter(
+      (step) => state.classification.get(step.position)?.aiWork !== null,
+    );
 
+    /*
+     * This call's answer is still discarded, and that is a known defect rather than a decision.
+     *
+     * Six of the seven stages ask a model something and read nothing back; only the
+     * classification above consumes its reply today. The tool list this stage asks for has no
+     * field to land in yet, and inventing one from an unvalidated reply is how a plan ends up
+     * citing tools a company does not have. Recorded in the findings document.
+     */
     await this.ask(
       state,
       'objective.analysis.ai-work',
@@ -523,13 +587,17 @@ export class ObjectiveAnalysisService {
 
     for (const step of machine) {
       // An Executor step is a checking step, never a doing-the-work step — the locked naming
-      // rule. It is still an AI node, and the risk note says what it is for.
+      // rule. It is still an AI node, and the risk note says what it is for. This is the one
+      // thing `whoEngine` still decides, and it is a layer rather than a doer.
       const isExecutor = step.whoEngine === 'Executor';
+      const part = state.classification.get(step.position);
+      const nodeId = workNodeId(state, step.position, 'Ai');
 
       state.nodes.push({
-        id: `step-${step.position}`,
+        id: nodeId,
         kind: 'Ai',
-        label: step.whatExactWork,
+        // The agent's own portion, in the analysis's words. See the human node for why.
+        label: part?.aiWork ?? step.whatExactWork,
         shape: nodeShapeFor('Ai'),
         fromStepPosition: step.position,
         ownerUserId: null,
@@ -553,7 +621,7 @@ export class ObjectiveAnalysisService {
 
       if (isExecutor) {
         state.risks.push({
-          nodeId: `step-${step.position}`,
+          nodeId,
           severity: 'Low',
           summary:
             'This is an Executor step: it monitors and validates. It must never approve ' +
@@ -757,27 +825,48 @@ export class ObjectiveAnalysisService {
     let previousId = 'goal';
 
     for (const step of ordered) {
-      const stepNodeId = `step-${step.position}`;
+      /*
+       * A step is one node or two, and the chain threads through however many it made.
+       *
+       * This read `step-${position}` and linked that one id. On a step the analysis divides
+       * between an agent and a person, that id belongs to neither node — the chain would have
+       * pointed at nothing, and both halves of the step would have hung off the diagram
+       * unreachable.
+       *
+       * The agent's part leads: a model prepares and a person decides on what it prepared. That
+       * is an assumption, so `classifyWork` records it as a gap for the manager to check rather
+       * than leaving it to be discovered from the picture.
+       */
+      const work = state.nodes.filter(
+        (node) => node.fromStepPosition === step.position && node.kind !== 'Approval',
+      );
+      const chain = [
+        ...work.filter((node) => node.kind === 'Ai'),
+        ...work.filter((node) => node.kind !== 'Ai'),
+      ];
+
       // Schema version 2: every edge declares how it leads. The analysis produces a plain
       // chain; the manager introduces parallel, condition and failure edges in the editor.
-      state.edges.push({
-        fromNodeId: previousId,
-        toNodeId: stepNodeId,
-        kind: 'Sequential',
-        condition: null,
-      });
+      for (const node of chain) {
+        state.edges.push({
+          fromNodeId: previousId,
+          toNodeId: node.id,
+          kind: 'Sequential',
+          condition: null,
+        });
+        previousId = node.id;
+      }
 
+      // The gate follows the last of the step's work, whether that was one node or two.
       const gateId = `approval-${step.position}`;
       if (state.nodes.some((node) => node.id === gateId)) {
         state.edges.push({
-          fromNodeId: stepNodeId,
+          fromNodeId: previousId,
           toNodeId: gateId,
           kind: 'Sequential',
           condition: null,
         });
         previousId = gateId;
-      } else {
-        previousId = stepNodeId;
       }
     }
 
@@ -985,12 +1074,107 @@ export class ObjectiveAnalysisService {
    * genuinely on the path of every stage, so a real provider changes the analysis's behaviour
    * everywhere at once rather than in whichever stage somebody remembered to wire.
    */
+  /**
+   * Ask the model which steps need a person, and refuse to continue without a usable answer.
+   *
+   * ## The shape it must come back in
+   *
+   * One entry per step, by position, each saying `Human` or `Ai` and why. The `OBJECTIVE_PLANNER`
+   * profile is schema-constrained, so the provider is already asked for JSON; this still parses
+   * defensively, because "the provider was asked" and "the provider complied" are different
+   * claims and only one of them is observable here.
+   *
+   * ## Why every step must appear
+   *
+   * A partial answer is the dangerous one. A model that classifies nineteen of twenty-five steps
+   * leaves six that belong to nobody — they would silently become AI work, or silently vanish
+   * from the plan, and either way the objective that gets approved is not the objective that was
+   * written. So a missing position is a failed run, named by position so somebody can see which.
+   */
+  private async classifyWork(state: PipelineState): Promise<void> {
+    if (state.steps.length === 0) return;
+
+    const answer = await this.ask(
+      state,
+      'objective.analysis.human-work',
+      'For each numbered step of this company process, split the work into the part an AI agent ' +
+        'can do unaided and the part a person must do. Answer with JSON only, in the form ' +
+        '{"steps":[{"position":<number>,"aiWork":"<what an agent does, or null>",' +
+        '"humanWork":"<what the person does, or null>","why":"<one short sentence>"}]}. ' +
+        'Include every position given, exactly once, and at least one of the two parts for each. ' +
+        'Many steps divide: say so rather than rounding the whole step to one side. Put work in ' +
+        'humanWork when it needs judgement about people, a physical action, an outside ' +
+        'relationship, or accountability somebody must personally carry. Put work in aiWork when ' +
+        'it is reading, writing, checking, calculating or moving information. Describe each part ' +
+        'in the company’s own words, as an instruction somebody could follow.',
+      state.steps.map((step) => `${step.position}. ${step.whatExactWork}`),
+    );
+
+    const parsed = parseClassification(answer);
+    if (parsed === null) {
+      throw new Error(
+        'The model did not return a usable classification of which steps need a person, so no ' +
+          'workflow was built. Nothing has been changed. Run the analysis again; if it keeps ' +
+          'failing, the objective planner model is unavailable.',
+      );
+    }
+
+    const missing = state.steps
+      .map((step) => step.position)
+      .filter((position) => !parsed.has(position));
+    if (missing.length > 0) {
+      throw new Error(
+        `The model classified only some of the steps — ${missing.join(', ')} ` +
+          `${missing.length === 1 ? 'was' : 'were'} left out, so no workflow was built. Nothing ` +
+          'has been changed. Run the analysis again.',
+      );
+    }
+
+    state.classification = parsed;
+
+    /*
+     * A split step is recorded as a gap, not because it is wrong but because its order is this
+     * code's assumption rather than the analysis's answer.
+     *
+     * The chain puts the AI part first — a model prepares, a person decides on what it prepared —
+     * which is the common shape and not a universal one. A manager reorders it in the editor, and
+     * saying so is the difference between a plan that states its assumptions and one that hides
+     * them inside a sort.
+     */
+    const split = state.steps
+      .map((step) => step.position)
+      .filter((position) => {
+        const entry = parsed.get(position);
+        return entry !== undefined && entry.aiWork !== null && entry.humanWork !== null;
+      });
+    if (split.length > 0) {
+      state.gaps.push(
+        `Step${split.length === 1 ? '' : 's'} ${split.join(', ')} divide${
+          split.length === 1 ? 's' : ''
+        } between an agent and a person. The agent's part is placed first, which is an assumption ` +
+          'about order rather than something the analysis determined — check it in the editor.',
+      );
+    }
+  }
+
+  /**
+   * One model call, and **its answer**.
+   *
+   * This returned `void` for as long as it has existed. Seven stages called it, every one of them
+   * paid for a real completion, and every one of them threw the reply away — the workflow was
+   * then assembled from the company's own grid and presented as the analysis's conclusion. The
+   * stage literally named "Classify which steps are human work" asked the question and then
+   * partitioned on the column somebody had typed by hand.
+   *
+   * Returning the output is the first half of fixing that. The second half is each stage actually
+   * reading it, which `detectHumanWork` now does and the remaining stages do not yet.
+   */
   private async ask(
     state: PipelineState,
     purpose: string,
     instruction: string,
     context: string[],
-  ): Promise<void> {
+  ): Promise<string> {
     const response = await this.modelGateway.complete({
       // Section 18 names this one exactly: OBJECTIVE_PLANNER is "objective analysis/workflow
       // draft", with "high reasoning, schema-constrained output, conservative fallback".
@@ -1026,6 +1210,8 @@ export class ObjectiveAnalysisService {
     state.capability = response.capability;
     // Latched: if any call in the run reached a real model, the run says so.
     state.producedByRealModel = state.producedByRealModel || response.producedByRealModel;
+
+    return response.output;
   }
 
   /** Record that a stage has begun, so a reopened screen shows real progress. */
@@ -1169,4 +1355,104 @@ export class ObjectiveAnalysisService {
         'publishes it, and no work is assignable before that.',
     };
   }
+}
+
+/**
+ * Read a classification out of whatever the model actually sent.
+ *
+ * ## Why this is tolerant about the wrapper and strict about the contents
+ *
+ * A schema-constrained profile asks a provider for JSON; it does not guarantee the reply is only
+ * JSON. Models wrap an answer in prose, in a fenced code block, or in an object with a different
+ * key around the array. None of that changes whether the answer is right, so the wrapper is
+ * peeled rather than refused.
+ *
+ * What is not tolerated is a row that does not say both things. A step with no `doer` is a step
+ * nobody has decided, and guessing one here — defaulting to `Ai`, or to `Human` — would be this
+ * function inventing the judgement the whole stage exists to obtain.
+ *
+ * Returns `null` when nothing usable is there, so the caller can fail the run with its own words
+ * rather than throwing a parser's.
+ */
+function parseClassification(
+  answer: string,
+): Map<number, { aiWork: string | null; humanWork: string | null; why: string }> | null {
+  // The first `{` to the last `}`: peels a fence, a preamble and a trailing apology in one go.
+  const start = answer.indexOf('{');
+  const end = answer.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(answer.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+
+  // `steps` is what the instruction asks for; the other two are what models send instead.
+  const container = parsed as Record<string, unknown>;
+  const rows =
+    (Array.isArray(container['steps']) && container['steps']) ||
+    (Array.isArray(container['classifications']) && container['classifications']) ||
+    (Array.isArray(parsed) && parsed) ||
+    null;
+  if (rows === null) return null;
+
+  const classification = new Map<
+    number,
+    { aiWork: string | null; humanWork: string | null; why: string }
+  >();
+
+  /*
+   * `null` and the string "null" and an empty string all mean "no part on this side".
+   *
+   * The instruction asks for JSON null, and models send all three. Treating the word "null" as a
+   * description would put the literal text `null` on a node in somebody's workflow, which is a
+   * defect that looks like a joke and reaches a customer.
+   */
+  const side = (value: unknown): string | null => {
+    const text = typeof value === 'string' ? value.trim() : '';
+    if (text === '' || text.toLowerCase() === 'null' || text.toLowerCase() === 'none') return null;
+    return text;
+  };
+
+  for (const row of rows) {
+    if (typeof row !== 'object' || row === null) continue;
+    const entry = row as Record<string, unknown>;
+
+    const position = Number(entry['position']);
+    if (!Number.isInteger(position)) continue;
+
+    const aiWork = side(entry['aiWork']);
+    const humanWork = side(entry['humanWork']);
+    // A row with neither side has decided nothing. Dropping it means the caller reports the
+    // position as unclassified, which is true, rather than silently creating a step with no work.
+    if (aiWork === null && humanWork === null) continue;
+
+    classification.set(position, {
+      aiWork,
+      humanWork,
+      // The reason is reported, never relied on, so an absent one is not worth failing a run for.
+      why: String(entry['why'] ?? '').trim(),
+    });
+  }
+
+  return classification.size === 0 ? null : classification;
+}
+
+/**
+ * The id of the node carrying one side of a step's work.
+ *
+ * A step that goes entirely one way keeps the plain `step-3`, because that is what every draft
+ * written before the split already uses and there is no reason to churn it. A step that divides
+ * gets `step-3-ai` and `step-3-human`, which are two nodes that must not collide.
+ *
+ * Derived from the classification rather than passed in, so the two stages that build these nodes
+ * cannot disagree about which form a given step takes — they run minutes apart and the second one
+ * would have no way to know what the first chose.
+ */
+function workNodeId(state: PipelineState, position: number, side: 'Ai' | 'Human'): string {
+  const part = state.classification.get(position);
+  const divides = part !== undefined && part.aiWork !== null && part.humanWork !== null;
+  return divides ? `step-${position}-${side.toLowerCase()}` : `step-${position}`;
 }

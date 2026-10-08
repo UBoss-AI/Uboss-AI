@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { ROLE_TEMPLATES } from './role-templates.js';
+import { STATUS_TONE_NAMES } from './status-tone.js';
 
 import {
   ALLOWED_OBJECTIVE_TRANSITIONS,
@@ -59,7 +60,17 @@ describe('the extended objective lifecycle', () => {
   it('labels and tones every status, including the new ones', () => {
     for (const status of OBJECTIVE_STATUSES) {
       assert.ok(OBJECTIVE_STATUS_LABELS[status].length > 0, status);
-      assert.ok(OBJECTIVE_STATUS_TONES[status].length > 0, status);
+      /*
+       * Membership, not length.
+       *
+       * This read `.length > 0` and passed for a year while `WorkflowDraft` was `'cyan'`, a
+       * colour no stylesheet defines — so the badge rendered with no pill at all. The question
+       * was never whether a tone had been written down; it was whether the one written exists.
+       */
+      assert.ok(
+        (STATUS_TONE_NAMES as readonly string[]).includes(OBJECTIVE_STATUS_TONES[status]),
+        `${status} has tone ${OBJECTIVE_STATUS_TONES[status]}, which is not a tone`,
+      );
       assert.ok(ALLOWED_OBJECTIVE_TRANSITIONS[status] !== undefined, status);
     }
   });

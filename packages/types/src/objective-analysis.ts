@@ -1,3 +1,5 @@
+import type { StatusTone } from './status-tone.js';
+
 import type { StepApprovalKind } from './objectives.js';
 
 /**
@@ -80,9 +82,9 @@ export const ANALYSIS_RUN_STATUS_LABELS: Record<AnalysisRunStatus, string> = {
   Failed: 'Failed',
 };
 
-export const ANALYSIS_RUN_STATUS_TONES: Record<AnalysisRunStatus, string> = {
+export const ANALYSIS_RUN_STATUS_TONES: Record<AnalysisRunStatus, StatusTone> = {
   Queued: 'grey',
-  Running: 'cyan',
+  Running: 'teal',
   Completed: 'success',
   Cancelled: 'grey',
   Failed: 'danger',

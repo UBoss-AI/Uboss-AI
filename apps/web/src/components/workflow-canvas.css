@@ -17,10 +17,17 @@
 
 .wfc__svg {
   display: block;
-  width: 100%;
+
+  /*
+   * Sized by its own width and height attributes, which the zoom control sets.
+   *
+   * This was `width: 100%`, and a stylesheet beats a presentation attribute — so the element
+   * would have gone on stretching to its container and every zoom step would have changed
+   * nothing somebody could see. The wrapper scrolls to whatever the drawn size comes to.
+   */
+  width: auto;
   height: auto;
-  /* Room for the longest plan without squeezing the short one. */
-  min-width: 520px;
+  max-width: none;
 }
 
 /* ---------- whether the stream is connected ---------- */
@@ -294,4 +301,73 @@
   .wfc__pulse {
     opacity: 0.3;
   }
+}
+
+/* ---------- the bar above the plan: whether it is live, and how large it is drawn ---------- */
+
+.wfc__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+/*
+ * Pushed right on its own when there is no live indicator beside it.
+ *
+ * The canvas is used in two places and only one of them streams, so the bar has one child about
+ * half the time — and a lone control under `space-between` sits on the left, where it reads as a
+ * heading rather than as a tool.
+ */
+.wfc__zoom {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+/* Square, so the minus and the plus are the same target and the row does not jitter. */
+.wfc__zoom-btn {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--uboss-text-2);
+  background: var(--uboss-surface);
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-control);
+  cursor: pointer;
+}
+
+.wfc__zoom-btn:hover:not([disabled]) {
+  background: var(--uboss-bg-2);
+  color: var(--uboss-text);
+}
+
+.wfc__zoom-btn[disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.wfc__zoom-value {
+  min-width: 52px;
+  padding: 4px 6px;
+  font: inherit;
+  font-size: var(--uboss-font-size-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: var(--uboss-text-2);
+  background: none;
+  border: 0;
+  border-radius: var(--uboss-radius-control);
+  cursor: pointer;
+}
+
+.wfc__zoom-value:hover {
+  background: var(--uboss-bg-2);
+  color: var(--uboss-text);
 }

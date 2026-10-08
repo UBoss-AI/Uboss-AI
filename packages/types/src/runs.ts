@@ -1,3 +1,5 @@
+import type { StatusTone } from './status-tone.js';
+
 /**
  * Engine Agent Runs — Prompt 26.
  *
@@ -70,10 +72,10 @@ export const RUN_STATE_LABELS: Record<RunState, string> = {
   BlockedByProvider: 'Blocked by provider',
 };
 
-export const RUN_STATE_TONES: Record<RunState, string> = {
+export const RUN_STATE_TONES: Record<RunState, StatusTone> = {
   Queued: 'grey',
   Reserved: 'blue',
-  Running: 'cyan',
+  Running: 'teal',
   WaitingForHumanInput: 'warn',
   WaitingForApproval: 'purple',
   Retrying: 'warn',

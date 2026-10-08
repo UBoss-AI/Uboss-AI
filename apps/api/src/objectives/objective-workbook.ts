@@ -3,6 +3,7 @@ import ExcelJS from 'exceljs';
 import {
   FORM2_OBJECTIVE_FIELDS,
   FORM2_WORKFLOW_COLUMNS,
+  SELECTABLE_STEP_ENGINE_KINDS,
   STEP_APPROVAL_KINDS,
   STEP_ENGINE_KINDS,
   TIME_UNITS,
@@ -80,7 +81,17 @@ export interface ObjectiveSnapshot {
  * would have put every one of those agents in front of the manager.
  */
 function legendFor(column: (typeof FORM2_WORKFLOW_COLUMNS)[number]): string {
-  if (column.kind === 'engine') return `One of: ${STEP_ENGINE_KINDS.join(', ')}`;
+  /*
+   * The three layers somebody chooses, and not `Human`.
+   *
+   * The template offers what the form offers. Whether a step needs a person is the analysis's
+   * answer now, read from the work itself — a column telling somebody to write `Human` would be
+   * asking them to decide it again, in the one place nothing checks.
+   *
+   * The reader still accepts `Human`, because a workbook downloaded before this is one somebody
+   * is entitled to upload today.
+   */
+  if (column.kind === 'engine') return `One of: ${SELECTABLE_STEP_ENGINE_KINDS.join(', ')}`;
   if (column.kind === 'approval') return `One of: ${STEP_APPROVAL_KINDS.join(', ')}`;
   if (column.key === 'whoPersonName') {
     return 'Fill this in on every step, including the AI ones — on an AI step it is who is accountable for it, not who performs it.';
@@ -381,7 +392,9 @@ export class ObjectiveWorkbook {
             where: `Step ${position}`,
             field: 'Engine / Sub-Engine / Executor',
             kind: 'Invalid',
-            detail: `"${engine}" is not one of: ${STEP_ENGINE_KINDS.join(', ')}.`,
+            // The three on the template, named in the message. `Human` is still accepted by the
+            // check above — an older file carrying it imports — it is simply not offered.
+            detail: `"${engine}" is not one of: ${SELECTABLE_STEP_ENGINE_KINDS.join(', ')}.`,
           });
           delete values['whoEngine'];
         }

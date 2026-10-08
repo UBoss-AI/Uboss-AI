@@ -1,3 +1,5 @@
+import type { StatusTone } from './status-tone.js';
+
 /**
  * Reward rules and reward awards.
  *
@@ -71,10 +73,10 @@ export const REWARD_AWARD_STATUS_LABELS: Record<RewardAwardStatus, string> = {
   Recorded: 'Recorded',
 };
 
-export const REWARD_AWARD_STATUS_TONES: Record<RewardAwardStatus, string> = {
+export const REWARD_AWARD_STATUS_TONES: Record<RewardAwardStatus, StatusTone> = {
   Draft: 'grey',
   Assigned: 'blue',
-  Completed: 'cyan',
+  Completed: 'teal',
   Eligible: 'warn',
   Approved: 'success',
   Rejected: 'danger',
