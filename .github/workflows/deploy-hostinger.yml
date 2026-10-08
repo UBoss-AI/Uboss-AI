@@ -64,6 +64,18 @@ jobs:
           project-name: ubossai
           docker-compose-path: deploy/docker-compose.yaml
           environment-variables: |
+            # The commit being released, and the only line here that changes between releases.
+            #
+            # `docker-compose.yaml` builds from `…Uboss-AI.git#${GIT_SHA}` and tags every image
+            # with it. Without this the file handed over was byte-for-byte the same every time,
+            # so there was nothing for Hostinger to act on: it brought the existing images back
+            # up in eleven seconds and reported success, and the site stayed on a day-old build
+            # through two green deployments.
+            #
+            # `head_sha` rather than `github.sha`, matching the checkout above: on a
+            # `workflow_run` trigger `github.sha` is whatever `main` points at now, which is not
+            # necessarily the commit CI went green on.
+            GIT_SHA=${{ github.event.workflow_run.head_sha || github.sha }}
             POSTGRES_PASSWORD=${{ secrets.UBOSS_POSTGRES_PASSWORD }}
             APP_DB_PASSWORD=${{ secrets.UBOSS_APP_DB_PASSWORD }}
             AUTH_ENCRYPTION_KEYS=${{ secrets.UBOSS_AUTH_ENCRYPTION_KEYS }}
@@ -124,6 +136,10 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Taken before the wait, so "did the API start after this deployment began?" compares
+          # against a fixed point rather than one that moves while the loop runs.
+          started_epoch=$(date +%s)
+
           window_minutes=45
           deadline=$(( SECONDS + window_minutes * 60 ))
 
@@ -167,3 +183,40 @@ jobs:
             https://chiefagent.ubossai.com/; do
             wait_for "$url"
           done
+
+          #
+          # Everything above proves the site is *up*. It does not prove it is *new*.
+          #
+          # That distinction cost a day. Two deployments reported success, every check here
+          # passed, and the live site served a build from the previous afternoon the whole time —
+          # because the services really were answering, which is the only question this step had
+          # been asking. "Green" and "released" were different facts and nothing compared them.
+          #
+          # The API's own uptime settles it. If it has been running longer than this job has
+          # existed, this deployment did not replace it, whatever anything else reported.
+          #
+          uptime=$(curl --silent --max-time 15 https://api.ubossai.com/health \
+                   | sed -n 's/.*"uptimeSeconds":\([0-9]*\).*/\1/p')
+
+          if [[ -z "$uptime" ]]; then
+            echo "The health endpoint did not report an uptime, so whether this deployment" >&2
+            echo "replaced anything cannot be established. Refusing to call it released." >&2
+            exit 1
+          fi
+
+          age_at_start=$(( $(date +%s) - uptime - started_epoch ))
+          echo "API uptime: ${uptime}s; it started $(( -age_at_start ))s after this job began."
+
+          if (( age_at_start < 0 )); then
+            echo "Released: the API restarted during this deployment."
+          else
+            echo "" >&2
+            echo "The API has been up for ${uptime}s — since before this job started — so nothing" >&2
+            echo "was replaced and the live site is still running the previous build." >&2
+            echo "" >&2
+            echo "The usual cause is that the composed file handed over was identical to the one" >&2
+            echo "already deployed, leaving Hostinger nothing to act on. GIT_SHA pins the build" >&2
+            echo "context and every image tag to the released commit to prevent exactly that; if" >&2
+            echo "this fires, check that it reached the VPS." >&2
+            exit 1
+          fi

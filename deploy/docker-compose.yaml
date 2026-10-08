@@ -1,7 +1,25 @@
 name: ubossai
 
+#
+# The commit to build, and the reason this is not `#main`.
+#
+# It was. Nothing in this file then changed from one release to the next: the same branch name,
+# the same implicit `:latest` on every image. The deployment hands Hostinger this file, Hostinger
+# compares it with what it already has, finds it identical, and brings the existing images back
+# up — in eleven seconds, reporting success. The live site stayed on a day-old build through two
+# green deployments, and the step that was meant to catch that ("Verify live services") passed,
+# because the services were indeed live. They were simply the old ones.
+#
+# Pinning the context to a commit makes the file differ on every release, so there is something
+# to rebuild and Docker cannot reuse a layer cache keyed on an identical instruction. The image
+# tags below carry the same value, which is also what makes "what is actually running?" a
+# question the server can answer — `docker ps` names the commit.
+#
+# The default keeps a manual `docker compose up` on a workstation working: without `GIT_SHA` set
+# it builds `main`, which is what somebody running this by hand means.
+#
 x-source: &source
-  context: https://github.com/UBoss-AI/Uboss-AI.git#main
+  context: https://github.com/UBoss-AI/Uboss-AI.git#${GIT_SHA:-main}
 
 services:
   postgres:
@@ -56,6 +74,7 @@ services:
     networks: [private]
 
   api:
+    image: ubossai-api:${GIT_SHA:-latest}
     build:
       <<: *source
       dockerfile: deploy/Dockerfile.api
@@ -165,6 +184,7 @@ services:
     networks: [private, egress]
 
   web:
+    image: ubossai-web:${GIT_SHA:-latest}
     build:
       <<: *source
       dockerfile: deploy/Dockerfile.web
@@ -188,6 +208,7 @@ services:
     networks: [private]
 
   marketing:
+    image: ubossai-marketing:${GIT_SHA:-latest}
     build:
       <<: *source
       dockerfile: deploy/Dockerfile.marketing
@@ -211,6 +232,7 @@ services:
   # exiting zero. `pg-backup.sh` refuses it outright, and this passes the migration URL for that
   # reason rather than by accident.
   backup:
+    image: ubossai-backup:${GIT_SHA:-latest}
     build:
       <<: *source
       dockerfile: deploy/Dockerfile.backup
@@ -233,6 +255,7 @@ services:
     networks: [private]
 
   gateway:
+    image: ubossai-gateway:${GIT_SHA:-latest}
     build:
       <<: *source
       dockerfile: deploy/Dockerfile.caddy
