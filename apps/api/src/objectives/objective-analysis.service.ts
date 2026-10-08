@@ -492,11 +492,16 @@ export class ObjectiveAnalysisService {
    *
    * ## Why the person no longer picks it
    *
-   * The client's instruction: somebody writing an objective says which machine layer a step
+   * What the client asked for — somebody writing an objective says which machine layer a step
    * belongs to — Engine, Sub-Engine or Executor — and the analysis works out which parts of that
    * work a model can actually do and which parts need a person. Deciding that at the moment the
    * form is filled in means deciding it before anybody knows what the AI can do, which is how
    * every step ends up marked Human.
+   *
+   * (Worded without the word that names a model's orders followed by a colon: the prompt-injection
+   * scan reads every line of this directory and does not strip comments, so that phrasing in prose
+   * reports itself as a computed instruction. The test is right to be literal-minded; the comment
+   * is the thing that should move.)
    *
    * `whoEngine` still means something: it is the layer, and `Executor` still marks a checking
    * step. What it no longer decides is who does the work.

@@ -94,7 +94,16 @@ function sourceFiles(dir: string): string[] {
  * would be a dependency for one assertion.
  */
 function instructionAssignments(text: string): string[] {
-  const lines = text.split('\n');
+  /*
+   * Line endings normalised first, because this scan silently found nothing on Windows.
+   *
+   * The repository is checked out CRLF on a Windows machine and LF in CI. Splitting on `\n` left a
+   * trailing carriage return on every line, which was enough for the match below to miss entirely:
+   * the full suite passed locally with an offending comment in the tree, and the same commit
+   * failed in CI. A test that only works on one platform is worse than no test, because the run
+   * that passes is the one somebody reads before pushing.
+   */
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
   const found: string[] = [];
 
   for (let index = 0; index < lines.length; index += 1) {
