@@ -229,6 +229,50 @@ describe('AppShell — the section names itself once', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Agent Builder');
   });
 
+  /*
+   * Settings sits with the person, not in the menu.
+   *
+   * It was the last entry in its own group — a heading over a single line — and it is not the
+   * same kind of thing as the entries above it: nobody opens Settings as a piece of work. The
+   * client asked for it beside the name, as an icon.
+   *
+   * Both halves are asserted. Testing only that the footer has it would let it be in both
+   * places, which is how a menu quietly grows an entry back.
+   */
+  it('puts Settings beside the person rather than in the navigation', () => {
+    render(
+      <AppShell
+        variant="company"
+        workspaceName="SPM Medicare"
+        groups={COMPANY_NAV}
+        activeKey="hierarchy"
+        user={user}
+      >
+        <p>Content</p>
+      </AppShell>,
+    );
+
+    const settings = screen.getByRole('link', { name: 'Settings' });
+    expect(settings).toHaveAttribute('href', '/settings');
+
+    // An icon with no text of its own: the word is its label and its tooltip, not its content.
+    expect(settings).toHaveAttribute('title', 'Settings');
+    expect(settings.textContent).toBe('');
+
+    // And it is in the footer with the name, not among the navigation items above.
+    const nav = screen.getByRole('navigation', { name: 'Primary' });
+    const foot = nav.querySelector('.uboss-side-foot');
+    expect(foot?.contains(settings)).toBe(true);
+  });
+
+  it('no longer lists Settings as a navigation destination', () => {
+    // The group it belonged to held nothing else once the three screens inside it moved into
+    // Settings, so the group went with it. A heading over one item is not a group.
+    const keys = COMPANY_NAV.flatMap((group) => group.items.map((item) => item.key));
+    expect(keys).not.toContain('settings');
+    expect(COMPANY_NAV.map((group) => group.group)).not.toContain('Administration');
+  });
+
   it('suppresses the page heading below it, leaving exactly one name on the screen', () => {
     render(
       <AppShell

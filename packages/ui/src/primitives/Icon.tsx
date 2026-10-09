@@ -72,7 +72,16 @@ const ICON_PATHS = {
    * strokes stay straight at any size, which is the whole problem with tracing an outline at
    * sidebar scale.
    */
-  gear: 'M12 2v3M12 19v3M4.2 6.5l2.6 1.5M17.2 16l2.6 1.5M4.2 17.5l2.6-1.5M17.2 8l2.6-1.5',
+  /*
+   * Eight teeth, each starting **on** the ring.
+   *
+   * They used to float: six strokes running from radius 7 out to 10, over a ring of radius 6.2,
+   * leaving a gap between the ring and every tooth. A cog whose teeth do not touch it is a sun,
+   * and that is what it read as on screen.
+   */
+  gear:
+    'M18.2 12h2.4M5.8 12H3.4M12 5.8V3.4M12 18.2v2.4' +
+    'M16.4 7.6l1.7-1.7M7.6 7.6L5.9 5.9M16.4 16.4l1.7 1.7M7.6 16.4l-1.7 1.7',
   users: 'M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 5.5a3 3 0 010 6M18 20c0-2.2-.8-3.9-2-5',
   bot: 'M12 8V4M8 13h.01M16 13h.01M9 3h6',
   ops: 'M12 2v4M12 18v4M2 12h4M18 12h4',

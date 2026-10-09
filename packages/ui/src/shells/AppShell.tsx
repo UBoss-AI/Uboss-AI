@@ -6,6 +6,7 @@ import { useEffect, useId, useLayoutEffect, useMemo, useState } from 'react';
 import { cn } from '../lib/class-names';
 import { rememberSidebarCollapsed, sidebarCollapsedFromDocument } from './sidebar-preference';
 import { PageNameShownAboveContext } from '../lib/page-name-context';
+import { SETTINGS_DESTINATION } from '../navigation/navigation-model';
 import type { NavGroup } from '../navigation/navigation-model';
 import type { AccountMenuItem } from './AccountMenu';
 import { Sidebar, type SidebarUser } from './Sidebar';
@@ -201,6 +202,10 @@ export function AppShell(props: AppShellProps) {
         collapsed={collapsed}
         onToggleCollapse={toggleCollapse}
         onSignOut={onSignOut}
+        // Only a company workspace. The Master Console is the platform control plane and its own
+        // navigation carries what it needs; pointing its sidebar at a tenant's `/settings` would
+        // be a door to the wrong building.
+        settings={isMaster ? undefined : SETTINGS_DESTINATION}
         open={mobileOpen}
       />
 

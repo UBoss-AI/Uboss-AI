@@ -38,6 +38,19 @@ export interface SidebarProps {
   onToggleCollapse?: () => void;
   /** Ends the session. The reference's sidebar footer carries a Sign out action. */
   onSignOut?: (() => void) | undefined;
+  /**
+   * Settings, as an icon beside the person rather than an item in the menu.
+   *
+   * It was the only entry left in its own navigation group — a heading above a single line —
+   * and it is not work the way the entries above it are: nobody opens Settings as a task, they
+   * open it to change something about themselves or the company. That is the same place the
+   * name and Sign out already live, so it sits there, at the size of a control rather than a
+   * destination.
+   *
+   * Icon only, with the word in a tooltip: the footer has room for one line of text and the
+   * person's name has the better claim on it.
+   */
+  settings?: { href: string; label: string } | undefined;
   /** Open state on small screens, where the sidebar becomes an off-canvas drawer. */
   open?: boolean;
   className?: string;
@@ -60,6 +73,7 @@ export function Sidebar({
   collapsed = false,
   onToggleCollapse,
   onSignOut,
+  settings,
   open = false,
   className,
 }: SidebarProps) {
@@ -199,6 +213,27 @@ export function Sidebar({
             <span className="uboss-side-foot-role">{user.role}</span>
           )}
         </div>
+
+        {/*
+          Settings, at the far end of the person's own row.
+
+          `title` carries the word rather than a bespoke tooltip: it is what a browser already
+          shows on hover and what assistive technology already reads, and a hand-built tooltip
+          here would be a second implementation of something the platform does correctly.
+          `aria-label` repeats it because the control has no text of its own — an icon alone is
+          an unlabelled link.
+        */}
+        {settings === undefined ? null : (
+          <a
+            className="uboss-side-foot-settings"
+            href={settings.href}
+            title={settings.label}
+            aria-label={settings.label}
+            onClick={(event) => onNavigate?.('settings', settings.href, event)}
+          >
+            <Icon name="gear" size={17} />
+          </a>
+        )}
       </div>
     </nav>
   );

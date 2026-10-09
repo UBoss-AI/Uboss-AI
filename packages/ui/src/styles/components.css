@@ -518,6 +518,44 @@
   font-weight: 700;
 }
 
+/*
+ * Settings, at the far end of the person's row.
+ *
+ * `margin-left: auto` rather than a spacer, so the name and Sign out keep whatever width they
+ * need and this stays pinned to the right edge however long the name is. The stack beside it
+ * already grows; without `min-width: 0` on that stack a long name would push this out of the
+ * sidebar instead of being truncated.
+ */
+.uboss-side-foot-settings {
+  margin-left: auto;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--uboss-radius-control);
+  color: rgba(255, 255, 255, 0.62);
+  transition: var(--uboss-motion) var(--uboss-ease);
+  transition-property: color, background-color;
+}
+
+.uboss-side-foot-settings:hover,
+.uboss-side-foot-settings:focus-visible {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Without this the name pushes the gear past the sidebar's edge rather than ellipsising. */
+.uboss-side-foot-stack {
+  min-width: 0;
+}
+
+.uboss-side-foot-stack > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .uboss-side-foot-role {
   font-size: 11px;
   color: var(--uboss-navy-ink-2);

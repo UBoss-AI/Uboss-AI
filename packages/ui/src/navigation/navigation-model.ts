@@ -100,48 +100,21 @@ export const COMPANY_NAV: readonly NavGroup[] = [
       { key: 'reports', label: 'Reports', icon: 'chart', href: '/reports' },
     ],
   },
-  {
-    group: 'Administration',
-    items: [
-      /*
-       * Three screens that used to live inside Settings as signposts.
-       *
-       * Each was a "settings category" whose entire content was a sentence and a button reading
-       * *Open X* — and for two of them that button was the only route to the screen at all. A
-       * category that exists to point somewhere else is not a setting; it is a menu entry in the
-       * wrong menu, and it cost a reader three clicks to reach a screen that should have been
-       * one.
-       *
-       * Roles & Permissions stays in Settings, because it genuinely is one: the catalogue and
-       * the company's own roles are configuration, and they are edited there rather than
-       * anywhere else.
-       */
-      /*
-       * Users & Access, Billing and Audit are Settings sections, not sidebar entries.
-       *
-       * They were sections holding a sentence and an *Open X* button, which is why they briefly
-       * moved here. The client's decision is that they belong in Settings — so they are back
-       * there, and the fix for the original complaint is that selecting one now opens the screen
-       * itself instead of a panel describing it.
-       *
-       * The screens stay full pages rather than being embedded in the Settings dialog. Users &
-       * Access is three tabs of tables and bulk operations; in an eight-hundred-pixel modal it
-       * would be worse than the page, not tidier.
-       */
-      /*
-       * UBoss Profile Search is in Settings now, not here.
-       *
-       * It is an occasional lookup — somebody's UBoss history, checked before a hire — and it sat
-       * permanently in ADMINISTRATION at the same weight as the screens people are in all day.
-       * The client asked for it to live in Settings; it is a section there, and selecting it opens
-       * this same screen.
-       *
-       * The route is untouched and the screen is unchanged. What moved is the door.
-       */
-      { key: 'settings', label: 'Settings', icon: 'gear', href: '/settings' },
-    ],
-  },
 ] as const;
+
+/**
+ * Settings, which is not a navigation item.
+ *
+ * It was the last entry in ADMINISTRATION — a group heading above a single line, after the three
+ * screens that used to sit with it moved into Settings itself. A heading over one item is not a
+ * group, and the item under it was not the same kind of thing as the ones above: nobody opens
+ * Settings as a piece of work, they open it to change something about themselves or the company.
+ *
+ * So it sits with the person, in the sidebar footer, at the size of a control rather than a
+ * destination — an icon with the word in its tooltip, because the footer has room for one line of
+ * text and the name has the better claim on it. `AppShell` passes it to `Sidebar`.
+ */
+export const SETTINGS_DESTINATION = { href: '/settings', label: 'Settings' } as const;
 
 /** UBoss Master Console navigation — the platform control plane, separate from any tenant. */
 export const MASTER_NAV: readonly NavGroup[] = [
