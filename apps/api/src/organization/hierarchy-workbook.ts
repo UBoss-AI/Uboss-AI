@@ -82,7 +82,7 @@ export const HIERARCHY_COLUMNS: readonly HierarchyColumn[] = [
   {
     heading: 'Department',
     required: true,
-    note: 'Pick from the list in the cell. It must already exist — create the department first, then import.',
+    note: 'Pick from the list in the cell, or type a new one. A department this company does not have yet is created by the import — the preview names each one before anything is applied.',
     width: 24,
   },
   {
@@ -285,8 +285,9 @@ export class HierarchyWorkbook {
       'Department',
       'A',
       reference.departments.length,
-      'This company has no department by that name. Pick one from the list, or create the ' +
-        'department first — the import will refuse the row otherwise.',
+      'This company has no department by that name. If it is one of these spelt differently, ' +
+        'pick it from the list — two spellings make two departments. A genuinely new one is ' +
+        'fine: the import creates it, and the preview says so before anything is applied.',
     );
     attachList(
       'Reporting Manager',
@@ -313,9 +314,10 @@ export class HierarchyWorkbook {
       const cell = headingCell('Department');
       if (cell !== null) {
         cell.note =
-          'No departments exist yet, so there is nothing to pick. Create one in the product ' +
-          'first — an employee cannot belong to a department that is not there, and every row ' +
-          'will be refused.';
+          'No departments exist yet, so there is nothing to pick. Type the names you want — the ' +
+          'import creates each one it cannot find, and the preview lists them before anything ' +
+          'is applied. Keep the spelling the same down the column: two spellings make two ' +
+          'departments.';
       }
     }
     if (reference.people.length === 0) {

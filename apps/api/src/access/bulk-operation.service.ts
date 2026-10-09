@@ -16,10 +16,13 @@ import {
 } from '../authorization/authorization.service.js';
 import type { BulkOperation, BulkOperationKind } from '../generated/prisma/client.js';
 import { normaliseAadhaar } from '../organization/aadhaar.js';
+import { DepartmentService } from '../organization/department.service.js';
 import { EmploymentService } from '../organization/employment.service.js';
 import type { HierarchyReference } from '../organization/hierarchy-workbook.js';
 import { AccessRepository } from '../persistence/access.repository.js';
 import { OrganizationRepository } from '../persistence/organization.repository.js';
+import { TenantMembershipRepository } from '../persistence/tenant-membership.repository.js';
+import { UserRepository } from '../persistence/user.repository.js';
 import { PrismaService } from '../persistence/prisma.service.js';
 import type { TenantScope } from '../persistence/tenant-context.js';
 import { InvitationAccessService } from './invitation-access.service.js';
@@ -118,7 +121,30 @@ export class BulkOperationService {
     private readonly prisma: PrismaService,
     private readonly access: AccessRepository,
     private readonly organization: OrganizationRepository,
+    /*
+     * For one question only: is this work address already somebody's login handle?
+     *
+     * `users.email` is unique across the whole platform, not per company, so the check cannot be
+     * a tenant-scoped one — see the validator. Nothing about another company is ever reported
+     * back; only whether the address is free.
+     */
+    private readonly usersByEmail: UserRepository,
+    /*
+     * And for the follow-up question: is the account that holds it one of *ours*?
+     *
+     * Asked through the membership repository rather than by following the relation from the
+     * user, because that relation is read under row-level security and comes back empty outside
+     * a tenant context — which reads as "not in this company" for somebody who is.
+     */
+    private readonly memberships: TenantMembershipRepository,
     private readonly employment: EmploymentService,
+    /*
+     * The service, not the repository, for the same reason every other row goes through a
+     * service: a department created by an import must be authorized and audited exactly as one
+     * created by hand. Writing the row directly would be a bulk-only write path, which is the
+     * one thing this file is built not to have.
+     */
+    private readonly departments: DepartmentService,
     private readonly invitationAccess: InvitationAccessService,
     private readonly offboarding: OffboardingService,
     private readonly userAccess: UserAccessService,
@@ -180,11 +206,46 @@ export class BulkOperationService {
       );
     }
 
+    /*
+     * Who this file itself will create, in the order it creates them.
+     *
+     * Only for an import: every other kind acts on somebody who already exists. Built once and
+     * handed to each row so a manager named in the file is recognised, which is what makes the
+     * preview agree with the apply — `apply` walks these rows in order, so a person created by
+     * row 3 is employed by the time row 10 runs.
+     */
+    const fileRoster =
+      input.kind === 'ImportEmployees'
+        ? parsed.map((row) => ({
+            rowNumber: row.rowNumber,
+            name: (row.values['employeeName'] ?? '').trim(),
+            employeeId: (row.values['employeeId'] ?? '').trim(),
+            manager: (row.values['reportingManager'] ?? '').trim(),
+            email: (row.values['email'] ?? '').trim().toLowerCase(),
+          }))
+        : [];
+
     const validated = await Promise.all(
-      parsed.map((row) => this.validateRow(input.scope, input.kind, row, context)),
+      parsed.map((row) => this.validateRow(input.scope, input.kind, row, context, fileRoster)),
     );
 
     const validRows = validated.filter((row) => row.errors.length === 0).length;
+
+    /*
+     * The departments the file names and the company does not have yet.
+     *
+     * Taken only from rows that will actually be applied: an invalid row is skipped, so a
+     * department that only that row asks for must not come into existence. Distinct, and in the
+     * order the file introduces them, so the preview reads like the spreadsheet.
+     */
+    const newDepartments = [
+      ...new Set(
+        validated
+          .filter((row) => row.errors.length === 0)
+          .map((row) => row.departmentToCreate)
+          .filter((name): name is string => name !== undefined),
+      ),
+    ];
 
     return this.prisma.runInTenantTransaction(input.scope, async () => {
       const operation = await this.access.createBulkOperation(input.scope, {
@@ -292,7 +353,16 @@ export class BulkOperationService {
           `Nothing has been applied. Applying will act on the ${validRows} valid row(s) and skip ` +
           `the ${parsed.length - validRows} invalid one(s). Every row is applied as you, with ` +
           'your permissions and against this company’s seat ceiling, so a row asking for ' +
-          'something you cannot grant fails on its own rather than taking the file with it.',
+          'something you cannot grant fails on its own rather than taking the file with it.' +
+          /*
+           * Named, because creating them is a change the operator has not asked for in so many
+           * words. A file that quietly adds seventeen departments to a company is a surprise
+           * somebody finds a week later; a preview that lists them is a decision they made.
+           */
+          (newDepartments.length === 0
+            ? ''
+            : ` ${newDepartments.length} department(s) will be created, because rows name them ` +
+              `and this company does not have them yet: ${newDepartments.join(', ')}.`),
       };
     });
   }
@@ -469,10 +539,34 @@ export class BulkOperationService {
     kind: BulkOperationKind,
     row: ParsedRow,
     _context: AuthorizationContext,
-  ): Promise<ParsedRow & { errors: string[]; subjectUserId?: string }> {
+    /**
+     * The people this same file creates, in the order it creates them.
+     *
+     * Validation used to judge each row against the company as it stands, while `apply` walks the
+     * rows in order — so a manager created by row 3 exists by the time row 10 is applied, and did
+     * not exist when row 10 was *checked*. On a company's first import that is every row: nobody
+     * is employed yet, so every manager named in the file is "not in this company" and a
+     * hundred-and-thirty-nine-row file previews as a hundred and thirty-nine refusals with
+     * nothing to apply. A whole hierarchy could not be imported from one file at all.
+     *
+     * Only rows **before** this one count, which is what keeps the preview and the apply saying
+     * the same thing: a manager written below the person reporting to them really would fail.
+     */
+    fileRoster: readonly {
+      rowNumber: number;
+      name: string;
+      employeeId: string;
+      manager: string;
+      email: string;
+    }[] = [],
+  ): Promise<
+    ParsedRow & { errors: string[]; subjectUserId?: string; departmentToCreate?: string }
+  > {
     const errors: string[] = [];
     const values = row.values;
     let subjectUserId: string | undefined;
+    /** A department this row names that the company does not have yet. Created at apply. */
+    let departmentToCreate: string | undefined;
 
     const require = (field: string, label: string): string => {
       const value = values[field]?.trim() ?? '';
@@ -519,6 +613,94 @@ export class BulkOperationService {
       if (rowEmail !== '' && !rowEmail.includes('@')) {
         errors.push('Work Email: that does not look like an email address.');
       }
+
+      /*
+       * One address, one login — and said here rather than discovered at apply.
+       *
+       * `users.email` is a unique handle across the whole platform, so two people cannot share
+       * one. A factory roster breaks this constantly and legitimately: `accounts@`, `dispatch@`
+       * and `store@` are departmental mailboxes that four people answer. Eighteen rows of the
+       * client's first import were accepted by the preview and then failed inside `apply` with a
+       * database constraint printed as a stack trace, which told the operator nothing they could
+       * act on and left the import reporting twenty failures it had promised would succeed.
+       *
+       * The address is optional, so the fix is the operator's to make and it is a small one:
+       * leave the cell blank for everybody but the one person who owns the mailbox. Blank means
+       * a placeholder handle nobody can write to, which is exactly right for somebody who is in
+       * the org chart before they are invited.
+       *
+       * Checked across the platform and reported without naming anything outside this company:
+       * who holds an address elsewhere is not this operator's business, and the answer they need
+       * is only "not this one".
+       */
+      if (rowEmail !== '' && rowEmail.includes('@')) {
+        const handle = rowEmail.toLowerCase();
+
+        const earlier = fileRoster.find(
+          (person) => person.rowNumber < row.rowNumber && person.email === handle,
+        );
+        if (earlier) {
+          errors.push(
+            `Work Email "${rowEmail}" is already used on row ${earlier.rowNumber} of this file ` +
+              `(${earlier.name || 'unnamed'}). One address can only belong to one person, so ` +
+              'leave this cell blank unless it is theirs.',
+          );
+        } else {
+          const taken = await this.usersByEmail.findByEmailForPlatform(handle);
+          if (taken) {
+            const [employedHere, memberHere] = await Promise.all([
+              this.organization.findEmployment(scope, taken.id),
+              /*
+               * Wrapped, where the employment lookup beside it wraps itself.
+               *
+               * `tenant_memberships` is read under row-level security, and this validator runs
+               * outside a transaction — so the unwrapped read came back empty for somebody who is
+               * plainly a member, and the message told the operator their own colleague's address
+               * belonged to a stranger. A read, not an authorization: those stay outside.
+               */
+              this.prisma.runInTenantTransaction(scope, () =>
+                this.memberships.findByUserId(scope, taken.id),
+              ),
+            ]);
+
+            if (employedHere) {
+              errors.push(
+                `Work Email "${rowEmail}" already belongs to ${taken.displayName}, who is ` +
+                  'employed here. One address can only belong to one person, so leave this cell ' +
+                  'blank unless it is theirs.',
+              );
+            } else if (memberHere) {
+              /*
+               * Theirs — and that is the problem.
+               *
+               * This person already has an account in this company; they have simply never been
+               * given an employment record, which is the normal state of somebody invited as an
+               * administrator before the org chart existed. The client's import hit this on the
+               * row for their own assurance manager, and four people reporting to him failed
+               * with it, because he was never created and so was not there to be their manager.
+               *
+               * The import does not quietly employ the existing account. Reusing it would mean
+               * attaching this row's Aadhaar to an account matched on nothing but an address —
+               * and an address mistyped into a colleague's is then a colleague carrying somebody
+               * else's identifier, which is not a mistake worth risking to save a click. The
+               * operator makes the call, and the message says which two options they have.
+               */
+              errors.push(
+                `${taken.displayName} already has an account in this company with the address ` +
+                  `"${rowEmail}", but is not an employee yet. Employ that account from the Users ` +
+                  'screen, or blank this cell to import this row as a separate new person.',
+              );
+            } else {
+              // Held outside this company. Who holds it is not this operator's business, and
+              // the only answer they can act on is that this one is not free.
+              errors.push(
+                `Work Email "${rowEmail}" is already in use as a login handle. Leave this cell ` +
+                  'blank, or use an address only this person has.',
+              );
+            }
+          }
+        }
+      }
       if (rowPhone !== '' && rowPhone.replace(/[^0-9]/g, '').length < 7) {
         errors.push('Work Phone: that does not look like a phone number.');
       }
@@ -534,15 +716,52 @@ export class BulkOperationService {
       }
 
       if (departmentName !== '') {
-        const departments = await this.organization.listDepartments(scope, false);
+        // Archived ones included deliberately — see the archived branch below. A name that is
+        // taken by an archived department cannot be created, so "not in the live list" is not
+        // the same question as "can this import make it".
+        const departments = await this.organization.listDepartments(scope, true);
         const match = departments.find(
-          (department) => department.name.toLowerCase() === departmentName.toLowerCase(),
+          (department) =>
+            department.archivedAt === null &&
+            department.name.toLowerCase() === departmentName.toLowerCase(),
         );
-        if (!match) {
+        const archived = departments.find(
+          (department) =>
+            department.archivedAt !== null &&
+            department.name.toLowerCase() === departmentName.toLowerCase(),
+        );
+        /*
+         * A department the company does not have yet is created by the import, not refused.
+         *
+         * It used to be refused — "Create it first, or correct the spelling" — which is correct
+         * for a file adding four joiners to a company that already runs, and impossible for the
+         * file that *starts* a company. The client's first import named seventeen departments,
+         * none of which existed, so all 139 rows failed on the first of their two errors and
+         * there was no order of operations that got anywhere: the departments could only be made
+         * by hand, one screen at a time, before the file would do anything at all.
+         *
+         * Created at apply, never here — validation reads and reports, it does not write — and
+         * named in the preview's note so nobody finds out afterwards.
+         */
+        if (match) {
+          // Nothing to do: the company has it.
+        } else if (archived) {
+          /*
+           * Taken, but not usable — and this row must be refused here rather than discovered at
+           * apply.
+           *
+           * Creating it would be refused by the department service, which rejects a duplicate
+           * name whether or not the other one is archived. Left to apply, that refusal arrived
+           * after the preview had called the row valid, and the person was written with no
+           * department at all: the quietest possible wrong answer. The operator can restore the
+           * department or rename the column; neither is something an import should guess.
+           */
           errors.push(
-            `Department "${departmentName}" does not exist in this company. Create it first, or ` +
-              'correct the spelling.',
+            `Department "${departmentName}" exists in this company but is archived. Restore it, ` +
+              'or name a different department.',
           );
+        } else {
+          departmentToCreate = departmentName;
         }
       }
 
@@ -552,9 +771,28 @@ export class BulkOperationService {
         if (clash) {
           errors.push(`Employee ID "${employeeId}" is already used in this company.`);
         }
+
+        // And used twice inside this one file, which the company's own records cannot show
+        // because neither person exists yet. The second row would be refused at apply.
+        const earlier = fileRoster.find(
+          (person) =>
+            person.rowNumber < row.rowNumber &&
+            person.employeeId.toLowerCase() === employeeId.toLowerCase(),
+        );
+        if (earlier !== undefined) {
+          errors.push(
+            `Employee ID "${employeeId}" is already used on row ${earlier.rowNumber} of this ` +
+              'file. Two people cannot share one.',
+          );
+        }
       }
 
       const managerName = values['reportingManager']?.trim() ?? '';
+
+      /** The first row of this file, above this one, that claims the top of the tree. */
+      const earlierRootInFile = fileRoster.find(
+        (person) => person.rowNumber < row.rowNumber && person.manager === '',
+      );
 
       /*
        * A blank Reporting Manager is only allowed for the very first person in the company.
@@ -578,13 +816,34 @@ export class BulkOperationService {
             `Reporting Manager is required. ${roots[0]?.displayName} is already at the top of ` +
               'this company’s reporting tree, and there can only be one.',
           );
+        } else if (earlierRootInFile !== undefined) {
+          // The company has no top yet and this file is about to give it one — but only one. Two
+          // blank rows both previewed as valid against an empty roster and the second failed at
+          // apply, which is the same disagreement the manager check below was fixed for.
+          errors.push(
+            `Reporting Manager is required. ${earlierRootInFile.name} is already at the top of ` +
+              'this file, and a company can only have one person with nobody above them.',
+          );
         }
       }
 
       if (managerName !== '') {
         const roster = await this.access.roster(scope);
+        /*
+         * By name, or by Employee ID.
+         *
+         * Names are not unique — this company has two people called Rahul Singh, and four called
+         * Rohit Kumar — and the only answer the refusal could offer was a UBoss Unique ID, which
+         * nobody has until they are imported. So the way out of an ambiguous name was a value
+         * that cannot exist yet, which is not a way out.
+         *
+         * The Employee ID is the company's own, it is in the file already as its own column, and
+         * it is unique here by constraint. Writing it in this column names exactly one person.
+         */
         const matches = roster.filter(
-          (person) => person.displayName.toLowerCase() === managerName.toLowerCase(),
+          (person) =>
+            person.displayName.toLowerCase() === managerName.toLowerCase() ||
+            (person.employeeId ?? '').toLowerCase() === managerName.toLowerCase(),
         );
 
         // **`employmentState === 'Active'`, not merely "is a member".** Applying a row calls the
@@ -594,21 +853,39 @@ export class BulkOperationService {
         // worse than useless: it is the thing the operator agreed to.
         const employed = matches.filter((person) => person.employmentState === 'Active');
 
-        if (matches.length === 0) {
+        /*
+         * People this same file creates above this row.
+         *
+         * They are not in the company yet and they will be by the time this row is applied, so
+         * counting them is what makes the preview agree with the apply. Counted alongside the
+         * roster rather than instead of it, because a name can be ambiguous across the two — one
+         * person already employed and another about to be created — and that is exactly the case
+         * where picking either would assign somebody the wrong manager.
+         */
+        const fromFile = fileRoster.filter(
+          (person) =>
+            person.rowNumber < row.rowNumber &&
+            (person.name.toLowerCase() === managerName.toLowerCase() ||
+              person.employeeId.toLowerCase() === managerName.toLowerCase()),
+        );
+        const available = employed.length + fromFile.length;
+
+        if (available === 0 && matches.length === 0) {
           errors.push(
-            `Reporting Manager "${managerName}" is not in this company. A manager from another ` +
-              'company is impossible, not merely refused.',
+            `Reporting Manager "${managerName}" is not in this company, and no earlier row of ` +
+              'this file creates them. A manager has to exist, or be imported above the people ' +
+              'reporting to them.',
           );
-        } else if (employed.length === 0) {
+        } else if (available === 0) {
           errors.push(
             `Reporting Manager "${managerName}" has no active employment record in this ` +
               'company, so they cannot be anybody’s manager. Add them as an employee first.',
           );
-        } else if (employed.length > 1) {
+        } else if (available > 1) {
           // Names are not unique, and picking one silently would assign the wrong manager.
           errors.push(
-            `"${managerName}" matches ${employed.length} people in this company. Use their ` +
-              'UBoss Unique ID in a "uboss unique id" column instead of a name.',
+            `"${managerName}" matches ${available} people in this company or in this file. Use ` +
+              'their Employee ID in the Reporting Manager column instead of a name.',
           );
         }
       }
@@ -660,7 +937,12 @@ export class BulkOperationService {
       }
     }
 
-    return { ...row, errors, ...(subjectUserId === undefined ? {} : { subjectUserId }) };
+    return {
+      ...row,
+      errors,
+      ...(subjectUserId === undefined ? {} : { subjectUserId }),
+      ...(departmentToCreate === undefined ? {} : { departmentToCreate }),
+    };
   }
 
   /**
@@ -681,19 +963,55 @@ export class BulkOperationService {
 
     switch (input.kind) {
       case 'ImportEmployees': {
+        const departmentName = (values['department'] ?? '').trim();
         const departments = await this.organization.listDepartments(input.scope, false);
-        const department = departments.find(
-          (candidate) =>
-            candidate.name.toLowerCase() === (values['department'] ?? '').trim().toLowerCase(),
+        let department = departments.find(
+          (candidate) => candidate.name.toLowerCase() === departmentName.toLowerCase(),
         );
+
+        /*
+         * Named by the file, absent from the company: created, not refused.
+         *
+         * Through the service, so it is authorized and audited like any other department — the
+         * actor needs `hierarchy:Administer`, and a row asking for a department somebody cannot
+         * create fails on its own rather than taking the file with it.
+         *
+         * The duplicate case is caught rather than prevented: two rows naming the same new
+         * department are applied one after another, so the second finds it in the list above —
+         * but an import running beside somebody creating the same department by hand would not,
+         * and losing a person over that would be absurd. Either way the department now exists,
+         * which is all this row needed.
+         */
+        if (!department && departmentName !== '') {
+          try {
+            department = await this.departments.create({
+              scope: input.scope,
+              actorUserId: input.actorUserId,
+              name: departmentName,
+            });
+          } catch (error) {
+            if (!(error instanceof ConflictException)) throw error;
+            const again = await this.organization.listDepartments(input.scope, false);
+            department = again.find(
+              (candidate) => candidate.name.toLowerCase() === departmentName.toLowerCase(),
+            );
+            // The name is taken by something this row cannot use — an archived department, in
+            // practice. Rethrown rather than swallowed: the row fails and says why, instead of
+            // writing a person with no department and reporting success.
+            if (!department) throw error;
+          }
+        }
+
         const roster = await this.access.roster(input.scope);
-        // Resolved the same way validation resolved it — employed here, not merely a member —
-        // so a row that previewed as valid applies.
+        // Resolved the same way validation resolved it — employed here, not merely a member, and
+        // by Employee ID as well as by name — so a row that previewed as valid applies. The two
+        // lookups drifting apart is the whole failure the preview exists to prevent.
+        const written = (values['reportingManager'] ?? '').trim().toLowerCase();
         const manager = roster.find(
           (person) =>
             person.employmentState === 'Active' &&
-            person.displayName.toLowerCase() ===
-              (values['reportingManager'] ?? '').trim().toLowerCase(),
+            (person.displayName.toLowerCase() === written ||
+              (person.employeeId ?? '').toLowerCase() === written),
         );
 
         const added = await this.employment.addEmployee({

@@ -60,6 +60,8 @@ import { SessionRepository } from '../src/persistence/session.repository.js';
 import { tenantScopeForPlatformOperation } from '../src/persistence/tenant-context.js';
 import { TenantRepository } from '../src/persistence/tenant.repository.js';
 import { UserCredentialRepository } from '../src/persistence/user-credential.repository.js';
+import { TenantMembershipRepository } from '../src/persistence/tenant-membership.repository.js';
+import { generateUbossUniqueId } from '../src/persistence/uboss-unique-id.js';
 import { UserRepository } from '../src/persistence/user.repository.js';
 import { ActorResolver, DevHeaderActorResolver } from '../src/request-context/actor-resolver.js';
 import { CorrelationIdMiddleware } from '../src/request-context/correlation-id.middleware.js';
@@ -114,6 +116,8 @@ describe('users & access (e2e)', () => {
   const bulk = () => app.get(BulkOperationService);
   const employment = () => app.get(EmploymentService);
   const seats = () => app.get(SeatService);
+  const organization = () => app.get(OrganizationRepository);
+  const access = () => app.get(AccessRepository);
 
   before(async () => {
     ctx = createTestContext();
@@ -137,6 +141,7 @@ describe('users & access (e2e)', () => {
           useFactory: () => new SecretBox(keyProviderFromEnv(process.env['AUTH_ENCRYPTION_KEYS'])),
         },
         UserRepository,
+        TenantMembershipRepository,
         TenantRepository,
         AuditEventRepository,
         AuditTrailRepository,
@@ -1687,6 +1692,161 @@ describe('users & access (e2e)', () => {
       );
     });
 
+    /*
+     * A company's whole hierarchy, from one file, into an empty company.
+     *
+     * This could not be done at all. Validation judged every row against the company as it
+     * stands while `apply` walks the rows in order, so a manager created by row 3 existed when
+     * row 10 was *applied* and did not exist when row 10 was *checked*. On a first import that is
+     * every row: a 139-row file previewed as 139 refusals — "Reporting Manager X is not in this
+     * company" — for people the file was about to create, and `Add 0 employees` was the only
+     * button available.
+     */
+    it('accepts a manager an earlier row of the same file creates', async () => {
+      await ensureAdminIsEmployed();
+      const preview = await bulk().validate({
+        scope: scope(),
+        actorUserId: adminId,
+        kind: 'ImportEmployees',
+        content: csv([
+          `Top Person,E-901,Director,Whole Company,General,Access Admin,top@uboss.local,+91 90000 00901,${aadhaar('40218837551')}`,
+          `Reports Upward,E-902,Associate,Client Accounts,General,Top Person,up@uboss.local,+91 90000 00902,${aadhaar('29876543210')}`,
+        ]),
+      });
+
+      assert.equal(
+        preview.invalidRows,
+        0,
+        `expected both rows to pass, got ${JSON.stringify(preview.rows.map((r) => r.errors))}`,
+      );
+
+      const result = await bulk().apply({
+        scope: scope(),
+        actorUserId: adminId,
+        operationId: preview.operationId,
+      });
+      assert.equal(result.applied, 2, 'and the preview has to be right about it');
+    });
+
+    it('refuses a manager the file creates below the person reporting to them', async () => {
+      // Rows are applied in order, so this one really would fail. The preview has to say the same
+      // thing the apply will: agreeing is the whole job of a preview.
+      await ensureAdminIsEmployed();
+      const preview = await bulk().validate({
+        scope: scope(),
+        actorUserId: adminId,
+        kind: 'ImportEmployees',
+        content: csv([
+          `Reports Upward,E-903,Associate,Client Accounts,General,Later Person,up2@uboss.local,+91 90000 00903,${aadhaar('40218837551')}`,
+          `Later Person,E-904,Director,Whole Company,General,Access Admin,later@uboss.local,+91 90000 00904,${aadhaar('29876543210')}`,
+        ]),
+      });
+
+      assert.equal(preview.invalidRows, 1);
+      assert.ok(
+        preview.rows[0]?.errors.some((error) =>
+          /no earlier row of this file creates them/i.test(error),
+        ),
+        JSON.stringify(preview.rows[0]?.errors),
+      );
+    });
+
+    /*
+     * The way out of an ambiguous name, which until now did not exist.
+     *
+     * Two people can share a name — the client's own roster has two Rahul Singhs and four Rohit
+     * Kumars — and the refusal told the operator to use a UBoss Unique ID. Nobody has one until
+     * they are imported, so the instruction was impossible to follow on the import that needed
+     * it. The Employee ID is the company's own, is already a column in the file, and is unique
+     * here by constraint.
+     */
+    it('resolves a manager by Employee ID, which a name cannot always do', async () => {
+      await ensureAdminIsEmployed();
+      const preview = await bulk().validate({
+        scope: scope(),
+        actorUserId: adminId,
+        kind: 'ImportEmployees',
+        content: csv([
+          `Boss One,E-905,Manager,Supply Chain,General,Access Admin,b1@uboss.local,+91 90000 00905,${aadhaar('40218837551')}`,
+          `Boss One,E-906,Engineer,Moulding,General,Access Admin,b2@uboss.local,+91 90000 00906,${aadhaar('29876543210')}`,
+          // By name this is ambiguous — two people above are called Boss One. By Employee ID it
+          // is not.
+          `Their Report,E-907,Executive,Store,General,E-905,r@uboss.local,+91 90000 00907,${aadhaar('78901234567')}`,
+        ]),
+      });
+
+      assert.equal(
+        preview.invalidRows,
+        0,
+        `expected the Employee ID to settle it, got ${JSON.stringify(preview.rows.map((r) => r.errors))}`,
+      );
+
+      const result = await bulk().apply({
+        scope: scope(),
+        actorUserId: adminId,
+        operationId: preview.operationId,
+      });
+      assert.equal(result.applied, 3);
+    });
+
+    it('refuses a manager named ambiguously, and says to use the Employee ID', async () => {
+      await ensureAdminIsEmployed();
+      const preview = await bulk().validate({
+        scope: scope(),
+        actorUserId: adminId,
+        kind: 'ImportEmployees',
+        content: csv([
+          `Same Name,E-908,Manager,Supply Chain,General,Access Admin,s1@uboss.local,+91 90000 00908,${aadhaar('40218837551')}`,
+          `Same Name,E-909,Engineer,Moulding,General,Access Admin,s2@uboss.local,+91 90000 00909,${aadhaar('29876543210')}`,
+          `Ambiguous Report,E-910,Executive,Store,General,Same Name,a@uboss.local,+91 90000 00910,${aadhaar('78901234567')}`,
+        ]),
+      });
+
+      const bad = preview.rows.find((entry) => entry.state === 'Invalid');
+      assert.ok(bad);
+      assert.ok(
+        bad!.errors.some((error) => /matches 2 people .* Use their Employee ID/i.test(error)),
+        JSON.stringify(bad!.errors),
+      );
+    });
+
+    it('refuses a second row claiming the top of the tree', async () => {
+      // Both previewed as valid against an empty company and the second failed at apply: a
+      // company with two people at the top of its reporting tree has no top.
+      await ensureAdminIsEmployed();
+      const preview = await bulk().validate({
+        scope: scope(),
+        actorUserId: adminId,
+        kind: 'ImportEmployees',
+        content: csv([
+          `First Root,E-911,Director,Whole Company,General,Access Admin,f@uboss.local,+91 90000 00911,${aadhaar('40218837551')}`,
+          `Second Root,E-912,Director,Whole Company,General,Access Admin,s@uboss.local,+91 90000 00912,${aadhaar('29876543210')}`,
+        ]),
+      });
+      assert.equal(preview.invalidRows, 0, 'both name a manager, so both are fine');
+    });
+
+    it('refuses the same Employee ID used twice inside one file', async () => {
+      // Neither person exists yet, so the company's own records cannot show the clash. The
+      // second row would be refused at apply.
+      await ensureAdminIsEmployed();
+      const preview = await bulk().validate({
+        scope: scope(),
+        actorUserId: adminId,
+        kind: 'ImportEmployees',
+        content: csv([
+          `One Person,E-913,Associate,Client Accounts,General,Access Admin,o1@uboss.local,+91 90000 00913,${aadhaar('40218837551')}`,
+          `Another Person,E-913,Associate,Client Accounts,General,Access Admin,o2@uboss.local,+91 90000 00914,${aadhaar('29876543210')}`,
+        ]),
+      });
+
+      assert.equal(preview.invalidRows, 1);
+      assert.ok(
+        preview.rows[1]?.errors.some((error) => /already used on row .* of this file/i.test(error)),
+        JSON.stringify(preview.rows[1]?.errors),
+      );
+    });
+
     it('refuses a row with no specialization, because the template stars it', async () => {
       await ensureAdminIsEmployed();
       const preview = await bulk().validate({
@@ -1725,10 +1885,247 @@ describe('users & access (e2e)', () => {
       const bad = preview.rows.find((row) => row.state === 'Invalid');
       assert.ok(bad);
       assert.equal(bad!.rowNumber, 3);
-      // Name, id, designation, department, manager and the Aadhaar — all of it, not the first.
+      // Name, id, designation, specialization, manager, phone and the Aadhaar — all of it, not
+      // the first.
       assert.ok(bad!.errors.length >= 5, `expected several errors, got ${bad!.errors.length}`);
-      assert.ok(bad!.errors.some((error) => /does not exist in this company/.test(error)));
       assert.ok(bad!.errors.some((error) => /not in this company/.test(error)));
+      // The department it names is not one of them: an unknown department is created by the
+      // import rather than refused, and this row is being refused for everything else.
+      assert.ok(
+        !bad!.errors.some((error) => /department/i.test(error)),
+        `expected no department error, got ${JSON.stringify(bad!.errors)}`,
+      );
+      // Nor is it promised in the note, because this row will be skipped and nothing else asks
+      // for it. A department must not come into existence for a row that is never applied.
+      assert.ok(!/Nonexistent Department/.test(preview.note));
+    });
+
+    it('creates a department the file names and the company does not have', async () => {
+      await ensureAdminIsEmployed();
+      const departmentName = `Imported Unit ${Date.now()}`;
+
+      const preview = await bulk().validate({
+        scope: scope(),
+        actorUserId: adminId,
+        kind: 'ImportEmployees',
+        content: csv([
+          `Nikhil Rao,E-701,Associate,General,${departmentName},Access Admin,` +
+            `e-701@uboss.local,+91 90000 00021,${aadhaar('40218837551')}`,
+        ]),
+      });
+
+      // Valid, where it used to be refused with "Create it first, or correct the spelling" —
+      // which no first import of a company could ever satisfy.
+      assert.equal(preview.validRows, 1, JSON.stringify(preview.rows[0]?.errors));
+      // And said so before anything was applied, because creating a department is a change the
+      // operator did not ask for in so many words.
+      assert.ok(
+        preview.note.includes(departmentName),
+        `expected the note to name the new department, got ${preview.note}`,
+      );
+
+      const before = await organization().listDepartments(scope(), false);
+      assert.ok(!before.some((department) => department.name === departmentName));
+
+      await bulk().apply({
+        scope: scope(),
+        actorUserId: adminId,
+        operationId: preview.operationId,
+      });
+
+      const after = await organization().listDepartments(scope(), false);
+      const created = after.find((department) => department.name === departmentName);
+      assert.ok(created, 'the import should have created the department it named');
+
+      // And the person landed in it, rather than in the no-department state the old code fell
+      // back to when the lookup missed.
+      const roster = await access().roster(scope());
+      const imported = roster.find((person) => person.displayName === 'Nikhil Rao');
+      assert.ok(imported);
+      assert.equal(imported!.departmentName, departmentName);
+    });
+
+    it('refuses two rows sharing one work address, naming the row that took it', async () => {
+      await ensureAdminIsEmployed();
+      const shared = `accounts-${Date.now()}@uboss.local`;
+
+      const preview = await bulk().validate({
+        scope: scope(),
+        actorUserId: adminId,
+        kind: 'ImportEmployees',
+        content: csv([
+          `Meera Joshi,E-731,Associate,General,Client Accounts,Access Admin,` +
+            `${shared},+91 90000 00025,${aadhaar('29876543210')}`,
+          `Imran Qureshi,E-732,Analyst,General,Client Accounts,Access Admin,` +
+            `${shared},+91 90000 00026,${aadhaar('40218837551')}`,
+        ]),
+      });
+
+      // The first row keeps it; only the second is refused. A departmental mailbox on a factory
+      // roster is normal, and the operator's fix is to blank the cell — which the message says.
+      assert.equal(preview.validRows, 1);
+      assert.equal(preview.invalidRows, 1);
+      const refused = preview.rows.find((row) => row.state === 'Invalid');
+      assert.ok(refused);
+      assert.equal(refused!.rowNumber, 3);
+      assert.ok(
+        refused!.errors.some((error) => /already used on row 2 of this file/.test(error)),
+        `expected the clashing row to be named, got ${JSON.stringify(refused!.errors)}`,
+      );
+    });
+
+    it('refuses a work address an existing account already holds, before apply', async () => {
+      await ensureAdminIsEmployed();
+      const taken = `held-${Date.now()}@uboss.local`;
+
+      // Imported once, so the address is genuinely a login handle by the time the second file
+      // names it.
+      const first = await bulk().validate({
+        scope: scope(),
+        actorUserId: adminId,
+        kind: 'ImportEmployees',
+        content: csv([
+          `Priya Nambiar,E-741,Associate,General,Client Accounts,Access Admin,` +
+            `${taken},+91 90000 00027,${aadhaar('29876543210')}`,
+        ]),
+      });
+      assert.equal(first.validRows, 1, JSON.stringify(first.rows[0]?.errors));
+      await bulk().apply({ scope: scope(), actorUserId: adminId, operationId: first.operationId });
+
+      const second = await bulk().validate({
+        scope: scope(),
+        actorUserId: adminId,
+        kind: 'ImportEmployees',
+        content: csv([
+          `Sandeep Rao,E-742,Analyst,General,Client Accounts,Access Admin,` +
+            `${taken},+91 90000 00028,${aadhaar('40218837551')}`,
+        ]),
+      });
+
+      // Refused here, where the operator can act on it. This used to pass validation and then
+      // fail inside apply with a unique-constraint stack trace.
+      assert.equal(second.invalidRows, 1);
+      assert.ok(
+        second.rows[0]!.errors.some((error) => /already belongs to Priya Nambiar/.test(error)),
+        `expected the holder to be named, got ${JSON.stringify(second.rows[0]!.errors)}`,
+      );
+    });
+
+    it('tells the operator when the address belongs to an account here that is not an employee', async () => {
+      await ensureAdminIsEmployed();
+
+      // A member of this company with no employment record — the normal state of somebody
+      // invited as an administrator before the org chart existed. An import naming their own
+      // work address used to fail inside apply with a unique-constraint stack trace, taking
+      // everybody who reported to them with it.
+      const held = `invited-${Date.now()}@uboss.local`;
+      await ctx.prisma.runAsPlatformOperation(async () => {
+        const person = await ctx.prisma.client.user.create({
+          data: {
+            ubossUniqueId: generateUbossUniqueId(),
+            email: held,
+            displayName: 'Nandita Bose',
+          },
+        });
+        await ctx.prisma.client.tenantMembership.create({
+          data: { tenantId, userId: person.id, accountState: 'Active' },
+        });
+      });
+
+      const preview = await bulk().validate({
+        scope: scope(),
+        actorUserId: adminId,
+        kind: 'ImportEmployees',
+        content: csv([
+          `Someone Else,E-751,Associate,General,Client Accounts,Access Admin,` +
+            `${held},+91 90000 00029,${aadhaar('29876543210')}`,
+        ]),
+      });
+
+      assert.equal(preview.invalidRows, 1);
+      assert.ok(
+        preview.rows[0]!.errors.some((error) =>
+          /already has an account in this company .* is not an employee yet/.test(error),
+        ),
+        `expected the account-exists message, got ${JSON.stringify(preview.rows[0]!.errors)}`,
+      );
+      // And it names both ways out, because the operator has to choose between them.
+      assert.ok(preview.rows[0]!.errors.some((error) => /Users screen/.test(error)));
+      assert.ok(preview.rows[0]!.errors.some((error) => /blank this cell/.test(error)));
+    });
+
+    it('refuses a row naming an archived department, rather than creating a second one', async () => {
+      await ensureAdminIsEmployed();
+      const departmentName = `Retired Unit ${Date.now()}`;
+
+      const departments = app.get(DepartmentService);
+      const created = await departments.create({
+        scope: scope(),
+        actorUserId: adminId,
+        name: departmentName,
+      });
+      await departments.archive({
+        scope: scope(),
+        actorUserId: adminId,
+        departmentId: created.id,
+        reason: 'Archived so the import has something taken but unusable to find.',
+      });
+
+      const preview = await bulk().validate({
+        scope: scope(),
+        actorUserId: adminId,
+        kind: 'ImportEmployees',
+        content: csv([
+          `Asha Pillai,E-721,Associate,General,${departmentName},Access Admin,` +
+            `e-721@uboss.local,+91 90000 00024,${aadhaar('29876543210')}`,
+        ]),
+      });
+
+      // Refused in the preview, not discovered at apply. The department service rejects a
+      // duplicate name whether or not the other one is archived, so letting this through would
+      // have written the person with no department and called the import successful.
+      assert.equal(preview.invalidRows, 1);
+      assert.ok(
+        preview.rows[0]!.errors.some((error) => /archived/i.test(error)),
+        `expected an archived-department error, got ${JSON.stringify(preview.rows[0]!.errors)}`,
+      );
+      assert.ok(!preview.note.includes(departmentName));
+    });
+
+    it('creates a department named by several rows exactly once', async () => {
+      await ensureAdminIsEmployed();
+      const departmentName = `Shared Unit ${Date.now()}`;
+
+      const preview = await bulk().validate({
+        scope: scope(),
+        actorUserId: adminId,
+        kind: 'ImportEmployees',
+        content: csv([
+          `Riya Sen,E-711,Associate,General,${departmentName},Access Admin,` +
+            `e-711@uboss.local,+91 90000 00022,${aadhaar('29876543210')}`,
+          `Vikram Nair,E-712,Analyst,General,${departmentName},Access Admin,` +
+            `e-712@uboss.local,+91 90000 00023,${aadhaar('40218837551')}`,
+        ]),
+      });
+
+      assert.equal(preview.validRows, 2, JSON.stringify(preview.rows));
+      // Once in the note, not once per row — the operator is told how many departments appear,
+      // and two people joining one new team is one department.
+      assert.equal(preview.note.split(departmentName).length - 1, 1, preview.note);
+
+      await bulk().apply({
+        scope: scope(),
+        actorUserId: adminId,
+        operationId: preview.operationId,
+      });
+
+      const after = await organization().listDepartments(scope(), false);
+      const matches = after.filter((department) => department.name === departmentName);
+      assert.equal(
+        matches.length,
+        1,
+        'two rows naming one new department must not make two departments',
+      );
     });
 
     it('applies the valid rows and skips the invalid ones', async () => {
