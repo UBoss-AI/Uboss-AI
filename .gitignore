@@ -57,3 +57,11 @@ uboss-website/image.png
 apps/api/scripts/provision-spm-medicare.mjs
 docs/UBOSS_MASTER_*.md
 apps/api/.file-store/
+
+# Customer hierarchy spreadsheets, which land here because the browser downloads to the folder
+# it was last pointed at. These carry real names, Aadhaar numbers, phones and email addresses
+# for every employee of a live company; none of it belongs in a repository.
+#
+# The root only, on purpose: apps/api/data/skill-catalog.xlsx is a fixture the product reads, and
+# a blanket rule would quietly ignore the next one somebody adds beside it.
+/*.xlsx
