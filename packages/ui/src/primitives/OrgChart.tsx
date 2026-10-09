@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
 import { cn } from '../lib/class-names';
 import { Icon } from './Icon';
@@ -113,6 +113,28 @@ const GAP_X = 26;
 const GAP_Y = 54;
 const PAD_X = 30;
 const PAD_Y = 28;
+
+/**
+ * When a row of people stops being a row and becomes a block.
+ *
+ * Giving every leaf its own column is correct for a diagram of eleven people and absurd for a real
+ * one. A factory floor has one supervisor with forty-nine reports: laid out side by side that is
+ * 18,000px of chart for one manager, the company's own hierarchy fitted at eight percent, and the
+ * names were grey smears. The shape of the company was not visible in a picture *of* the company.
+ *
+ * So a parent whose reports are more than three hangs them instead: a spine drops from the card
+ * and they stack down it. Three or fewer still spread across, because a row of two or three reads
+ * as a tree and a column of two reads as a queue.
+ *
+ * Past a point a single column is no better — forty-nine of them is 4,800px of height, which only
+ * trades one unreadable direction for another. So the block wraps into columns, enough of them to
+ * keep it roughly as wide as it is tall. The cards stay their full size at every count; it is the
+ * arrangement that changes, never the card.
+ */
+const HANG_MIN = 4;
+const HANG_GAP_Y = 16;
+/** How far the cards sit from their column's spine, and so how wide the spine's channel is. */
+const HANG_INDENT = 34;
 
 /**
  * The coloured band down the left of every card, and where the text starts after it.
@@ -442,6 +464,62 @@ function panelPath(
     .join(' ');
 }
 
+/** Everybody below a node, at any depth. What its toggle offers to show or to put away. */
+function countUnder(node: OrgChartNode): number {
+  return node.children.reduce((total, child) => total + 1 + countUnder(child), 0);
+}
+
+/**
+ * How big a company has to be before it arrives folded.
+ *
+ * A chart of eleven people is the whole picture and should simply be drawn. A chart of a hundred
+ * and fifteen cannot be: laid out in full it is 13,500px across, which the frame fits at eight
+ * percent, and eight percent of a name is a smudge. Opening at the departments and letting
+ * somebody ask for the one they want is not hiding the company — the count is on every card, and
+ * one press opens it.
+ *
+ * The threshold is about the number of cards rather than about pixels on purpose. A rule that
+ * reads the frame would fold and unfold as a window is dragged, and a chart that rearranges itself
+ * while you look at it is worse than one that is too small.
+ */
+const FOLD_OVER = 40;
+
+/**
+ * What is folded before anybody has touched anything.
+ *
+ * Everything under the first level, so a large company opens as itself and its departments. Only
+ * the topmost folded node of a branch is recorded; what is under it is not rendered, so it has no
+ * state worth keeping and would only have to be cleaned up when its parent opens.
+ */
+function foldedByDefault(root: OrgChartNode): ReadonlySet<string> {
+  if (countUnder(root) <= FOLD_OVER) return new Set();
+
+  const folded = new Set<string>();
+  const walk = (node: OrgChartNode, depth: number) => {
+    if (depth >= 1 && node.children.length > 0) {
+      folded.add(node.id);
+      return;
+    }
+    node.children.forEach((child) => walk(child, depth + 1));
+  };
+
+  walk(root, 0);
+  return folded;
+}
+
+/**
+ * The tree as it is to be drawn: a folded node keeps its card and loses its children.
+ *
+ * Which also makes it a leaf, so it joins the hanging block beside its siblings rather than
+ * standing in a column of its own. Seventeen folded departments become a block three across
+ * instead of a row seventeen wide, without the layout knowing anything about folding.
+ */
+function pruned(node: OrgChartNode, folded: ReadonlySet<string>): OrgChartNode {
+  if (node.children.length === 0) return node;
+  if (folded.has(node.id)) return { ...node, children: [] };
+  return { ...node, children: node.children.map((child) => pruned(child, folded)) };
+}
+
 interface Placed extends OrgChartNode {
   x: number;
   y: number;
@@ -449,55 +527,187 @@ interface Placed extends OrgChartNode {
   /** The nearest department ancestor's name, for the node colour. */
   departmentName: string;
   children: Placed[];
+  /**
+   * Set only on a card in a hanging block: where its column's spine stands, and the height the
+   * rail runs at. A card centred under its parent in the ordinary way does not carry it, which is
+   * how the connectors tell the two shapes apart.
+   */
+  hung?: { spineX: number; railY: number };
+}
+
+interface Size {
+  width: number;
+  height: number;
 }
 
 /**
- * Lay the tree out: leaves get consecutive slots, parents centre over their children.
+ * How many columns a hanging block of `count` cards wraps into.
  *
- * The reference's algorithm exactly. A single pass, because a node's own x depends only on its
- * children's — which is why this is depth-first and why the leaf counter is threaded through.
+ * Square-ish in cards rather than in pixels, which lands the block at roughly two-to-one on screen
+ * — a card is far wider than it is tall, so a block that is square in cards is a landscape block
+ * in pixels, and a landscape frame is what it has to fit into. Four reports stay one column, which
+ * is the shape somebody asked for; forty-nine become five columns of ten.
  */
+function hangColumns(count: number): number {
+  return Math.max(1, Math.round(Math.sqrt(count / 2)));
+}
+
+function hangSize(count: number): Size {
+  const columns = hangColumns(count);
+  const rows = Math.ceil(count / columns);
+  return {
+    width: HANG_INDENT + columns * BOX_WIDTH + (columns - 1) * GAP_X,
+    height: rows * BOX_HEIGHT + (rows - 1) * HANG_GAP_Y,
+  };
+}
+
+/**
+ * What sits under a node, as the things that take up room rather than as its children.
+ *
+ * A parent with enough leaves gets *one* slot for all of them — the hanging block — and one more
+ * for each child that has a subtree of its own. Branches keep spreading across, because a branch
+ * needs its width for what is underneath it; only the leaves, which need none, are stacked.
+ *
+ * That split is what makes the two arrangements compose. A manager with eight assistants and three
+ * supervisors under them gets a block of eight beside three ordinary subtrees, rather than either
+ * eleven columns or one column eleven deep.
+ */
+type Slot =
+  | { kind: 'hang'; leaves: OrgChartNode[]; size: Size }
+  | { kind: 'spread'; node: OrgChartNode; size: Size };
+
 function layout(root: OrgChartNode): { placed: Placed; width: number; height: number } {
-  let leafIndex = 0;
-  let maxDepth = 0;
+  // Memoised because `place` asks the same questions `sizeOf` already answered, one level down.
+  const sizes = new Map<OrgChartNode, Size>();
 
-  const place = (node: OrgChartNode, depth: number, departmentName: string): Placed => {
-    maxDepth = Math.max(maxDepth, depth);
+  const slotsOf = (node: OrgChartNode): Slot[] => {
+    if (node.children.length === 0) return [];
+
+    const leaves = node.children.filter((child) => child.children.length === 0);
+    if (leaves.length < HANG_MIN) {
+      return node.children.map((child) => ({
+        kind: 'spread' as const,
+        node: child,
+        size: sizeOf(child),
+      }));
+    }
+
+    return [
+      { kind: 'hang' as const, leaves, size: hangSize(leaves.length) },
+      ...node.children
+        .filter((child) => child.children.length > 0)
+        .map((child) => ({ kind: 'spread' as const, node: child, size: sizeOf(child) })),
+    ];
+  };
+
+  function sizeOf(node: OrgChartNode): Size {
+    const known = sizes.get(node);
+    if (known) return known;
+
+    const slots = slotsOf(node);
+    const size =
+      slots.length === 0
+        ? { width: BOX_WIDTH, height: BOX_HEIGHT }
+        : {
+            width: Math.max(
+              BOX_WIDTH,
+              slots.reduce((total, slot) => total + slot.size.width, 0) +
+                GAP_X * (slots.length - 1),
+            ),
+            height: BOX_HEIGHT + GAP_Y + Math.max(...slots.map((slot) => slot.size.height)),
+          };
+
+    sizes.set(node, size);
+    return size;
+  }
+
+  const place = (
+    node: OrgChartNode,
+    left: number,
+    top: number,
+    depth: number,
+    departmentName: string,
+  ): Placed => {
     const ownDepartment = node.kind === 'department' ? node.name : departmentName;
+    const size = sizeOf(node);
+    const slots = slotsOf(node);
+    const y = top + BOX_HEIGHT / 2;
+    // The parent sits over the middle of everything beneath it. With a single hanging column that
+    // puts the spine exactly under the parent's left edge, which is the shape this borrows from.
+    const x = left + size.width / 2;
 
-    const children = node.children.map((child) => place(child, depth + 1, ownDepartment));
+    if (slots.length === 0) {
+      return { ...node, x, y, depth, departmentName: ownDepartment, children: [] };
+    }
 
-    const y = PAD_Y + depth * (BOX_HEIGHT + GAP_Y) + BOX_HEIGHT / 2;
-    let x: number;
+    const childTop = top + BOX_HEIGHT + GAP_Y;
+    const railY = top + BOX_HEIGHT + GAP_Y / 2;
+    const across =
+      slots.reduce((total, slot) => total + slot.size.width, 0) + GAP_X * (slots.length - 1);
 
-    if (children.length > 0) {
-      x = (children[0]!.x + children[children.length - 1]!.x) / 2;
-    } else {
-      x = PAD_X + leafIndex * (BOX_WIDTH + GAP_X) + BOX_WIDTH / 2;
-      leafIndex += 1;
+    let cursor = left + (size.width - across) / 2;
+    const children: Placed[] = [];
+
+    for (const slot of slots) {
+      if (slot.kind === 'hang') {
+        const columns = hangColumns(slot.leaves.length);
+        const rows = Math.ceil(slot.leaves.length / columns);
+
+        slot.leaves.forEach((leaf, index) => {
+          // Down a column before across to the next, so each column is one unbroken run and the
+          // spine beside it belongs to the cards it touches.
+          const cardLeft = cursor + HANG_INDENT + Math.floor(index / rows) * (BOX_WIDTH + GAP_X);
+          children.push({
+            ...leaf,
+            x: cardLeft + BOX_WIDTH / 2,
+            y: childTop + (index % rows) * (BOX_HEIGHT + HANG_GAP_Y) + BOX_HEIGHT / 2,
+            depth: depth + 1,
+            departmentName: ownDepartment,
+            children: [],
+            hung: { spineX: cardLeft - HANG_INDENT / 2, railY },
+          });
+        });
+      } else {
+        children.push(place(slot.node, cursor, childTop, depth + 1, ownDepartment));
+      }
+
+      cursor += slot.size.width + GAP_X;
     }
 
     return { ...node, x, y, depth, departmentName: ownDepartment, children };
   };
 
-  const placed = place(root, 0, '');
+  const size = sizeOf(root);
 
   return {
-    placed,
-    width: Math.round(PAD_X * 2 + Math.max(leafIndex, 1) * (BOX_WIDTH + GAP_X) - GAP_X),
-    height: Math.round(PAD_Y * 2 + (maxDepth + 1) * (BOX_HEIGHT + GAP_Y) - GAP_Y),
+    placed: place(root, PAD_X, PAD_Y, 0, ''),
+    width: Math.round(PAD_X * 2 + size.width),
+    height: Math.round(PAD_Y * 2 + size.height),
   };
 }
 
-/** Elbow connectors: down, across, down. The reference's path shape. */
+/**
+ * Elbow connectors: down, across, down — and, for a hanging block, down a shared rail and along a
+ * spine. Overlapping segments are drawn twice and look drawn once, which is what lets each card
+ * own a whole path rather than the block needing a stitched-together one.
+ */
 function connectors(node: Placed): string[] {
   const paths: string[] = [];
+  const fromY = Math.round(node.y + BOX_HEIGHT / 2);
 
   for (const child of node.children) {
-    const fromY = node.y + BOX_HEIGHT / 2;
-    const toY = child.y - BOX_HEIGHT / 2;
-    const midY = (fromY + toY) / 2;
-    paths.push(`M${node.x} ${fromY} V${midY} H${child.x} V${toY}`);
+    if (child.hung) {
+      const { spineX, railY } = child.hung;
+      paths.push(
+        `M${Math.round(node.x)} ${fromY} V${Math.round(railY)} H${Math.round(spineX)} ` +
+          `V${Math.round(child.y)} H${Math.round(child.x - BOX_WIDTH / 2)}`,
+      );
+    } else {
+      const toY = Math.round(child.y - BOX_HEIGHT / 2);
+      const midY = Math.round((fromY + toY) / 2);
+      paths.push(`M${Math.round(node.x)} ${fromY} V${midY} H${Math.round(child.x)} V${toY}`);
+    }
+
     paths.push(...connectors(child));
   }
 
@@ -568,6 +778,41 @@ export function OrgChart({
   const drawing = useRef<SVGSVGElement>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+
+  /*
+   * What is folded, as a default plus what this person has since decided.
+   *
+   * Two pieces rather than one set, because the data arrives after the first render and arrives
+   * again on every change — a single set seeded once would be seeded from an empty company, and a
+   * set recomputed from the tree would throw away the department somebody had just opened. The
+   * default is derived from whatever tree is current; the overrides are theirs and survive it.
+   */
+  const defaultsFolded = useMemo(() => foldedByDefault(root), [root]);
+  const [chosen, setChosen] = useState<ReadonlyMap<string, boolean>>(() => new Map());
+
+  const folded = useMemo(() => {
+    const set = new Set(defaultsFolded);
+    for (const [id, isFolded] of chosen) {
+      if (isFolded) set.add(id);
+      else set.delete(id);
+    }
+    return set as ReadonlySet<string>;
+  }, [defaultsFolded, chosen]);
+
+  /** Everybody under each node that has anybody, from the tree as given rather than as drawn. */
+  const under = useMemo(() => {
+    const counts = new Map<string, number>();
+    const walk = (node: OrgChartNode) => {
+      if (node.children.length > 0) counts.set(node.id, countUnder(node));
+      node.children.forEach(walk);
+    };
+    walk(root);
+    return counts;
+  }, [root]);
+
+  const toggleFold = useCallback((id: string, isFolded: boolean) => {
+    setChosen((previous) => new Map(previous).set(id, isFolded));
+  }, []);
   const [full, setFull] = useState(false);
   const [exporting, setExporting] = useState(false);
   /*
@@ -724,7 +969,7 @@ export function OrgChart({
   const hasPeople = root.children.some((department) => department.children.length > 0);
   const emptyNote = !hasPeople && emptyMessage !== undefined ? emptyMessage : null;
 
-  const { placed, width, height } = layout(root);
+  const { placed, width, height } = layout(pruned(root, folded));
   const paths = connectors(placed);
 
   const nodes: Placed[] = [];
@@ -770,6 +1015,11 @@ export function OrgChart({
           key={`${node.kind}-${node.id}`}
           node={node}
           idPrefix={idPrefix}
+          // Not the company card. Folding it would leave a chart of one box and an offer to
+          // unfold, which is a control whose only use is to make the screen useless.
+          {...(node.kind !== 'company' && under.has(node.id)
+            ? { fold: { hidden: under.get(node.id)!, folded: folded.has(node.id), toggleFold } }
+            : {})}
           {...(onSelectPerson === undefined ? {} : { onSelectPerson })}
           {...(onAddReport === undefined ? {} : { onAddReport })}
           {...(onEditPerson === undefined ? {} : { onEditPerson })}
@@ -1163,6 +1413,85 @@ function NodeActions({ children }: { children: React.ReactNode }) {
   return <g className="uboss-org-actions">{children}</g>;
 }
 
+/**
+ * The fold toggle: a pill straddling the card's bottom edge, where the line to the people below
+ * leaves it.
+ *
+ * Sitting on the connector rather than beside it is deliberate — it is the control for that line,
+ * and a reader follows the line down to find it. It carries the count at all times, folded or not,
+ * because "12" on a closed card is the only thing telling somebody there are twelve people there,
+ * and on an open one it is the size of what they are about to put away.
+ *
+ * Always drawn, never revealed on hover like the edit actions: this is how the chart is navigated,
+ * and a navigation control somebody has to go looking for is one they do not know exists.
+ */
+function FoldToggle({
+  x,
+  y,
+  name,
+  fold,
+  id,
+}: {
+  x: number;
+  y: number;
+  name: string;
+  id: string;
+  fold: Fold;
+}) {
+  const label = fold.folded
+    ? `Show the ${fold.hidden} under ${name}`
+    : `Hide the ${fold.hidden} under ${name}`;
+
+  const text = fold.folded ? `+${fold.hidden}` : `−${fold.hidden}`;
+  const width = 26 + 7.5 * text.length;
+  const cx = x + BOX_WIDTH / 2;
+  const cy = y + BOX_HEIGHT;
+
+  return (
+    <g
+      className="uboss-org-fold"
+      role="button"
+      tabIndex={0}
+      aria-label={label}
+      style={{ cursor: 'pointer' }}
+      onClick={(event) => {
+        event.stopPropagation();
+        fold.toggleFold(id, !fold.folded);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          event.stopPropagation();
+          fold.toggleFold(id, !fold.folded);
+        }
+      }}
+    >
+      <title>{label}</title>
+      <rect
+        x={cx - width / 2}
+        y={cy - 11}
+        width={width}
+        height={22}
+        rx={11}
+        fill={fold.folded ? 'var(--uboss-blue-050)' : 'var(--uboss-surface)'}
+        stroke="var(--uboss-border)"
+        strokeWidth={1.2}
+      />
+      <text
+        x={cx}
+        y={cy + 4}
+        textAnchor="middle"
+        fill={fold.folded ? 'var(--uboss-blue)' : 'var(--uboss-text-2)'}
+        fontSize={11}
+        fontWeight={700}
+        pointerEvents="none"
+      >
+        {text}
+      </text>
+    </g>
+  );
+}
+
 function ActionButton({
   x,
   y,
@@ -1346,9 +1675,17 @@ function PersonAvatar({
   );
 }
 
+/** What a node needs to draw its own toggle. Absent on a node with nobody under it. */
+interface Fold {
+  hidden: number;
+  folded: boolean;
+  toggleFold: (id: string, folded: boolean) => void;
+}
+
 function OrgNode({
   node,
   idPrefix,
+  fold,
   onSelectPerson,
   onAddReport,
   onEditPerson,
@@ -1358,6 +1695,7 @@ function OrgNode({
 }: {
   node: Placed;
   idPrefix: string;
+  fold?: Fold;
   onSelectPerson?: (id: string) => void;
   onAddReport?: (id: string) => void;
   onEditPerson?: (id: string) => void;
@@ -1441,6 +1779,9 @@ function OrgNode({
         )}
         role="treeitem"
         aria-label={`${node.name}. ${node.subtitle}`}
+        // Only on a node that has anybody under it: on a leaf the attribute would claim there is
+        // something to open.
+        {...(fold === undefined ? {} : { 'aria-expanded': !fold.folded })}
         /*
           Both inks travel as custom properties and CSS picks one, because an SVG fill cannot ask
           what theme it is in and the right ink here depends on it. Set on the node rather than in
@@ -1494,6 +1835,10 @@ function OrgNode({
             ))}
           </NodeActions>
         )}
+
+        {fold === undefined ? null : (
+          <FoldToggle x={x} y={y} name={node.name} id={node.id} fold={fold} />
+        )}
       </g>
     );
   }
@@ -1522,6 +1867,7 @@ function OrgNode({
       className={cn('uboss-org-node', actions.length > 0 && 'uboss-org-node--acts')}
       role="treeitem"
       aria-label={`${node.name}. ${node.subtitle}`}
+      {...(fold === undefined ? {} : { 'aria-expanded': !fold.folded })}
       {...(selectable
         ? {
             tabIndex: 0,
@@ -1579,6 +1925,10 @@ function OrgNode({
             />
           ))}
         </NodeActions>
+      )}
+
+      {fold === undefined ? null : (
+        <FoldToggle x={x} y={y} name={node.name} id={node.id} fold={fold} />
       )}
     </g>
   );

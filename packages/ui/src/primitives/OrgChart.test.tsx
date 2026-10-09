@@ -611,3 +611,205 @@ describe('OrgChart — the frame', () => {
     });
   });
 });
+
+/*
+ * The layout itself, which until a real company arrived had only ever been looked at.
+ *
+ * Read off the rendered SVG rather than from the layout function, because the layout function is
+ * not exported and the thing that matters is where a card actually lands.
+ */
+describe('OrgChart — a manager with more reports than fit across', () => {
+  const reports = (count: number, from = 1): OrgChartNode[] =>
+    Array.from({ length: count }, (_, index) => ({
+      kind: 'person' as const,
+      id: `report-${from + index}`,
+      name: `Report ${from + index}`,
+      subtitle: 'Operator',
+      children: [],
+    }));
+
+  const underOneManager = (count: number): OrgChartNode => ({
+    kind: 'company',
+    id: 'company-1',
+    name: 'SPM Medicare',
+    subtitle: `Company · ${count} people`,
+    children: [
+      {
+        kind: 'person',
+        id: 'manager-1',
+        name: 'Karan Singh',
+        subtitle: 'Production Head',
+        children: reports(count),
+      },
+    ],
+  });
+
+  /**
+   * Where each card sits, by the name on it.
+   *
+   * Taken from the name's own `<text>`, because a card is drawn from absolute coordinates rather
+   * than moved by a transform. Every person's card puts that text at the same offset inside it, so
+   * comparing one person's to another's compares the cards.
+   */
+  const cards = (container: HTMLElement): Map<string, { x: number; y: number }> => {
+    const found = new Map<string, { x: number; y: number }>();
+    for (const group of container.querySelectorAll('g[role="treeitem"][aria-label]')) {
+      const label = (group.getAttribute('aria-label') ?? '').split('.')[0]!.trim();
+      const text = group.querySelector('text');
+      if (text) {
+        found.set(label, {
+          x: Number(text.getAttribute('x')),
+          y: Number(text.getAttribute('y')),
+        });
+      }
+    }
+    return found;
+  };
+
+  const chartWidth = (container: HTMLElement): number =>
+    Number(container.querySelector('svg')!.getAttribute('width'));
+
+  it('still spreads three reports across, because a row of three reads as a tree', () => {
+    const { container } = render(<OrgChart root={underOneManager(3)} />);
+    const placed = cards(container);
+
+    const ys = [1, 2, 3].map((n) => placed.get(`Report ${n}`)!.y);
+    expect(new Set(ys).size).toBe(1);
+  });
+
+  it('hangs four reports down one column instead of across', () => {
+    const { container } = render(<OrgChart root={underOneManager(4)} />);
+    const placed = cards(container);
+
+    const xs = [1, 2, 3, 4].map((n) => placed.get(`Report ${n}`)!.x);
+    const ys = [1, 2, 3, 4].map((n) => placed.get(`Report ${n}`)!.y);
+
+    expect(new Set(xs).size).toBe(1);
+    expect(new Set(ys).size).toBe(4);
+    // In the order they were given, which is the order the list was read in.
+    expect([...ys]).toEqual([...ys].sort((a, b) => a - b));
+  });
+
+  it('wraps a large block into columns rather than one very tall one', () => {
+    const { container } = render(<OrgChart root={underOneManager(49)} />);
+    // A company this size arrives folded, so the block has to be asked for before it can be
+    // measured — see the fold tests below.
+    fireEvent.click(screen.getByLabelText('Show the 49 under Karan Singh'));
+    const placed = cards(container);
+
+    const all = Array.from({ length: 49 }, (_, index) => placed.get(`Report ${index + 1}`)!);
+    const columns = new Set(all.map((card) => card.x));
+    const rows = new Set(all.map((card) => card.y));
+
+    expect(columns.size).toBe(5);
+    expect(rows.size).toBe(10);
+  });
+
+  it('keeps forty-nine reports inside a chart a screen can fit', () => {
+    const { container } = render(<OrgChart root={underOneManager(49)} />);
+    fireEvent.click(screen.getByLabelText('Show the 49 under Karan Singh'));
+
+    // Side by side these were 49 columns — over 18,000px, which fitted at eight percent and
+    // turned every name into a smear. The block is a fraction of that, open.
+    expect(chartWidth(container)).toBeLessThan(2400);
+  });
+
+  describe('and the company that arrives folded', () => {
+    it('draws a small company whole, with nothing to unfold', () => {
+      const { container } = render(<OrgChart root={underOneManager(6)} />);
+
+      // The company, the manager and all six.
+      expect(cards(container).size).toBe(8);
+      // The manager still offers to put them away; nothing is folded to begin with.
+      expect(screen.getByLabelText('Hide the 6 under Karan Singh')).toBeTruthy();
+    });
+
+    it('opens a large company at its first level instead of at eight per cent', () => {
+      const { container } = render(<OrgChart root={underOneManager(49)} />);
+
+      // The manager's card is there and says how many are behind it; the forty-nine are not
+      // drawn until somebody asks, which is what keeps the first screen readable.
+      expect(cards(container).has('Karan Singh')).toBe(true);
+      expect(cards(container).has('Report 1')).toBe(false);
+      expect(screen.getByLabelText('Show the 49 under Karan Singh')).toBeTruthy();
+    });
+
+    it('opens and closes on the toggle, and says which it is doing', () => {
+      const { container } = render(<OrgChart root={underOneManager(49)} />);
+
+      fireEvent.click(screen.getByLabelText('Show the 49 under Karan Singh'));
+      expect(cards(container).has('Report 1')).toBe(true);
+
+      fireEvent.click(screen.getByLabelText('Hide the 49 under Karan Singh'));
+      expect(cards(container).has('Report 1')).toBe(false);
+    });
+
+    it('opens from the keyboard, since the chart is reached by one', () => {
+      const { container } = render(<OrgChart root={underOneManager(49)} />);
+
+      fireEvent.keyDown(screen.getByLabelText('Show the 49 under Karan Singh'), { key: 'Enter' });
+      expect(cards(container).has('Report 1')).toBe(true);
+    });
+
+    it('tells a screen reader which cards have something behind them', () => {
+      const { container } = render(<OrgChart root={underOneManager(49)} />);
+
+      const manager = [...container.querySelectorAll('g[role="treeitem"]')].find((group) =>
+        (group.getAttribute('aria-label') ?? '').startsWith('Karan Singh'),
+      );
+      expect(manager!.getAttribute('aria-expanded')).toBe('false');
+
+      fireEvent.click(screen.getByLabelText('Show the 49 under Karan Singh'));
+      expect(
+        [...container.querySelectorAll('g[role="treeitem"]')]
+          .find((group) => (group.getAttribute('aria-label') ?? '').startsWith('Karan Singh'))!
+          .getAttribute('aria-expanded'),
+      ).toBe('true');
+    });
+
+    it('leaves a leaf without the attribute, having nothing to open', () => {
+      const { container } = render(<OrgChart root={underOneManager(6)} />);
+
+      const leaf = [...container.querySelectorAll('g[role="treeitem"]')].find((group) =>
+        (group.getAttribute('aria-label') ?? '').startsWith('Report 1'),
+      );
+      expect(leaf!.hasAttribute('aria-expanded')).toBe(false);
+    });
+  });
+
+  it('leaves a branch its own width while the leaves beside it stack', () => {
+    const mixed: OrgChartNode = {
+      kind: 'company',
+      id: 'company-1',
+      name: 'SPM Medicare',
+      subtitle: 'Company · 9 people',
+      children: [
+        {
+          kind: 'person',
+          id: 'manager-1',
+          name: 'Karan Singh',
+          subtitle: 'Production Head',
+          children: [
+            ...reports(6),
+            {
+              kind: 'person',
+              id: 'supervisor-1',
+              name: 'Lokesh Kumar',
+              subtitle: 'Supervisor',
+              children: reports(2, 7),
+            },
+          ],
+        },
+      ],
+    };
+
+    const { container } = render(<OrgChart root={mixed} />);
+    const placed = cards(container);
+
+    // The six stack; the supervisor keeps an ordinary subtree beside them, with their own two
+    // spread across underneath.
+    expect(new Set([1, 2, 3, 4, 5, 6].map((n) => placed.get(`Report ${n}`)!.x)).size).toBe(2);
+    expect(placed.get('Report 7')!.y).toBe(placed.get('Report 8')!.y);
+    expect(placed.get('Lokesh Kumar')!.y).toBeLessThan(placed.get('Report 7')!.y);
+  });
+});
