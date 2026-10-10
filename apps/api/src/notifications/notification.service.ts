@@ -202,10 +202,18 @@ export class NotificationService {
           };
         }
 
-        // A mandatory alert is emailed immediately whatever the digest says. A digest is a request
-        // for less noise, and "your account was accessed from a new country, in Friday's summary"
-        // is not a reasonable reading of it.
-        const emailNow = mandatory || (emailWanted && digest === 'Off');
+        /*
+         * A mandatory alert is emailed immediately whatever the digest says. A digest is a
+         * request for less noise, and "your account was accessed from a new country, in Friday's
+         * summary" is not a reasonable reading of it.
+         *
+         * `definition.emailable` comes first, and overrides even mandatory, because it is not a
+         * preference — it says this kind's email is somebody else's job. An invitation's email
+         * is the one carrying the activation link; a second one from here reached real inboxes
+         * saying "the activation link was emailed to you" over a link to a sign-in page the
+         * recipient has no password for. The bell still gets it.
+         */
+        const emailNow = definition.emailable && (mandatory || (emailWanted && digest === 'Off'));
         let emailQueued = false;
         // The row as the caller will see it. `markEmailQueuedWithinCurrentScope` returns the
         // updated version, so `result.notification.emailQueuedAt` is the truth rather than the

@@ -157,3 +157,26 @@ test('utcDay is a UTC calendar day, not a local one', () => {
   assert.equal(utcDay(new Date('2026-09-09T23:59:59Z')), '2026-09-09');
   assert.equal(utcDay(new Date('2026-09-10T00:00:00Z')), '2026-09-10');
 });
+
+/**
+ * Exactly one kind is not emailable, and the reason is not a preference.
+ *
+ * An invitation already has an email — the one carrying the activation link — so the
+ * notification beside it must not produce a second. Asserted as "one, and it is this one"
+ * rather than "Invitation is false", because the risk worth catching is a later kind being
+ * marked unemailable by habit: every other kind's email is the only notice its recipient gets.
+ */
+test('only the invitation suppresses its own email', () => {
+  const unemailable = NOTIFICATION_KIND_DEFINITIONS.filter(
+    (definition) => !definition.emailable,
+  ).map((definition) => definition.kind);
+
+  assert.deepEqual(unemailable, ['Invitation']);
+
+  // And it is still a real notification: suppressing the email must not mute the bell.
+  const invitation = NOTIFICATION_KIND_DEFINITIONS.find(
+    (definition) => definition.kind === 'Invitation',
+  );
+  assert.ok(invitation);
+  assert.equal(invitation!.alwaysMandatory, false);
+});

@@ -664,6 +664,39 @@ describe('notifications and escalation (e2e)', () => {
       assert.equal(result.notification?.emailQueuedAt, null);
     });
 
+    it('never emails an invitation, because the activation mail already is the email', async () => {
+      /*
+       * One event, one email.
+       *
+       * `IdentityMailService` sends the invitation — the message carrying the activation link,
+       * which is the whole point of inviting somebody. The notification beside it exists for the
+       * bell. With both going out, a real invited person received two messages: the usable one,
+       * and a second saying "the activation link was emailed to you" whose only link went to
+       * `/login`, a page they cannot use because the password they are being invited to set does
+       * not exist yet. Found by reading the inbox, not the code.
+       *
+       * The bell item is unaffected, and that is the point: this suppresses a duplicate email,
+       * not a notification.
+       */
+      const result = await notifications().raise({
+        tenantId,
+        recipientUserId: employeeId,
+        kind: 'Invitation',
+        severity: 'Info',
+        title: 'You have been invited',
+        body: 'Activate your account to reach this workspace.',
+        deepLink: '/login',
+        resourceType: 'invitation',
+        resourceId: 'INV-1',
+        isAssignedToRecipient: true,
+        dedupeKey: 'invitation:INV-1',
+      });
+
+      assert.equal(result.deliveredInApp, true, 'the bell still gets it');
+      assert.equal(result.emailQueued, false, 'and nothing is queued to email');
+      assert.equal(result.notification?.emailQueuedAt, null);
+    });
+
     it('ignores a digest for a mandatory alert', async () => {
       // "Your account was accessed from a new country, in Friday's summary" is not a reasonable
       // reading of a digest preference.

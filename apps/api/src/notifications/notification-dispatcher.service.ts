@@ -11,6 +11,7 @@ import type { TenantScope } from '../persistence/tenant-context.js';
 import { UserRepository } from '../persistence/user.repository.js';
 import { PlatformAlertService } from '../platform/platform-alert.service.js';
 import { EmailAdapter, maskEmail } from './email-adapter.js';
+import { renderEmailHtml } from './email-layout.js';
 
 export interface DispatchOutcome {
   claimed: number;
@@ -211,6 +212,20 @@ export class NotificationDispatcherService {
         (definition?.alwaysMandatory
           ? 'You are receiving this because security alerts cannot be turned off.\n'
           : ''),
+      html: renderEmailHtml({
+        preheader: notification.body.slice(0, 120),
+        heading: notification.title,
+        paragraphs: [
+          notification.body,
+          ...(notification.requiresAcknowledgement
+            ? ['This alert needs your acknowledgement. Opening it is not enough.']
+            : []),
+        ],
+        action: { label: 'Open it in UBoss', url: this.absolute(notification.deepLink) },
+        ...(definition?.alwaysMandatory
+          ? { footnote: 'You are receiving this because security alerts cannot be turned off.' }
+          : {}),
+      }),
       reference: `notification:${notification.id}`,
     });
 

@@ -46,6 +46,24 @@ export interface NotificationKindDefinition {
   /** Which module owns the resource, so a permission-aware screen can group them. */
   module: string;
   /**
+   * False when this kind must never be emailed, because something else already emails the event.
+   *
+   * There is exactly one of these and it was found by reading a real inbox. An invitation has
+   * its own email — the one carrying the activation link, sent by `IdentityMailService` — and
+   * the notification beside it exists for the bell. With both going out, the invited person
+   * received two messages: the real one, and a second saying *"the activation link was emailed
+   * to you"* whose only link went to `/login`, a page they cannot use because the password they
+   * are being invited to set does not exist yet.
+   *
+   * A property of the kind rather than of the call site: the reason holds wherever an
+   * invitation is raised from, and a flag passed in by hand is a flag somebody forgets on the
+   * second call site.
+   *
+   * It does **not** mute the bell, and it is not a preference. The person still gets the
+   * notification; what they do not get is a second, worse email about it.
+   */
+  emailable: boolean;
+  /**
    * Which prompt brings the module that *raises* this kind. Stated because three of the six
    * cannot fire yet, and a preference screen offering a control for something nothing produces
    * should say so rather than implying it is live.
@@ -70,6 +88,7 @@ export const NOTIFICATION_KIND_DEFINITIONS: readonly NotificationKindDefinition[
     alwaysMandatory: false,
     escalatesAfterSetting: null,
     module: 'users',
+    emailable: false,
     producedBy: 'live — Users & Access (Prompt 13)',
   },
   {
@@ -79,6 +98,7 @@ export const NOTIFICATION_KIND_DEFINITIONS: readonly NotificationKindDefinition[
     alwaysMandatory: false,
     escalatesAfterSetting: 'notifications.escalate_after_hours',
     module: 'approvals',
+    emailable: true,
     producedBy: 'the Approval Engine prompt',
   },
   {
@@ -88,6 +108,7 @@ export const NOTIFICATION_KIND_DEFINITIONS: readonly NotificationKindDefinition[
     alwaysMandatory: false,
     escalatesAfterSetting: 'notifications.escalate_after_hours',
     module: 'todo',
+    emailable: true,
     producedBy: 'the Human To-do prompt',
   },
   {
@@ -97,6 +118,7 @@ export const NOTIFICATION_KIND_DEFINITIONS: readonly NotificationKindDefinition[
     alwaysMandatory: false,
     escalatesAfterSetting: 'notifications.escalate_after_hours',
     module: 'settings',
+    emailable: true,
     producedBy: 'live — Connections & Secrets (Prompt 16)',
   },
   {
@@ -106,6 +128,7 @@ export const NOTIFICATION_KIND_DEFINITIONS: readonly NotificationKindDefinition[
     alwaysMandatory: false,
     escalatesAfterSetting: null,
     module: 'settings',
+    emailable: true,
     producedBy: 'live — Plans & Entitlements (Prompt 11)',
   },
   {
@@ -133,6 +156,7 @@ export const NOTIFICATION_KIND_DEFINITIONS: readonly NotificationKindDefinition[
      */
     escalatesAfterSetting: null,
     module: 'settings',
+    emailable: true,
     producedBy: 'live — the payment provider’s webhook',
   },
   {
@@ -149,6 +173,7 @@ export const NOTIFICATION_KIND_DEFINITIONS: readonly NotificationKindDefinition[
      */
     escalatesAfterSetting: null,
     module: 'todo',
+    emailable: true,
     producedBy: 'live — dependency release (Phase 6/7)',
   },
   {
@@ -159,6 +184,7 @@ export const NOTIFICATION_KIND_DEFINITIONS: readonly NotificationKindDefinition[
     alwaysMandatory: true,
     escalatesAfterSetting: null,
     module: 'settings',
+    emailable: true,
     producedBy: 'live — Audit & Security (Prompt 8)',
   },
   {
@@ -177,6 +203,7 @@ export const NOTIFICATION_KIND_DEFINITIONS: readonly NotificationKindDefinition[
     alwaysMandatory: false,
     escalatesAfterSetting: null,
     module: 'performance',
+    emailable: true,
     producedBy: 'live — the performance engine, when a badge period closes',
   },
 ];

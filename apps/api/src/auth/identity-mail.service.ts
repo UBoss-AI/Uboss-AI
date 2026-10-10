@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { AUTH_CONFIG, type AuthConfig } from './auth.config.js';
 import { EmailAdapter } from '../notifications/email-adapter.js';
+import { renderEmailHtml } from '../notifications/email-layout.js';
 
 /**
  * The two emails that are not workspace notifications: a password reset and an invitation.
@@ -86,6 +87,20 @@ export class IdentityMailService {
           'The link can be used once, and it expires.\n\n' +
           'If you were not expecting this, you can ignore it — nothing has been created for you ' +
           'until you open the link.\n',
+        // The text part stays, and is not a fallback nobody reads: a client set to plain text
+        // shows it, and so does every screen reader that refuses HTML mail.
+        html: renderEmailHtml({
+          preheader: `Set a password and activate your ${input.companyName} account.`,
+          heading: `You have been invited to ${input.companyName}`,
+          paragraphs: [
+            `${input.displayName}, an administrator at ${input.companyName} has invited you to ` +
+              'UBoss. Setting a password is the last step.',
+          ],
+          action: { label: 'Set your password', url: link },
+          footnote:
+            'The link can be used once, and it expires. If you were not expecting this you can ' +
+            'ignore this message — nothing has been created for you until you open the link.',
+        }),
         reference: 'invitation',
       });
       this.logger.log(`An activation link was sent for ${input.companyName}.`);
@@ -172,6 +187,21 @@ export class IdentityMailService {
           'stop here.\n\n' +
           'If this was not you, ignore this message. No account and no company has been created, ' +
           'and none will be.\n',
+        html: renderEmailHtml({
+          preheader: `Confirm this address to carry on setting up ${input.companyName}.`,
+          heading: 'Confirm your email address',
+          paragraphs: [
+            `${input.fullName}, somebody — we think you — started setting up ` +
+              `${input.companyName} on UBoss with this address.`,
+            'After this there is one more step: adding a DNS record to prove your company ' +
+              'controls the domain.',
+          ],
+          action: { label: 'Confirm this address', url: link },
+          footnote:
+            'Nothing is created until both steps are done, so there is nothing to undo if you ' +
+            'stop here. If this was not you, ignore this message — no account and no company ' +
+            'has been created, and none will be.',
+        }),
         reference: 'registration-confirmation',
       });
       this.logger.log('A registration confirmation link was sent.');
@@ -209,6 +239,15 @@ export class IdentityMailService {
           'The link expires shortly, and can be used once.\n\n' +
           'If this was not you, nothing has changed and you can ignore this message. ' +
           'Your password has not been altered.\n',
+        html: renderEmailHtml({
+          preheader: 'Choose a new password for your UBoss account.',
+          heading: 'Reset your password',
+          paragraphs: ['Somebody asked to reset the password for this UBoss account.'],
+          action: { label: 'Choose a new password', url: link },
+          footnote:
+            'The link expires shortly and can be used once. If this was not you, nothing has ' +
+            'changed and you can ignore this message — your password has not been altered.',
+        }),
         reference: 'password-reset',
       });
       this.logger.log('A password reset link was sent.');
