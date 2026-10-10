@@ -48,4 +48,13 @@ import { ubossConfig } from './packages/config/eslint.base.mjs';
  * reason. Linting it here means the product's build fails on a marketing page's code, which is
  * a failure nobody in this repository can act on.
  */
-export default [...ubossConfig(), { ignores: ['uboss-website/**'] }];
+/*
+ * `.venv` is a Python virtual environment somebody created in this folder.
+ *
+ * Same situation as `uboss-website` above and ignored for the same reason: it is not part of the
+ * product, it is not in version control, and CI never sees it. What it is, though, is thousands
+ * of vendored JavaScript files inside installed packages — and linting them made `npm run lint`
+ * report nineteen errors in `pip`'s bundled `urllib3`. A gate that cries wolf about somebody
+ * else's code is a gate people stop reading, and this one is the same gate CI runs.
+ */
+export default [...ubossConfig(), { ignores: ['uboss-website/**', '.venv/**'] }];

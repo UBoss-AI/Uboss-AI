@@ -82,7 +82,6 @@ describe('every emailed link points at a page the web app serves', () => {
    * Settings has three routes of its own and a dozen panels addressed by `?section=`, so both
    * halves of such a link have to be real: the path, and the key.
    */
-  const API_SRC = path.join(process.cwd(), 'src');
   const NAV_MODEL = path.join(
     process.cwd(),
     '..',
