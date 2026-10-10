@@ -150,6 +150,16 @@ export default function HierarchyPage() {
   const [departmentFilter, setDepartmentFilter] = useState('all');
 
   const [employeeOpen, setEmployeeOpen] = useState(false);
+  /*
+   * Set when the form is employing an account the company already has, rather than adding a
+   * person. Their name is not editable here, because it is their name across every company in
+   * UBoss and this screen is not where one employer rewrites it.
+   */
+  const [employSubject, setEmploySubject] = useState<{ userId: string; name: string } | null>(null);
+  /** People with an account here and no employment record — the gap this screen can close. */
+  const [unemployedAccounts, setUnemployedAccounts] = useState<{ userId: string; name: string }[]>(
+    [],
+  );
   const [form, setForm] = useState<EmployeeForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<AddEmployeeResult | null>(null);
@@ -303,6 +313,31 @@ export default function HierarchyPage() {
       .catch((caught: unknown) =>
         setError(caught instanceof ApiError ? caught.message : 'Could not load the hierarchy.'),
       );
+
+    /*
+     * The accounts this company has that are not in the chart.
+     *
+     * Almost always the administrator who was invited before the chart existed, and sometimes
+     * the two or three people invited alongside them. They are the reason an import refuses
+     * their own row and every row naming them as a manager, so the screen that builds the chart
+     * is the right place to notice them.
+     *
+     * Swallowed on failure: reading the roster needs a grant that somebody allowed to build the
+     * hierarchy may not hold, and a page that refuses to draw the company because of it would
+     * be a worse page than one that simply does not offer this.
+     */
+    void accessApi
+      .view(tenantId)
+      .then((access) => {
+        setUnemployedAccounts(
+          [...access.employees, ...access.pendingInvitations]
+            .filter(
+              (person) => person.employmentState === null && person.accountState !== 'Offboarded',
+            )
+            .map((person) => ({ userId: person.userId, name: person.displayName })),
+        );
+      })
+      .catch(() => setUnemployedAccounts([]));
   }, [tenantId]);
 
   useEffect(load, [load]);
@@ -392,31 +427,45 @@ export default function HierarchyPage() {
     setSaving(true);
     setError(null);
 
-    organizationApi
-      .addEmployee(tenantId, {
-        employeeName: form.employeeName,
-        employeeId: form.employeeId,
-        designation: form.designation,
-        specialization: form.specialization,
-        departmentId: form.departmentId,
-        ...(form.reportingManagerUserId === ''
-          ? {}
-          : { reportingManagerUserId: form.reportingManagerUserId }),
-        aadhaarNumber: form.aadhaarNumber,
-        ...(form.workEmail === '' ? {} : { workEmail: form.workEmail }),
-        ...(form.workPhone === '' ? {} : { workPhone: form.workPhone }),
-        ...(form.joinedOn === '' ? {} : { joinedOn: new Date(form.joinedOn).toISOString() }),
-      })
+    /*
+     * The employment fields, which are the same either way.
+     *
+     * What differs is only who the record belongs to: a person this call creates, or a person
+     * the company already has. The name is not sent in the second case — it is theirs across
+     * every company in UBoss, and the server reads it rather than taking it from this form.
+     */
+    const employment = {
+      employeeId: form.employeeId,
+      designation: form.designation,
+      specialization: form.specialization,
+      departmentId: form.departmentId,
+      ...(form.reportingManagerUserId === ''
+        ? {}
+        : { reportingManagerUserId: form.reportingManagerUserId }),
+      aadhaarNumber: form.aadhaarNumber,
+      ...(form.workEmail === '' ? {} : { workEmail: form.workEmail }),
+      ...(form.workPhone === '' ? {} : { workPhone: form.workPhone }),
+      ...(form.joinedOn === '' ? {} : { joinedOn: new Date(form.joinedOn).toISOString() }),
+    };
+
+    (employSubject === null
+      ? organizationApi.addEmployee(tenantId, {
+          employeeName: form.employeeName,
+          ...employment,
+        })
+      : organizationApi.employExistingAccount(tenantId, employSubject.userId, employment)
+    )
       .then((added) => {
         setResult(added);
         setForm(EMPTY_FORM);
+        setEmploySubject(null);
         load();
       })
       .catch((caught: unknown) =>
         setError(caught instanceof ApiError ? caught.message : 'Could not add that employee.'),
       )
       .finally(() => setSaving(false));
-  }, [form, load, tenantId]);
+  }, [employSubject, form, load, tenantId]);
 
   const closeDepartmentForm = useCallback(() => {
     setDepartmentOpen(false);
@@ -527,9 +576,15 @@ export default function HierarchyPage() {
     form.designation.trim() !== '' &&
     form.specialization.trim() !== '' &&
     form.departmentId !== '' &&
-    // CR-04, which the service enforces and this form did not: a hierarchy of people nobody can
-    // contact is what being lax here produced.
-    form.workEmail.trim() !== '' &&
+    /*
+     * CR-04, which the service enforces and this form did not: a hierarchy of people nobody can
+     * contact is what being lax here produced.
+     *
+     * Not asked when employing an account the company already has. They have a login handle, and
+     * the server uses it — demanding the operator retype an address the product already holds is
+     * a required field with a known answer, and the only thing it can produce is a typo.
+     */
+    (employSubject !== null || form.workEmail.trim() !== '') &&
     form.workPhone.trim() !== '' &&
     /*
      * The same condition the asterisk beside the field already uses.
@@ -567,8 +622,46 @@ export default function HierarchyPage() {
         breadcrumbs={[{ label: 'Hierarchy' }]}
       />
 
-      {error ? <Banner tone="danger">{error}</Banner> : null}
+      {/* Not while Add Employee is open — that dialog shows the same message inside itself,
+          where the fields that caused it are. Two copies of one sentence, one of them hidden
+          behind a modal, is how the hidden one gets written off as "nothing happened". */}
+      {error && !employeeOpen ? <Banner tone="danger">{error}</Banner> : null}
       {notice ? <Banner tone="ok">{notice}</Banner> : null}
+
+      {/*
+        Accounts this company has that are not in the chart.
+
+        Nearly always the administrator who was invited before the chart existed. Until they have
+        an employment record their own import row is refused, and so is every row that names them
+        as a manager — which is how one missing record turns into five refusals in a file of a
+        hundred and forty. Offered here rather than left to be discovered, because the operator
+        meets the consequence long before they meet the cause.
+      */}
+      {mayAdminister && unemployedAccounts.length > 0 ? (
+        <Banner tone="info">
+          {unemployedAccounts.length === 1
+            ? `${unemployedAccounts[0]!.name} has an account here but is not in the chart.`
+            : `${unemployedAccounts.length} people have an account here but are not in the chart.`}{' '}
+          Employ them so they can be named as a manager and appear in the hierarchy.
+          <span className="uboss-inline-actions">
+            {unemployedAccounts.map((person) => (
+              <Button
+                key={person.userId}
+                variant="default"
+                onClick={() => {
+                  setResult(null);
+                  setError(null);
+                  setEmploySubject(person);
+                  setForm({ ...EMPTY_FORM, employeeName: person.name });
+                  setEmployeeOpen(true);
+                }}
+              >
+                Employ {person.name}
+              </Button>
+            ))}
+          </span>
+        </Banner>
+      ) : null}
 
       {!view ? (
         <Card>
@@ -669,6 +762,7 @@ export default function HierarchyPage() {
                       icon="plus"
                       onClick={() => {
                         setResult(null);
+                        setError(null);
                         setEmployeeOpen(true);
                       }}
                     >
@@ -694,6 +788,7 @@ export default function HierarchyPage() {
                           onAddReport: (userId: string) => {
                             setResult(null);
                             setForm({ ...EMPTY_FORM, reportingManagerUserId: userId });
+                            setError(null);
                             setEmployeeOpen(true);
                           },
                           onEditPerson: (userId: string) => {
@@ -708,6 +803,7 @@ export default function HierarchyPage() {
                           onAddToDepartment: (departmentId: string) => {
                             setResult(null);
                             setForm({ ...EMPTY_FORM, departmentId });
+                            setError(null);
                             setEmployeeOpen(true);
                           },
                           onEditDepartment: editDepartment,
@@ -892,9 +988,18 @@ export default function HierarchyPage() {
         open={employeeOpen}
         onClose={() => {
           setEmployeeOpen(false);
+          setEmploySubject(null);
           setResult(null);
         }}
-        title={result ? 'Employee added' : saving ? 'Saving employee…' : 'Add Employee'}
+        title={
+          result
+            ? 'Employee added'
+            : saving
+              ? 'Saving employee…'
+              : employSubject === null
+                ? 'Add Employee'
+                : 'Employ ' + employSubject.name
+        }
         wide
         footer={
           result ? (
@@ -902,6 +1007,7 @@ export default function HierarchyPage() {
               <Button
                 onClick={() => {
                   setEmployeeOpen(false);
+                  setEmploySubject(null);
                   setResult(null);
                 }}
               >
@@ -1041,9 +1147,30 @@ export default function HierarchyPage() {
           />
         ) : (
           <>
+            {/*
+              The refusal, inside the dialog that caused it.
+
+              It used to render only on the page underneath, where the dialog covers it: the save
+              failed, the form sat there unchanged, and nothing on screen said why. The two
+              refusals an operator actually meets here — an Employee ID already in use, and a work
+              address that is already somebody's login — are both fixable in the fields directly
+              below this line, which is exactly where the sentence has to be.
+            */}
+            {error ? <Banner tone="danger">{error}</Banner> : null}
+
             <div className="uboss-section-label">Required</div>
 
-            <FormField label="Employee Name" required>
+            <FormField
+              label="Employee Name"
+              required
+              {...(employSubject === null
+                ? {}
+                : {
+                    hint:
+                      'Their name on the platform. One person has one name across every company ' +
+                      'they work in, so it is not edited here.',
+                  })}
+            >
               {(wiring) => (
                 <input
                   {...wiring}
@@ -1051,6 +1178,9 @@ export default function HierarchyPage() {
                   value={form.employeeName}
                   onChange={(event) => set('employeeName', event.target.value)}
                   placeholder="e.g. Kavya Reddy"
+                  // Employing an account that already exists: the person is named by id, and
+                  // this field is showing who that is rather than asking.
+                  readOnly={employSubject !== null}
                 />
               )}
             </FormField>
@@ -1180,7 +1310,15 @@ export default function HierarchyPage() {
               lax about it produced. They sat under "Optional details" wearing asterisks, which
               made that heading untrue three lines above them.
             */}
-            <FormField label="Email" required>
+            {/* No star when employing an existing account: the address is already theirs, and
+                the server uses it unless this field overrides it. */}
+            <FormField
+              label="Email"
+              required={employSubject === null}
+              {...(employSubject === null
+                ? {}
+                : { hint: 'Leave blank to keep the address their account already uses.' })}
+            >
               {(wiring) => (
                 <input
                   {...wiring}

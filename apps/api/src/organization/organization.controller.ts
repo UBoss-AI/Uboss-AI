@@ -118,6 +118,64 @@ export class ArchiveDepartmentDto {
  * service normalises it, derives a keyed match hash and the last four digits, and discards the
  * rest. There is no column it could be written to.
  */
+/**
+ * Employing an account this company already has.
+ *
+ * The same employment fields as Add Employee and **no identity fields**: the person is named by
+ * the id in the path, so there is no name to type and nothing to match on. That is the whole
+ * safety difference between this and matching on an address somebody typed.
+ */
+class EmployExistingAccountDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(40)
+  employeeId!: string;
+
+  @IsString()
+  @MinLength(2)
+  @MaxLength(160)
+  designation!: string;
+
+  @IsUUID()
+  departmentId!: string;
+
+  /** Null only for the first person in a company; the service refuses a second root. */
+  @IsOptional()
+  @IsUUID()
+  reportingManagerUserId?: string | null;
+
+  @IsString()
+  @Matches(/^[0-9\s-]{12,20}$/, {
+    message: 'Aadhaar Number must be twelve digits; spaces and dashes are allowed.',
+  })
+  aadhaarNumber!: string;
+
+  @IsString()
+  @MinLength(7)
+  @MaxLength(40)
+  workPhone!: string;
+
+  /** Already theirs, so it defaults to the account's own address when left out. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(320)
+  workEmail?: string;
+
+  @IsOptional()
+  @IsISO8601()
+  joinedOn?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  employmentType?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  specialization?: string;
+}
+
 export class AddEmployeeDto {
   @IsString()
   @MinLength(2)
@@ -444,6 +502,37 @@ export class OrganizationController {
       ...(body.joinedOn === undefined ? {} : { joinedOn: new Date(body.joinedOn) }),
       employmentType: body.employmentType,
       specialization: body.specialization,
+    });
+  }
+
+  /**
+   * Employ somebody who already has an account here.
+   *
+   * The path that the import's own refusal has always pointed at and that did not exist: an
+   * administrator invited before the org chart has a membership and no employment record, and
+   * every row naming them as a manager fails until they have one. Add Employee cannot do it,
+   * because it creates a person, and a second person for the same human is permanent.
+   */
+  @Post('employees/:userId/employ')
+  @RequirePermission({ module: 'hierarchy', action: 'Administer' })
+  async employExistingAccount(
+    @Param('userId', new ParseUUIDPipe()) userId: string,
+    @Body() body: EmployExistingAccountDto,
+  ): Promise<unknown> {
+    return this.employment.employExistingAccount({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
+      subjectUserId: userId,
+      employeeId: body.employeeId,
+      designation: body.designation,
+      departmentId: body.departmentId,
+      reportingManagerUserId: body.reportingManagerUserId ?? null,
+      aadhaarNumber: body.aadhaarNumber,
+      workPhone: body.workPhone,
+      ...(body.workEmail === undefined ? {} : { workEmail: body.workEmail }),
+      ...(body.joinedOn === undefined ? {} : { joinedOn: new Date(body.joinedOn) }),
+      ...(body.employmentType === undefined ? {} : { employmentType: body.employmentType }),
+      ...(body.specialization === undefined ? {} : { specialization: body.specialization }),
     });
   }
 

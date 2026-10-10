@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common';
 
 import { AuditEventService } from '../audit/audit-event.service.js';
 import { SECURITY_ACTIONS, SecurityEventPublisher } from '../auth/security-event.publisher.js';
@@ -125,7 +125,69 @@ export class PersonRegistryService {
       };
     }
 
-    // Nothing matched: a new permanent UBoss identity.
+    /*
+     * Nothing matched on the identifier. Before creating a person, the address has to be free.
+     *
+     * `users.email` is a unique login handle across the whole platform, so an address somebody
+     * else already holds cannot be given to a new person. **This check is the whole reason Add
+     * Employee stopped working**: without it the create below reached PostgreSQL, which raised
+     * `23505` on `users_email_key`; Prisma reported `P2002`; nothing in the request pipeline
+     * turns a Prisma error into an HTTP answer, so Nest returned **500 Internal Server Error**
+     * and the form showed nothing at all. Reproduced against a company whose administrator was
+     * invited before the org chart existed — which is every company, in that order.
+     *
+     * The answer is a 409 that names what to do, and it is three different sentences because
+     * the operator's next action is three different things.
+     *
+     * What this deliberately does **not** do is employ the account it found. Matching a person
+     * on nothing but an address means an address mistyped into a colleague's attaches this
+     * row's Aadhaar to that colleague — a real person carrying somebody else's identifier, to
+     * save a click. Employing an existing account is its own deliberate act, on the person
+     * rather than on a typed string: `EmploymentService.employExistingAccount`.
+     */
+    const typed = input.workEmail?.trim().toLowerCase() ?? '';
+    if (typed !== '') {
+      const holder = await this.prisma.client.user.findUnique({
+        where: { email: typed },
+        select: { id: true, displayName: true },
+      });
+
+      if (holder) {
+        const memberHere = await this.prisma.client.tenantMembership.findFirst({
+          where: { tenantId: input.tenantId, userId: holder.id },
+          select: { id: true },
+        });
+        const employedHere = memberHere
+          ? await this.prisma.client.employmentRecord.findFirst({
+              where: { tenantId: input.tenantId, userId: holder.id },
+              select: { id: true },
+            })
+          : null;
+
+        if (employedHere) {
+          throw new ConflictException(
+            `"${typed}" already belongs to ${holder.displayName}, who is employed here. Edit ` +
+              'their record instead of adding them again, or use an address only this person has.',
+          );
+        }
+        if (memberHere) {
+          throw new ConflictException(
+            `${holder.displayName} already has an account in this company with the address ` +
+              `"${typed}", and is not an employee yet. Employ that account from the banner at ` +
+              'the top of the Hierarchy screen rather than creating a second person for them. ' +
+              'To add somebody else entirely, use an address only they have.',
+          );
+        }
+        // Held outside this company. Who holds it is not this operator's business, and the only
+        // answer they can act on is that this one is not free.
+        throw new ConflictException(
+          `"${typed}" is already in use as a login handle. Leave the address blank, or use one ` +
+            'only this person has.',
+        );
+      }
+    }
+
+    // A new permanent UBoss identity.
     //
     // The email is synthesised from the UBoss Unique ID when the company did not supply one,
     // because `users.email` is a unique login handle and this person may have no work address
@@ -133,9 +195,7 @@ export class PersonRegistryService {
     // a placeholder that cannot receive mail and cannot collide, and the invitation flow
     // replaces it when a real address arrives.
     const ubossUniqueId = generateUbossUniqueId();
-    const email = input.workEmail?.trim()
-      ? input.workEmail.trim().toLowerCase()
-      : `${ubossUniqueId.toLowerCase()}@person.uboss.invalid`;
+    const email = typed !== '' ? typed : `${ubossUniqueId.toLowerCase()}@person.uboss.invalid`;
 
     const person = await this.prisma.client.user.create({
       data: {
@@ -192,5 +252,68 @@ export class PersonRegistryService {
       matchedOn: null,
       aadhaarMasked: `XXXX XXXX ${lastFour}`,
     };
+  }
+
+  /**
+   * Record an entered identifier against somebody this company already knows.
+   *
+   * For employing an existing account: the person is not being matched, they are being named,
+   * so there is nothing to search for. What is still needed is the identifier, because an
+   * employment record carries one and because the identifier is what lets a later employer
+   * recognise the same human.
+   *
+   * Three outcomes, and the third is the one that matters: an identifier already attached to a
+   * **different** person is refused rather than moved. Two people cannot hold one Aadhaar, and
+   * the honest reading of that collision is a typo in the number — not that the person in front
+   * of the operator is secretly somebody else.
+   */
+  async attachIdentifierToKnownPersonWithinCurrentScope(input: {
+    tenantId: string;
+    actorUserId: string;
+    userId: string;
+    aadhaarNumber: string;
+  }): Promise<{ aadhaarMasked: string }> {
+    const normalisation = normaliseAadhaar(input.aadhaarNumber);
+    if (!normalisation.ok) {
+      throw new BadRequestException(AADHAAR_REJECTION_MESSAGES[normalisation.reason]);
+    }
+
+    const { normalised, lastFour } = normalisation.value;
+    const index = this.secrets.blindIndex(normalised, BLIND_INDEX_PURPOSES.aadhaarMatch);
+
+    const existing = await this.organization.findPersonByIdentifierWithinCurrentScope({
+      kind: 'AadhaarEnteredOnly',
+      matchHash: index.hash,
+    });
+
+    if (existing && existing.userId !== input.userId) {
+      throw new ConflictException(
+        'That identifier already belongs to a different person. Check the number — one ' +
+          'identifier cannot be held by two people.',
+      );
+    }
+
+    if (!existing) {
+      await this.organization.attachIdentifierWithinCurrentScope({
+        userId: input.userId,
+        kind: 'AadhaarEnteredOnly',
+        matchHash: index.hash,
+        matchKeyId: index.keyId,
+        lastFour,
+        enteredByTenantId: input.tenantId,
+        enteredByUserId: input.actorUserId,
+      });
+
+      await this.auditEvents.appendWithinCurrentScope(input.tenantId, {
+        action: 'person.identifier_attached',
+        resourceType: 'user',
+        resourceId: input.userId,
+        actorUserId: input.actorUserId,
+        summary: 'Recorded an entered identifier against an existing account.',
+        metadata: { aadhaarAssurance: 'EnteredOnly', aadhaarVerified: false, aadhaarStored: false },
+      });
+    }
+
+    return { aadhaarMasked: `XXXX XXXX ${lastFour}` };
   }
 }

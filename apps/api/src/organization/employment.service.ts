@@ -209,34 +209,7 @@ export class EmploymentService {
       );
     }
 
-    if (input.reportingManagerUserId !== null) {
-      const manager = await this.organization.findEmployment(
-        input.scope,
-        input.reportingManagerUserId,
-      );
-      if (!manager) {
-        throw new BadRequestException(
-          'A reporting manager must already be employed by this company.',
-        );
-      }
-      if (manager.state !== 'Active') {
-        throw new ConflictException(
-          'That person’s employment has ended, so they cannot be a reporting manager.',
-        );
-      }
-    } else {
-      // The one allowed exception, and it is checked rather than assumed: a company that already
-      // has a root does not get a second one by leaving the field blank.
-      const existing = await this.organization.listHierarchy(input.scope);
-      const roots = existing.filter((row) => row.reportingManagerUserId === null);
-      if (roots.length > 0) {
-        throw new BadRequestException(
-          'Reporting Manager is required. This company already has somebody at the top of the ' +
-            `reporting tree (${roots[0]?.displayName}), so a second person with no manager ` +
-            'would leave the chart with two disconnected roots.',
-        );
-      }
-    }
+    await this.assertReportingManager(input.scope, input.reportingManagerUserId);
 
     return this.prisma.runInTenantTransaction(input.scope, async () => {
       // 1. The global person: match an existing UBoss identity or create a new one.
@@ -248,6 +221,94 @@ export class EmploymentService {
         workEmail: input.workEmail,
       });
 
+      return this.writeEmployment({
+        scope: input.scope,
+        actorUserId: input.actorUserId,
+        person,
+        employeeName,
+        employeeId,
+        designation,
+        departmentName: department.name,
+        departmentId: input.departmentId,
+        reportingManagerUserId: input.reportingManagerUserId,
+        ...(input.specialization === undefined ? {} : { specialization: input.specialization }),
+        ...(input.workEmail === undefined ? {} : { workEmail: input.workEmail }),
+        ...(input.workPhone === undefined ? {} : { workPhone: input.workPhone }),
+        ...(input.joinedOn === undefined ? {} : { joinedOn: input.joinedOn }),
+        ...(input.employmentType === undefined ? {} : { employmentType: input.employmentType }),
+      });
+    });
+  }
+
+  /**
+   * Who this person reports to — and the one case where nobody is the right answer.
+   *
+   * The client lists Reporting Manager among the required fields. The exception is structural
+   * rather than a relaxation: the **first** person in a company has nobody to report to. A
+   * second root is refused, because a chart with two disconnected tops is not a hierarchy.
+   */
+  private async assertReportingManager(
+    scope: TenantScope,
+    reportingManagerUserId: string | null,
+  ): Promise<void> {
+    if (reportingManagerUserId !== null) {
+      const manager = await this.organization.findEmployment(scope, reportingManagerUserId);
+      if (!manager) {
+        throw new BadRequestException(
+          'A reporting manager must already be employed by this company.',
+        );
+      }
+      if (manager.state !== 'Active') {
+        throw new ConflictException(
+          'That person’s employment has ended, so they cannot be a reporting manager.',
+        );
+      }
+      return;
+    }
+
+    // Checked rather than assumed: a company that already has a root does not get a second one
+    // by leaving the field blank.
+    const existing = await this.organization.listHierarchy(scope);
+    const roots = existing.filter((row) => row.reportingManagerUserId === null);
+    if (roots.length > 0) {
+      throw new BadRequestException(
+        'Reporting Manager is required. This company already has somebody at the top of the ' +
+          `reporting tree (${roots[0]?.displayName}), so a second person with no manager ` +
+          'would leave the chart with two disconnected roots.',
+      );
+    }
+  }
+
+  /**
+   * The part that is the same however the person was found: seat, membership, record, audit.
+   *
+   * Runs inside the caller's tenant transaction. Shared by Add Employee and by employing an
+   * existing account, because the difference between those two is **only** how the person is
+   * resolved — and a second copy of this is how one path quietly stops claiming a seat.
+   */
+  private async writeEmployment(input: {
+    scope: TenantScope;
+    actorUserId: string;
+    person: {
+      userId: string;
+      ubossUniqueId: string;
+      matched: boolean;
+      aadhaarMasked: string | null;
+    };
+    employeeName: string;
+    employeeId: string;
+    designation: string;
+    departmentName: string;
+    departmentId: string;
+    reportingManagerUserId: string | null;
+    specialization?: string | undefined;
+    workEmail?: string | undefined;
+    workPhone?: string | undefined;
+    joinedOn?: Date | undefined;
+    employmentType?: string | undefined;
+  }): Promise<AddEmployeeResult> {
+    const { person } = input;
+    {
       const alreadyEmployed = await this.prisma.client.employmentRecord.findFirst({
         where: { tenantId: input.scope.tenantId, userId: person.userId },
       });
@@ -286,8 +347,8 @@ export class EmploymentService {
       // 4. The employment record.
       const employment = await this.organization.createEmployment(input.scope, {
         userId: person.userId,
-        employeeId,
-        designation,
+        employeeId: input.employeeId,
+        designation: input.designation,
         ...(input.specialization === undefined
           ? {}
           : { specialization: input.specialization.trim() }),
@@ -308,9 +369,9 @@ export class EmploymentService {
         action: 'hierarchy.employee_added',
         resourceType: 'employment_record',
         resourceId: employment.id,
-        resourceRef: employeeId,
+        resourceRef: input.employeeId,
         actorUserId: input.actorUserId,
-        summary: `Added ${employeeName} as ${designation} in ${department.name}.`,
+        summary: `Added ${input.employeeName} as ${input.designation} in ${input.departmentName}.`,
         metadata: {
           userId: person.userId,
           ubossUniqueId: person.ubossUniqueId,
@@ -327,12 +388,173 @@ export class EmploymentService {
         userId: person.userId,
         ubossUniqueId: person.ubossUniqueId,
         matchedExistingPerson: person.matched,
-        employeeId,
+        employeeId: input.employeeId,
         aadhaarMasked: person.aadhaarMasked,
         aadhaarAssurance: 'EnteredOnly' as const,
         seats: { used: seats.used, ceiling: seats.ceiling, available: seats.available },
         invitationSent: false as const,
       };
+    }
+  }
+
+  /**
+   * Employ somebody who already has an account in this company.
+   *
+   * ## Why this exists
+   *
+   * An administrator is invited before the org chart exists — that is the normal order, and it
+   * leaves them a member of the company with no employment record. When the roster is imported
+   * later, their own row is refused, and so is every row naming them as a manager, because the
+   * import will not quietly reuse an account it found by matching a typed address. The refusal
+   * told the operator to "employ that account from the Users screen", and **there was no such
+   * action anywhere in the product**: `addEmployee` was the only way to create an employment
+   * record, and it always creates a person. So the only way out was to import the same human a
+   * second time under a blanked address — two UBoss identities for one person, permanently.
+   *
+   * ## Why it is safe where matching on an address is not
+   *
+   * The operator names the **person**, by id, chosen from the people this company already has.
+   * Nothing is inferred from a string somebody typed, so a mistyped address cannot attach this
+   * row's identifier to a colleague. That is the whole distinction, and it is why this is a
+   * separate deliberate act rather than a fallback inside Add Employee.
+   *
+   * Everything after that is `addEmployee`'s own work and is not repeated here: the seat claim,
+   * the employment record, the audit event, and the rule that a second root must be explicit.
+   */
+  async employExistingAccount(input: {
+    scope: TenantScope;
+    actorUserId: string;
+    /** Somebody who is already a member of this company and has no employment record. */
+    subjectUserId: string;
+    employeeId: string;
+    designation: string;
+    departmentId: string;
+    reportingManagerUserId: string | null;
+    aadhaarNumber: string;
+    specialization?: string | undefined;
+    workEmail?: string | undefined;
+    workPhone?: string | undefined;
+    joinedOn?: Date | undefined;
+    employmentType?: string | undefined;
+  }): Promise<AddEmployeeResult> {
+    const context = await this.authorization.contextFor(input.scope, input.actorUserId);
+    await this.authorization.assertCan(context, { module: 'hierarchy', action: 'Administer' });
+
+    const subject = await this.prisma.runInTenantTransaction(input.scope, async () => {
+      const membership = await this.prisma.client.tenantMembership.findFirst({
+        where: { tenantId: input.scope.tenantId, userId: input.subjectUserId },
+        select: { id: true },
+      });
+      if (!membership) return null;
+
+      return this.prisma.client.user.findUnique({
+        where: { id: input.subjectUserId },
+        select: { id: true, displayName: true, email: true },
+      });
+    });
+
+    if (!subject) {
+      throw new NotFoundException(
+        'That person does not have an account in this company, so there is nothing to employ. ' +
+          'Use Add Employee instead.',
+      );
+    }
+
+    const alreadyEmployed = await this.organization.findEmployment(
+      input.scope,
+      input.subjectUserId,
+    );
+    if (alreadyEmployed) {
+      throw new ConflictException(
+        `${subject.displayName} already has an employment record in this company. Edit it ` +
+          'instead — one person has one employment record per company.',
+      );
+    }
+
+    /*
+     * Their own address, when the caller did not send one.
+     *
+     * The person already has a login handle and it is almost always the work address the
+     * operator would type anyway. Defaulting to it means the employment record carries a way to
+     * reach them rather than a blank, and it cannot collide with anything, because it is
+     * already theirs.
+     */
+    const workEmail = input.workEmail?.trim() || subject.email;
+    const workPhone = (input.workPhone ?? '').trim();
+    if (!workPhone) {
+      throw new BadRequestException(
+        'Work Phone is required. Work is chased by phone, and an employee the company cannot ' +
+          'reach is not a record worth keeping.',
+      );
+    }
+
+    const employeeId = input.employeeId.trim();
+    const designation = input.designation.trim();
+    if (!employeeId || !designation) {
+      throw new BadRequestException(
+        'Employee ID and Designation are required and cannot be blank.',
+      );
+    }
+
+    const department = await this.organization.findDepartment(input.scope, input.departmentId);
+    if (!department || department.archivedAt !== null) {
+      throw new BadRequestException(
+        'That department does not exist in this company, or is archived.',
+      );
+    }
+
+    const duplicateEmployeeId = await this.organization.findEmploymentByEmployeeId(
+      input.scope,
+      employeeId,
+    );
+    if (duplicateEmployeeId) {
+      throw new ConflictException(
+        `Employee ID "${employeeId}" is already used in this company. Company Employee IDs are ` +
+          'unique within a company.',
+      );
+    }
+
+    // The same reporting rule as Add Employee, and for the same reason: a manager who is not
+    // employed here cannot be one, and a second root has to be asked for rather than left blank.
+    await this.assertReportingManager(input.scope, input.reportingManagerUserId);
+
+    return this.prisma.runInTenantTransaction(input.scope, async () => {
+      const identifier = await this.people.attachIdentifierToKnownPersonWithinCurrentScope({
+        tenantId: input.scope.tenantId,
+        actorUserId: input.actorUserId,
+        userId: subject.id,
+        aadhaarNumber: input.aadhaarNumber,
+      });
+
+      return this.writeEmployment({
+        scope: input.scope,
+        actorUserId: input.actorUserId,
+        person: {
+          userId: subject.id,
+          // Read back inside the transaction rather than carried: the permanent id is the one
+          // thing here that must be the person's own and not a value assembled on the way in.
+          ubossUniqueId:
+            (
+              await this.prisma.client.user.findUnique({
+                where: { id: subject.id },
+                select: { ubossUniqueId: true },
+              })
+            )?.ubossUniqueId ?? '',
+          matched: true,
+          aadhaarMasked: identifier.aadhaarMasked,
+        },
+        employeeName: subject.displayName,
+        employeeId,
+        designation,
+        departmentName: department.name,
+        departmentId: input.departmentId,
+        reportingManagerUserId: input.reportingManagerUserId,
+        ...(input.specialization === undefined ? {} : { specialization: input.specialization }),
+        workEmail,
+        workPhone,
+        ...(input.joinedOn === undefined ? {} : { joinedOn: input.joinedOn }),
+        ...(input.employmentType === undefined ? {} : { employmentType: input.employmentType }),
+      });
     });
   }
 

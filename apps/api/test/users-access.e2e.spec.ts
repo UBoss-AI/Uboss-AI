@@ -59,6 +59,8 @@ import { PrismaService } from '../src/persistence/prisma.service.js';
 import { SessionRepository } from '../src/persistence/session.repository.js';
 import { tenantScopeForPlatformOperation } from '../src/persistence/tenant-context.js';
 import { TenantRepository } from '../src/persistence/tenant.repository.js';
+import { PasswordResetService } from '../src/auth/password-reset.service.js';
+import { PasswordResetRepository } from '../src/persistence/password-reset.repository.js';
 import { UserCredentialRepository } from '../src/persistence/user-credential.repository.js';
 import { TenantMembershipRepository } from '../src/persistence/tenant-membership.repository.js';
 import { generateUbossUniqueId } from '../src/persistence/uboss-unique-id.js';
@@ -181,6 +183,9 @@ describe('users & access (e2e)', () => {
         { provide: EmailAdapter, useClass: LoggingEmailAdapter },
         // The activation link, which is the only part of an invitation a person can act on.
         IdentityMailService,
+        // And the reset link an administrator sends on somebody else's behalf.
+        PasswordResetService,
+        PasswordResetRepository,
         PerformanceService,
         MemoryService,
         OffboardingService,
@@ -2049,9 +2054,17 @@ describe('users & access (e2e)', () => {
         ),
         `expected the account-exists message, got ${JSON.stringify(preview.rows[0]!.errors)}`,
       );
-      // And it names both ways out, because the operator has to choose between them.
-      assert.ok(preview.rows[0]!.errors.some((error) => /Users screen/.test(error)));
-      assert.ok(preview.rows[0]!.errors.some((error) => /blank this cell/.test(error)));
+      /*
+       * And it names both ways out, because the operator has to choose between them.
+       *
+       * It said "the Users screen", which was a dead end: `addEmployee` was the only way to
+       * create an employment record and it always creates a person, so there was no action
+       * anywhere that employed an account the company already had. The Hierarchy screen now
+       * offers exactly that, and the message points at it — a refusal that names a screen has
+       * to name one where the thing can be done.
+       */
+      assert.ok(preview.rows[0]!.errors.some((error) => /Hierarchy screen/.test(error)));
+      assert.ok(preview.rows[0]!.errors.some((error) => /Blanking this cell/.test(error)));
     });
 
     it('refuses a row naming an archived department, rather than creating a second one', async () => {
@@ -2628,6 +2641,115 @@ describe('users & access (e2e)', () => {
         body.roles.every((role) => role.youMayGrant),
         'a company administrator was told they may not grant something in their own company',
       );
+    });
+  });
+
+  /**
+   * The reset link an administrator sends on somebody else's behalf.
+   *
+   * The rule the client gave: an administrator may reset a password, and must never know it. So
+   * these hold the two halves of that — the link goes out and the response carries no token, and
+   * the case where there is no password yet is a refusal naming the invitation rather than a
+   * cheerful success that sent nothing.
+   */
+  describe('sending a password reset', () => {
+    it('refuses somebody who has never set a password, and names what to send instead', async () => {
+      const person = await addHierarchyPerson('Never Activated', 'E-801', '40218837551', adminId);
+
+      const response = await as(
+        agent().post(`/tenants/${tenantId}/access/people/${person.userId}/password-reset`),
+        adminUboss,
+      ).expect(409);
+
+      /*
+       * The whole reason this is not one button that always says "Reset password". Everybody a
+       * spreadsheet import creates is in exactly this state, and the reset service answers them
+       * with silence.
+       */
+      assert.match(response.body.message, /never set a password/);
+      assert.match(response.body.message, /invitation/);
+    });
+
+    it('refuses when there is nowhere to send it', async () => {
+      const person = await addHierarchyPerson('No Address', 'E-802', '29876543210', adminId);
+
+      /*
+       * Put back the handle a person with no work address actually carries.
+       *
+       * `person-registry` synthesises `<uboss-id>@person.uboss.invalid` for somebody who is in
+       * the org chart before anybody has an address for them — which is most of a spreadsheet
+       * import. The fixture helper always supplies a real one, so this sets the real-world state
+       * back deliberately.
+       */
+      await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.user.update({
+          where: { id: person.userId },
+          data: { email: 'ub-noaddr-0001@person.uboss.invalid' },
+        }),
+      );
+
+      const response = await as(
+        agent().post(`/tenants/${tenantId}/access/people/${person.userId}/password-reset`),
+        adminUboss,
+      ).expect(400);
+
+      assert.match(response.body.message, /no work address/i);
+    });
+
+    it('refuses somebody who is not in this company', async () => {
+      await as(
+        agent().post(`/tenants/${tenantId}/access/people/${ownerId}/password-reset`),
+        adminUboss,
+      ).expect(404);
+    });
+
+    it('refuses an employee asking for a colleague', async () => {
+      const person = await addHierarchyPerson('Somebody Else', 'E-803', '40218837551', adminId);
+
+      await as(
+        agent().post(`/tenants/${tenantId}/access/people/${person.userId}/password-reset`),
+        employeeUboss,
+      ).expect(403);
+    });
+
+    it('sends the link, says where it went, and hands back no token', async () => {
+      const person = await addHierarchyPerson('Has A Password', 'E-804', '29876543210', adminId);
+
+      // A credential, which is what turns "invite them" into "reset it" — the same thing
+      // activation would have created.
+      await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.user.update({
+          where: { id: person.userId },
+          data: { email: 'has.a.password@access.example' },
+        }),
+      );
+      await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.userCredential.create({
+          data: { userId: person.userId, passwordHash: 'argon2id$fixture' },
+        }),
+      );
+
+      const response = await as(
+        agent().post(`/tenants/${tenantId}/access/people/${person.userId}/password-reset`),
+        adminUboss,
+      ).expect(201);
+
+      assert.equal(response.body.sent, true);
+      assert.equal(response.body.email, 'has.a.password@access.example');
+      // Nothing resembling a credential comes back to the administrator. This is the property
+      // the whole design exists for: they can start a reset, and cannot learn the password.
+      assert.equal(response.body.token, undefined);
+      assert.equal(JSON.stringify(response.body).includes('token'), false);
+
+      const trail = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.auditEvent.findFirst({
+          where: { tenantId, action: 'access.password_reset_sent' },
+        }),
+      );
+      assert.ok(trail, 'the reset should be on the audit trail');
+      assert.equal((trail!.metadata as { subjectUserId?: string }).subjectUserId, person.userId);
+      // The address is recorded so a reviewer can see where it went; the token never is.
+      assert.equal(JSON.stringify(trail!.metadata).includes('token'), false);
     });
   });
 });

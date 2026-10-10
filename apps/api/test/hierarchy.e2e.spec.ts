@@ -1481,4 +1481,164 @@ describe('organization hierarchy (e2e)', () => {
       );
     });
   });
+
+  /**
+   * An account the company already has, and the row that names it.
+   *
+   * An administrator is invited before the org chart exists. That leaves them a member of the
+   * company with no employment record, and it is the normal order rather than an edge case. Two
+   * things follow, and both were broken:
+   *
+   *   1. Typing their address into Add Employee tried to create a second person holding the same
+   *      login handle. `users.email` is unique platform-wide, so PostgreSQL raised 23505, Prisma
+   *      raised P2002, nothing turned it into an answer, and the form got a **500 with no
+   *      message at all**.
+   *   2. The import's own refusal said to "employ that account from the Users screen", and no
+   *      such action existed anywhere — `addEmployee` was the only way to make an employment
+   *      record and it always makes a person.
+   */
+  describe('employing an account the company already has', () => {
+    const ADMIN_EMAIL = 'ub-oadm-0001@org.example';
+
+    /** Somebody at the top, so the admin has a manager to report to. */
+    const seedRoot = async (): Promise<string> => {
+      const root = await employment().addEmployee({
+        scope: scope(),
+        actorUserId: adminId,
+        employeeName: 'Root Person',
+        employeeId: 'E-ROOT',
+        designation: 'Managing Director',
+        departmentId,
+        reportingManagerUserId: null,
+        aadhaarNumber: aadhaar('91122233344'),
+        workPhone: '+91 90000 00001',
+      });
+      return root.userId;
+    };
+
+    it('refuses an address that is already a login handle, and says whose it is', async () => {
+      const rootId = await seedRoot();
+
+      /*
+       * The exact payload that returned 500 in production: a new person, a number nobody holds,
+       * and the address of somebody who already has an account here.
+       */
+      await assert.rejects(
+        () =>
+          employment().addEmployee({
+            scope: scope(),
+            actorUserId: adminId,
+            employeeName: 'Second Person For One Human',
+            employeeId: 'E-DUPMAIL',
+            designation: 'Engineer',
+            departmentId,
+            reportingManagerUserId: rootId,
+            aadhaarNumber: aadhaar('22233344455'),
+            workEmail: ADMIN_EMAIL,
+            workPhone: '+91 90000 00002',
+          }),
+        (error: unknown) => {
+          // A refusal the operator can act on — not a Prisma error, and not a 500.
+          assert.match(
+            (error as Error).message,
+            /already has an account in this company/i,
+            'the message has to name the situation, because the operator has two options',
+          );
+          assert.equal((error as { status?: number }).status, 409);
+          return true;
+        },
+      );
+    });
+
+    it('employs that account instead of creating a second person for one human', async () => {
+      const rootId = await seedRoot();
+
+      const employed = await employment().employExistingAccount({
+        scope: scope(),
+        actorUserId: adminId,
+        subjectUserId: adminId,
+        employeeId: 'E-ADMIN',
+        designation: 'Assistant General Manager',
+        departmentId: secondDepartmentId,
+        reportingManagerUserId: rootId,
+        aadhaarNumber: aadhaar('33344455566'),
+        workPhone: '+91 90000 00003',
+      });
+
+      assert.equal(employed.userId, adminId, 'the same human, not a new one');
+      assert.equal(employed.matchedExistingPerson, true);
+      assert.equal(employed.invitationSent, false);
+
+      // And they are now a manager other rows can name, which is the whole point.
+      const record = await organization().findEmployment(scope(), adminId);
+      assert.ok(record);
+      assert.equal(record!.employeeId, 'E-ADMIN');
+    });
+
+    it('keeps their own address when none is given', async () => {
+      const rootId = await seedRoot();
+
+      await employment().employExistingAccount({
+        scope: scope(),
+        actorUserId: adminId,
+        subjectUserId: adminId,
+        employeeId: 'E-ADMIN2',
+        designation: 'Assistant General Manager',
+        departmentId,
+        reportingManagerUserId: rootId,
+        aadhaarNumber: aadhaar('44455566677'),
+        workPhone: '+91 90000 00004',
+      });
+
+      const record = await organization().findEmployment(scope(), adminId);
+      assert.equal(record!.workEmail, ADMIN_EMAIL);
+    });
+
+    it('refuses somebody who has no account in this company', async () => {
+      const rootId = await seedRoot();
+      const stranger = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.users.createForPlatform({
+          ubossUniqueId: 'UB-STRANGER-1',
+          email: 'stranger@elsewhere.example',
+          displayName: 'Not A Member',
+        }),
+      );
+
+      await assert.rejects(
+        () =>
+          employment().employExistingAccount({
+            scope: scope(),
+            actorUserId: adminId,
+            subjectUserId: stranger.id,
+            employeeId: 'E-STRANGER',
+            designation: 'Engineer',
+            departmentId,
+            reportingManagerUserId: rootId,
+            aadhaarNumber: aadhaar('55566677788'),
+            workPhone: '+91 90000 00005',
+          }),
+        /does not have an account in this company/i,
+      );
+    });
+
+    it('refuses somebody who is already employed here', async () => {
+      const rootId = await seedRoot();
+
+      await assert.rejects(
+        () =>
+          employment().employExistingAccount({
+            scope: scope(),
+            actorUserId: adminId,
+            subjectUserId: rootId,
+            employeeId: 'E-AGAIN',
+            designation: 'Engineer',
+            departmentId,
+            reportingManagerUserId: rootId,
+            aadhaarNumber: aadhaar('66677788899'),
+            workPhone: '+91 90000 00006',
+          }),
+        /already has an employment record/i,
+      );
+    });
+  });
 });

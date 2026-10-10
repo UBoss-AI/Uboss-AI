@@ -687,8 +687,9 @@ export class BulkOperationService {
                */
               errors.push(
                 `${taken.displayName} already has an account in this company with the address ` +
-                  `"${rowEmail}", but is not an employee yet. Employ that account from the Users ` +
-                  'screen, or blank this cell to import this row as a separate new person.',
+                  `"${rowEmail}", but is not an employee yet. Employ that account from the ` +
+                  'Hierarchy screen — it offers them at the top — then import this file again. ' +
+                  'Blanking this cell instead imports the row as a second, separate person.',
               );
             } else {
               // Held outside this company. Who holds it is not this operator's business, and
