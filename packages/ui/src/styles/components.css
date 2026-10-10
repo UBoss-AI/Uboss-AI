@@ -11928,3 +11928,34 @@ tr[data-drop-target='true'] td {
 .uboss-manager-search {
   margin-bottom: var(--uboss-space-2);
 }
+
+/*
+   The autocomplete hint on a workflow grid cell.
+
+   Floated over the bottom of the cell rather than placed under it: a hint
+   that took part in the layout would push every row below it down on each
+   keystroke, and a grid that moves while somebody reads it is worse than one
+   that types slowly.
+ */
+.uboss-wfg .uboss-wfg-cellwrap {
+  position: relative;
+}
+
+.uboss-wfg-complete {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 2px;
+  z-index: 1;
+  overflow: hidden;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--uboss-blue-050);
+  color: var(--uboss-blue);
+  font-size: 11px;
+  line-height: 15px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  /* The cell underneath is still being typed in. */
+  pointer-events: none;
+}

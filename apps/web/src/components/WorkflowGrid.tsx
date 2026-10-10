@@ -166,6 +166,56 @@ function autoSize(element: HTMLTextAreaElement | null): void {
   element.style.overflowY = element.scrollHeight > MAX_CELL_HEIGHT_PX ? 'auto' : 'hidden';
 }
 
+/**
+ * The one value in this column that the typed text could be the start of.
+ *
+ * ## Why only one, ever
+ *
+ * This is the rule a spreadsheet uses, and the reason is that a wrong completion costs more than
+ * no completion. With "Mon" matching both "Month end" and "Monthly", guessing picks one and is
+ * right half the time — and on a grid where Tab *also* means "next cell", half the time is a
+ * value somebody did not type and may not look at again. So a suggestion appears only when the
+ * column leaves no choice, and stays silent the moment a second distinct value could fit.
+ *
+ * ## Where it looks
+ *
+ * The same column, other rows. That is where a repeated value lives: the trigger is "Month end"
+ * on every row and the frequency is "Monthly" on every row, and typing either of those for the
+ * ninth time is the thing this removes. Not the row — the values across one row have nothing to
+ * do with each other.
+ *
+ * Case-insensitive, because a roster is typed by a person and "monthly" is the same answer as
+ * "Monthly"; the completion then arrives in the casing the column already uses, which is also
+ * what keeps a column consistent.
+ */
+export function completionFromColumn(
+  steps: readonly Form2WorkflowStep[],
+  key: string,
+  typed: string,
+  position: number,
+): string | null {
+  const prefix = typed.trim().toLowerCase();
+  if (prefix === '') return null;
+
+  const matches = new Set<string>();
+  for (const step of steps) {
+    if (step.position === position) continue;
+
+    const other = (step as unknown as Record<string, unknown>)[key];
+    if (typeof other !== 'string') continue;
+
+    const trimmed = other.trim();
+    // Strictly longer: completing "Monthly" to "Monthly" is not a completion, it is a no-op
+    // dressed as a suggestion, and Tab would then do nothing visible.
+    if (trimmed.length > prefix.length && trimmed.toLowerCase().startsWith(prefix)) {
+      matches.add(trimmed);
+    }
+    if (matches.size > 1) return null;
+  }
+
+  return matches.size === 1 ? [...matches][0]! : null;
+}
+
 export function WorkflowGrid({
   steps,
   onChange,
@@ -288,6 +338,21 @@ export function WorkflowGrid({
       window.removeEventListener('blur', onKey);
     };
   }, [menu]);
+
+  /*
+   * What the cell being typed in would complete to, if Tab were pressed.
+   *
+   * Held for one cell at a time, because only one has focus and a suggestion for a cell nobody
+   * is in is a hint pointing at nothing.
+   */
+  const [completion, setCompletion] = useState<{
+    position: number;
+    key: string;
+    value: string;
+  } | null>(null);
+
+  const completionFor = (key: string, typed: string, position: number): string | null =>
+    completionFromColumn(steps, key, typed, position);
 
   const update = (position: number, patch: Partial<Form2WorkflowStep>) => {
     const index = steps.findIndex((step) => step.position === position);
@@ -434,11 +499,30 @@ export function WorkflowGrid({
 
     const value = (step as unknown as Record<string, unknown>)[column.key];
 
+    const suggestion =
+      completion !== null && completion.position === step.position && completion.key === column.key
+        ? completion.value
+        : null;
+
     return (
-      <td key={column.key}>
+      <td key={column.key} className="uboss-wfg-cellwrap">
         <textarea
           rows={1}
           ref={autoSize}
+          onKeyDown={(event) => {
+            /*
+             * Tab completes, and only when there is something to complete.
+             *
+             * Otherwise Tab stays what it has always been in a grid — move to the next cell. A
+             * completion that swallowed every Tab would break keyboard navigation across
+             * fourteen columns to save typing in one of them.
+             */
+            if (event.key !== 'Tab' || event.shiftKey || suggestion === null) return;
+            event.preventDefault();
+            update(step.position, { [column.key]: suggestion } as Partial<Form2WorkflowStep>);
+            setCompletion(null);
+          }}
+          onBlur={() => setCompletion(null)}
           className={cn(
             'uboss-wfg-editable',
             'uboss-wfg-cell',
@@ -456,8 +540,30 @@ export function WorkflowGrid({
             update(step.position, {
               [column.key]: column.key === 'whatExactWork' ? next : next === '' ? null : next,
             } as Partial<Form2WorkflowStep>);
+
+            const whole = completionFor(column.key, next, step.position);
+            setCompletion(
+              whole === null ? null : { position: step.position, key: column.key, value: whole },
+            );
           }}
         />
+
+        {/*
+          The suggestion, said rather than implied.
+
+          A completion nobody can see is a keystroke nobody presses. It floats over the bottom of
+          the cell rather than sitting under it, because a hint that appeared in the layout would
+          push every row below it down on each keystroke — the grid would move while somebody is
+          reading it.
+
+          `aria-live` so it reaches a screen reader too: "press Tab to finish this" is not
+          information that should depend on seeing grey text.
+        */}
+        {suggestion === null ? null : (
+          <span className="uboss-wfg-complete" aria-live="polite">
+            Tab → {suggestion}
+          </span>
+        )}
       </td>
     );
   };
