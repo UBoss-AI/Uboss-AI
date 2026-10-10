@@ -113,6 +113,43 @@ interface ParsedRow {
  * composite foreign keys (ADR-064) that refuse a department or a manager from another company.
  * A row naming another tenant's uuid fails on that row.
  */
+/**
+ * One person's name, written two ways, reduced to one thing to compare.
+ *
+ * A roster is typed in capitals and an account was created in title case; "PRANAV" and "Pranav"
+ * are the same person and nothing about the difference is information. Runs of whitespace are
+ * flattened for the same reason — a double space between two words is a keystroke, not a name.
+ *
+ * Deliberately exact after that, rather than fuzzy. This comparison is the **second** signal
+ * that a row belongs to an account the company already has, and its whole value is being
+ * independent of the first one: a mistyped address lands on a colleague, and the guard holds
+ * only because the colleague's name is not also in the name column. Matching on a first name
+ * would let one "Pranav" stand for another and throw that away.
+ */
+function sameName(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * What the address on a row turns out to be, once the company has been asked about it.
+ *
+ * Six answers rather than a boolean, because validation has a different sentence for each and
+ * the operator's next action differs every time. Apply cares about exactly one of them.
+ */
+type RowAccount =
+  /** Nothing in the way: no address, or one nobody holds. Create a person. */
+  | { kind: 'free' }
+  /** Theirs, they are an internal member here, and they are not in the chart yet. */
+  | { kind: 'employ'; userId: string; displayName: string }
+  /** Already employed here. Two people cannot share one address. */
+  | { kind: 'employedHere'; displayName: string }
+  /** The address is one person's and the name is another's — a mistyped cell. */
+  | { kind: 'nameMismatch'; displayName: string }
+  /** Here, but as a guest. Employing them raises what they may do. */
+  | { kind: 'guest'; displayName: string }
+  /** Held outside this company. Whose is not this operator's business. */
+  | { kind: 'elsewhere' };
+
 @Injectable()
 export class BulkOperationService {
   private readonly logger = new Logger(BulkOperationService.name);
@@ -247,6 +284,11 @@ export class BulkOperationService {
       ),
     ];
 
+    /** The people whose row lands on an account they already have, named for the preview. */
+    const employedAccounts = validated
+      .filter((row) => row.errors.length === 0 && row.employExistingUserId !== undefined)
+      .map((row) => row.values['employeeName']?.trim() || 'an existing account');
+
     return this.prisma.runInTenantTransaction(input.scope, async () => {
       const operation = await this.access.createBulkOperation(input.scope, {
         kind: input.kind,
@@ -362,7 +404,22 @@ export class BulkOperationService {
           (newDepartments.length === 0
             ? ''
             : ` ${newDepartments.length} department(s) will be created, because rows name them ` +
-              `and this company does not have them yet: ${newDepartments.join(', ')}.`),
+              `and this company does not have them yet: ${newDepartments.join(', ')}.`) +
+          /*
+           * Said out loud for the same reason the departments are.
+           *
+           * These rows do not create a person: they attach an employment record to an account
+           * this company already has, so the person keeps the UBoss Unique ID that is already
+           * theirs. That is the right outcome and it is also *not* what "importing a row"
+           * sounds like, so the preview names who it is about rather than leaving the operator
+           * to notice afterwards that no new record appeared.
+           */
+          (employedAccounts.length === 0
+            ? ''
+            : ` ${employedAccounts.length} row(s) belong to people who already have an account ` +
+              'here and are not in the chart yet. They will be employed on the account they ' +
+              'already have, keeping their existing UBoss Unique ID rather than becoming a ' +
+              `second record: ${employedAccounts.join(', ')}.`),
       };
     });
   }
@@ -534,6 +591,61 @@ export class BulkOperationService {
   // Validation and application, per kind
   // -------------------------------------------------------------------------
 
+  /**
+   * Who, if anybody, this row's work address already belongs to in this company.
+   *
+   * Asked twice — once by validation to choose a sentence, once by apply to choose a call — and
+   * written once so the two cannot drift. That drift is a real failure here and not a
+   * hypothetical one: the manager lookup beside this had it, and rows that previewed as valid
+   * failed on apply because the preview resolved a name the apply step could not.
+   */
+  private async describeRowAccount(
+    scope: TenantScope,
+    values: Record<string, string>,
+  ): Promise<RowAccount> {
+    const handle = (values['email'] ?? '').trim().toLowerCase();
+    if (handle === '' || !handle.includes('@')) return { kind: 'free' };
+
+    const taken = await this.usersByEmail.findByEmailForPlatform(handle);
+    if (!taken) return { kind: 'free' };
+
+    const [employedHere, memberHere] = await Promise.all([
+      this.organization.findEmployment(scope, taken.id),
+      /*
+       * Wrapped, where the employment lookup beside it wraps itself.
+       *
+       * `tenant_memberships` is read under row-level security, and this runs outside a
+       * transaction — so the unwrapped read came back empty for somebody who is plainly a
+       * member, and the message told the operator their own colleague's address belonged to a
+       * stranger. A read, not an authorization: those stay outside.
+       */
+      this.prisma.runInTenantTransaction(scope, () =>
+        this.memberships.findByUserId(scope, taken.id),
+      ),
+    ]);
+
+    if (employedHere) return { kind: 'employedHere', displayName: taken.displayName };
+    if (!memberHere) return { kind: 'elsewhere' };
+
+    // The name is the second, independent signal. See `sameName`.
+    if (sameName(values['employeeName'] ?? '') !== sameName(taken.displayName)) {
+      return { kind: 'nameMismatch', displayName: taken.displayName };
+    }
+    if (memberHere.userType === 'ExternalGuest') {
+      return { kind: 'guest', displayName: taken.displayName };
+    }
+    return { kind: 'employ', userId: taken.id, displayName: taken.displayName };
+  }
+
+  /** The id when this row is an existing account's own row, and null otherwise. */
+  private async existingAccountForRow(
+    scope: TenantScope,
+    values: Record<string, string>,
+  ): Promise<string | null> {
+    const account = await this.describeRowAccount(scope, values);
+    return account.kind === 'employ' ? account.userId : null;
+  }
+
   private async validateRow(
     scope: TenantScope,
     kind: BulkOperationKind,
@@ -560,13 +672,26 @@ export class BulkOperationService {
       email: string;
     }[] = [],
   ): Promise<
-    ParsedRow & { errors: string[]; subjectUserId?: string; departmentToCreate?: string }
+    ParsedRow & {
+      errors: string[];
+      subjectUserId?: string;
+      departmentToCreate?: string;
+      employExistingUserId?: string;
+    }
   > {
     const errors: string[] = [];
     const values = row.values;
     let subjectUserId: string | undefined;
     /** A department this row names that the company does not have yet. Created at apply. */
     let departmentToCreate: string | undefined;
+    /**
+     * An account this company already has, which this row is the employment record for.
+     *
+     * Set only when the address **and** the name both point at the same existing internal
+     * account. Apply employs that account rather than creating a person, so one human keeps one
+     * UBoss Unique ID.
+     */
+    let employExistingUserId: string | undefined;
 
     const require = (field: string, label: string): string => {
       const value = values[field]?.trim() ?? '';
@@ -646,59 +771,74 @@ export class BulkOperationService {
               'leave this cell blank unless it is theirs.',
           );
         } else {
-          const taken = await this.usersByEmail.findByEmailForPlatform(handle);
-          if (taken) {
-            const [employedHere, memberHere] = await Promise.all([
-              this.organization.findEmployment(scope, taken.id),
-              /*
-               * Wrapped, where the employment lookup beside it wraps itself.
-               *
-               * `tenant_memberships` is read under row-level security, and this validator runs
-               * outside a transaction — so the unwrapped read came back empty for somebody who is
-               * plainly a member, and the message told the operator their own colleague's address
-               * belonged to a stranger. A read, not an authorization: those stay outside.
-               */
-              this.prisma.runInTenantTransaction(scope, () =>
-                this.memberships.findByUserId(scope, taken.id),
-              ),
-            ]);
+          /*
+           * Theirs, and they are simply not in the chart yet — the `employ` case below.
+           *
+           * The normal state of somebody invited as an administrator before the org chart
+           * existed, which is every company in that order. This row is their own row, and the
+           * right outcome is an employment record **on the account they already have**, keeping
+           * the UBoss Unique ID that is already theirs. Creating a second person would give one
+           * human two permanent identities, for good.
+           *
+           * It used to refuse and send the operator off to do it by hand. That was the safe
+           * answer to a real danger: an address mistyped into a colleague's would otherwise
+           * attach this row's Aadhaar and designation to that colleague. The name is what makes
+           * it safe to do automatically — a typo puts a colleague's *address* in the cell, it
+           * does not also put the colleague's *name* in the name column. Both have to agree,
+           * and when they disagree the old refusal stands, which is the case the danger was
+           * ever about.
+           */
+          const account = await this.describeRowAccount(scope, values);
 
-            if (employedHere) {
+          switch (account.kind) {
+            case 'employ':
+              employExistingUserId = account.userId;
+              break;
+
+            case 'employedHere':
               errors.push(
-                `Work Email "${rowEmail}" already belongs to ${taken.displayName}, who is ` +
+                `Work Email "${rowEmail}" already belongs to ${account.displayName}, who is ` +
                   'employed here. One address can only belong to one person, so leave this cell ' +
                   'blank unless it is theirs.',
               );
-            } else if (memberHere) {
+              break;
+
+            case 'nameMismatch':
+              errors.push(
+                `Work Email "${rowEmail}" belongs to ${account.displayName}'s account in this ` +
+                  `company, but this row names ${values['employeeName']?.trim() || 'somebody else'}. ` +
+                  'One address can only belong to one person — check the address, or leave the ' +
+                  'cell blank to import this row as a separate person.',
+              );
+              break;
+
+            case 'guest':
               /*
-               * Theirs — and that is the problem.
-               *
-               * This person already has an account in this company; they have simply never been
-               * given an employment record, which is the normal state of somebody invited as an
-               * administrator before the org chart existed. The client's import hit this on the
-               * row for their own assurance manager, and four people reporting to him failed
-               * with it, because he was never created and so was not there to be their manager.
-               *
-               * The import does not quietly employ the existing account. Reusing it would mean
-               * attaching this row's Aadhaar to an account matched on nothing but an address —
-               * and an address mistyped into a colleague's is then a colleague carrying somebody
-               * else's identifier, which is not a mistake worth risking to save a click. The
-               * operator makes the call, and the message says which two options they have.
+               * A guest is capped at read, comment and draft, and their access carries an end
+               * date the database requires them to have. Employing one is therefore not the
+               * same act as employing an internal account: it raises what they may do and
+               * removes the date their access stops. A privilege change should not arrive from
+               * a row in a spreadsheet — a person decides it, on a named colleague.
                */
               errors.push(
-                `${taken.displayName} already has an account in this company with the address ` +
-                  `"${rowEmail}", but is not an employee yet. Employ that account from the ` +
-                  'Hierarchy screen — it offers them at the top — then import this file again. ' +
-                  'Blanking this cell instead imports the row as a second, separate person.',
+                `${account.displayName} is a guest in this company, not an internal member. ` +
+                  'Employ them from the Hierarchy screen — that also makes them an internal ' +
+                  'user and removes the end date on their access, which a spreadsheet row ' +
+                  'should not do on its own.',
               );
-            } else {
-              // Held outside this company. Who holds it is not this operator's business, and
-              // the only answer they can act on is that this one is not free.
+              break;
+
+            case 'elsewhere':
+              // Who holds it is not this operator's business, and the only answer they can act
+              // on is that this one is not free.
               errors.push(
                 `Work Email "${rowEmail}" is already in use as a login handle. Leave this cell ` +
                   'blank, or use an address only this person has.',
               );
-            }
+              break;
+
+            case 'free':
+              break;
           }
         }
       }
@@ -943,6 +1083,7 @@ export class BulkOperationService {
       errors,
       ...(subjectUserId === undefined ? {} : { subjectUserId }),
       ...(departmentToCreate === undefined ? {} : { departmentToCreate }),
+      ...(employExistingUserId === undefined ? {} : { employExistingUserId }),
     };
   }
 
@@ -1015,10 +1156,20 @@ export class BulkOperationService {
               (person.employeeId ?? '').toLowerCase() === written),
         );
 
-        const added = await this.employment.addEmployee({
+        /*
+         * Whose employment record this row is.
+         *
+         * Recomputed here rather than carried from validation. The two could be minutes apart
+         * and the company can change in between — somebody employed, an account invited — and a
+         * decision carried across that gap was made about a company that no longer exists. It
+         * costs one lookup, and it is the same function validation used, so the two cannot
+         * disagree about what they are looking at.
+         */
+        const existing = await this.existingAccountForRow(input.scope, values);
+
+        const employmentFields = {
           scope: input.scope,
           actorUserId: input.actorUserId,
-          employeeName: values['employeeName'] ?? '',
           employeeId: values['employeeId'] ?? '',
           designation: values['designation'] ?? '',
           departmentId: department?.id ?? '',
@@ -1031,7 +1182,21 @@ export class BulkOperationService {
             : {}),
           ...(values['email']?.trim() ? { workEmail: values['email'].trim() } : {}),
           ...(values['phone']?.trim() ? { workPhone: values['phone'].trim() } : {}),
-        });
+        };
+
+        const added =
+          existing === null
+            ? await this.employment.addEmployee({
+                ...employmentFields,
+                employeeName: values['employeeName'] ?? '',
+              })
+            : // Their own row. The employment record goes on the account they already have, so
+              // one human keeps one UBoss Unique ID — and no name is sent, because theirs is
+              // already on the platform and this company does not get to rewrite it.
+              await this.employment.employExistingAccount({
+                ...employmentFields,
+                subjectUserId: existing,
+              });
 
         /*
          * The photograph that came in on this row, now that there is somebody to attach it to --

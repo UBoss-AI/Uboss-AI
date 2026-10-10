@@ -157,9 +157,9 @@ export default function HierarchyPage() {
    */
   const [employSubject, setEmploySubject] = useState<{ userId: string; name: string } | null>(null);
   /** People with an account here and no employment record — the gap this screen can close. */
-  const [unemployedAccounts, setUnemployedAccounts] = useState<{ userId: string; name: string }[]>(
-    [],
-  );
+  const [unemployedAccounts, setUnemployedAccounts] = useState<
+    { userId: string; name: string; guest: boolean }[]
+  >([]);
   const [form, setForm] = useState<EmployeeForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<AddEmployeeResult | null>(null);
@@ -329,12 +329,25 @@ export default function HierarchyPage() {
     void accessApi
       .view(tenantId)
       .then((access) => {
+        /*
+         * Guests are here too, and said to be guests.
+         *
+         * They were left out at first, because employing a guest raises what they may do and
+         * that is not a thing to slip past somebody. Leaving them out did not avoid the
+         * decision, it only hid it: the client's two colleagues were invited as guests by
+         * mistake, their import rows are refused for it, and no screen offered a way through.
+         * So they appear, labelled, and the label is the warning.
+         */
         setUnemployedAccounts(
-          [...access.employees, ...access.pendingInvitations]
+          [...access.employees, ...access.guests, ...access.pendingInvitations]
             .filter(
               (person) => person.employmentState === null && person.accountState !== 'Offboarded',
             )
-            .map((person) => ({ userId: person.userId, name: person.displayName })),
+            .map((person) => ({
+              userId: person.userId,
+              name: person.displayName,
+              guest: person.userType === 'ExternalGuest',
+            })),
         );
       })
       .catch(() => setUnemployedAccounts([]));
@@ -642,7 +655,15 @@ export default function HierarchyPage() {
           {unemployedAccounts.length === 1
             ? `${unemployedAccounts[0]!.name} has an account here but is not in the chart.`
             : `${unemployedAccounts.length} people have an account here but are not in the chart.`}{' '}
-          Employ them so they can be named as a manager and appear in the hierarchy.
+          Employ them so they can be named as a manager and appear in the hierarchy. They keep the
+          UBoss Unique ID they already have.
+          {unemployedAccounts.some((person) => person.guest) ? (
+            <>
+              {' '}
+              A guest is capped at read, comment and draft and their access carries an end date;
+              employing one makes them an internal user and removes that date.
+            </>
+          ) : null}
           <span className="uboss-inline-actions">
             {unemployedAccounts.map((person) => (
               <Button
@@ -656,7 +677,9 @@ export default function HierarchyPage() {
                   setEmployeeOpen(true);
                 }}
               >
+                {/* The label says which kind of act this is, because for a guest it is two. */}
                 Employ {person.name}
+                {person.guest ? ' (guest)' : ''}
               </Button>
             ))}
           </span>

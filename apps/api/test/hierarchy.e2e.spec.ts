@@ -1640,5 +1640,64 @@ describe('organization hierarchy (e2e)', () => {
         /already has an employment record/i,
       );
     });
+
+    it('makes a guest an internal user when it employs them, and clears their end date', async () => {
+      const rootId = await seedRoot();
+
+      /*
+       * A colleague invited as a guest by mistake — the client's own case, twice over.
+       *
+       * `ExternalGuest` is capped at read, comment and draft, and the database **requires** such
+       * a membership to carry `guestAccessExpiresAt` while forbidding it for anybody else. So
+       * employing a guest without changing the type leaves somebody who is an employee on paper,
+       * may not do the work, and whose access stops on a date set months earlier. The two
+       * changes go together or the check constraint refuses them.
+       */
+      const guest = await ctx.prisma.runAsPlatformOperation(async () => {
+        const person = await ctx.users.createForPlatform({
+          ubossUniqueId: 'UB-GUEST-0001',
+          email: 'invited.guest@org.example',
+          displayName: 'Invited Guest',
+        });
+        await ctx.prisma.client.tenantMembership.create({
+          data: {
+            tenantId,
+            userId: person.id,
+            accountState: 'Active',
+            userType: 'ExternalGuest',
+            guestAccessExpiresAt: new Date(Date.now() + 30 * 86_400_000),
+          },
+        });
+        return person;
+      });
+
+      const employed = await employment().employExistingAccount({
+        scope: scope(),
+        actorUserId: adminId,
+        subjectUserId: guest.id,
+        employeeId: 'E-WASGUEST',
+        designation: 'Engineer',
+        departmentId,
+        reportingManagerUserId: rootId,
+        aadhaarNumber: aadhaar('77788899900'),
+        workPhone: '+91 90000 00009',
+      });
+
+      assert.equal(employed.userId, guest.id, 'the same human, and the same permanent id');
+      assert.equal(employed.ubossUniqueId, 'UB-GUEST-0001');
+
+      const membership = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.tenantMembership.findFirst({
+          where: { tenantId, userId: guest.id },
+          select: { userType: true, guestAccessExpiresAt: true },
+        }),
+      );
+      assert.equal(membership!.userType, 'InternalUser', 'a guest cannot do an employee’s work');
+      assert.equal(
+        membership!.guestAccessExpiresAt,
+        null,
+        'an employee’s access does not expire on a date somebody set for a visit',
+      );
+    });
   });
 });

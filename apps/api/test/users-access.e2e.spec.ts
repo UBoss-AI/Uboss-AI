@@ -2016,13 +2016,17 @@ describe('users & access (e2e)', () => {
       );
     });
 
-    it('tells the operator when the address belongs to an account here that is not an employee', async () => {
+    it('refuses when the address is one person’s account and the name is somebody else’s', async () => {
       await ensureAdminIsEmployed();
 
-      // A member of this company with no employment record — the normal state of somebody
-      // invited as an administrator before the org chart existed. An import naming their own
-      // work address used to fail inside apply with a unique-constraint stack trace, taking
-      // everybody who reported to them with it.
+      /*
+       * The typo, and the reason a matching address alone is not enough to employ an account.
+       *
+       * A row whose address was mistyped into a colleague's would otherwise attach this row's
+       * Aadhaar, designation and employee id to that colleague. The name column is the second,
+       * independent signal: a slip of the fingers in the address cell does not also put the
+       * colleague's name in the name cell. When the two disagree, this is what happens.
+       */
       const held = `invited-${Date.now()}@uboss.local`;
       await ctx.prisma.runAsPlatformOperation(async () => {
         const person = await ctx.prisma.client.user.create({
@@ -2050,21 +2054,140 @@ describe('users & access (e2e)', () => {
       assert.equal(preview.invalidRows, 1);
       assert.ok(
         preview.rows[0]!.errors.some((error) =>
-          /already has an account in this company .* is not an employee yet/.test(error),
+          /belongs to Nandita Bose's account .* but this row names Someone Else/.test(error),
         ),
-        `expected the account-exists message, got ${JSON.stringify(preview.rows[0]!.errors)}`,
+        `expected the name-mismatch message, got ${JSON.stringify(preview.rows[0]!.errors)}`,
       );
+      // And it names the two ways out, because the operator has to choose between them.
+      assert.ok(preview.rows[0]!.errors.some((error) => /check the address/.test(error)));
+      assert.ok(preview.rows[0]!.errors.some((error) => /cell blank/.test(error)));
+    });
+
+    /**
+     * An administrator invited before the org chart existed, meeting their own row.
+     *
+     * The client's live company: Pranav was made a Company Admin on day one, when there were no
+     * departments and nobody to report to, so no employment record could exist. Their own row in
+     * the roster then had nowhere to go — the import refused it, and refused everybody reporting
+     * to them as well, because they were never created and so were never there to be a manager.
+     *
+     * The row is now applied to the account they already have. One human, one UBoss Unique ID.
+     */
+    const seedUnemployedAccount = async (input: {
+      email: string;
+      displayName: string;
+      guest?: boolean;
+    }): Promise<{ userId: string; ubossUniqueId: string }> =>
+      ctx.prisma.runAsPlatformOperation(async () => {
+        const person = await ctx.prisma.client.user.create({
+          data: {
+            ubossUniqueId: generateUbossUniqueId(),
+            email: input.email,
+            displayName: input.displayName,
+          },
+        });
+        await ctx.prisma.client.tenantMembership.create({
+          data: {
+            tenantId,
+            userId: person.id,
+            accountState: 'Active',
+            ...(input.guest === true
+              ? {
+                  userType: 'ExternalGuest' as const,
+                  // The database requires a guest to have one, and forbids it for anybody else.
+                  guestAccessExpiresAt: new Date(Date.now() + 30 * 86_400_000),
+                }
+              : {}),
+          },
+        });
+        return { userId: person.id, ubossUniqueId: person.ubossUniqueId };
+      });
+
+    it('employs the account a row belongs to, rather than making a second person', async () => {
+      await ensureAdminIsEmployed();
+
+      const held = `pranav-${Date.now()}@uboss.local`;
+      const account = await seedUnemployedAccount({ email: held, displayName: 'Pranav' });
+
       /*
-       * And it names both ways out, because the operator has to choose between them.
-       *
-       * It said "the Users screen", which was a dead end: `addEmployee` was the only way to
-       * create an employment record and it always creates a person, so there was no action
-       * anywhere that employed an account the company already had. The Hierarchy screen now
-       * offers exactly that, and the message points at it — a refusal that names a screen has
-       * to name one where the thing can be done.
+       * The name in capitals, as a roster writes it, against an account created in title case.
+       * The two are the same person and the difference carries no information, so the
+       * comparison ignores it — which is the first thing somebody tries.
        */
+      const preview = await bulk().validate({
+        scope: scope(),
+        actorUserId: adminId,
+        kind: 'ImportEmployees',
+        content: csv([
+          `PRANAV,E-IA-1,Assistant General Manager,Internal Assurance,Client Accounts,` +
+            `Access Admin,${held},+91 90000 00031,${aadhaar('39876543210')}`,
+        ]),
+      });
+
+      assert.equal(
+        preview.invalidRows,
+        0,
+        `their own row should be valid, got ${JSON.stringify(preview.rows[0]!.errors)}`,
+      );
+      // And the preview says so, because "imported" and "employed on the account they already
+      // have" are different outcomes and only one of them creates a record.
+      assert.match(preview.note, /keeping their existing UBoss Unique ID/);
+      assert.match(preview.note, /PRANAV/);
+
+      const applied = await bulk().apply({
+        scope: scope(),
+        actorUserId: adminId,
+        operationId: preview.operationId,
+      });
+      assert.equal(applied.applied, 1);
+      assert.equal(applied.failed, 0);
+
+      // The same human, not a second one: their id and their permanent identifier are unchanged,
+      // and exactly one account holds that address.
+      const employment = await app
+        .get(OrganizationRepository)
+        .findEmployment(scope(), account.userId);
+      assert.ok(employment, 'the existing account should now have an employment record');
+      assert.equal(employment!.employeeId, 'E-IA-1');
+
+      const holders = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.user.findMany({
+          where: { email: held },
+          select: { ubossUniqueId: true },
+        }),
+      );
+      assert.equal(holders.length, 1, 'one address, one person');
+      assert.equal(holders[0]!.ubossUniqueId, account.ubossUniqueId, 'their ID must not change');
+    });
+
+    it('still refuses a guest, because employing one raises what they may do', async () => {
+      await ensureAdminIsEmployed();
+
+      const held = `nikhil-${Date.now()}@uboss.local`;
+      await seedUnemployedAccount({ email: held, displayName: 'Nikhil', guest: true });
+
+      /*
+       * Name and address both agree here — this really is their row. It is refused anyway,
+       * because a guest is capped at read, comment and draft and their access carries an end
+       * date the database requires. Employing one removes both limits, and a privilege change
+       * should not arrive from a row in a spreadsheet.
+       */
+      const preview = await bulk().validate({
+        scope: scope(),
+        actorUserId: adminId,
+        kind: 'ImportEmployees',
+        content: csv([
+          `NIKHIL,E-IA-2,Assistant Manager,Internal Assurance,Client Accounts,` +
+            `Access Admin,${held},+91 90000 00032,${aadhaar('49876543210')}`,
+        ]),
+      });
+
+      assert.equal(preview.invalidRows, 1);
+      assert.ok(
+        preview.rows[0]!.errors.some((error) => /is a guest in this company/.test(error)),
+        `expected the guest message, got ${JSON.stringify(preview.rows[0]!.errors)}`,
+      );
       assert.ok(preview.rows[0]!.errors.some((error) => /Hierarchy screen/.test(error)));
-      assert.ok(preview.rows[0]!.errors.some((error) => /Blanking this cell/.test(error)));
     });
 
     it('refuses a row naming an archived department, rather than creating a second one', async () => {

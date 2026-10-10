@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 
 import { AuditEventService } from '../audit/audit-event.service.js';
+import { SECURITY_ACTIONS, SecurityEventPublisher } from '../auth/security-event.publisher.js';
 import { AuthorizationService } from '../authorization/authorization.service.js';
 import { SeatService } from '../commercial/seat.service.js';
 import { OrganizationRepository } from '../persistence/organization.repository.js';
@@ -108,6 +109,9 @@ export class EmploymentService {
     private readonly seats: SeatService,
     private readonly authorization: AuthorizationService,
     private readonly auditEvents: AuditEventService,
+    // For the one act here that changes what somebody may do rather than only recording them:
+    // a guest becoming an internal user when they are employed.
+    private readonly securityEvents: SecurityEventPublisher,
   ) {}
 
   async addEmployee(input: {
@@ -443,14 +447,15 @@ export class EmploymentService {
     const subject = await this.prisma.runInTenantTransaction(input.scope, async () => {
       const membership = await this.prisma.client.tenantMembership.findFirst({
         where: { tenantId: input.scope.tenantId, userId: input.subjectUserId },
-        select: { id: true },
+        select: { id: true, userType: true },
       });
       if (!membership) return null;
 
-      return this.prisma.client.user.findUnique({
+      const user = await this.prisma.client.user.findUnique({
         where: { id: input.subjectUserId },
         select: { id: true, displayName: true, email: true },
       });
+      return user === null ? null : { ...user, membership };
     });
 
     if (!subject) {
@@ -518,7 +523,42 @@ export class EmploymentService {
     // employed here cannot be one, and a second root has to be asked for rather than left blank.
     await this.assertReportingManager(input.scope, input.reportingManagerUserId);
 
+    const wasGuest = subject.membership.userType === 'ExternalGuest';
+
     return this.prisma.runInTenantTransaction(input.scope, async () => {
+      /*
+       * A guest becoming staff, which is a privilege change and not only a new record.
+       *
+       * `ExternalGuest` is capped at read, comment and draft, and the database requires such a
+       * membership to carry an end date — `guestAccessExpiresAt` is mandatory for a guest and
+       * forbidden for anybody else, by check constraint. So employing a guest without changing
+       * the type would leave an employee who may not do the work and whose access switches off
+       * on a date somebody set months earlier; and changing the type without clearing the date
+       * would be refused by the constraint. The two go together or neither does.
+       *
+       * This is why a spreadsheet row cannot do it. The importer refuses a guest and sends the
+       * operator here, where a person is naming a colleague deliberately.
+       */
+      if (wasGuest) {
+        await this.prisma.client.tenantMembership.updateMany({
+          where: { tenantId: input.scope.tenantId, userId: input.subjectUserId },
+          data: { userType: 'InternalUser', guestAccessExpiresAt: null },
+        });
+
+        await this.securityEvents.recordWithinCurrentScope({
+          action: SECURITY_ACTIONS.userTypeChanged,
+          tenantId: input.scope.tenantId,
+          actorUserId: input.actorUserId,
+          subjectUserId: input.subjectUserId,
+          resourceType: 'tenant_membership',
+          resourceId: input.subjectUserId,
+          summary:
+            `${subject.displayName} was a guest and is now an internal user, employed in this ` +
+            'company. Their access no longer expires.',
+          metadata: { from: 'ExternalGuest', to: 'InternalUser', guestExpiryCleared: true },
+        });
+      }
+
       const identifier = await this.people.attachIdentifierToKnownPersonWithinCurrentScope({
         tenantId: input.scope.tenantId,
         actorUserId: input.actorUserId,
