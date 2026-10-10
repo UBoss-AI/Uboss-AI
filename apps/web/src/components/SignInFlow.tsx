@@ -22,10 +22,30 @@ import {
   ApiError,
   authApi,
   myAccessApi,
+  RETURN_TO_KEY,
+  SESSION_ENDED_KEY,
   type SignInMethods,
   type SsoConnectionSummary,
   type Workspace,
 } from '../lib/api-client';
+
+/**
+ * Where this tab was when the session ended, read once and forgotten.
+ *
+ * Cleared on read so a later, deliberate sign-in does not reopen a screen somebody left days
+ * ago — the path is an answer to "take me back", not a home page.
+ */
+function takeReturnPath(): string | null {
+  try {
+    const path = sessionStorage.getItem(RETURN_TO_KEY);
+    sessionStorage.removeItem(RETURN_TO_KEY);
+    // Same-origin and absolute, or nothing: a stored value that could carry a host would be the
+    // open redirect that keeping this out of the URL was meant to avoid.
+    return path !== null && path.startsWith('/') && !path.startsWith('//') ? path : null;
+  } catch {
+    return null;
+  }
+}
 
 type Step =
   | { kind: 'credentials' }
@@ -136,6 +156,29 @@ export function SignInFlow({ plane }: SignInFlowProps) {
   >(null);
   const [ssoError, setSsoError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  /*
+   * Whether somebody arrived here because their session ended under them, rather than by
+   * choosing to sign in.
+   *
+   * Worth saying out loud. Without it this page is indistinguishable from a normal sign-in, and
+   * the person is left to work out for themselves why they are looking at it — which for
+   * somebody half-way through a form is the moment they assume the product lost their work.
+   *
+   * Read after mount, because `sessionStorage` does not exist while this page is being rendered
+   * on the server.
+   */
+  const [sessionEnded, setSessionEnded] = useState(false);
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem(SESSION_ENDED_KEY) === '1') {
+        setSessionEnded(true);
+        sessionStorage.removeItem(SESSION_ENDED_KEY);
+      }
+    } catch {
+      // Storage blocked. They still get the sign-in page, just without the explanation.
+    }
+  }, []);
 
   /*
    * The terms tick and the verification question.
@@ -560,6 +603,20 @@ export function SignInFlow({ plane }: SignInFlowProps) {
                        * a role name. A failure to get that answer lands them on the Dashboard, which
                        * every company role can open.
                        */
+                      /*
+                       * Back where they were, when they were thrown out of somewhere.
+                       *
+                       * A session that ends mid-task sends somebody here; landing them on the
+                       * Dashboard afterwards means finding their way back to the screen they
+                       * were on, which is the second half of the same interruption. Read once
+                       * and cleared, so a later ordinary sign-in does not reopen it.
+                       */
+                      const returnTo = takeReturnPath();
+                      if (returnTo !== null) {
+                        router.push(returnTo);
+                        return;
+                      }
+
                       void myAccessApi
                         .mine(workspace.tenantId)
                         .then((access) => {
@@ -788,6 +845,21 @@ export function SignInFlow({ plane }: SignInFlowProps) {
       <form onSubmit={handlePassword} noValidate>
         <h1>Welcome back</h1>
         <p className="uboss-login-card-sub">Sign in to Chief Agent, powered by UBoss AI.</p>
+
+        {/*
+          Why they are looking at this page, when they did not ask to.
+
+          Above the error, not instead of it: a session can end and the next password attempt can
+          still be wrong, and both are things the person needs to be told.
+        */}
+        {sessionEnded ? (
+          <div style={{ marginBottom: 16 }}>
+            <Banner tone="info">
+              Your session ended, so you were signed out. Sign in and you will be taken back to
+              where you were.
+            </Banner>
+          </div>
+        ) : null}
 
         {step.kind === 'error' ? (
           <div style={{ marginBottom: 16 }}>

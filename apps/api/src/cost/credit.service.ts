@@ -1245,7 +1245,7 @@ export class CreditService {
         severity: input.severity,
         title: input.title,
         body: input.body,
-        deepLink: '/settings?category=tokens',
+        deepLink: '/settings?section=tokens',
         resourceType: 'credit-request',
         dedupeKey: input.dedupeKey,
       });

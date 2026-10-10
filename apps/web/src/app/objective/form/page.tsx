@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   FORM2_SECTION_LABELS,
@@ -170,6 +170,8 @@ function ObjectiveFormInner() {
   /* Whether the grid's free-text cells are showing their full content. See WorkflowGrid. */
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** Set when this tab had work the server never received, and it was put back on screen. */
+  const [restored, setRestored] = useState(false);
 
   /*
    * What an uploaded workbook said, before any of it is applied.
@@ -268,6 +270,39 @@ function ObjectiveFormInner() {
         if (loaded.reward) {
           setReward(loaded.reward);
           setRewardNote(loaded.reward.note);
+        }
+
+        /*
+         * Anything this tab was holding that never reached the server.
+         *
+         * Restored rather than offered as a choice: it is the newer of the two by definition —
+         * it is what somebody typed after the version they are looking at — and a dialog asking
+         * "keep your work or throw it away" is a question with one sensible answer and a chance
+         * to press the wrong button. The line under the toolbar says it happened, and Save Draft
+         * is one press away.
+         */
+        try {
+          const kept = sessionStorage.getItem(`uboss.objectiveForm.${objectiveId}`);
+          if (kept === null) return;
+
+          const parsed: unknown = JSON.parse(kept);
+          const held = parsed as { content?: Form2Objective; steps?: Form2WorkflowStep[] };
+          const current = JSON.stringify({
+            content: shown?.content ?? emptyForm2(),
+            steps:
+              shown === null || shown.steps.length === 0
+                ? [blankWorkflowStep(1)]
+                : shown.steps.map(toEditableStep),
+          });
+
+          if (kept !== current && held.content !== undefined && held.steps !== undefined) {
+            setContent(held.content);
+            setSteps(held.steps);
+            setRestored(true);
+          }
+        } catch {
+          // Unreadable or blocked. The server's version is already on screen, which is the safe
+          // thing to be showing.
         }
       })
       .catch((caught: unknown) =>
@@ -515,6 +550,43 @@ function ObjectiveFormInner() {
       .finally(() => setBusy(false));
   }, [content, objective, steps, tenantId, upload, uploadScope]);
 
+  /*
+   * What is on screen, as one value that changes exactly when the form does.
+   *
+   * Both the autosave and the local backup below are answers to "has anything changed since the
+   * last time this was true", and deriving them from the same string is what keeps them from
+   * disagreeing about it.
+   */
+  const snapshot = useMemo(() => JSON.stringify({ content, steps }), [content, steps]);
+
+  /** What the server last accepted. Null until something has been saved in this session. */
+  const lastSaved = useRef<string | null>(null);
+  const [autosave, setAutosave] = useState<'clean' | 'pending' | 'saving' | 'failed'>('clean');
+
+  /*
+   * A copy in this tab, for the form that cannot be saved to the server yet.
+   *
+   * A brand-new objective has never been validated — autosaving one would put half-typed rows in
+   * everybody's list — so until the first Save Draft there is nothing on the server to update.
+   * That used to be survivable, because a lost session left the page sitting there with the
+   * typing still in it. It no longer does: an expired session now takes the person to sign in,
+   * which is the right answer for being stuck and the wrong one for their work.
+   *
+   * `sessionStorage` because the trip to sign in and back happens in this tab, and because a
+   * draft left in `localStorage` would reappear on a machine somebody else uses next.
+   */
+  const backupKey = `uboss.objectiveForm.${objectiveId ?? 'new'}`;
+
+  useEffect(() => {
+    if (readOnly) return;
+    try {
+      sessionStorage.setItem(backupKey, snapshot);
+    } catch {
+      // Storage blocked or full. The server autosave below is the real protection; this is the
+      // belt for the case it cannot cover.
+    }
+  }, [backupKey, snapshot, readOnly]);
+
   const save = useCallback(() => {
     if (!tenantId) return;
     setBusy(true);
@@ -544,6 +616,65 @@ function ObjectiveFormInner() {
       .then(done)
       .catch(failed);
   }, [content, draft, objective, steps, tenantId]);
+
+  /*
+   * Save a draft that already exists, on its own, a couple of seconds after typing stops.
+   *
+   * ## Why only an objective that exists
+   *
+   * Creating one needs content the server will accept, and a form part-way through filling in is
+   * precisely content it will refuse. Autosaving a new objective would either litter the list
+   * with incomplete ones or fail silently every two seconds. The first Save Draft stays a
+   * decision; everything after it is kept.
+   *
+   * ## Why it does not touch `busy`
+   *
+   * `busy` disables the toolbar. A save nobody asked for must not grey out the buttons under
+   * somebody's cursor, so this reports itself in one small line and leaves the page alone.
+   *
+   * ## Why a failure is quiet
+   *
+   * It says "not saved" and stops; it does not raise the error banner. The banner is where a
+   * person's own Save Draft reports a refusal they need to act on, and filling it from a
+   * background write would mean a validation message appearing while somebody is mid-sentence.
+   * The line below the buttons is enough to know to press Save Draft and read the reason.
+   */
+  useEffect(() => {
+    if (!tenantId || readOnly || objective === null || busy) return;
+
+    // The first snapshot after a load is the loaded value, not a change somebody made.
+    if (lastSaved.current === null) {
+      lastSaved.current = snapshot;
+      return;
+    }
+    if (lastSaved.current === snapshot) return;
+
+    setAutosave('pending');
+    const timer = setTimeout(() => {
+      const attempted = snapshot;
+      setAutosave('saving');
+
+      void objectivesApi
+        .saveDraft(tenantId, objective.id, {
+          content,
+          steps,
+          ...(draft === null ? {} : { versionId: draft.id }),
+        })
+        .then((saved) => {
+          setObjective(saved);
+          lastSaved.current = attempted;
+          setAutosave('clean');
+          try {
+            sessionStorage.removeItem(backupKey);
+          } catch {
+            // Nothing to clean up if it was never written.
+          }
+        })
+        .catch(() => setAutosave('failed'));
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [snapshot, tenantId, readOnly, objective, busy, content, steps, draft, backupKey]);
 
   const submit = useCallback(() => {
     if (!tenantId || objective === null) {
@@ -773,6 +904,28 @@ function ObjectiveFormInner() {
           </>
         }
       />
+
+      {/*
+        What the background save is doing, in one line.
+
+        Quiet on purpose. A toast for every autosave is noise; silence is worse, because somebody
+        who has been told once that their work was lost does not take "it is probably saving" on
+        trust. So it says which of four things is true and nothing else, and "not saved" is the
+        only one that stays until something changes it.
+      */}
+      {readOnly || (autosave === 'clean' && !restored) ? null : (
+        <p className="uboss-autosave" role="status" aria-live="polite">
+          {restored && autosave === 'clean'
+            ? 'Unsaved changes from this tab were put back. Press Save Draft to store them.'
+            : autosave === 'saving'
+              ? 'Saving…'
+              : autosave === 'failed'
+                ? 'Not saved. Press Save Draft to see why.'
+                : autosave === 'pending'
+                  ? 'Unsaved changes'
+                  : null}
+        </p>
+      )}
 
       {error === null ? null : (
         /*

@@ -11959,3 +11959,15 @@ tr[data-drop-target='true'] td {
   /* The cell underneath is still being typed in. */
   pointer-events: none;
 }
+
+/*
+   The objective form's autosave line.
+
+   Under the toolbar, in the muted tone the rest of the form uses for things
+   that are true rather than things to do.
+ */
+.uboss-autosave {
+  margin: 0 0 var(--uboss-space-3);
+  font-size: 13px;
+  color: var(--uboss-text-3);
+}

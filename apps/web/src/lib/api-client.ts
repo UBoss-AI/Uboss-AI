@@ -88,6 +88,73 @@ function messageFrom(body: unknown, fallback: string): string {
   return fallback;
 }
 
+/**
+ * The pages that talk to the API without being signed in.
+ *
+ * Sending somebody from here to `/login` would be a loop: `/login` itself asks the server for
+ * sign-in methods, `/activate` reads an invitation, `/access-help` starts a reset, `/start`
+ * drives self-serve signup. A 401 on any of them is an ordinary answer, not a lost session.
+ */
+const PUBLIC_PAGES = ['/login', '/activate', '/access-help', '/start'];
+
+/**
+ * The calls where a 401 **is** the answer, not an expired session.
+ *
+ * A wrong password returns 401 from `/auth/login`, and redirecting there would replace "that
+ * password is not right" with a page reload that loses what was typed and explains nothing. The
+ * same holds for a dead invitation token and a used reset link.
+ */
+const SIGNED_OUT_CALLS = [
+  '/auth/login',
+  '/auth/captcha',
+  '/auth/sign-in-methods',
+  '/auth/social-providers',
+  '/auth/sso/',
+  '/auth/mfa/',
+  '/auth/invitations/',
+  '/auth/password-reset/',
+  '/register',
+];
+
+/** Where to send somebody back to once they have signed in again. */
+export const RETURN_TO_KEY = 'uboss.returnTo';
+/** Set when the session ended under somebody, so the sign-in page can say so. */
+export const SESSION_ENDED_KEY = 'uboss.sessionEnded';
+
+/**
+ * A session that ended while somebody was working.
+ *
+ * ## What it replaces
+ *
+ * Nothing. Every screen caught the 401, put *"Authentication is required."* in its error banner
+ * and carried on showing an empty page — a sentence that reads like a bug, on a screen that can
+ * no longer do anything, with no way forward but to find the sign-in page by hand. Reported by
+ * somebody who was part-way through an objective.
+ *
+ * ## Why `sessionStorage` rather than a `?returnTo=` parameter
+ *
+ * A return path in the URL is an open redirect unless it is validated on the way back, and the
+ * validation is the part that gets forgotten. The path never leaves this tab, so there is
+ * nothing for anybody else to set.
+ */
+function sessionEnded(apiPath: string): void {
+  if (typeof window === 'undefined') return;
+
+  const here = window.location.pathname;
+  if (PUBLIC_PAGES.some((page) => here === page || here.startsWith(`${page}/`))) return;
+  if (SIGNED_OUT_CALLS.some((prefix) => apiPath.startsWith(prefix))) return;
+
+  try {
+    sessionStorage.setItem(RETURN_TO_KEY, `${here}${window.location.search}`);
+    sessionStorage.setItem(SESSION_ENDED_KEY, '1');
+  } catch {
+    // A browser with storage blocked still gets sent to sign in; it just arrives without the
+    // sentence explaining why, which is the lesser of the two failures.
+  }
+
+  window.location.assign('/login');
+}
+
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
   let response: Response;
 
@@ -109,6 +176,8 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
   const body: unknown = await response.json().catch(() => null);
 
   if (!response.ok) {
+    if (response.status === 401) sessionEnded(path);
+
     const retryAfter = response.headers.get('Retry-After');
     throw new ApiError(
       messageFrom(body, 'Something went wrong. Please try again.'),

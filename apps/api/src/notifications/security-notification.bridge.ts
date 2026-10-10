@@ -68,6 +68,112 @@ const WORDING: Record<string, { title: string; body: string }> = {
     title: 'An administrator signed you out',
     body: 'Your sessions were ended by a company administrator.',
   },
+
+  /*
+   * The rest of the events that actually send a message.
+   *
+   * Twenty-two actions reach this table and six had an entry, so sixteen of them arrived as *"A
+   * security event on your account — something security-relevant happened on your account in
+   * this workspace"*. A real administrator received one for granting somebody a role, which is
+   * the most ordinary act there is, and it read like a breach.
+   *
+   * That is worse than no notification. An alarming sentence with no content cannot be acted on,
+   * and a person who gets three of them stops reading the fourth — which is the one that
+   * matters. The fallback below still exists for an action nobody has written words for yet, and
+   * it should keep shrinking.
+   */
+  'security.role_assigned': {
+    title: 'Your access in this company changed',
+    body:
+      'An administrator gave you a role. What you can see and do may have changed; Login & ' +
+      'Security shows when it happened and who did it.',
+  },
+  'security.role_revoked': {
+    title: 'A role was removed from your account',
+    body:
+      'An administrator removed one of your roles, so some screens may no longer be available ' +
+      'to you. If that stops you working, ask them — it is reversible.',
+  },
+  'security.user_type_changed': {
+    title: 'You are now an internal user of this company',
+    body:
+      'You were a guest and have been employed, so your access is no longer capped at reading ' +
+      'and commenting, and no longer has an end date.',
+  },
+  'security.password_reset_requested': {
+    title: 'A password reset was requested for your account',
+    body:
+      'If that was you, use the link in the email we sent. If it was not, nothing has changed ' +
+      'yet and your password still works — but somebody knows your address.',
+  },
+  'security.mfa_failed': {
+    title: 'A second-factor code was rejected',
+    body:
+      'Somebody entered a wrong code for your account. If it was not you, your password may be ' +
+      'known to them: change it, and sign out of all devices.',
+  },
+  'security.mfa_recovery_code_used': {
+    title: 'A recovery code was used on your account',
+    body:
+      'One of your single-use recovery codes signed in. Each works once. If it was not you, ' +
+      'change your password and generate a new set immediately.',
+  },
+  'security.session_revoked_by_company_admin': {
+    title: 'An administrator signed you out',
+    body: 'A company administrator ended your sessions. Signing in again is all that is needed.',
+  },
+  'security.sso_login_failed': {
+    title: 'A single sign-on attempt for your account failed',
+    body:
+      'Your identity provider refused the sign-in. If this keeps happening, your administrator ' +
+      'can see the reason under Security.',
+  },
+  'security.sso_backchannel_logout': {
+    title: 'Your identity provider signed you out',
+    body: 'Your sessions here were ended because your provider ended the one it holds.',
+  },
+  'security.sso_connection_deleted': {
+    title: 'Single sign-on was removed from this company',
+    body:
+      'An administrator deleted the connection. People who signed in through it will need a ' +
+      'password, or a new connection.',
+  },
+  'security.scim_client_revoked': {
+    title: 'An automated provisioning client was revoked',
+    body:
+      'A directory integration can no longer create or remove people here. Anybody it was ' +
+      'keeping in step will stop being updated.',
+  },
+  'security.scim_user_deprovisioned': {
+    title: 'Your access was ended by your company’s directory',
+    body:
+      'Your directory removed you from this company, so your access here has ended. Nothing has ' +
+      'been deleted — your employment record and your work are kept.',
+  },
+  'security.separation_of_duties_blocked': {
+    title: 'An action was refused because one person cannot do both halves',
+    body:
+      'Separation of duties stopped this: the same person may not both raise and approve it. ' +
+      'Somebody else has to take the second half.',
+  },
+  'security.custom_role_created': {
+    title: 'A custom role was created in this company',
+    body:
+      'An administrator wrote a new role. Roles decide what people can see and do, so it is ' +
+      'worth a look under Roles & Permissions.',
+  },
+  'security.domain_claim_removed': {
+    title: 'A domain claim was removed from this company',
+    body:
+      'Addresses at that domain can no longer be invited without confirming each one, and a ' +
+      'single sign-on assertion carrying one is no longer believed on its own.',
+  },
+  'security.file_scan_found_malware': {
+    title: 'A file you uploaded was found to contain malware',
+    body:
+      'The file was quarantined and is not available to anybody. Nothing else of yours is ' +
+      'affected; the copy on the machine you sent it from may still be infected.',
+  },
 };
 
 /**
@@ -140,7 +246,16 @@ export class SecurityNotificationBridge implements OnModuleInit {
         event.outcome === 'Blocked'
           ? `${wording.body}\n\nThe attempt was refused by a security control.`
           : wording.body,
-      deepLink: '/settings/security',
+      /*
+       * `?section=`, because `/settings/security` is not a page.
+       *
+       * Settings has exactly three routes — itself, `billing` and `users`. Everything else is a
+       * panel on the one page, chosen by `?section=`, and the key for this one is `security`.
+       * The link sent `/settings/security` and the recipient got a 404: the worst possible
+       * landing for a message whose whole point is "something happened to your account, go and
+       * look". Found by an administrator following one.
+       */
+      deepLink: '/settings?section=security',
       resourceType: event.resourceType ?? 'security_event',
       ...(event.resourceId === undefined ? {} : { resourceId: event.resourceId }),
       // Not "assigned": a security alert is something to know about, not a task in a queue.

@@ -1647,7 +1647,7 @@ export class CostEngineService {
             threshold === 'HardStop'
               ? 'The AI allowance is exhausted. New runs are blocked until credits are added.'
               : `The company AI allowance has passed its ${threshold.toLowerCase()} threshold.`,
-          deepLink: '/settings?category=tokens',
+          deepLink: '/settings?section=tokens',
           resourceType: 'budget-wallet',
           // One notification per threshold per company, not one per run that crosses it.
           dedupeKey: `budget-threshold:${scope.tenantId}:${threshold}`,

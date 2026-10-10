@@ -479,7 +479,7 @@ describe('notifications and escalation (e2e)', () => {
                 severity: 'Warning',
                 title: 'New device',
                 body: 'A new device signed in.',
-                deepLink: '/settings/security',
+                deepLink: '/settings?section=security',
                 resourceType: 'security_event',
                 dedupeKey: 'k-security-optional',
                 isMandatory: false,
@@ -987,7 +987,7 @@ describe('notifications and escalation (e2e)', () => {
         severity: 'Critical',
         title: 'Your password was changed',
         body: 'If you did not change it, contact your administrator.',
-        deepLink: '/settings/security',
+        deepLink: '/settings?section=security',
         resourceType: 'security_event',
         dedupeKey: 'security:pwd:1',
       });
@@ -1293,7 +1293,7 @@ describe('notifications and escalation (e2e)', () => {
       assert.equal(view.items[0]?.isMandatory, true);
       // Real wording, not the machine action key — the same defect as showing `svgDashboard`.
       assert.match(view.items[0]?.title ?? '', /new device/i);
-      assert.equal(view.items[0]?.deepLink, '/settings/security');
+      assert.equal(view.items[0]?.deepLink, '/settings?section=security');
     });
 
     it('collapses a storm into one notification per minute', async () => {
