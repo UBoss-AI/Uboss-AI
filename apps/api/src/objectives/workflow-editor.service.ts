@@ -10,6 +10,7 @@ import {
   connectorDefinition,
   HIGH_RISK_TOOL_CATEGORIES,
   incompleteDodFields,
+  isHighRiskToolCategory,
   mayConvertNode,
   nodeShapeFor,
   upgradeWorkflowDraft,
@@ -279,6 +280,17 @@ export class WorkflowEditorService {
         // drift apart.
         if (input.patch.dod.approval !== undefined) {
           node.approvalKind = input.patch.dod.approval;
+        }
+        /*
+         * Setting the tools is a person taking responsibility for them.
+         *
+         * Until this moment the list is whatever the analysis read into the step, and the
+         * Pre-Publish Summary treats a high-risk category it inferred as something to look at
+         * rather than something to stop for. Once a manager has opened the node and said what it
+         * needs, the same category is a declaration, and an ungated declaration blocks.
+         */
+        if (input.patch.dod.tools !== undefined) {
+          node.dod.toolsInferred = false;
         }
       }
 
@@ -584,13 +596,50 @@ export class WorkflowEditorService {
     const neededTools = [...new Set(graph.nodes.flatMap((node) => node.dod.tools))];
     const missingConnections = await this.missingConnectionsFor(input.scope, neededTools);
 
+    /*
+     * The categories somebody has actually said the plan needs.
+     *
+     * A node whose tools the analysis inferred has not been confirmed by anybody, so a category
+     * that appears only on such nodes is a suggestion. The distinction decides severity twice
+     * below — here, and for high-risk actions.
+     */
+    const confirmedTools = new Set(
+      graph.nodes
+        .filter((node) => node.dod.toolsInferred !== true)
+        .flatMap((node) => node.dod.tools),
+    );
+    /*
+     * An inferred need only stops blocking when it is also a **high-risk** one.
+     *
+     * The narrower test is deliberate, and it is what keeps this change from loosening anything
+     * that was already load-bearing. Before the analysis read the model's answer, every AI node
+     * was given `Read` or `Read, Write` by one line of code — so a plan with no live connection
+     * was blocked on those two categories, and had been for as long as the check has existed.
+     * `Read` and `Write` are also the only two categories that are **not** high-risk. Restricting
+     * the downgrade to high-risk ones therefore leaves that long-standing block exactly as it
+     * was, and softens only the case that could not arise until this build: a model naming
+     * `FinancialChange` on a step nobody has confirmed.
+     */
+    const inferredMissingConnections = missingConnections.filter(
+      (category) =>
+        !confirmedTools.has(category) &&
+        isHighRiskToolCategory(category as (typeof HIGH_RISK_TOOL_CATEGORIES)[number]),
+    );
+
+    // Read from the narrowed list rather than recomputed, so the severity a manager reads and the
+    // list the assignment refuses on cannot say different things about the same category.
+    const unconfirmedMissing = new Set(inferredMissingConnections);
     for (const category of missingConnections) {
+      const inferred = unconfirmedMissing.has(category);
       findings.push({
-        severity: 'Blocker',
+        severity: inferred ? 'Warning' : 'Blocker',
         nodeId: null,
-        summary:
-          `The plan needs a "${category}" tool but no live connection provides it. Configure and ` +
-          'connect one, or remove the need.',
+        summary: inferred
+          ? `The analysis thinks a step needs a "${category}" tool, and no live connection ` +
+            'provides it. Nobody has confirmed the plan needs it, so this does not stop ' +
+            'publishing — open the step and set its tools if it does.'
+          : `The plan needs a "${category}" tool but no live connection provides it. Configure ` +
+            'and connect one, or remove the need.',
       });
     }
 
@@ -603,6 +652,11 @@ export class WorkflowEditorService {
       )
       .map((node) => node.id);
 
+    const inferredHighRiskNodes = highRiskNodes.filter(
+      (nodeId) =>
+        graph.nodes.find((candidate) => candidate.id === nodeId)?.dod.toolsInferred === true,
+    );
+
     for (const nodeId of highRiskNodes) {
       const node = graph.nodes.find((candidate) => candidate.id === nodeId);
       const gated =
@@ -612,15 +666,34 @@ export class WorkflowEditorService {
             edge.fromNodeId === nodeId &&
             graph.nodes.find((candidate) => candidate.id === edge.toNodeId)?.kind === 'Approval',
         );
+      const inferred = node?.dod.toolsInferred === true;
 
       findings.push({
-        // A high-risk step behind an approval is a decision the company has made; one with no
-        // gate at all is the case worth stopping for.
-        severity: gated ? 'Warning' : 'Blocker',
+        /*
+         * Three cases, and only one of them stops a publish.
+         *
+         * A high-risk step behind an approval is a decision the company has already made. A
+         * high-risk step with no gate, whose category **a person set**, is the case worth
+         * stopping for: somebody looked at it, said it moves money, and left nothing in front of
+         * it.
+         *
+         * The third case is new, and it is why this is not a two-way test any more. Since the
+         * analysis began reading the model's answer into `dod.tools`, a step can be called
+         * high-risk by a model that read one line of its description. Blocking a company's plan
+         * on that is the wrong trade: the guess is worth surfacing, not worth refusing a publish
+         * over, and if it is right the manager sets the category themselves and it blocks
+         * properly. Nothing here weakens the gate — it moves the stopping point to the person who
+         * can actually judge it.
+         */
+        severity: gated || inferred ? 'Warning' : 'Blocker',
         nodeId,
         summary: gated
           ? 'This step performs a high-risk action. It is behind an approval.'
-          : 'This step performs a high-risk action with no approval gate in front of it.',
+          : inferred
+            ? 'The analysis reads this step as a high-risk action, and there is no approval gate ' +
+              'in front of it. Nobody has confirmed that reading. Open the step: if it is right, ' +
+              'set the tools or add an approval; if it is not, correct the tools.'
+            : 'This step performs a high-risk action with no approval gate in front of it.',
       });
     }
 
@@ -660,7 +733,9 @@ export class WorkflowEditorService {
       nodesNeedingNewSkill,
       nodesReusingSkill,
       missingConnections,
+      inferredMissingConnections,
       highRiskNodes,
+      inferredHighRiskNodes,
       estimatedUsage: graph.usage,
       workloadConflicts,
       incompleteNodes,

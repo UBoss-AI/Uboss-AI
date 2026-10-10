@@ -41,6 +41,31 @@ describe('WorkflowGrid', () => {
     expect(wrap()?.classList.contains('uboss-wfgrid-wrap--tall')).toBe(false);
   });
 
+  /*
+   * The half of the growth that makes it a spreadsheet: leaving the cell puts it back.
+   *
+   * jsdom computes no layout, so `scrollHeight` is 0 and the grown height cannot be asserted as a
+   * number — that part was watched in a browser. What is checkable here is the thing that would
+   * actually break: that entering a cell sets an inline height at all, and that leaving it
+   * **removes** the inline height rather than writing another number. Removing it is what hands
+   * the row height back to the stylesheet, and it is why "Expand long text" still works on a cell
+   * somebody has typed in.
+   */
+  it('sizes a cell on the way in and hands the height back on the way out', () => {
+    render(<Harness />);
+    const cell = screen.getByLabelText('Step 1 Exact Work');
+
+    fireEvent.focus(cell);
+    expect(cell.style.height).not.toBe('');
+
+    // A number, as a browser would have left it after measuring real content.
+    cell.style.height = '84px';
+    fireEvent.blur(cell);
+
+    expect(cell.style.height).toBe('');
+    expect(cell.style.overflowY).toBe('hidden');
+  });
+
   it('renders every source column header except the approval gate', () => {
     // The locked rule made testable: the header row is derived from the shared array, so a
     // dropped column fails here rather than shipping.

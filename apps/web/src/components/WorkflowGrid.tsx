@@ -153,6 +153,19 @@ function renumber(steps: readonly Form2WorkflowStep[]): Form2WorkflowStep[] {
  * **floor** under every cell at once, so a reader can see the whole sheet's long text without
  * clicking into each one. This sets the height of the cell being typed in. They compose — the
  * floor wins when the content is shorter, the measurement wins when it is longer.
+ *
+ * ## Only while the cell is being used
+ *
+ * The growth is tied to focus, and `collapse` undoes it on the way out, because that is the half
+ * that makes it a spreadsheet rather than a page that keeps swelling. A grid where every long
+ * cell stays tall for ever is a grid whose rows are all different heights and whose fourteen
+ * columns no longer line up — three paragraphs in one cell push the nine short answers beside it
+ * into a column of whitespace, and nothing can be scanned down any more. Excel does exactly
+ * this: the cell you are in opens up to hold what you are writing, and closes back to the row
+ * height the moment you leave it.
+ *
+ * Nothing is lost by closing it. The text is still there, "Expand long text" still shows every
+ * cell's full content at once, and clicking back in reopens this one.
  */
 const MAX_CELL_HEIGHT_PX = 200;
 
@@ -164,6 +177,20 @@ function autoSize(element: HTMLTextAreaElement | null): void {
   element.style.height = `${needed}px`;
   // Only the cell that outgrew the ceiling gets a scrollbar; the rest stay clean.
   element.style.overflowY = element.scrollHeight > MAX_CELL_HEIGHT_PX ? 'auto' : 'hidden';
+}
+
+/**
+ * Put a cell back to the height every other cell has.
+ *
+ * The inline height is **removed** rather than set to a number, which matters: the row height is
+ * a CSS decision — 26px normally, 76px while "Expand long text" is on — and writing a pixel value
+ * here would freeze whichever one happened to be true at the time and quietly break that control.
+ */
+function collapse(element: HTMLTextAreaElement | null): void {
+  if (element === null) return;
+
+  element.style.height = '';
+  element.style.overflowY = 'hidden';
 }
 
 /**
@@ -508,7 +535,10 @@ export function WorkflowGrid({
       <td key={column.key} className="uboss-wfg-cellwrap">
         <textarea
           rows={1}
-          ref={autoSize}
+          // Sized when somebody enters it, not when it renders. A grid that measured every cell
+          // on mount would open with rows of fourteen different heights before anybody had
+          // touched it.
+          onFocus={(event) => autoSize(event.currentTarget)}
           onKeyDown={(event) => {
             /*
              * Tab completes, and only when there is something to complete.
@@ -522,7 +552,10 @@ export function WorkflowGrid({
             update(step.position, { [column.key]: suggestion } as Partial<Form2WorkflowStep>);
             setCompletion(null);
           }}
-          onBlur={() => setCompletion(null)}
+          onBlur={(event) => {
+            setCompletion(null);
+            collapse(event.currentTarget);
+          }}
           className={cn(
             'uboss-wfg-editable',
             'uboss-wfg-cell',

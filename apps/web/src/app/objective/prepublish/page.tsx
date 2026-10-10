@@ -60,6 +60,20 @@ function readinessRows(summary: PrePublishSummary): ReadinessRow[] {
   const highRiskUngated = summary.findings.filter(
     (finding) => finding.severity === 'Blocker' && finding.summary.includes('high-risk'),
   ).length;
+  /*
+   * Defaulted, because the API and the web app are separate containers and a deploy restarts them
+   * one at a time. For the minute in between, this page can be the new build reading a summary the
+   * old one wrote, and that summary has neither of these two fields. Reading `.includes` off
+   * `undefined` would throw and the manager would get a blank readiness screen — which is a worse
+   * failure than the absent nicety. Empty is also the honest reading of a server that does not
+   * know the difference yet: nothing is marked unconfirmed, so every finding keeps the severity
+   * that server gave it.
+   */
+  const inferredMissing = summary.inferredMissingConnections ?? [];
+  const inferredHighRisk = summary.inferredHighRiskNodes ?? [];
+  const confirmedMissing = summary.missingConnections.filter(
+    (category) => !inferredMissing.includes(category),
+  );
 
   return [
     {
@@ -88,11 +102,19 @@ function readinessRows(summary: PrePublishSummary): ReadinessRow[] {
     },
     {
       check: 'Connections valid',
-      ready: summary.missingConnections.length === 0 ? 'Ready' : 'Blocked',
+      // A category wanted only by steps whose tools the analysis inferred is a suggestion nobody
+      // has confirmed, so it reads as Review. The server grades it the same way and Approve &
+      // Assign no longer refuses on it; showing "Blocked" here would contradict both.
+      ready:
+        confirmedMissing.length > 0 ? 'Blocked' : inferredMissing.length > 0 ? 'Review' : 'Ready',
       detail:
-        summary.missingConnections.length === 0
-          ? 'Every tool the plan needs has a live grant'
-          : `No live connection provides: ${summary.missingConnections.join(', ')}`,
+        confirmedMissing.length > 0
+          ? `No live connection provides: ${confirmedMissing.join(', ')}`
+          : inferredMissing.length > 0
+            ? `The analysis thinks a step needs ${inferredMissing.join(
+                ', ',
+              )}, which no connection provides. Nobody has confirmed that`
+            : 'Every tool the plan needs has a live grant',
     },
     {
       check: 'Estimated AI usage',
@@ -105,6 +127,12 @@ function readinessRows(summary: PrePublishSummary): ReadinessRow[] {
       check: 'High-impact actions',
       ready:
         highRiskUngated > 0 ? 'Blocked' : summary.highRiskNodes.length > 0 ? 'Review' : 'Ready',
+      /*
+       * Three sentences, because there are now three situations and the old two-way text lied in
+       * the third. A step the analysis read as high-risk and that has no gate used to be
+       * impossible; it is reported, it does not block, and saying "all behind an approval" about
+       * it would be false on the one row a reader relies on most.
+       */
       detail:
         summary.highRiskNodes.length === 0
           ? 'No high-risk tool categories in this plan'
@@ -112,9 +140,13 @@ function readinessRows(summary: PrePublishSummary): ReadinessRow[] {
             ? `${highRiskUngated} high-risk step${
                 highRiskUngated === 1 ? '' : 's'
               } with no approval gate`
-            : `${summary.highRiskNodes.length} high-risk step${
-                summary.highRiskNodes.length === 1 ? '' : 's'
-              }, all behind an approval`,
+            : inferredHighRisk.length > 0
+              ? `${inferredHighRisk.length} step${
+                  inferredHighRisk.length === 1 ? '' : 's'
+                } the analysis reads as high-risk, not confirmed by anybody yet`
+              : `${summary.highRiskNodes.length} high-risk step${
+                  summary.highRiskNodes.length === 1 ? '' : 's'
+                }, all behind an approval`,
     },
   ];
 }

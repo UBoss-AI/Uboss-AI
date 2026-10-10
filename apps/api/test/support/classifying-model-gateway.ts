@@ -63,8 +63,28 @@ export class ClassifyingModelGateway extends MockModelGateway {
   /** Set to make the classification come back as something the service cannot read. */
   classificationAnswer: string | null = null;
 
+  /**
+   * What the gateway answers when asked which tool categories each AI step needs.
+   *
+   * Null leaves the base mock's reply in place, which the parser cannot read — so the analysis
+   * falls back to its own guess and every existing fixture keeps the `Read` / `Read, Write` lists
+   * it was written against.
+   *
+   * A suite that needs a particular category sets it, in the answer's own format
+   * (`"1: FinancialChange"`, one line per step). That is the only way to get a high-risk category
+   * onto a node the way a real run would produce one — through the parser and the fallback, not by
+   * writing the draft JSON directly, which would prove the summary works on a shape no analysis
+   * can actually emit.
+   */
+  toolCategoriesAnswer: string | null = null;
+
   override async complete(request: ModelRequest): Promise<ModelResponse> {
     const response = await super.complete(request);
+
+    if (request.purpose === 'objective.analysis.ai-work' && this.toolCategoriesAnswer !== null) {
+      return { ...response, output: this.toolCategoriesAnswer };
+    }
+
     if (request.purpose !== 'objective.analysis.human-work') return response;
 
     return {

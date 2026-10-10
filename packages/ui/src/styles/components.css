@@ -4706,11 +4706,30 @@ tr:hover .uboss-row-name .uboss-btn,
    without them is unreadable, which is why they are here rather than left to a
    page to reinvent. */
 
+/*
+  The grid is never taller than the screen it is read on.
+
+  The frozen header only freezes against *this* box, because that is the only thing it can freeze
+  against: the grid scrolls sideways across fifteen columns, and a box that scrolls on one axis is
+  a scroll container on both — there is no arrangement in which a `thead` inside it sticks to the
+  window instead. So the header stays put while you scroll rows, and goes away with the box when
+  you scroll the page past it.
+
+  At 560px flat, on a short window, the box was taller than the viewport. The reader could never
+  have the whole grid on screen, so scrolling the page was the only way to reach the lower rows —
+  and that takes the header with it. The column names disappeared exactly when somebody was
+  furthest from the header and needed them most, which is what "freeze the header" was asked for.
+
+  `min()` means the figure only changes where it was wrong. On an ordinary screen `100vh - 120px`
+  is well past 560 and the grid is the 560px of the approved reference, unchanged. On a short one
+  the grid shrinks to what is actually visible — 56px of top bar and a little breathing room —
+  so the rows scroll inside the box, under a header that stays.
+*/
 .uboss-wfgrid-wrap {
   overflow: auto;
   border: 1px solid var(--uboss-border);
   border-radius: var(--uboss-radius-card);
-  max-height: 560px;
+  max-height: min(560px, calc(100vh - 120px));
   background: var(--uboss-surface);
 }
 

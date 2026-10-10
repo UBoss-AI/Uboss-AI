@@ -697,6 +697,15 @@ export class ObjectiveAnalysisService {
            * list reads downstream as "this does nothing" rather than as "nobody knows".
            */
           tools: chosen[index] ?? (step.inputReceivedFrom === null ? ['Read'] : ['Read', 'Write']),
+          /*
+           * Nobody has looked at this list yet, and the Pre-Publish Summary weighs it accordingly.
+           *
+           * True for the fallback as well as for the model's answer: a guess made from one line of
+           * step text and a guess made from whether the step has an input are both guesses, and
+           * neither is a manager saying "yes, this step moves money". It becomes false the moment
+           * somebody edits the tools on this node.
+           */
+          toolsInferred: true,
           approval: step.approval === 'NotRequired' ? null : step.approval,
           failureCondition: '',
         },

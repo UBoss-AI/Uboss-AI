@@ -15,6 +15,7 @@ import {
   WORKFLOW_EDGE_KINDS,
   type Form2Objective,
   type Form2WorkflowStep,
+  type PrePublishSummary,
   type SkillContent,
   type WorkflowDraft,
 } from '@uboss/types';
@@ -1397,6 +1398,135 @@ describe('workflow graph editor and pre-publish readiness (e2e)', () => {
       );
       assert.equal(stored.assignedAt, null);
       assert.equal(stored.revision, draft.revision);
+    });
+
+    /*
+     * A guess about a dangerous capability must not stop a company publishing its plan.
+     *
+     * Until the analysis began reading the model's answer into `dod.tools`, every AI node was
+     * given `Read` or `Read, Write` by one line of code, so **no plan could ever contain a
+     * high-risk AI step** and the Blocker below had never once fired. Now a model that reads one
+     * line of a step description can call it `FinancialChange`, and on the old two-way test that
+     * single word would have refused the publish outright.
+     *
+     * That is the wrong place to stop. The model has guessed; the manager is the one who can
+     * judge it. So an inferred high-risk category is reported and the plan stays publishable, and
+     * the moment a person opens the node and sets the category themselves it blocks exactly as it
+     * always would have. Nothing is hidden and no gate is weakened — the stopping point moved to
+     * the person who can actually answer the question.
+     *
+     * Both halves are proved here, through the real pipeline: the category arrives by way of the
+     * parser and the node's own fallback, not by writing draft JSON a running analysis could
+     * never emit.
+     */
+    describe('a high-risk category that nobody has confirmed', () => {
+      const highRiskFinding = (summary: PrePublishSummary, nodeId: string) =>
+        summary.findings.find(
+          (finding) => finding.nodeId === nodeId && /high-risk/.test(finding.summary),
+        ) ?? assert.fail('the summary reported nothing at all about the high-risk step');
+
+      /** An analysed objective whose one AI step the model called `FinancialChange`. */
+      const withInferredFinancialChange = async () => {
+        const gateway = app.get(ModelGateway) as ClassifyingModelGateway;
+        gateway.toolCategoriesAnswer = '1: FinancialChange';
+        try {
+          const { objective } = await analysedObjective();
+          const draft = await open(objective.id);
+          const ai = aiNodeOf(draft.graph);
+
+          assert.deepEqual(
+            ai.dod.tools,
+            ['FinancialChange'],
+            'the model’s answer reached the node',
+          );
+          assert.equal(ai.dod.toolsInferred, true, 'and is marked as nobody’s declaration');
+
+          // The whole distinction is about an **ungated** step, so a fixture that happens to gate
+          // this node would make the test pass for the wrong reason.
+          const gated =
+            ai.dod.approval !== null ||
+            draft.graph.edges.some(
+              (edge) =>
+                edge.fromNodeId === ai.id &&
+                draft.graph.nodes.find((node) => node.id === edge.toNodeId)?.kind === 'Approval',
+            );
+          assert.equal(gated, false, 'the fixture’s AI step must have no approval in front of it');
+
+          return { objective, draft, ai };
+        } finally {
+          gateway.toolCategoriesAnswer = null;
+        }
+      };
+
+      it('reports it, and lets the plan stay publishable', async () => {
+        const { objective, ai } = await withInferredFinancialChange();
+        const summary = (await summaryFor(objective.id)) as PrePublishSummary;
+
+        assert.deepEqual(summary.highRiskNodes, [ai.id], 'it is still counted as high-risk');
+        assert.deepEqual(summary.inferredHighRiskNodes, [ai.id], 'and named as unconfirmed');
+
+        const finding = highRiskFinding(summary, ai.id);
+        assert.equal(finding.severity, 'Warning', finding.summary);
+        assert.match(finding.summary, /analysis reads this step as a high-risk action/);
+
+        assert.equal(
+          summary.findings.some(
+            (other) => other.severity === 'Blocker' && /high-risk/.test(other.summary),
+          ),
+          false,
+          'a model’s reading of one line must not refuse a publish',
+        );
+      });
+
+      it('blocks the moment a person sets the same category themselves', async () => {
+        const { objective, draft, ai } = await withInferredFinancialChange();
+
+        const edited = await as(
+          agent()
+            .put(`/tenants/${tenantId}/objectives/${objective.id}/workflow/nodes/${ai.id}`)
+            .send({ revision: draft.revision, dod: { tools: ['FinancialChange'] } }),
+          ownerUboss,
+        );
+        assert.equal(edited.status, 200, JSON.stringify(edited.body));
+
+        const after = (edited.body.graph as WorkflowDraft).nodes.find((node) => node.id === ai.id)!;
+        assert.deepEqual(after.dod.tools, ['FinancialChange'], 'the same category, unchanged');
+        assert.equal(after.dod.toolsInferred, false, 'but now somebody’s declaration');
+
+        const summary = (await summaryFor(objective.id)) as PrePublishSummary;
+        assert.deepEqual(summary.inferredHighRiskNodes, [], 'nothing is unconfirmed any more');
+
+        const finding = highRiskFinding(summary, ai.id);
+        assert.equal(finding.severity, 'Blocker', finding.summary);
+        assert.match(finding.summary, /no approval gate in front of it/);
+        assert.equal(summary.readyToAssign, false, 'and the publish is refused');
+      });
+
+      it('leaves the ordinary categories blocking exactly as they did', async () => {
+        // `Read` and `Write` are the only two categories that are not high-risk, and they are
+        // precisely what the old code inferred for every AI node. A plan with no live connection
+        // has been blocked on them for as long as the check has existed, and this change must not
+        // quietly publish such a plan — only the case that could not arise before is softened.
+        const { objective } = await analysedObjective();
+        await open(objective.id);
+        const summary = (await summaryFor(objective.id)) as PrePublishSummary;
+
+        const ordinary = summary.missingConnections.filter(
+          (category) => category === 'Read' || category === 'Write',
+        );
+        assert.ok(ordinary.length > 0, 'this tenant has no connection, so these must be missing');
+        assert.deepEqual(
+          summary.inferredMissingConnections,
+          [],
+          'an ordinary inferred category is not downgraded',
+        );
+        for (const category of ordinary) {
+          const finding =
+            summary.findings.find((entry) => entry.summary.includes(`"${category}"`)) ??
+            assert.fail(`nothing was reported about the missing ${category} connection`);
+          assert.equal(finding.severity, 'Blocker', finding.summary);
+        }
+      });
     });
   });
 

@@ -574,6 +574,21 @@ export interface DefinitionOfDone {
   dependencies: string[];
   /** Tool categories the node needs. Drives the high-risk count. */
   tools: string[];
+  /**
+   * `true` when `tools` is the analysis's own reading of the step and no person has confirmed it.
+   *
+   * Added because the two cases carry different weight. A manager who opens a step and ticks
+   * `FinancialChange` has *declared* that it moves money, and publishing that with no approval
+   * gate in front of it is worth stopping for. A model that read one line of a step description
+   * and offered the same word has *guessed*, and a guess must not be able to stop a company
+   * publishing its plan — it should say "look at this", which is a Warning.
+   *
+   * Optional, which is the documented rule for this schema: absent means the field was written
+   * before the distinction existed, and such a list is treated as a person's. Every draft already
+   * stored therefore keeps exactly the severity it had, because until this build no analysis
+   * could produce a high-risk category at all — only a person could.
+   */
+  toolsInferred?: boolean;
   /** The approval this node requires, if any. */
   approval: StepApprovalKind | null;
   /** What counts as failure, so a failure branch has something to trigger on. */
@@ -684,8 +699,19 @@ export interface PrePublishSummary {
   nodesReusingSkill: string[];
   /** Tool categories the plan needs that no live connection provides. */
   missingConnections: string[];
+  /**
+   * The subset of `missingConnections` wanted only by steps whose categories the analysis
+   * inferred. Nobody has confirmed the plan needs these, so they are reported rather than
+   * blocking.
+   */
+  inferredMissingConnections: string[];
   /** Nodes whose tools include a high-risk category. */
   highRiskNodes: string[];
+  /**
+   * The subset of `highRiskNodes` that is high-risk only because the analysis said so. Reported
+   * for a person to confirm or correct; see `DefinitionOfDone.toolsInferred`.
+   */
+  inferredHighRiskNodes: string[];
   /** A range, never a single figure. */
   estimatedUsage: AiUsageEstimate;
   /** People assigned more concurrent work than the plan can honour. */

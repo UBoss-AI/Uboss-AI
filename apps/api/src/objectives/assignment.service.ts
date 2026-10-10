@@ -948,7 +948,18 @@ export class AssignmentService {
       versionId: input.versionId,
     });
 
+    /*
+     * Only the needs somebody has confirmed refuse the assignment.
+     *
+     * The summary reports every category no live connection provides, and marks the ones wanted
+     * only by steps whose tool list the analysis inferred. Refusing on those would undo the whole
+     * point of grading them a Warning: the manager would read "ready to assign" on screen and
+     * then be refused here, which is the worst of both — a readiness report they cannot rely on.
+     * The confirmed ones refuse exactly as before.
+     */
+    const unconfirmed = new Set(summary.inferredMissingConnections);
     for (const category of summary.missingConnections) {
+      if (unconfirmed.has(category)) continue;
       refuse(
         'ConnectionReadiness',
         null,
