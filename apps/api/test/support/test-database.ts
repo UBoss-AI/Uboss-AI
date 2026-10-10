@@ -317,6 +317,24 @@ export async function resetTestDatabase(context: TestContext): Promise<void> {
     // and a file, and a photo references a file, so the pointers go before the things they point
     // at. All of these cascade from `tenants` as well — they are listed so a reset does not
     // depend on the cascade order, which is the same reasoning as the Prompt 39 entries below.
+    /*
+     * Task & Tracker, children before parents.
+     *
+     * Listed rather than left to the cascade, because these do **not** cascade from `users`: a
+     * space, a board, an item and a cell each name the person who made or last touched them with
+     * `ON DELETE RESTRICT`, which is the right answer in production — you do not delete the
+     * person who made a board — and which blocks the reset outright. The symptom was every test
+     * after the first failing on a foreign key violation against `users` that had nothing to do
+     * with what any of them were testing.
+     */
+    'board_cell_values',
+    'board_item_updates',
+    'board_items',
+    'board_columns',
+    'board_groups',
+    'board_members',
+    'boards',
+    'spaces',
     'chat_context_refs',
     'chat_message_attachments',
     'chat_messages',

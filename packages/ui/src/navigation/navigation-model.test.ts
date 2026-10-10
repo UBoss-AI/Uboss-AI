@@ -106,8 +106,19 @@ describe('filterNavigation', () => {
       (group) => group.group === 'Operations',
     );
 
-    // Source order, and chat sits where COMPANY_NAV puts it rather than being appended.
-    expect(operations?.items.map((item) => item.key)).toEqual(['todo', 'agents', 'chat']);
+    /*
+     * Source order, and chat sits where COMPANY_NAV puts it rather than being appended.
+     *
+     * `tracker` appears from the `todo` grant: Task & Tracker is gated on that module, so one
+     * grant offers both entries — and it lands between To-do List and Engine Agents, which is
+     * where the source puts it and not where the grant list does.
+     */
+    expect(operations?.items.map((item) => item.key)).toEqual([
+      'todo',
+      'tracker',
+      'agents',
+      'chat',
+    ]);
   });
 
   it('returns nothing module-gated when nothing is granted', () => {

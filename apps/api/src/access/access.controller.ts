@@ -359,6 +359,26 @@ export class AccessController {
     return { invitationId, cancelled: true };
   }
 
+  /**
+   * Send somebody a password reset link.
+   *
+   * No body: there is nothing for the caller to supply and nothing for them to choose. The
+   * administrator never sees the token and never learns the password — the link goes to the
+   * person, who sets their own. See `UserAccessService.sendPasswordReset`.
+   *
+   * 409 when that person has never set a password, naming the invitation as the thing to send
+   * instead, rather than reporting a success that put no mail in anybody's inbox.
+   */
+  @Post('people/:userId/password-reset')
+  @RequirePermission({ module: 'users', action: 'ManageAccess' })
+  async sendPasswordReset(@Param('userId', new ParseUUIDPipe()) userId: string): Promise<unknown> {
+    return this.users.sendPasswordReset({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
+      subjectUserId: userId,
+    });
+  }
+
   @Post('people/:userId/suspend')
   @RequirePermission({ module: 'users', action: 'ManageAccess' })
   async suspend(

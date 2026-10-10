@@ -10930,3 +10930,991 @@ tr[data-drop-target='true'] td {
   flex: 1 1 170px;
   min-width: 0;
 }
+
+/* ---------------------------------------------------------------------------
+   Task & Tracker.
+
+   Almost everything on these two screens is a primitive that already existed --
+   MetricCard, FilterBar, SearchField, SegmentedControl, StatusBadge, RunState,
+   MedalBadge, EmptyState. What is left here is the card's own geometry and the
+   two discs, and nothing that duplicates a token.
+   --------------------------------------------------------------------------- */
+
+.uboss-tracker-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--uboss-space-2);
+  margin-bottom: var(--uboss-space-3);
+}
+
+/* The figure that is currently filtering the grid. Border and fill, never colour alone. */
+.uboss-tracker-metric--on {
+  border-color: var(--uboss-blue);
+  background: var(--uboss-blue-050);
+}
+
+.uboss-tracker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: var(--uboss-space-3);
+  margin-top: var(--uboss-space-3);
+}
+
+/*
+   The department rail, the same idea as the org chart's: the colour is structural
+   rather than decorative, because it is the one thing that says which part of the
+   company somebody belongs to.
+ */
+.uboss-tracker-card {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+}
+
+.uboss-tracker-card__rail {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+}
+
+.uboss-tracker-card__open {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.uboss-tracker-card__open:focus-visible {
+  outline: 2px solid var(--uboss-blue);
+  outline-offset: 4px;
+  border-radius: var(--uboss-radius-control);
+}
+
+.uboss-tracker-card__person {
+  display: flex;
+  align-items: center;
+  gap: var(--uboss-space-3);
+}
+
+.uboss-tracker-card__disc,
+.uboss-tracker-person__disc {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  color: #ffffff;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.uboss-tracker-card__disc {
+  width: 42px;
+  height: 42px;
+  font-size: 14px;
+}
+
+.uboss-tracker-person__disc {
+  width: 64px;
+  height: 64px;
+  font-size: 22px;
+}
+
+.uboss-tracker-card__who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.uboss-tracker-card__name {
+  font-weight: 700;
+  color: var(--uboss-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uboss-tracker-card__role,
+.uboss-tracker-card__dept {
+  font-size: 12px;
+  color: var(--uboss-text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uboss-tracker-card__dept {
+  color: var(--uboss-text-3);
+  font-size: 11px;
+}
+
+.uboss-tracker-card__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--uboss-space-4);
+  margin-top: var(--uboss-space-3);
+  padding-top: var(--uboss-space-3);
+  border-top: 1px solid var(--uboss-border);
+}
+
+.uboss-tracker-stat {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.uboss-tracker-stat strong {
+  font-size: 17px;
+  color: var(--uboss-text);
+}
+
+.uboss-tracker-stat span {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--uboss-text-3);
+}
+
+/* Dimmed at zero: four bold zeros is four things to read and nothing to know. */
+.uboss-tracker-stat--zero strong {
+  color: var(--uboss-text-3);
+  font-weight: 500;
+}
+
+/* And loud only when it is not. */
+.uboss-tracker-stat--warn strong {
+  color: var(--uboss-danger);
+}
+
+.uboss-tracker-card__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--uboss-space-2);
+  margin-top: var(--uboss-space-3);
+  font-size: 12px;
+}
+
+.uboss-tracker-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  color: var(--uboss-text);
+}
+
+.uboss-tracker-noscore {
+  padding: 2px 10px;
+  border-radius: var(--uboss-radius-pill);
+  background: var(--uboss-bg-2);
+  color: var(--uboss-text-3);
+  font-size: 11px;
+}
+
+.uboss-tracker-card__action {
+  display: flex;
+  flex-direction: column;
+  gap: var(--uboss-space-1);
+  margin-top: var(--uboss-space-3);
+  padding-top: var(--uboss-space-3);
+  border-top: 1px solid var(--uboss-border);
+}
+
+.uboss-tracker-card__reason {
+  margin: 0;
+  font-size: 11px;
+  color: var(--uboss-text-3);
+}
+
+.uboss-tracker-person {
+  display: flex;
+  align-items: center;
+  gap: var(--uboss-space-4);
+  margin-bottom: var(--uboss-space-3);
+}
+
+.uboss-tracker-person__state {
+  display: flex;
+  flex-direction: column;
+  gap: var(--uboss-space-1);
+}
+
+.uboss-tracker-person__state p {
+  margin: 0;
+  font-size: 12px;
+}
+
+.uboss-tracker-h {
+  margin: 0 0 var(--uboss-space-3);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--uboss-text-3);
+}
+
+.uboss-tracker-account {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--uboss-space-3);
+}
+
+.uboss-tracker-account p {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 13px;
+}
+
+.uboss-tracker-runs,
+.uboss-tracker-tasks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--uboss-space-2);
+}
+
+.uboss-tracker-runs li,
+.uboss-tracker-tasks li {
+  padding: var(--uboss-space-2) var(--uboss-space-3);
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-control);
+  background: var(--uboss-bg-2);
+  font-size: 12px;
+}
+
+.uboss-tracker-run__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--uboss-space-2);
+}
+
+.uboss-tracker-run__why {
+  margin: var(--uboss-space-1) 0 0;
+  color: var(--uboss-danger);
+}
+
+.uboss-tracker-tasks li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--uboss-space-2);
+}
+
+.uboss-tracker-due {
+  color: var(--uboss-text-3);
+}
+
+.uboss-tracker-due--late {
+  color: var(--uboss-danger);
+  font-weight: 700;
+}
+
+/* The Mine / Everybody toggle, given room above the screen it switches. */
+.uboss-performance-audience {
+  margin-bottom: var(--uboss-space-3);
+}
+
+/* ---------------------------------------------------------------------------
+   Task & Tracker — boards.
+
+   A board is a table that scrolls sideways when it has more columns than the
+   screen, and a row that keeps its name column in view while it does. Everything
+   else on these screens is a primitive that already existed.
+   --------------------------------------------------------------------------- */
+
+.uboss-board-space {
+  margin-top: var(--uboss-space-4);
+}
+
+.uboss-board-space__name {
+  margin: 0 0 var(--uboss-space-2);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--uboss-text-3);
+}
+
+.uboss-board-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--uboss-space-3);
+}
+
+.uboss-board-card__open {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.uboss-board-card__open:focus-visible {
+  outline: 2px solid var(--uboss-blue);
+  outline-offset: 4px;
+  border-radius: var(--uboss-radius-control);
+}
+
+.uboss-board-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--uboss-space-2);
+}
+
+.uboss-board-card__name {
+  font-weight: 700;
+  color: var(--uboss-text);
+}
+
+.uboss-board-card__desc {
+  display: block;
+  margin-top: var(--uboss-space-1);
+  font-size: 12px;
+  color: var(--uboss-text-2);
+}
+
+.uboss-board-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--uboss-space-2);
+  margin-top: var(--uboss-space-3);
+  font-size: 12px;
+  color: var(--uboss-text-2);
+}
+
+.uboss-board-kind {
+  margin: var(--uboss-space-3) 0;
+}
+
+.uboss-board-kind__note {
+  margin: var(--uboss-space-2) 0 0;
+  font-size: 12px;
+}
+
+.uboss-board-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--uboss-space-2);
+  margin-bottom: var(--uboss-space-3);
+  font-size: 12px;
+}
+
+.uboss-board-group {
+  margin-bottom: var(--uboss-space-4);
+}
+
+/*
+   The group's colour is a bar down its left, not a background behind its rows:
+   a tinted table is harder to read than a white one, and the bar still says
+   which group a row is in when the heading has scrolled away.
+ */
+.uboss-board-group__title {
+  display: flex;
+  align-items: center;
+  gap: var(--uboss-space-2);
+  margin: 0 0 var(--uboss-space-2);
+  padding-left: var(--uboss-space-2);
+  border-left: 4px solid var(--uboss-text-3);
+  font-size: 14px;
+}
+
+.uboss-board-group__title--success {
+  border-left-color: var(--uboss-success);
+}
+
+.uboss-board-group__title--blue {
+  border-left-color: var(--uboss-blue);
+}
+
+.uboss-board-group__title--warn {
+  border-left-color: var(--uboss-warning);
+}
+
+.uboss-board-group__title--danger {
+  border-left-color: var(--uboss-danger);
+}
+
+.uboss-board-group__count {
+  padding: 0 8px;
+  border-radius: var(--uboss-radius-pill);
+  background: var(--uboss-bg-2);
+  color: var(--uboss-text-3);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.uboss-board-table {
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-card);
+  background: var(--uboss-surface);
+  overflow-x: auto;
+}
+
+/*
+   `stretch`, not `center`, and an opaque background.
+
+   Stretch so every cell fills the row's height and the line down its right edge
+   runs the whole way — a border on a centred cell is a dash beside the text.
+
+   Opaque because the first column is frozen: `position: sticky` only takes the
+   cell out of the flow, it does not give it anything to sit on, so the columns
+   scrolling past were visible straight through the item name. It read as a
+   caption floating over the table rather than as a column held in place.
+ */
+.uboss-board-row {
+  display: flex;
+  align-items: stretch;
+  min-height: 38px;
+  border-bottom: 1px solid var(--uboss-border);
+  background: var(--uboss-surface);
+}
+
+.uboss-board-row:hover {
+  background: var(--uboss-bg-2);
+}
+
+.uboss-board-row:last-of-type {
+  border-bottom: 0;
+}
+
+.uboss-board-row--head {
+  min-height: 36px;
+  background: var(--uboss-bg-2);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--uboss-text-3);
+}
+
+.uboss-board-row--adding {
+  padding: var(--uboss-space-2) var(--uboss-space-3);
+}
+
+/*
+   A line down the right of every cell.
+
+   Without it a board is rows of text at tab stops: the columns are there in the
+   layout and invisible on the screen, so an empty cell reads as the end of the
+   row rather than as a cell nobody filled. The line is what makes a grid a grid,
+   and it is the one thing a sheet has that a list does not.
+ */
+.uboss-board-cell {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 0 10px;
+  border-right: 1px solid var(--uboss-border);
+  font-size: 13px;
+  color: var(--uboss-text);
+}
+
+.uboss-board-cell:last-child {
+  border-right: 0;
+}
+
+/*
+   The name holds the row together, so it takes the space left over and stays put
+   while the columns beside it scroll.
+ */
+/*
+   The frozen first column.
+
+   `background: inherit` takes the row's own, including the hover tint, so the
+   columns scrolling behind it never show through. `z-index` puts it over them
+   rather than under. The heavier right edge is what says "the table scrolls from
+   here" — the same line Excel draws at a frozen pane.
+ */
+.uboss-board-cell--name {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  flex: 1 1 260px;
+  min-width: 220px;
+  background: inherit;
+  border-right: 2px solid var(--uboss-border);
+  font-weight: 600;
+}
+
+.uboss-board-cell--name > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uboss-board-empty {
+  margin: 0;
+  padding: var(--uboss-space-3);
+  font-size: 12px;
+}
+
+.uboss-board-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: var(--uboss-space-2) var(--uboss-space-3);
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--uboss-text-3);
+  text-align: left;
+  cursor: pointer;
+}
+
+.uboss-board-add:hover {
+  color: var(--uboss-blue);
+  background: var(--uboss-bg-2);
+}
+
+/*
+   A cell's control has no border until it is reached. A table of forty bordered
+   inputs reads as a form somebody has to fill in rather than as data they can
+   change, which is the difference between a board and a questionnaire.
+ */
+.uboss-board-input,
+.uboss-board-select {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--uboss-radius-control);
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--uboss-text);
+}
+
+.uboss-board-input:hover,
+.uboss-board-select:hover {
+  border-color: var(--uboss-border);
+}
+
+.uboss-board-input:focus,
+.uboss-board-select:focus {
+  outline: none;
+  border-color: var(--uboss-blue);
+  background: var(--uboss-surface);
+}
+
+.uboss-board-check {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--uboss-blue);
+}
+
+.uboss-board-empty-cell,
+.uboss-board-raw {
+  color: var(--uboss-text-3);
+  font-size: 12px;
+}
+
+/*
+   The cell under the cursor.
+
+   A ring drawn inside the cell rather than an outline around it: an outline on a
+   sticky first column is clipped by the column beside it, and the one cell that
+   must always be visible is the one somebody is standing on.
+ */
+.uboss-board-cell.is-on {
+  box-shadow: inset 0 0 0 2px var(--uboss-blue);
+  border-radius: var(--uboss-radius-control);
+}
+
+.uboss-board-cell:focus {
+  outline: none;
+}
+
+/*
+   The group heading is the collapse control, so it reads as one — and as nothing
+   else. `border: 0` because a button brings its own, and that border drew a box
+   the width of the board around a title, which read as an empty field above the
+   table rather than as its heading.
+ */
+.uboss-board-group__title {
+  width: 100%;
+  /*
+   * Three sides, not all four: the left one is the group's colour, set above and
+   * overridden per tone. `border: 0` here would win on order and take the colour
+   * off every group.
+   */
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--uboss-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.uboss-board-group__title:focus-visible {
+  outline: 2px solid var(--uboss-blue);
+  outline-offset: 2px;
+}
+
+/* The shortcuts, said once where somebody will read them rather than in a help page. */
+.uboss-board-hint {
+  margin-left: auto;
+  font-size: 11px;
+}
+
+/*
+   The row at the bottom of every group that is always empty.
+   
+   It keeps the columns of the rows above it so the grid does not change shape at
+   the bottom, and its border is dashed: a solid one would read as a row that is
+   there, and this is a row that is not yet.
+ */
+.uboss-board-row--add {
+  border-bottom: 0;
+  border-top: 1px dashed var(--uboss-border);
+  background: var(--uboss-surface);
+}
+
+.uboss-board-add-input,
+.uboss-board-input--name {
+  width: 100%;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: var(--uboss-radius-control);
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--uboss-text);
+}
+
+.uboss-board-input--name {
+  font-weight: 600;
+}
+
+.uboss-board-add-input::placeholder {
+  color: var(--uboss-text-3);
+}
+
+.uboss-board-add-input:hover,
+.uboss-board-input--name:hover {
+  border-color: var(--uboss-border);
+}
+
+.uboss-board-add-input:focus,
+.uboss-board-input--name:focus {
+  outline: none;
+  border-color: var(--uboss-blue);
+  background: var(--uboss-surface);
+}
+
+/* The group's chevron turns down when it is open, which is the whole of what it says. */
+.uboss-board-group__caret--open {
+  transform: rotate(90deg);
+}
+
+/* The row's menu sits at the end of the name cell, out of the way of the name. */
+.uboss-board-row__menu {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.uboss-board-people {
+  display: flex;
+  gap: 4px;
+}
+
+.uboss-board-person {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--uboss-blue-050);
+  color: var(--uboss-blue);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+/* Two dates side by side, each taking half of whatever the column is. */
+.uboss-board-span {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
+.uboss-board-span input {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/*
+   A document on a row. Shown as what it is and how long it is, because the one
+   thing somebody wants to know from a table is whether there is anything there.
+ */
+.uboss-board-doc {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--uboss-radius-control);
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--uboss-blue);
+  cursor: pointer;
+}
+
+.uboss-board-doc:hover {
+  border-color: var(--uboss-border);
+  background: var(--uboss-surface);
+}
+
+/* ---------------------------------------------------------------------------
+   RIS: the rail
+   ---------------------------------------------------------------------------
+   A tree of spaces, folders, sub-folders and boards down the left, and whatever
+   is in the selected one on the right.
+
+   The rail is a fixed column rather than a share of the width: a tree whose
+   indentation moves when the content beside it changes is a tree nobody can
+   read the shape of. Below the breakpoint it stops being a column and becomes
+   the first block on the page, because 280px of tree on a phone leaves nothing
+   for what the tree points at.
+   --------------------------------------------------------------------------- */
+
+.uboss-tracker {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: var(--uboss-space-5);
+  align-items: start;
+  margin-top: var(--uboss-space-4);
+}
+
+@media (max-width: 900px) {
+  .uboss-tracker {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/*
+   No scroll box on the rail, deliberately.
+
+   It started as `max-height` plus `overflow: auto`, which looks right until a row menu opens:
+   every "Move into…" list is a child of a row, so the scroll box clips it and the menu becomes a
+   two-line stub with a scrollbar. A popover cannot escape an `overflow: auto` ancestor without a
+   portal, and a tree where every row has a menu is the wrong place to fight that.
+
+   So the rail grows with its content and the page scrolls. A long tree makes a long page, which
+   is the ordinary outcome; a clipped menu is a broken one.
+ */
+.uboss-tracker__rail {
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-card);
+  background: var(--uboss-surface);
+  padding: var(--uboss-space-2);
+}
+
+.uboss-tracker__main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--uboss-space-3);
+  min-width: 0;
+}
+
+.uboss-tree__space {
+  display: flex;
+  align-items: center;
+  gap: var(--uboss-space-2);
+  padding: var(--uboss-space-2) var(--uboss-space-2) var(--uboss-space-2) var(--uboss-space-3);
+  border-radius: var(--uboss-radius-control);
+  font-weight: 650;
+  color: var(--uboss-text);
+}
+
+.uboss-tree__space.is-active {
+  background: var(--uboss-blue-050);
+}
+
+.uboss-tree__space-pick {
+  display: flex;
+  align-items: center;
+  gap: var(--uboss-space-2);
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.uboss-tree__space-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uboss-tree__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.uboss-tree__node {
+  margin: 0;
+}
+
+.uboss-tree__row {
+  display: flex;
+  align-items: center;
+  gap: var(--uboss-space-1);
+  padding-inline-end: var(--uboss-space-1);
+  border-radius: var(--uboss-radius-control);
+  transition: background var(--uboss-motion-micro) var(--uboss-ease);
+}
+
+.uboss-tree__row:hover {
+  background: var(--uboss-bg);
+}
+
+.uboss-tree__row.is-active {
+  background: var(--uboss-blue-050);
+}
+
+.uboss-tree__disclose,
+.uboss-tree__open {
+  display: flex;
+  align-items: center;
+  gap: var(--uboss-space-2);
+  flex: 1;
+  min-width: 0;
+  padding: 7px 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--uboss-font-size-sm);
+  color: var(--uboss-text-2);
+  text-align: left;
+  cursor: pointer;
+}
+
+.uboss-tree__row.is-active .uboss-tree__disclose,
+.uboss-tree__row.is-active .uboss-tree__open {
+  color: var(--uboss-text);
+  font-weight: 550;
+}
+
+.uboss-tree__disclose:focus-visible,
+.uboss-tree__open:focus-visible,
+.uboss-tree__space-pick:focus-visible {
+  outline: 2px solid var(--uboss-blue);
+  outline-offset: 2px;
+  border-radius: var(--uboss-radius-control);
+}
+
+/*
+   The chevron turns rather than being swapped for a second icon, so the row does
+   not reflow by a pixel every time somebody opens a folder.
+ */
+.uboss-tree__chevron {
+  flex: none;
+  color: var(--uboss-text-3);
+  transition: transform var(--uboss-motion-small) var(--uboss-ease);
+}
+
+.uboss-tree__chevron.is-open {
+  transform: rotate(90deg);
+}
+
+/* Where a chevron would be, so board names line up under folder names. */
+.uboss-tree__chevron-slot {
+  flex: none;
+  width: 14px;
+}
+
+.uboss-tree__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uboss-tree__count {
+  margin-inline-start: auto;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.uboss-tree__kind {
+  flex: none;
+  color: var(--uboss-text-3);
+}
+
+.uboss-tree__empty {
+  display: flex;
+  align-items: center;
+  gap: var(--uboss-space-2);
+  padding: var(--uboss-space-2) var(--uboss-space-3);
+  font-size: 12px;
+}
+
+/*
+   A row of buttons inside a Banner.
+
+   Banners carry a sentence; this one carries a sentence and the two or three
+   people it is about. Wrapping rather than scrolling, because the number of
+   accounts without an employment record is small and bounded — it is the
+   people invited before the org chart existed, not a list.
+ */
+.uboss-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--uboss-space-2);
+  margin-top: var(--uboss-space-2);
+}
+
+/*
+   The RIS rail's root.
+
+   Carries the tree's own type size so every row inherits one scale rather than
+   each row setting its own — the rail sits beside page content and should not
+   compete with it for weight.
+ */
+.uboss-tree {
+  display: block;
+  font-size: var(--uboss-font-size-sm);
+}
+
+/*
+   A plain list inside a dialog.
+
+   For the handful of names a confirmation shows before it does something — the
+   departments a button is about to make folders from. Indented and loosened
+   just enough to read as a list of things rather than a paragraph with breaks.
+ */
+.uboss-list {
+  margin: var(--uboss-space-2) 0;
+  padding-inline-start: var(--uboss-space-5);
+  color: var(--uboss-text-2);
+}
+
+.uboss-list > li {
+  margin-bottom: 2px;
+}

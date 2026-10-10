@@ -35,6 +35,13 @@ export interface RichTextEditorProps {
   /** Labels the editing area for a screen reader, and names it in the toolbar's title text. */
   label: string;
   disabled?: boolean;
+  /**
+   * Put the cursor in the writing area when this mounts.
+   *
+   * For a dialog whose point is the text. The focus trap otherwise lands on the close button,
+   * which is the first focusable thing in a dialog and almost never the one somebody wants.
+   */
+  autoFocus?: boolean;
   className?: string;
   /** Drawn in the toolbar after the formatting controls, for anything else. */
   actions?: React.ReactNode;
@@ -73,6 +80,7 @@ export function RichTextEditor({
   placeholder,
   label,
   disabled = false,
+  autoFocus = false,
   className,
   actions,
   uploadImage,
@@ -279,6 +287,15 @@ export function RichTextEditor({
         ) : null}
         <div
           ref={area}
+          /*
+           * `data-autofocus` when the caller asked for it, which is how `useFocusTrap` is told
+           * which control a dialog is actually about.
+           *
+           * Found in a dialog whose entire purpose is writing: it opened with the cursor on its
+           * close button, because the trap takes the first focusable element in DOM order and in
+           * every dialog that is the dismiss control. Somebody opened it and typed into nothing.
+           */
+          {...(autoFocus ? { 'data-autofocus': true } : {})}
           className="uboss-rte-area"
           role="textbox"
           aria-multiline="true"

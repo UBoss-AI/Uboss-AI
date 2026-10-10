@@ -858,6 +858,23 @@ export class CompanyExitService {
     // hand — the fallback below catches the rest — but it keeps the common cases from relying on
     // a cascade and so keeps the manifest honest.
     const first = [
+      /*
+       * RIS, children first.
+       *
+       * Named here rather than left to the fallback because these do not cascade: the creator
+       * columns are `ON DELETE RESTRICT`, so deleting a space before the boards inside it is
+       * refused by PostgreSQL rather than quietly cascading. The test database's own reset hit
+       * exactly this and every test after the first failed on a foreign key against `users`.
+       */
+      'board_cell_values',
+      'board_item_updates',
+      'board_items',
+      'board_groups',
+      'board_columns',
+      'board_members',
+      'boards',
+      'board_folders',
+      'spaces',
       'human_task_evidence',
       'human_task_notes',
       'human_tasks',

@@ -20,6 +20,8 @@ import { PermissionGuard } from '../src/authorization/permission.guard.js';
 import { ReportingHierarchyResolver } from '../src/organization/reporting-hierarchy.resolver.js';
 import { PerformanceController } from '../src/performance/performance.controller.js';
 import { PerformanceService } from '../src/performance/performance.service.js';
+import { TrackerService } from '../src/performance/tracker.service.js';
+import { AccessRepository } from '../src/persistence/access.repository.js';
 import { AuditEventRepository } from '../src/persistence/audit-event.repository.js';
 import { AuditTrailRepository } from '../src/persistence/audit-trail.repository.js';
 import { AuthorizationRepository } from '../src/persistence/authorization.repository.js';
@@ -125,6 +127,10 @@ describe('performance score and badges (e2e)', () => {
         NotificationRepository,
         OutboxRepository,
         PerformanceService,
+        // Task & Tracker lives on this controller, so its service and the roster query it reads
+        // have to be in the graph the controller is built from.
+        TrackerService,
+        AccessRepository,
         TenantContextService,
         Reflector,
         {
@@ -1332,6 +1338,264 @@ describe('performance score and badges (e2e)', () => {
           `the answer names the database: ${JSON.stringify(response.body)}`,
         );
       }
+    });
+  });
+
+  /**
+   * Task & Tracker — the administrator's grid, and what is behind a card.
+   *
+   * The screen is new; nothing under it is. These hold the two things that were decided rather
+   * than inherited: who may see it at all, and what the single account button on a card offers
+   * for somebody who has never had a password.
+   */
+  describe('Task & Tracker', () => {
+    it('cards the people who have been given access, not the whole org chart', async () => {
+      const response = await as(
+        agent().get(`/tenants/${tenantId}/performance/tracker`),
+        adminUboss,
+      ).expect(200);
+
+      // The four employed people, all of whose memberships are Active. The platform owner has no
+      // employment here and the provisioned first member was never employed, so neither is on the
+      // grid.
+      assert.equal(response.body.total, 4);
+      const names = (response.body.cards as { name: string }[]).map((card) => card.name).sort();
+      assert.deepEqual(names, [
+        'Performance Admin',
+        'Performance Employee',
+        'Performance Manager',
+        'Performance Peer',
+      ]);
+    });
+
+    it('leaves somebody who was never invited off it, and counts them instead', async () => {
+      /*
+       * The case a real company arrives in. An imported org chart is a hundred and fifteen
+       * `NotInvited` memberships: people the company records, who are not users of this product
+       * and cannot sign in. A card for each of them is a grid of tiles reporting nothing.
+       */
+      const onChartOnly = await ctx.prisma.runAsPlatformOperation(async () => {
+        const user = await ctx.users.createForPlatform({
+          ubossUniqueId: 'UB-PCHT-0001',
+          email: 'on.chart.only@perf.example',
+          displayName: 'On The Chart Only',
+        });
+        await ctx.prisma.client.tenantMembership.create({
+          // What an import creates: in the hierarchy, never given access.
+          data: { tenantId, userId: user.id, accountState: 'NotInvited' },
+        });
+        await ctx.prisma.client.employmentRecord.create({
+          data: {
+            tenantId,
+            userId: user.id,
+            employeeId: 'P-010',
+            designation: 'Operator',
+            departmentId,
+          },
+        });
+        return user;
+      });
+
+      const response = await as(
+        agent().get(`/tenants/${tenantId}/performance/tracker`),
+        adminUboss,
+      ).expect(200);
+
+      const ids = (response.body.cards as { userId: string }[]).map((card) => card.userId);
+      assert.equal(ids.includes(onChartOnly.id), false);
+      assert.equal(response.body.total, 4);
+
+      // Counted rather than silently dropped, so the screen can say how many are waiting and how
+      // many of those could be invited today.
+      assert.equal(response.body.notInvited, 1);
+      assert.equal(response.body.invitable, 1);
+    });
+
+    it('counts somebody with no work address as waiting but not invitable', async () => {
+      await ctx.prisma.runAsPlatformOperation(async () => {
+        const user = await ctx.users.createForPlatform({
+          ubossUniqueId: 'UB-PCHT-0002',
+          // The placeholder an import mints for somebody with no address of their own.
+          email: 'ub-pcht-0002@person.uboss.invalid',
+          displayName: 'No Way To Reach',
+        });
+        await ctx.prisma.client.tenantMembership.create({
+          data: { tenantId, userId: user.id, accountState: 'NotInvited' },
+        });
+        await ctx.prisma.client.employmentRecord.create({
+          data: {
+            tenantId,
+            userId: user.id,
+            employeeId: 'P-011',
+            designation: 'Operator',
+            departmentId,
+          },
+        });
+      });
+
+      const response = await as(
+        agent().get(`/tenants/${tenantId}/performance/tracker`),
+        adminUboss,
+      ).expect(200);
+
+      assert.equal(response.body.notInvited, 1);
+      // An invitation needs somewhere to go. Saying "1 can be invited" here would send an
+      // administrator to a button that refuses.
+      assert.equal(response.body.invitable, 0);
+    });
+
+    it('cards somebody who was invited and has not accepted, because that is the chase', async () => {
+      const invited = await ctx.prisma.runAsPlatformOperation(async () => {
+        const user = await ctx.users.createForPlatform({
+          ubossUniqueId: 'UB-PINV-0001',
+          email: 'invited.not.accepted@perf.example',
+          displayName: 'Invited Not Accepted',
+        });
+        await ctx.prisma.client.tenantMembership.create({
+          data: { tenantId, userId: user.id, accountState: 'InvitePending' },
+        });
+        await ctx.prisma.client.employmentRecord.create({
+          data: {
+            tenantId,
+            userId: user.id,
+            employeeId: 'P-012',
+            designation: 'Operator',
+            departmentId,
+          },
+        });
+        return user;
+      });
+
+      const response = await as(
+        agent().get(`/tenants/${tenantId}/performance/tracker`),
+        adminUboss,
+      ).expect(200);
+
+      // Access has been given; they have simply not taken it up. "I invited them on Monday and
+      // they still have not signed in" is one of the things this screen exists to show, and
+      // keeping only Active would make them vanish exactly when somebody starts watching.
+      const ids = (response.body.cards as { userId: string }[]).map((card) => card.userId);
+      assert.equal(ids.includes(invited.id), true);
+      assert.equal(response.body.notInvited, 0);
+    });
+
+    it('refuses everybody who is not an administrator', async () => {
+      // `performance:View` is held by every template, which is exactly why the grid is not on it:
+      // this is a company screen showing colleagues' workload and account state.
+      for (const who of [managerUboss, employeeUboss]) {
+        await as(agent().get(`/tenants/${tenantId}/performance/tracker`), who).expect(403);
+      }
+    });
+
+    it('carries the score and the shown badge, not a label invented here', async () => {
+      await record('OnTimeAccepted', 'tracker-1');
+
+      const response = await as(
+        agent().get(`/tenants/${tenantId}/performance/tracker`),
+        adminUboss,
+      ).expect(200);
+
+      const card = (response.body.cards as { userId: string; performance: unknown }[]).find(
+        (entry) => entry.userId === employeeId,
+      );
+      assert.ok(card);
+      assert.deepEqual(card!.performance, { score: 10, level: 'Bronze', label: 'Starter' });
+    });
+
+    it('offers an invitation, not a password reset, to somebody who never activated', async () => {
+      const response = await as(
+        agent().get(`/tenants/${tenantId}/performance/tracker`),
+        adminUboss,
+      ).expect(200);
+
+      const card = (response.body.cards as { userId: string; account: { action: string } }[]).find(
+        (entry) => entry.userId === employeeId,
+      );
+      assert.ok(card);
+      /*
+       * The whole reason the button is not simply "Reset password". These fixtures are Active
+       * memberships with no credential, which is every person a spreadsheet import creates —
+       * and the reset service returns empty for them, so a reset button would have reported
+       * success and sent nothing.
+       */
+      assert.equal(card!.account.action, 'Invite');
+    });
+
+    it('disables the button, with a reason, for somebody with no work address', async () => {
+      const placeholder = await ctx.prisma.runAsPlatformOperation(async () => {
+        const user = await ctx.users.createForPlatform({
+          ubossUniqueId: 'UB-PNOM-0001',
+          // What `person-registry` mints for an imported person with no address of their own.
+          email: 'ub-pnom-0001@person.uboss.invalid',
+          displayName: 'No Address',
+        });
+        await ctx.prisma.client.tenantMembership.create({
+          data: { tenantId, userId: user.id, accountState: 'Active' },
+        });
+        await ctx.prisma.client.employmentRecord.create({
+          data: {
+            tenantId,
+            userId: user.id,
+            employeeId: 'P-005',
+            designation: 'Operator',
+            departmentId,
+          },
+        });
+        return user;
+      });
+
+      const response = await as(
+        agent().get(`/tenants/${tenantId}/performance/tracker`),
+        adminUboss,
+      ).expect(200);
+
+      const card = (
+        response.body.cards as {
+          userId: string;
+          account: { action: string; email: string | null; reason: string | null };
+        }[]
+      ).find((entry) => entry.userId === placeholder.id);
+      assert.ok(card);
+      assert.equal(card!.account.action, 'None');
+      assert.equal(card!.account.email, null);
+      assert.match(card!.account.reason ?? '', /No work address/);
+    });
+
+    it('opens one card, and refuses a card from another company', async () => {
+      const mine = await as(
+        agent().get(`/tenants/${tenantId}/performance/tracker/${employeeId}`),
+        adminUboss,
+      ).expect(200);
+
+      assert.equal(mine.body.name, 'Performance Employee');
+      assert.ok(Array.isArray(mine.body.runs));
+      assert.ok(Array.isArray(mine.body.openTasks));
+
+      // Employed in this company, asked for in another the administrator does not administer.
+      await as(
+        agent().get(`/tenants/${otherTenantId}/performance/tracker/${employeeId}`),
+        adminUboss,
+        otherTenantId,
+      ).expect((response) => {
+        assert.ok(
+          response.status === 403 || response.status === 404,
+          `expected a refusal, got ${response.status}`,
+        );
+      });
+    });
+
+    it('says 404 for somebody who is not employed here, rather than an empty panel', async () => {
+      await as(
+        agent().get(`/tenants/${tenantId}/performance/tracker/${ownerId}`),
+        adminUboss,
+      ).expect(404);
+    });
+
+    it('says 400 for a path segment that is not an id', async () => {
+      await as(
+        agent().get(`/tenants/${tenantId}/performance/tracker/not-a-uuid`),
+        adminUboss,
+      ).expect(400);
     });
   });
 });

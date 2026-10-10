@@ -118,6 +118,14 @@ export { SegmentedControl } from './primitives/SegmentedControl';
 export type { SegmentedControlProps, SegmentedOption } from './primitives/SegmentedControl';
 
 export { OrgChart } from './primitives/OrgChart';
+/*
+ * The department palette, exported because more than the chart needs it now.
+ *
+ * Task & Tracker puts a department on every card, and a second palette would give the same
+ * department two colours in one product — the org chart's and the grid's. One function, derived
+ * from the name, so Production is the same colour wherever it appears.
+ */
+export { departmentColour, departmentSkin } from './primitives/OrgChart';
 export type { OrgChartNode, OrgChartProps } from './primitives/OrgChart';
 export type { DonutDashboardProps } from './primitives/DonutDashboard';
 

@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 
 import { AuditEventService } from '../audit/audit-event.service.js';
+import { IdentityMailService } from '../auth/identity-mail.service.js';
+import { PasswordResetService } from '../auth/password-reset.service.js';
 import { SECURITY_ACTIONS, SecurityEventPublisher } from '../auth/security-event.publisher.js';
 import { AuthorizationService } from '../authorization/authorization.service.js';
 import { ReportScopeService } from '../reports/report-scope.service.js';
@@ -114,7 +116,94 @@ export class UserAccessService {
     private readonly reportScope: ReportScopeService,
     private readonly auditEvents: AuditEventService,
     private readonly securityEvents: SecurityEventPublisher,
+    /*
+     * The two halves of a reset an administrator asks for on somebody else's behalf: the service
+     * that mints the token, and the mail that carries it. Both come from the global `AuthModule`.
+     */
+    private readonly passwordResets: PasswordResetService,
+    private readonly identityMail: IdentityMailService,
   ) {}
+
+  /**
+   * Send somebody in this company a password reset link.
+   *
+   * ## The administrator never learns the password, and never sees the token
+   *
+   * That is the whole shape of this. The link goes to the person; they choose their own password;
+   * nothing here, in the response, or in the log carries the token. An administrator who could set
+   * a colleague's password could sign in as them, and the audit trail would show the colleague
+   * doing whatever followed — which is not a trail at all.
+   *
+   * ## Why this one answers, where the anonymous route refuses to
+   *
+   * `POST /auth/password-reset/request` deliberately returns the same 202 whether or not an
+   * account exists: anything else makes it an oracle for which addresses are registered. Here the
+   * caller already holds `users:ManageAccess` over this company and is naming somebody from its
+   * own roster, so there is nothing left to disclose — and an operator who presses a button needs
+   * to know whether it did anything.
+   *
+   * ## The case that made this a separate method rather than a button
+   *
+   * `PasswordResetService.request` returns empty for anybody with **no credential** — somebody who
+   * has never activated has no password to reset, and needs their invitation instead. Every person
+   * a spreadsheet import creates is in exactly that state. Left alone, the button would have
+   * reported success to the operator and sent nothing at all, for most of a newly imported
+   * company. So that case is a refusal with the next step named.
+   */
+  async sendPasswordReset(input: {
+    scope: TenantScope;
+    actorUserId: string;
+    subjectUserId: string;
+  }): Promise<{ sent: true; email: string }> {
+    await this.assertMayManageAccess(input.scope, input.actorUserId);
+
+    const roster = await this.access.roster(input.scope);
+    const person = roster.find((row) => row.userId === input.subjectUserId);
+    if (!person) {
+      throw new NotFoundException('Nobody by that id is in this company.');
+    }
+
+    const email = person.email.trim().toLowerCase();
+    // The address an import mints for somebody with none of their own. It cannot receive mail.
+    if (email === '' || email.endsWith('@person.uboss.invalid')) {
+      throw new BadRequestException(
+        `${person.displayName} has no work address on file, so there is nowhere to send a link. ` +
+          'Add one from their profile first.',
+      );
+    }
+
+    const outcome = await this.passwordResets.request(email);
+    if (outcome.token === undefined || outcome.email === undefined) {
+      throw new ConflictException(
+        `${person.displayName} has never set a password, so there is nothing to reset. Send them ` +
+          'an invitation instead — that is the link that lets them set one.',
+      );
+    }
+
+    // Lifted out of `outcome` so the narrowing survives into the audit closure below.
+    const sentTo = outcome.email;
+
+    /*
+     * Awaited, not queued, for the same reason the anonymous route awaits it: the token expires
+     * in under an hour, so a retry tomorrow delivers a dead link.
+     */
+    await this.identityMail.sendPasswordReset({ to: sentTo, token: outcome.token });
+
+    await this.prisma.runInTenantTransaction(input.scope, async () => {
+      await this.auditEvents.appendWithinCurrentScope(input.scope.tenantId, {
+        action: 'access.password_reset_sent',
+        resourceType: 'user',
+        resourceId: input.subjectUserId,
+        actorUserId: input.actorUserId,
+        summary: `Sent ${person.displayName} a password reset link.`,
+        // The address, because an operator reviewing this needs to see where it went. Never the
+        // token: an audit trail that carries a live credential is a credential store.
+        metadata: { subjectUserId: input.subjectUserId, email: sentTo },
+      });
+    });
+
+    return { sent: true, email: sentTo };
+  }
 
   /** The whole screen: three tabs, the seat position, and why each invitation is or is not ready. */
   async viewFor(scope: TenantScope, actorUserId: string): Promise<AccessView> {

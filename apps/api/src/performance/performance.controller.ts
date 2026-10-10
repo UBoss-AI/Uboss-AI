@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Post,
@@ -26,6 +27,7 @@ import { getActor } from '../request-context/request-context.js';
 import { TenantScoped } from '../tenancy/tenancy.decorators.js';
 import { TenantContextService } from '../tenancy/tenant-context.service.js';
 import { PerformanceService } from './performance.service.js';
+import { TrackerService } from './tracker.service.js';
 
 /** The kinds a *person* may record by hand. The derived four come from the modules that own work. */
 const MANUAL_EVENT_KINDS = ['ManualAdjustment', 'BlockerNeutralised'] as const;
@@ -108,6 +110,7 @@ export class SetPolicyDto {
 export class PerformanceController {
   constructor(
     private readonly performance: PerformanceService,
+    private readonly trackerService: TrackerService,
     private readonly tenantContext: TenantContextService,
   ) {}
 
@@ -165,6 +168,51 @@ export class PerformanceController {
       changes,
     });
     return { version: policy.version, supersededVersion: policy.version - 1 };
+  }
+
+  /**
+   * Task & Tracker — one card per employed person.
+   *
+   * `performance:Administer`, not `View`. Everybody holds `View`, and the Employee template's own
+   * note says that grant is "this person's own record rather than a company screen". This is a
+   * company screen: it shows every colleague's workload, their failures and their account state
+   * on one grid. `Administer` is held by the Company Administrator template alone, which is the
+   * answer the client gave — this section is for the administrator and nobody else.
+   *
+   * The grant is only half of it. `visibleModules` is filtered by the company's plan first, and
+   * Performance was entitled on Enterprise alone, so a real administrator on a Growth company had
+   * every grant and still no sidebar entry. Growth now entitles it too —
+   * `20261009120000_growth_plan_includes_performance` — and Starter and Pilot deliberately do not.
+   *
+   * Declared above `:subjectUserId`, like `me` and `policy`, or that route matches "tracker"
+   * first and the screen asks for the performance record of a person called tracker.
+   */
+  @Get('tracker')
+  @RequirePermission({ module: 'performance', action: 'Administer' })
+  async tracker(): Promise<unknown> {
+    const grid = await this.trackerService.cards(this.tenantContext.requireScope());
+    return { ...grid, total: grid.cards.length };
+  }
+
+  /**
+   * What is behind one card: the runs that person started, and the work still on their desk.
+   *
+   * 404 rather than an empty panel when nobody by that id is employed here — a card held open in
+   * a browser since before somebody was offboarded should say so, not show them with nothing.
+   */
+  @Get('tracker/:subjectUserId')
+  @RequirePermission({ module: 'performance', action: 'Administer' })
+  async trackerDetail(
+    @Param('subjectUserId', new ParseUUIDPipe()) subjectUserId: string,
+  ): Promise<unknown> {
+    const detail = await this.trackerService.detail(
+      this.tenantContext.requireScope(),
+      subjectUserId,
+    );
+    if (detail === null) {
+      throw new NotFoundException('Nobody by that id is employed in this company.');
+    }
+    return detail;
   }
 
   /**

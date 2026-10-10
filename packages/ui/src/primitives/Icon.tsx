@@ -109,6 +109,17 @@ const ICON_PATHS = {
    * it.
    */
   minus: 'M5 12h14',
+  /*
+   * A disclosure chevron, pointing right.
+   *
+   * The set had `expand` and `collapse`, which are the four-corner arrows that mean full screen —
+   * so a collapsible group heading was marked with the symbol for "make this fill the window".
+   * A section that opens and shuts needs the other thing, and callers turn this one down with a
+   * transform rather than the set carrying two of the same arrow.
+   */
+  chevron: 'M9 6l6 6-6 6',
+  // The tab across the top is what reads as a folder rather than a rectangle at 16px.
+  folder: 'M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z',
   expand: 'M4 9V4h5M20 15v5h-5M15 4h5v5M9 20H4v-5',
   collapse: 'M9 4v5H4M15 20v-5h5M20 9h-5V4M4 15h5v5',
   frame: 'M8 10h8v4H8z',

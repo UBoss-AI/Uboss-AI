@@ -13,6 +13,7 @@ import {
   BADGE_LADDER_LABELS,
   MedalBadge,
   PageHeader,
+  SegmentedControl,
   SkeletonText,
 } from '@uboss/ui';
 
@@ -35,6 +36,9 @@ import {
 } from '../../lib/active-workspace';
 import { useNotificationBell } from '../../lib/use-notification-bell';
 import { useCompanyNavigation } from '../../lib/use-company-navigation';
+import { can, useMyAccess } from '../../lib/use-my-access';
+import { EveryoneGrid } from './EveryoneGrid';
+import { PersonWork } from './PersonWork';
 
 /** A person-readable label per event kind. The enum is the contract; this is the wording. */
 const EVENT_LABELS: Record<string, string> = {
@@ -96,6 +100,10 @@ function PerformancePageBody() {
   const [view, setView] = useState<PerformanceView | null>(null);
   const [policy, setPolicy] = useState<PerformancePolicyView | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  /** Mine, or everybody's. Only an administrator is offered the second — see the toggle below. */
+  const [audience, setAudience] = useState<'mine' | 'everybody'>('mine');
+  const access = useMyAccess();
 
   const tenantId =
     resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
@@ -166,7 +174,32 @@ function PerformancePageBody() {
 
       {error ? <Banner tone="danger">{error}</Banner> : null}
 
-      {view === null || policy === null ? (
+      {/*
+        Mine, or everybody's.
+
+        Performance always showed one person — whoever was reading it, or whoever a manager asked
+        for. "Everybody" is the same screen with the audience changed, the way Hierarchy is one
+        screen with Tree and List, rather than a second destination showing people a third time.
+
+        Offered only with `performance:Administer`, which the CompanyAdmin template holds alone.
+        The toggle is presentation; the route behind it refuses on its own.
+      */}
+      {subjectUserId === null && can(access, 'performance', 'Administer') ? (
+        <SegmentedControl
+          label="Whose performance"
+          value={audience}
+          onChange={(value) => setAudience(value as 'mine' | 'everybody')}
+          options={[
+            { value: 'mine', label: 'Mine' },
+            { value: 'everybody', label: 'Everybody' },
+          ]}
+          className="uboss-performance-audience"
+        />
+      ) : null}
+
+      {subjectUserId === null && audience === 'everybody' ? (
+        <EveryoneGrid tenantId={tenantId} />
+      ) : view === null || policy === null ? (
         error === null ? (
           <Card>
             <CardBody>
@@ -175,7 +208,16 @@ function PerformancePageBody() {
           </Card>
         ) : null
       ) : (
-        <div className="uboss-grid" style={{ gridTemplateColumns: '1fr 340px' }}>
+        /*
+         * `minmax(0, 1fr)`, not `1fr`.
+         *
+         * A grid item's default `min-width` is `auto`, which means "as wide as my content
+         * insists" — so the timeline on the left pushed its own column past its share and shoved
+         * the 340px score panel off the right of the screen, where it read as cut off rather than
+         * as laid out. `minmax(0, …)` lets the column be narrower than its content and the
+         * content wrap, which is what a fraction was meant to say in the first place.
+         */
+        <div className="uboss-grid" style={{ gridTemplateColumns: 'minmax(0, 1fr) 340px' }}>
           <Card>
             <CardBody>
               <div className="uboss-actions" style={{ justifyContent: 'space-between' }}>
@@ -327,6 +369,18 @@ function PerformancePageBody() {
             </CardBody>
           </Card>
         </div>
+      )}
+
+      {/*
+        What is behind the score, when the score belongs to somebody else.
+
+        Not on one's own record: the account section offers to invite somebody or to send them a
+        reset link, and a button to invite yourself answers nothing. The run history is also the
+        part that makes a score arguable, and that argument is one an administrator has with a
+        colleague rather than with themselves.
+      */}
+      {subjectUserId === null || !can(access, 'performance', 'Administer') ? null : (
+        <PersonWork tenantId={tenantId} userId={subjectUserId} />
       )}
     </RoutedAppShell>
   );

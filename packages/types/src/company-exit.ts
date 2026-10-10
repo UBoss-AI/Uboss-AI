@@ -327,6 +327,34 @@ export const TABLE_DISPOSITION: Record<string, Disposition> = {
   /// emptied it already — classified anyway, because 'it is probably empty' is not a disposition.
   idempotency_records: 'Content',
 
+  /*
+   * ---- RIS: the boards ----
+   *
+   * All `Content`. A board is a delivery plan, a fault list, a month of production — the
+   * company's own work, which is the definition of this bucket.
+   *
+   * Two of these are worth the argument rather than the assumption:
+   *
+   * `board_members` is a list of who could open a board, which sounds like access and therefore
+   * like `Accountability`. It is not the same thing as a role: `role_assignments` records
+   * authority granted inside the company and is what an access review after the fact reads.
+   * Being on a board is content-level sharing — the equivalent of being in a chat conversation,
+   * which is `Content` three lines down for exactly this reason.
+   *
+   * `board_item_updates` is a conversation thread, and conversations between colleagues about
+   * their own work go with the work. `chat_messages` is `Content`; a thread on a row is not a
+   * more serious record than a message in a channel.
+   */
+  spaces: 'Content',
+  boards: 'Content',
+  board_folders: 'Content',
+  board_members: 'Content',
+  board_columns: 'Content',
+  board_groups: 'Content',
+  board_items: 'Content',
+  board_cell_values: 'Content',
+  board_item_updates: 'Content',
+
   // ---- Prompt 40A (CR-03) ----
   //
   /// All `Content`, and the one worth arguing about is the photo.

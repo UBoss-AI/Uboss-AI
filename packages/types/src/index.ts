@@ -1630,3 +1630,29 @@ export {
 // word no stylesheet defines renders as an unstyled badge rather than failing anywhere visible.
 export { STATUS_TONE_NAMES } from './status-tone.js';
 export type { StatusTone } from './status-tone.js';
+
+/* ---- Boards: the Task & Tracker work model ---- */
+export {
+  BOARD_KINDS,
+  BOARD_KIND_LABELS,
+  BOARD_KIND_DESCRIPTIONS,
+  BOARD_MEMBER_ROLES,
+  BOARD_MEMBER_ROLE_LABELS,
+  BOARD_COLUMN_KINDS,
+  BOARD_COLUMN_KIND_LABELS,
+  MAX_BOARD_ITEM_DEPTH,
+  MAX_FOLDER_DEPTH,
+  DEFAULT_BOARD_GROUPS,
+  DEFAULT_STATUS_LABELS,
+  isBoardKind,
+  isBoardColumnKind,
+  isBoardMemberRole,
+} from './boards.js';
+export type {
+  BoardKind,
+  BoardMemberRole,
+  BoardColumnKind,
+  BoardStatusTone,
+  StatusColumnSettings,
+  DropdownColumnSettings,
+} from './boards.js';

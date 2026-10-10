@@ -89,6 +89,18 @@ export const COMPANY_NAV: readonly NavGroup[] = [
     group: 'Operations',
     items: [
       { key: 'todo', label: 'To-do List', icon: 'list', href: '/todo' },
+      /*
+       * Task & Tracker — boards.
+       *
+       * `module: 'todo'`, which every plan entitles and every role template grants, so the entry
+       * is everybody's. What somebody sees once they are inside is decided per board: a Main
+       * board is the company's, a Private one is its members'. That is a rule about a row, so the
+       * server enforces it rather than this file hiding anything.
+       *
+       * Beside To-do List on purpose. Both are work somebody has been given; the difference is
+       * that a to-do comes from an objective and a board item is arranged by the people doing it.
+       */
+      { key: 'tracker', label: 'RIS', icon: 'panel', href: '/tracker', module: 'todo' },
       { key: 'agents', label: 'Engine Agents', icon: 'bot', href: '/agents' },
       { key: 'executor', label: 'Executor Agent', icon: 'shield', href: '/executor' },
       // Prompt 40A (CR-03). Under OPERATIONS, where the client put it.

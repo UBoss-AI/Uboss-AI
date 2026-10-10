@@ -244,6 +244,17 @@ model Tenant {
   /// The self-serve signup this company came from, where it came from one.
   pendingRegistrations PendingRegistration[]
 
+  /// Task & Tracker: the containers, and everything inside them.
+  spaces           Space[]
+  boards           Board[]
+  boardMembers     BoardMember[]
+  boardColumns     BoardColumn[]
+  boardGroups      BoardGroup[]
+  boardItems       BoardItem[]
+  boardCellValues  BoardCellValue[]
+  boardItemUpdates BoardItemUpdate[]
+  boardFolders     BoardFolder[]
+
   /// The Master Console filters companies by lifecycle state.
   @@index([lifecycleState])
   @@map("tenants")
@@ -301,6 +312,18 @@ model User {
   identifiers       PersonIdentifier[]
   employmentRecords EmploymentRecord[] @relation("EmploymentSubject")
   departmentsHeaded Department[]       @relation("DepartmentHead")
+
+  // Task & Tracker. Who made a thing and who last touched a cell, kept because a
+  // board is a record of what people did and "who changed this" is the first
+  // question anybody asks of a shared table.
+  spacesCreated       Space[]           @relation("SpaceCreator")
+  boardsCreated       Board[]           @relation("BoardCreator")
+  boardMemberships    BoardMember[]     @relation("BoardMemberUser")
+  boardMembersAdded   BoardMember[]     @relation("BoardMemberAddedBy")
+  boardItemsCreated   BoardItem[]       @relation("BoardItemCreator")
+  boardCellsUpdated   BoardCellValue[]  @relation("BoardCellUpdatedBy")
+  boardUpdatesWritten BoardItemUpdate[] @relation("BoardUpdateAuthor")
+  boardFoldersCreated BoardFolder[]     @relation("BoardFolderCreator")
 
   @@map("users")
 }
@@ -5823,7 +5846,7 @@ model AiWorkAssignment {
   objective        Objective?              @relation(fields: [tenantId, objectiveId], references: [tenantId, id], onDelete: Cascade)
   objectiveVersion ObjectiveVersion?       @relation(fields: [tenantId, objectiveVersionId], references: [tenantId, id], onDelete: Cascade)
   workflowDraft    ObjectiveWorkflowDraft? @relation(fields: [tenantId, workflowDraftId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
-  engineAgent      EngineAgent?           @relation(fields: [tenantId, engineAgentId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  engineAgent      EngineAgent?            @relation(fields: [tenantId, engineAgentId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
   testRuns         AgentBuilderTestRun[]
 
   @@unique([tenantId, objectiveVersionId, nodeId])
@@ -8467,4 +8490,409 @@ model ChatContextRefRow {
   @@unique([conversationId, contextType, resourceId], map: "one_reference_per_resource")
   @@index([tenantId, contextType, resourceId])
   @@map("chat_context_refs")
+}
+
+// ---------------------------------------------------------------------------
+// Task & Tracker — the board model.
+//
+// Modelled on monday.com, because that is what the client asked for: a container
+// of boards, a board of groups and items, items that nest, and columns that
+// decide what the board is *for*. A board is an empty table until somebody
+// chooses its columns; the same structure becomes a hiring pipeline, a bug list
+// or a delivery plan depending on nothing but which columns sit on it.
+//
+// Two names differ from monday's on purpose — see `packages/types/src/boards.ts`.
+// `Space`, because UBoss already calls a *company* a workspace. `Item`, because
+// `HumanTask` already exists, belongs to an objective, and is what scores
+// somebody's performance; a board item is free-standing, and the two are joined
+// by an optional link rather than by being the same row.
+// ---------------------------------------------------------------------------
+
+/// A container of boards. monday.com's "workspace", renamed so one word does not
+/// mean two things one level apart.
+model Space {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  tenantId String @map("tenant_id") @db.Uuid
+
+  name        String  @db.VarChar(200)
+  description String? @db.VarChar(2000)
+
+  /// A `STATUS_TONE_NAMES` tone, so a space's colour is the product's palette and
+  /// not a second one invented for this screen.
+  tone String @default("blue") @db.VarChar(20)
+
+  /// The one a company starts with, and the one a board lands in when nobody
+  /// chose. Exactly one per company, enforced by a partial unique index.
+  isDefault Boolean @default(false) @map("is_default")
+
+  createdByUserId String @map("created_by_user_id") @db.Uuid
+
+  /// Archived, never deleted: a space holds boards, a board holds a record of
+  /// what people did, and deleting that to tidy a sidebar is not a trade anybody
+  /// should be offered.
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
+
+  position Float @default(0)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version   Int      @default(1) @map("row_version")
+
+  tenant  Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  creator User          @relation("SpaceCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  boards  Board[]
+  folders BoardFolder[]
+
+  /// The composite target every child points at, so a board cannot reference a
+  /// space in another company (ADR-064).
+  @@unique([tenantId, id])
+  @@index([tenantId, archivedAt])
+  @@map("spaces")
+}
+
+/// Where work is organised: groups down the page, columns across it.
+model Board {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  tenantId String @map("tenant_id") @db.Uuid
+  spaceId  String @map("space_id") @db.Uuid
+
+  /// Which folder it sits in, or null for a board straight in the space.
+  ///
+  /// Optional on purpose: monday.com lets a board live in a workspace without a
+  /// folder, and every board made before folders existed is exactly that.
+  folderId String? @map("folder_id") @db.Uuid
+
+  name        String  @db.VarChar(200)
+  description String? @db.VarChar(2000)
+
+  /// `Main`, `Private` or `Shareable` — who can reach this board before any
+  /// membership is consulted. A board nobody was added to is either everybody's
+  /// or nobody's, and which one has to be stated rather than inferred from an
+  /// empty member list. See `BOARD_KINDS`.
+  kind String @default("Main") @db.VarChar(20)
+
+  createdByUserId String @map("created_by_user_id") @db.Uuid
+
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
+
+  position Float @default(0)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version   Int      @default(1) @map("row_version")
+
+  tenant  Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  space   Space        @relation(fields: [tenantId, spaceId], references: [tenantId, id], onDelete: Cascade)
+  /// NO ACTION for the reason ADR-204 records: SET NULL over a composite key would null
+  /// tenant_id too, and that column is required. Nothing here is ever hard-deleted — a folder is
+  /// archived and its boards keep pointing at it — so the action only matters for a company going
+  /// away, which the tenant cascade above already handles.
+  folder  BoardFolder? @relation(fields: [tenantId, folderId], references: [tenantId, id], onDelete: NoAction, onUpdate: NoAction)
+  creator User         @relation("BoardCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  members BoardMember[]
+  columns BoardColumn[]
+  groups  BoardGroup[]
+  items   BoardItem[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, spaceId, archivedAt])
+  @@map("boards")
+}
+
+/// Somebody added to a board, and what they may do on it.
+model BoardMember {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  tenantId String @map("tenant_id") @db.Uuid
+  boardId  String @map("board_id") @db.Uuid
+  userId   String @map("user_id") @db.Uuid
+
+  /// `Owner`, `Member` or `Viewer`. See `BOARD_MEMBER_ROLES`.
+  role String @default("Member") @db.VarChar(20)
+
+  addedByUserId String @map("added_by_user_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version   Int      @default(1) @map("row_version")
+
+  tenant  Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  board   Board  @relation(fields: [tenantId, boardId], references: [tenantId, id], onDelete: Cascade)
+  user    User   @relation("BoardMemberUser", fields: [userId], references: [id], onDelete: Cascade)
+  addedBy User   @relation("BoardMemberAddedBy", fields: [addedByUserId], references: [id], onDelete: Restrict)
+
+  /// One membership per person per board. Two rows would be two answers to "what
+  /// may they do here", and the code would have to pick.
+  @@unique([boardId, userId], map: "one_membership_per_person_per_board")
+  @@index([tenantId, userId])
+  @@map("board_members")
+}
+
+/// A column on a board: the thing that decides what the board is for.
+///
+/// The kind is a string and the settings are JSON, which is what makes thirty
+/// column types a list rather than thirty tables. A new kind is a renderer, an
+/// editor, a validator and a sort order — a day's work — not a migration.
+model BoardColumn {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  tenantId String @map("tenant_id") @db.Uuid
+  boardId  String @map("board_id") @db.Uuid
+
+  title String @db.VarChar(200)
+
+  /// One of `BOARD_COLUMN_KINDS`. Eight ship first; the ninth is additive.
+  kind String @db.VarChar(40)
+
+  /// What this kind needs to render and validate itself: a status column's
+  /// labels and their tones, a dropdown's options, a number's unit. Shapeless
+  /// here on purpose — the kind owns the shape, and `packages/types` names it.
+  settings Json @default("{}") @db.JsonB
+
+  /// Fractional, so inserting between two columns is an update to one row rather
+  /// than a renumbering of the board.
+  position Float @default(0)
+
+  width Int @default(160)
+
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version   Int      @default(1) @map("row_version")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  board  Board  @relation(fields: [tenantId, boardId], references: [tenantId, id], onDelete: Cascade)
+
+  cells BoardCellValue[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, boardId, archivedAt])
+  @@map("board_columns")
+}
+
+/// A section down a board — "To do", "In progress", "Done".
+model BoardGroup {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  tenantId String @map("tenant_id") @db.Uuid
+  boardId  String @map("board_id") @db.Uuid
+
+  title String @db.VarChar(200)
+
+  /// A `STATUS_TONE_NAMES` tone, the same palette as everywhere else.
+  tone String @default("grey") @db.VarChar(20)
+
+  position Float @default(0)
+
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version   Int      @default(1) @map("row_version")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  board  Board  @relation(fields: [tenantId, boardId], references: [tenantId, id], onDelete: Cascade)
+
+  items BoardItem[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, boardId, archivedAt])
+  @@map("board_groups")
+}
+
+/// A row on a board, and a subitem of one.
+///
+/// Subitems are the same table with a parent, rather than a second one: four
+/// levels of two different things would be two sets of every query, and the
+/// depth is the only thing that actually differs.
+model BoardItem {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  tenantId String @map("tenant_id") @db.Uuid
+  boardId  String @map("board_id") @db.Uuid
+  groupId  String @map("group_id") @db.Uuid
+
+  /// Null for a top-level row. Set for a subitem, whose parent is on the same
+  /// board — enforced by the composite key below.
+  parentItemId String? @map("parent_item_id") @db.Uuid
+
+  /// 0 for a row, 1..3 for its subitems. Stored rather than walked, because
+  /// every read that bounds nesting would otherwise climb the tree to find out
+  /// how deep it already is. `MAX_BOARD_ITEM_DEPTH` is the ceiling.
+  depth Int @default(0)
+
+  name        String  @db.VarChar(500)
+  description String? @db.VarChar(5000)
+
+  position Float @default(0)
+
+  /// The optional join to the rest of UBoss.
+  ///
+  /// A board item is not a `HumanTask` and must not become one: a to-do belongs
+  /// to an objective, and that chain is what scores somebody's performance.
+  /// These say "this row is about that work" without making the row that work.
+  objectiveId String? @map("objective_id") @db.Uuid
+  humanTaskId String? @map("human_task_id") @db.Uuid
+
+  createdByUserId String @map("created_by_user_id") @db.Uuid
+
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version   Int      @default(1) @map("row_version")
+
+  tenant  Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  board   Board      @relation(fields: [tenantId, boardId], references: [tenantId, id], onDelete: Cascade)
+  group   BoardGroup @relation(fields: [tenantId, groupId], references: [tenantId, id], onDelete: Cascade)
+  creator User       @relation("BoardItemCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  parent   BoardItem?  @relation("BoardItemSubitems", fields: [tenantId, parentItemId], references: [tenantId, id], onDelete: Cascade)
+  subitems BoardItem[] @relation("BoardItemSubitems")
+
+  cells   BoardCellValue[]
+  updates BoardItemUpdate[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, boardId, groupId, archivedAt])
+  @@index([tenantId, parentItemId])
+  @@map("board_items")
+}
+
+/// One cell: what this item holds in that column.
+///
+/// Sparse on purpose. A board of five hundred rows and twenty columns is not ten
+/// thousand rows here — it is however many cells somebody actually filled, and an
+/// empty cell is the absence of a row rather than a row holding nothing.
+model BoardCellValue {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  tenantId String @map("tenant_id") @db.Uuid
+  itemId   String @map("item_id") @db.Uuid
+  columnId String @map("column_id") @db.Uuid
+
+  /// The kind's own shape: a status label id, a list of user ids, a date, a
+  /// number, a from/to pair. Validated against the column's kind on the way in,
+  /// never trusted on the way out.
+  value Json @db.JsonB
+
+  updatedByUserId String @map("updated_by_user_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version   Int      @default(1) @map("row_version")
+
+  tenant    Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  item      BoardItem   @relation(fields: [tenantId, itemId], references: [tenantId, id], onDelete: Cascade)
+  column    BoardColumn @relation(fields: [tenantId, columnId], references: [tenantId, id], onDelete: Cascade)
+  updatedBy User        @relation("BoardCellUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: Restrict)
+
+  /// One value per cell. Two rows would be two answers to what a cell holds.
+  @@unique([itemId, columnId], map: "one_value_per_cell")
+  @@index([tenantId, columnId])
+  @@map("board_cell_values")
+}
+
+/// A post on an item's thread — monday.com's "update".
+///
+/// The part of a board that is not a table. A status column says where something
+/// is; the thread says why, who asked, and what was decided — and on a real
+/// board it is where most of the writing happens.
+///
+/// Replies are the same table with a parent, one level deep. A thread of threads
+/// is a forum, and nobody reads those.
+model BoardItemUpdate {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  tenantId String @map("tenant_id") @db.Uuid
+  itemId   String @map("item_id") @db.Uuid
+
+  /// Null for a post, set for a reply to one.
+  parentUpdateId String? @map("parent_update_id") @db.Uuid
+
+  body String @db.VarChar(20000)
+
+  authorUserId String @map("author_user_id") @db.Uuid
+
+  /// Edited in place keeps one post rather than a trail of corrections, and the
+  /// timestamp says it happened. Deleting is archiving, like everywhere else: a
+  /// thread with holes in it is worse than one that says something was withdrawn.
+  editedAt   DateTime? @map("edited_at") @db.Timestamptz(6)
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version   Int      @default(1) @map("row_version")
+
+  tenant Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  item   BoardItem @relation(fields: [tenantId, itemId], references: [tenantId, id], onDelete: Cascade)
+  author User      @relation("BoardUpdateAuthor", fields: [authorUserId], references: [id], onDelete: Restrict)
+
+  parent  BoardItemUpdate?  @relation("BoardUpdateReplies", fields: [tenantId, parentUpdateId], references: [tenantId, id], onDelete: Cascade)
+  replies BoardItemUpdate[] @relation("BoardUpdateReplies")
+
+  @@unique([tenantId, id])
+  @@index([tenantId, itemId, archivedAt])
+  @@map("board_item_updates")
+}
+
+/// A folder inside a space, and a folder inside a folder.
+///
+/// The level monday.com has between a workspace and a board, which the first
+/// cut of this model left out. The client's own use is a folder per department
+/// — PRODUCTION, QUALITY CONTROL, SCM — with that department's boards inside,
+/// and sub-folders under those for a team, a project or a month.
+///
+/// Nesting is deliberately not capped at a small number: `MAX_FOLDER_DEPTH` is
+/// ten, which nobody navigates past and which exists only to stop a tree nobody
+/// bounded. The protection that matters is in the service: a folder can never be
+/// moved inside one of its own descendants, because that is a loop rather than a
+/// depth, and a loop makes the sidebar's own render run for ever.
+model BoardFolder {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  tenantId String @map("tenant_id") @db.Uuid
+  spaceId  String @map("space_id") @db.Uuid
+
+  /// Null at the top of a space. Set for a sub-folder, whose parent is in the
+  /// same space — the composite key below is what refuses one from another.
+  parentFolderId String? @map("parent_folder_id") @db.Uuid
+
+  /// 0 at the top of a space, 1.. under a parent. Stored rather than walked,
+  /// because every read that bounds nesting would otherwise climb the tree to
+  /// find out how deep it already is.
+  depth Int @default(0)
+
+  name String @db.VarChar(200)
+
+  /// A `STATUS_TONE_NAMES` tone, the product's palette rather than a second one.
+  tone String @default("grey") @db.VarChar(20)
+
+  position Float @default(0)
+
+  createdByUserId String @map("created_by_user_id") @db.Uuid
+
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version   Int      @default(1) @map("row_version")
+
+  tenant  Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  space   Space  @relation(fields: [tenantId, spaceId], references: [tenantId, id], onDelete: Cascade)
+  creator User   @relation("BoardFolderCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  parent   BoardFolder?  @relation("BoardFolderNesting", fields: [tenantId, parentFolderId], references: [tenantId, id], onDelete: Cascade)
+  children BoardFolder[] @relation("BoardFolderNesting")
+
+  boards Board[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, spaceId, archivedAt])
+  @@index([tenantId, parentFolderId])
+  @@map("board_folders")
 }

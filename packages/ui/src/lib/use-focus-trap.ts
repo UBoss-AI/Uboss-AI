@@ -49,7 +49,19 @@ export function useFocusTrap(open: boolean, onClose?: () => void) {
 
     const container = containerRef.current;
     if (container) {
-      const first = container.querySelector<HTMLElement>(FOCUSABLE);
+      /*
+       * What the author asked for, then the first focusable thing.
+       *
+       * In DOM order the first focusable element of a dialog is almost always its close button,
+       * so an opened dialog put the cursor on "dismiss this" and a field marked `autoFocus` never
+       * got it — the trap ran after React and took it back. Somebody opening "Add a column" then
+       * typed into nothing.
+       *
+       * `data-autofocus` is how a dialog says which control it is actually about. Without one the
+       * behaviour is unchanged, so no existing dialog moves.
+       */
+      const asked = container.querySelector<HTMLElement>('[data-autofocus]');
+      const first = asked ?? container.querySelector<HTMLElement>(FOCUSABLE);
       (first ?? container).focus();
     }
 

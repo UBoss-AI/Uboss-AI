@@ -1924,6 +1924,19 @@ export const organizationApi = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  /**
+   * Give an employment record to somebody who already has an account here.
+   *
+   * Not the same call as `addEmployee` and deliberately so: that one creates a person, and an
+   * administrator invited before the org chart existed already is one. Naming them by id is what
+   * makes this safe where matching on a typed address is not.
+   */
+  employExistingAccount: (tenantId: string, userId: string, body: Record<string, unknown>) =>
+    call<AddEmployeeResult>(
+      `/tenants/${encodeURIComponent(tenantId)}/organization/employees/${encodeURIComponent(userId)}/employ`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+
   employee: (tenantId: string, userId: string) =>
     call<EmployeeProfile>(
       `/tenants/${encodeURIComponent(tenantId)}/organization/employees/${encodeURIComponent(userId)}`,
@@ -2098,6 +2111,19 @@ export const accessApi = {
   cancelInvitation: (tenantId: string, invitationId: string) =>
     call<{ invitationId: string; cancelled: boolean }>(
       `/tenants/${encodeURIComponent(tenantId)}/access/invitations/${encodeURIComponent(invitationId)}/cancel`,
+      { method: 'POST' },
+    ),
+
+  /**
+   * Send somebody a password reset link.
+   *
+   * No body and no token in the answer: the link goes to them, and they choose their own
+   * password. 409 when that person has never set one — they need the invitation instead, and
+   * the message says so.
+   */
+  sendPasswordReset: (tenantId: string, userId: string) =>
+    call<{ sent: true; email: string }>(
+      `/tenants/${encodeURIComponent(tenantId)}/access/people/${encodeURIComponent(userId)}/password-reset`,
       { method: 'POST' },
     ),
 
@@ -2471,6 +2497,276 @@ export interface PerformancePolicyView {
  * an approved blocker's neutralisation can be posted, and both need `performance:Administer`
  * and a reason.
  */
+/* ---- Task & Tracker: boards ---- */
+
+/** A container of boards. monday.com's "workspace", renamed because UBoss already uses the word. */
+export interface SpaceSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  tone: string;
+  isDefault: boolean;
+  archivedAt: string | null;
+}
+
+/**
+ * A folder inside a space, and possibly inside another folder.
+ *
+ * Flat on the wire on purpose: the server has no opinion about how a sidebar draws a tree, and
+ * a nested payload is one that has to be re-walked anyway the moment anything is moved.
+ */
+export interface FolderSummary {
+  id: string;
+  spaceId: string;
+  parentFolderId: string | null;
+  name: string;
+  tone: string;
+  depth: number;
+  position: number;
+  archivedAt: string | null;
+}
+
+export interface BoardSummary {
+  id: string;
+  spaceId: string;
+  /** Null for a board at the top of its space, rather than inside a folder. */
+  folderId: string | null;
+  name: string;
+  description: string | null;
+  kind: 'Main' | 'Private' | 'Shareable';
+  itemCount: number;
+  /** Null when they are not on it, which a Main board allows. */
+  myRole: 'Owner' | 'Member' | 'Viewer' | null;
+  createdAt: string;
+}
+
+export interface BoardColumnView {
+  id: string;
+  boardId: string;
+  title: string;
+  kind: string;
+  settings: Record<string, unknown>;
+  position: number;
+  width: number;
+}
+
+export interface BoardGroupView {
+  id: string;
+  boardId: string;
+  title: string;
+  tone: string;
+  position: number;
+}
+
+export interface BoardItemView {
+  id: string;
+  boardId: string;
+  groupId: string;
+  parentItemId: string | null;
+  depth: number;
+  name: string;
+  description: string | null;
+  position: number;
+}
+
+export interface BoardCellView {
+  id: string;
+  itemId: string;
+  columnId: string;
+  value: unknown;
+}
+
+export interface BoardMemberView {
+  id: string;
+  boardId: string;
+  userId: string;
+  role: 'Owner' | 'Member' | 'Viewer';
+  /**
+   * Who they are.
+   *
+   * Joined by the server so a People cell can offer a name rather than a UUID — and from the
+   * board's own members, because a standard Employee has no grant to read the company roster.
+   */
+  name: string;
+}
+
+/**
+ * A board and everything on it, in one request.
+ *
+ * `mayEdit` is the server's answer rather than something the screen works out from `myRole`:
+ * "may I type here" has two inputs — the module grant and the board role — and a screen that
+ * recomputes it eventually disagrees with the route that enforces it.
+ */
+export interface BoardOpenView {
+  board: BoardSummary & { myRole: BoardSummary['myRole']; mayEdit: boolean };
+  groups: BoardGroupView[];
+  columns: BoardColumnView[];
+  items: BoardItemView[];
+  cells: BoardCellView[];
+  members: BoardMemberView[];
+}
+
+export interface BoardUpdateView {
+  id: string;
+  itemId: string;
+  parentUpdateId: string | null;
+  body: string;
+  authorUserId: string;
+  createdAt: string;
+  editedAt: string | null;
+}
+
+export const boardsApi = {
+  listSpaces: (tenantId: string) =>
+    call<{ spaces: SpaceSummary[] }>(`/tenants/${encodeURIComponent(tenantId)}/boards/spaces`),
+
+  listBoards: (tenantId: string) =>
+    call<{ boards: BoardSummary[]; total: number }>(
+      `/tenants/${encodeURIComponent(tenantId)}/boards`,
+    ),
+
+  listFolders: (tenantId: string) =>
+    call<{ folders: FolderSummary[] }>(`/tenants/${encodeURIComponent(tenantId)}/boards/folders`),
+
+  createFolder: (
+    tenantId: string,
+    body: { name: string; parentFolderId?: string; spaceId?: string },
+  ) =>
+    call<FolderSummary>(`/tenants/${encodeURIComponent(tenantId)}/boards/folders`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  /** Sending no parent takes the folder to the top of its space. */
+  moveFolder: (tenantId: string, folderId: string, parentFolderId: string | null) =>
+    call<FolderSummary>(
+      `/tenants/${encodeURIComponent(tenantId)}/boards/folders/${encodeURIComponent(folderId)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(parentFolderId === null ? {} : { parentFolderId }),
+      },
+    ),
+
+  /**
+   * One folder per department.
+   *
+   * Preview first, always: this creates rows in somebody's company, and seventeen folders that
+   * appeared without being asked for is a surprise found a week later.
+   */
+  foldersFromDepartments: (tenantId: string, preview: boolean) =>
+    call<{ spaceId: string; willCreate: string[]; created: number; skipped: number }>(
+      `/tenants/${encodeURIComponent(tenantId)}/boards/folders/from-departments`,
+      { method: 'POST', body: JSON.stringify({ preview }) },
+    ),
+
+  createBoard: (
+    tenantId: string,
+    body: {
+      name: string;
+      description?: string;
+      kind?: string;
+      spaceId?: string;
+      folderId?: string;
+    },
+  ) =>
+    call<BoardSummary & { id: string }>(`/tenants/${encodeURIComponent(tenantId)}/boards`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  /** Sending no folder takes the board to the top of its space. */
+  moveBoard: (tenantId: string, boardId: string, folderId: string | null) =>
+    call<{ boardId: string; folderId: string | null }>(
+      `/tenants/${encodeURIComponent(tenantId)}/boards/${encodeURIComponent(boardId)}`,
+      { method: 'PATCH', body: JSON.stringify(folderId === null ? {} : { folderId }) },
+    ),
+
+  open: (tenantId: string, boardId: string) =>
+    call<BoardOpenView>(
+      `/tenants/${encodeURIComponent(tenantId)}/boards/${encodeURIComponent(boardId)}`,
+    ),
+
+  archiveBoard: (tenantId: string, boardId: string) =>
+    call<{ boardId: string; archived: boolean }>(
+      `/tenants/${encodeURIComponent(tenantId)}/boards/${encodeURIComponent(boardId)}`,
+      { method: 'DELETE' },
+    ),
+
+  /**
+   * Add a column — which is to say, change what the board is for.
+   *
+   * `todo:Create`, not the grant that lets somebody put a row on it: deciding that every row now
+   * has a Priority changes the shape of everybody's board.
+   */
+  addColumn: (
+    tenantId: string,
+    boardId: string,
+    body: { title: string; kind: string; settings?: Record<string, unknown> },
+  ) =>
+    call<BoardColumnView>(
+      `/tenants/${encodeURIComponent(tenantId)}/boards/${encodeURIComponent(boardId)}/columns`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+
+  addGroup: (tenantId: string, boardId: string, body: { title: string; tone?: string }) =>
+    call<BoardGroupView>(
+      `/tenants/${encodeURIComponent(tenantId)}/boards/${encodeURIComponent(boardId)}/groups`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+
+  createItem: (
+    tenantId: string,
+    boardId: string,
+    body: { name: string; groupId?: string; parentItemId?: string },
+  ) =>
+    call<BoardItemView>(
+      `/tenants/${encodeURIComponent(tenantId)}/boards/${encodeURIComponent(boardId)}/items`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+
+  renameItem: (tenantId: string, itemId: string, name: string) =>
+    call<BoardItemView>(
+      `/tenants/${encodeURIComponent(tenantId)}/boards/items/${encodeURIComponent(itemId)}`,
+      { method: 'PATCH', body: JSON.stringify({ name }) },
+    ),
+
+  archiveItem: (tenantId: string, itemId: string) =>
+    call<{ itemId: string; archived: boolean }>(
+      `/tenants/${encodeURIComponent(tenantId)}/boards/items/${encodeURIComponent(itemId)}`,
+      { method: 'DELETE' },
+    ),
+
+  /** Write one cell. Sending no value clears it — an empty cell has no row at all. */
+  setCell: (tenantId: string, itemId: string, columnId: string, value?: unknown) =>
+    call<BoardCellView | { cleared: true }>(
+      `/tenants/${encodeURIComponent(tenantId)}/boards/items/${encodeURIComponent(itemId)}/cells`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(value === undefined ? { columnId } : { columnId, value }),
+      },
+    ),
+
+  listUpdates: (tenantId: string, itemId: string) =>
+    call<{ updates: BoardUpdateView[] }>(
+      `/tenants/${encodeURIComponent(tenantId)}/boards/items/${encodeURIComponent(itemId)}/updates`,
+    ),
+
+  postUpdate: (tenantId: string, itemId: string, body: string, parentUpdateId?: string) =>
+    call<BoardUpdateView>(
+      `/tenants/${encodeURIComponent(tenantId)}/boards/items/${encodeURIComponent(itemId)}/updates`,
+      {
+        method: 'POST',
+        body: JSON.stringify(parentUpdateId === undefined ? { body } : { body, parentUpdateId }),
+      },
+    ),
+
+  setMember: (tenantId: string, boardId: string, userId: string, role: string) =>
+    call<BoardMemberView>(
+      `/tenants/${encodeURIComponent(tenantId)}/boards/${encodeURIComponent(boardId)}/members`,
+      { method: 'POST', body: JSON.stringify({ userId, role }) },
+    ),
+};
+
 export const performanceApi = {
   /** The signed-in person's own. Always permitted to themselves. */
   mine: (tenantId: string) =>
@@ -2485,7 +2781,99 @@ export const performanceApi = {
   /** The active policy, so a screen can show the rules next to the score. */
   policy: (tenantId: string) =>
     call<PerformancePolicyView>(`/tenants/${encodeURIComponent(tenantId)}/performance/policy`),
+
+  /**
+   * Task & Tracker: one card per employed person.
+   *
+   * `performance:Administer`, so the administrator and nobody else — and only on a plan that
+   * entitles Performance, which is Growth and Enterprise.
+   */
+  tracker: (tenantId: string) =>
+    call<TrackerGrid>(`/tenants/${encodeURIComponent(tenantId)}/performance/tracker`),
+
+  /** What is behind one card: the runs that person started, and the work still on their desk. */
+  trackerDetail: (tenantId: string, userId: string) =>
+    call<TrackerDetail>(
+      `/tenants/${encodeURIComponent(tenantId)}/performance/tracker/${encodeURIComponent(userId)}`,
+    ),
 };
+
+/**
+ * What the one account button on a tracker card offers.
+ *
+ * Four answers rather than one, because "Reset password" is wrong for most of a freshly imported
+ * company: somebody who has never activated has no password to reset, and the reset service
+ * answers them with silence. `None` means the button is disabled and `reason` says why.
+ */
+export interface TrackerAccount {
+  state: string;
+  action: 'Invite' | 'Resend' | 'Reset' | 'None';
+  email: string | null;
+  reason: string | null;
+}
+
+export interface TrackerCard {
+  userId: string;
+  name: string;
+  employeeId: string | null;
+  designation: string | null;
+  department: string | null;
+  tasks: { assigned: number; open: number; overdue: number; done: number };
+  runs: {
+    total: number;
+    failed: number;
+    lastStartedAt: string | null;
+    lastState: string | null;
+  };
+  performance: { score: number; level: string; label: string };
+  account: TrackerAccount;
+}
+
+/**
+ * The grid, and who is not on it.
+ *
+ * A card is made for somebody who has been **given access** — their membership is `Active` or
+ * `InvitePending` — not for everybody in the org chart. `notInvited` and `invitable` are what the
+ * empty state needs to say something useful rather than just "nobody here".
+ */
+export interface TrackerGrid {
+  cards: TrackerCard[];
+  total: number;
+  notInvited: number;
+  invitable: number;
+}
+
+export interface TrackerRun {
+  id: string;
+  agent: string;
+  state: string;
+  trigger: string;
+  attempt: number;
+  startedAt: string | null;
+  finishedAt: string | null;
+  /** Milliseconds from start to finish, or to now while it is still going. Null before it starts. */
+  elapsedMs: number | null;
+  stillGoing: boolean;
+  failureReason: string | null;
+  progressMessage: string | null;
+}
+
+export interface TrackerDetail {
+  userId: string;
+  name: string;
+  employeeId: string | null;
+  designation: string | null;
+  department: string | null;
+  account: TrackerAccount;
+  runs: TrackerRun[];
+  openTasks: {
+    id: string;
+    title: string;
+    status: string;
+    dueAt: string | null;
+    overdue: boolean;
+  }[];
+}
 
 // ---------------------------------------------------------------------------
 // Notifications and escalation (Prompt 15)

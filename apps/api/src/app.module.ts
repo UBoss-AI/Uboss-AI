@@ -2,6 +2,7 @@ import { type MiddlewareConsumer, Module, type NestModule } from '@nestjs/common
 import { ConfigModule } from '@nestjs/config';
 
 import { AccessModule } from './access/access.module.js';
+import { BoardsModule } from './boards/boards.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { BillingModule } from './billing/billing.module.js';
@@ -84,6 +85,9 @@ import { TenancyModule } from './tenancy/tenancy.module.js';
     // PerformanceModule after AccessModule: offboarding writes the exit snapshot, so the
     // performance engine must be constructible by the time access is wired.
     PerformanceModule,
+    // BoardsModule imports nothing of its own: persistence, authorization and audit are all
+    // global, so Task & Tracker is the feature and nothing else.
+    BoardsModule,
     // PlatformAlertModule before the things that raise alerts. Global and tiny, like the audit
     // module: what is worth alerting on — mail that cannot be delivered, a provider that cannot
     // be reached — is spread across the product, and a module each producer had to remember to
