@@ -42,6 +42,7 @@ import {
 } from '../../../lib/active-workspace';
 import { blankWorkflowStep, toEditableStep, WorkflowGrid } from '../../../components/WorkflowGrid';
 import { parseValidationProblems } from '../../../lib/validation-problems';
+import { shouldRestoreFormBackup } from '../../../lib/form-backup';
 import {
   ApiError,
   authApi,
@@ -172,6 +173,24 @@ function ObjectiveFormInner() {
   const [busy, setBusy] = useState(false);
   /** Set when this tab had work the server never received, and it was put back on screen. */
   const [restored, setRestored] = useState(false);
+  /**
+   * Whether what is on screen is this objective's own content yet.
+   *
+   * False from mount until the server's answer has been applied, and the local backup below
+   * refuses to write anything while it is. It has to exist because the form renders *before* it
+   * has anything to render: `content` starts as `emptyForm2()` and `steps` as a single blank
+   * row, and for the width of one network round trip that pristine nothing is what the page
+   * holds.
+   *
+   * Backing it up was a draft-destroying mistake. The restore below reads the backup the moment
+   * the load resolves, finds the empty form this effect had written to that same key
+   * milliseconds earlier, decides it is newer work the server never received — and puts it on
+   * screen over the draft that had just arrived, under a banner saying the person's work had
+   * been recovered. Anything typed after that autosaved the emptiness back to the server.
+   *
+   * Reported from production by an administrator who opened a filled draft and watched it empty.
+   */
+  const hydrated = useRef(false);
 
   /*
    * What an uploaded workbook said, before any of it is applied.
@@ -252,7 +271,19 @@ function ObjectiveFormInner() {
   }, []);
 
   useEffect(() => {
-    if (!tenantId || objectiveId === null) return;
+    /*
+     * A new objective has nothing to load, so it is its own content from the first keystroke.
+     *
+     * Said here rather than left to fall out of the load below, because this is the one case the
+     * local backup exists for: a brand-new objective is not on the server at all until the first
+     * Save Draft, so losing the session loses everything typed. Leaving `hydrated` false for it
+     * would have fixed a draft-eating bug by quietly removing the only protection the case had.
+     */
+    if (objectiveId === null) {
+      hydrated.current = true;
+      return;
+    }
+    if (!tenantId) return;
 
     void objectivesApi
       .view(tenantId, objectiveId)
@@ -295,7 +326,22 @@ function ObjectiveFormInner() {
                 : shown.steps.map(toEditableStep),
           });
 
-          if (kept !== current && held.content !== undefined && held.steps !== undefined) {
+          /*
+           * `hydrated` above keeps the pristine form from reaching storage at all; this is the
+           * second lock on the same door. Two of them because one failing costs somebody their
+           * work and tells them it was saved. The rule itself lives in `shouldRestoreFormBackup`
+           * with what it is for.
+           */
+          const pristine = JSON.stringify({
+            content: emptyForm2(),
+            steps: [blankWorkflowStep(1)],
+          });
+
+          if (
+            shouldRestoreFormBackup({ kept, current, pristine }) &&
+            held.content !== undefined &&
+            held.steps !== undefined
+          ) {
             setContent(held.content);
             setSteps(held.steps);
             setRestored(true);
@@ -303,6 +349,11 @@ function ObjectiveFormInner() {
         } catch {
           // Unreadable or blocked. The server's version is already on screen, which is the safe
           // thing to be showing.
+        } finally {
+          // Whatever happened above, what is on screen is now this objective's own content, so
+          // the backup may start recording changes to it. In `finally` because a backup that
+          // stopped working after a storage error would take the autosave's safety net with it.
+          hydrated.current = true;
         }
       })
       .catch((caught: unknown) =>
@@ -579,6 +630,10 @@ function ObjectiveFormInner() {
 
   useEffect(() => {
     if (readOnly) return;
+    // Nothing on screen is this objective's yet. See `hydrated`: writing the pristine empty form
+    // here is what destroyed a production draft, because the restore cannot tell that backup
+    // from somebody's unsaved work.
+    if (!hydrated.current) return;
     try {
       sessionStorage.setItem(backupKey, snapshot);
     } catch {
