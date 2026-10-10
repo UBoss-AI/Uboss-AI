@@ -231,7 +231,19 @@ describe('prompt injection — the instruction is never built from data', () => 
       ...text.matchAll(/this\.ask\(\s*state,\s*(?:\n\s*)?'[^']+',\s*(?:\n\s*)?([^\n]*)/g),
     ];
 
-    assert.ok(calls.length >= 6, `expected the analysis stages, found ${calls.length}`);
+    /*
+     * Two, not six.
+     *
+     * The number is a guard against the regex silently matching nothing, not a claim about how
+     * many stages the analysis ought to have — and it went stale when five of the seven were
+     * removed. Those five asked a model a question and threw the answer away: the workflow was
+     * built by deterministic code either way, so they changed no output and cost a company money
+     * on every run. What remains is the human/AI split and the tool categories, and both are read.
+     *
+     * It is written as a floor rather than an exact count so that adding a stage does not fail
+     * this test for the wrong reason — the loop below is what actually polices a new one.
+     */
+    assert.ok(calls.length >= 2, `expected the analysis stages, found ${calls.length}`);
     for (const call of calls) {
       const argument = (call[1] ?? '').trim();
       assert.ok(

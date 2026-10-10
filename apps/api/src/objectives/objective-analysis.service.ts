@@ -649,12 +649,31 @@ export class ObjectiveAnalysisService {
      * or `SensitiveExport`**, and those are exactly the categories `isHighRiskToolCategory`
      * exists to flag. A step that moves money looked, to every later check, like a step that
      * reads a file.
+     *
+     * ## Why the seven words are written out below
+     *
+     * They were `${TOOL_ACTION_CATEGORIES.join(', ')}`, which is in step with the enum by
+     * construction — and a `${` inside an instruction, which is the one thing
+     * `prompt-injection.spec.ts` forbids this service. The bright line is worth more than the
+     * convenience: a frozen constant is safe to interpolate today, and the rule's value is that
+     * nobody has to work out whether the *next* value somebody reaches for is. "Is this
+     * instruction built from data" stays a question with a one-glance answer.
+     *
+     * It sat there unnoticed because that test reads only the first line of the argument and the
+     * interpolation was on the second. Passing by accident rather than by agreement is not
+     * passing.
+     *
+     * The cost is that the sentence can drift from the enum, so `tool-categories.spec.ts`
+     * compares the two and fails if a category is added without being named here. This note is
+     * above the call rather than beside the argument for the dull reason that a comment in the
+     * argument list is what that test then reads as the instruction.
      */
     const answer = await this.ask(
       state,
       'objective.analysis.ai-work',
       'For each numbered step, say which of these action categories the work needs: ' +
-        `${TOOL_ACTION_CATEGORIES.join(', ')}. ` +
+        'Read, Write, Delete, ExternalBulkSend, SensitiveExport, FinancialChange, ' +
+        'ProductionChange. ' +
         'Answer one line per step, as "<number>: <categories, comma separated>". ' +
         'Use only those words. Read is the safe default; name a stronger category only when ' +
         'the step plainly does that thing.',

@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, it } from 'node:test';
+
+import { TOOL_ACTION_CATEGORIES } from '@uboss/types';
 
 import { parseToolCategories } from '../src/objectives/objective-analysis.service.js';
 
@@ -98,5 +102,41 @@ describe('reading tool categories from a model reply', () => {
 
     assert.ok(chosen[0]!.includes('FinancialChange'));
     assert.ok(chosen[1]!.includes('ProductionChange'));
+  });
+
+  it('asks the model about every category the parser would accept', () => {
+    /*
+     * The sentence sent to the model lists the seven words literally, and this is what stops the
+     * two drifting apart.
+     *
+     * It used to be `${TOOL_ACTION_CATEGORIES.join(', ')}` — in step with the enum by
+     * construction, and a `${` inside an instruction, which is the one thing
+     * `prompt-injection.spec.ts` forbids this service. Writing the words out keeps that line
+     * clean and moves the risk here: somebody adds an eighth category, the parser accepts it,
+     * and the model is never told it exists — so it never names it, and the feature is silently
+     * half-built. That failure has no symptom anybody would notice, which is why it is worth a
+     * test of its own.
+     *
+     * The source is read rather than the string exported, because exporting it would make the
+     * instruction reachable from outside the service and invite exactly the assembly the rule is
+     * there to prevent.
+     */
+    const source = readFileSync(
+      path.join(process.cwd(), 'src', 'objectives', 'objective-analysis.service.ts'),
+      'utf8',
+    );
+    const sentence = /action categories the work needs:([\s\S]*?)Answer one line per step/.exec(
+      source,
+    );
+
+    assert.ok(sentence !== null, 'the ai-work instruction moved; this test cannot see it any more');
+
+    const named = TOOL_ACTION_CATEGORIES.filter((category) => sentence[1]!.includes(category));
+    assert.deepEqual(
+      [...named].sort(),
+      [...TOOL_ACTION_CATEGORIES].sort(),
+      'a category the parser accepts is missing from the sentence the model is given, so no ' +
+        'model will ever return it',
+    );
   });
 });
