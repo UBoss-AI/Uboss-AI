@@ -658,6 +658,108 @@ describe('users & access (e2e)', () => {
       );
     });
 
+    /*
+     * An invitation is from a person, and says so.
+     *
+     * It arrived as "UBoss AI" with the body offering "an administrator at <company>" — which is
+     * the shape of every phishing attempt a person has been trained to delete, and it was asking
+     * them to set a password. The name of a colleague they recognise is the one thing that makes
+     * it credible.
+     *
+     * What this cannot do, and the reason the sender's own address is not in `From:`, is send as
+     * somebody else's domain: SPF and DKIM are checked against it, and mail claiming to be from
+     * `spmmedicare.com` out of this deployment would be marked spam or refused. Doing the
+     * obvious thing would stop invitations arriving. So the name travels in the display name and
+     * the address stays ours, with `replyTo` carrying where an answer belongs.
+     */
+    it('says who invited them, and sends the reply to that person', async () => {
+      const person = await addHierarchyPerson('Named Invite', 'E-261', '40218837558', adminId);
+      const adapter = app.get(EmailAdapter) as LoggingEmailAdapter;
+      adapter.sent.length = 0;
+
+      await invitations().inviteExistingPerson({
+        scope: scope(),
+        actorUserId: adminId,
+        subjectUserId: person.userId,
+        workEmail: 'named@access.example',
+      });
+
+      const activation = adapter.sent.find((mail) => /invited/i.test(mail.subject));
+      assert.ok(activation, 'no invitation email was sent');
+
+      assert.match(
+        activation.fromName ?? '',
+        /^Access Admin \(.+\) via Chief Agent$/,
+        'the sender name names neither the administrator nor the product',
+      );
+      assert.equal(
+        activation.replyTo,
+        'ub-aadm-0001@access.example',
+        'a reply would go to the no-reply address instead of the person who invited them',
+      );
+      assert.match(activation.text, /Access Admin invited you/);
+      assert.match(activation.html ?? '', /Access Admin has invited you/);
+
+      /*
+       * The safety property, asserted on the message rather than left to a comment: a caller can
+       * set who it *looks* like it is from and cannot set the address it is actually from. If a
+       * `from` ever appears here, somebody has made it possible to send as a customer's domain,
+       * and that is a deliverability failure which shows up as "invitations stopped arriving"
+       * rather than as an error.
+       */
+      assert.equal(
+        'from' in activation,
+        false,
+        'an outbound message can now override the sending address',
+      );
+    });
+
+    it('withholds a reply-to that would bounce, and still names the sender', async () => {
+      /*
+       * Somebody in the org chart from before work addresses were required holds
+       * `…@person.uboss.invalid`. A reply-to pointing there is worse than none: the recipient
+       * believes they have asked their question, and nobody ever receives it. The name is still
+       * worth having, so only the reply route is withheld.
+       */
+      const legacyAdmin = await addHierarchyPerson('Legacy Admin', 'E-262', '40218837559', adminId);
+      await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.user.update({
+          where: { id: legacyAdmin.userId },
+          data: { email: 'legacy.admin@person.uboss.invalid' },
+        }),
+      );
+      await as(
+        agent().post(`/tenants/${tenantId}/access/people/${legacyAdmin.userId}/roles`),
+        adminUboss,
+      )
+        .send({
+          roleKind: 'CompanyAdmin',
+          scopeKind: 'WholeCompany',
+          justification: 'Administers the company from before work addresses were required.',
+        })
+        .expect(201);
+
+      const person = await addHierarchyPerson('Legacy Invite', 'E-263', '40218837560', adminId);
+      const adapter = app.get(EmailAdapter) as LoggingEmailAdapter;
+      adapter.sent.length = 0;
+
+      await invitations().inviteExistingPerson({
+        scope: scope(),
+        actorUserId: legacyAdmin.userId,
+        subjectUserId: person.userId,
+        workEmail: 'legacy.invite@access.example',
+      });
+
+      const activation = adapter.sent.find((mail) => /invited/i.test(mail.subject));
+      assert.ok(activation, 'no invitation email was sent');
+      assert.match(activation.fromName ?? '', /^Legacy Admin \(.+\) via Chief Agent$/);
+      assert.equal(
+        activation.replyTo,
+        undefined,
+        'the invitation would send replies to an address that cannot receive them',
+      );
+    });
+
     it('notifies the person that they were invited, and again when it is resent', async () => {
       // Prompt 15's Invitation source, asserted here rather than in the notifications suite:
       // this is the module that raises it, and a test that mocked the invitation would prove

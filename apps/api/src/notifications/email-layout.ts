@@ -45,6 +45,16 @@ const LINE = '#e5e7eb';
 const ACCENT = '#6d28d9';
 const PAGE = '#f4f5f8';
 
+/**
+ * What the product calls itself in a mailbox.
+ *
+ * Exported because two places say it and they must not disagree: the masthead this file draws,
+ * and the sender name on a message sent on somebody's behalf — "Priya Nair (Aarohan Healthcare)
+ * via Chief Agent". A reader who sees one name in the From line and another at the top of the
+ * message has been given a reason to doubt the message.
+ */
+export const MAIL_PRODUCT_NAME = 'Chief Agent';
+
 export interface EmailLayoutInput {
   /** The one line at the top, and the one thing the message is about. */
   heading: string;
@@ -141,7 +151,7 @@ export function renderEmailHtml(input: EmailLayoutInput): string {
         <tr>
           <td style="padding:24px 28px 0;">
             <p style="margin:0;font-size:13px;font-weight:700;letter-spacing:0.08em;
-                      text-transform:uppercase;color:${ACCENT};">Chief Agent</p>
+                      text-transform:uppercase;color:${ACCENT};">${MAIL_PRODUCT_NAME}</p>
             <p style="margin:2px 0 0;font-size:12px;color:${MUTED};">powered by UBoss AI</p>
           </td>
         </tr>

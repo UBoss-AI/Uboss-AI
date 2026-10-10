@@ -8,6 +8,31 @@ export interface OutboundEmail {
   html?: string | undefined;
   /** Correlates the mail with the outbox row and the notification that produced it. */
   reference: string;
+  /**
+   * The name to show as the sender, when a person rather than the product is behind this message.
+   *
+   * ## Why only the name, and never the address
+   *
+   * An invitation is sent *by somebody* — a named administrator at a named company — and arriving
+   * from "UBoss AI" with no human attached makes a legitimate message look like a mailshot. The
+   * obvious fix is to put that administrator's own address in `From:`, and it is the one thing
+   * that cannot be done: a receiving server checks SPF and DKIM against the sending domain, and
+   * this deployment is not authorised to send as `spmmedicare.com` or anybody else's domain. Mail
+   * that claims to be would be marked as spam or refused outright, so "make it come from the
+   * admin" would, done literally, stop invitations arriving at all.
+   *
+   * So the display name carries the person and the company, the address stays the one this
+   * deployment is authorised to use, and `replyTo` carries where an answer should go. That is
+   * what every product that sends on somebody's behalf does, and the "via" a mail client shows is
+   * this arrangement being honest about itself.
+   *
+   * Sending as the company's own domain is possible, and it is a different feature: the company
+   * publishes SPF and DKIM records delegating a subdomain, which is the same DNS verification
+   * machinery domain claims already use. Until then, this.
+   */
+  fromName?: string | undefined;
+  /** Where a reply should go — the person who sent it, not the no-reply address it came from. */
+  replyTo?: string | undefined;
 }
 
 export interface EmailDeliveryResult {

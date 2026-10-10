@@ -220,12 +220,30 @@ export class InvitationAccessService {
       }),
     );
 
+    /*
+     * Who sent it, so the message can say so and be answered.
+     *
+     * Read from the roster already in hand rather than fetched: the administrator is a member of
+     * the company they are inviting into, so they are one of these rows by definition.
+     *
+     * The placeholder address is excluded deliberately. Somebody in the org chart with no work
+     * address holds `…@person.uboss.invalid`, and a reply-to pointing there bounces — which is
+     * worse than having none, because the recipient would believe their question had been asked.
+     * Their name still goes on the message; only the reply route is withheld.
+     */
+    const inviter = rows.find((row) => row.userId === input.actorUserId);
+    const inviterEmail =
+      inviter === undefined || inviter.email.endsWith(PLACEHOLDER_EMAIL_DOMAIN)
+        ? null
+        : inviter.email;
+
     const delivery = await this.identityMail.sendInvitation({
       to: email === '' ? person.email : email,
       token: issued.token,
       displayName: person.displayName,
       companyName: company?.name ?? 'your workspace',
       resent: issued.resent,
+      invitedBy: inviter === undefined ? null : { name: inviter.displayName, email: inviterEmail },
     });
 
     /*

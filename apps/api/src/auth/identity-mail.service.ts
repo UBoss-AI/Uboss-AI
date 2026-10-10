@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { AUTH_CONFIG, type AuthConfig } from './auth.config.js';
 import { EmailAdapter } from '../notifications/email-adapter.js';
-import { renderEmailHtml } from '../notifications/email-layout.js';
+import { MAIL_PRODUCT_NAME, renderEmailHtml } from '../notifications/email-layout.js';
 
 /**
  * The two emails that are not workspace notifications: a password reset and an invitation.
@@ -71,18 +71,45 @@ export class IdentityMailService {
     displayName: string;
     companyName: string;
     resent: boolean;
+    /**
+     * The administrator who sent it, where they can be named and replied to.
+     *
+     * Null when the invitation has no human behind it, and `email` is null on its own when the
+     * sender holds only the `…@person.uboss.invalid` placeholder the org chart gives somebody
+     * with no work address. A reply-to pointing at that would bounce, which is worse than no
+     * reply-to: the recipient would believe they had answered.
+     */
+    invitedBy?: { name: string; email: string | null } | null;
   }): Promise<MailOutcome> {
     const link = `${this.config.webBaseUrl}/activate?token=${encodeURIComponent(input.token)}`;
+    const sender = input.invitedBy ?? null;
+
+    /*
+     * "Priya Nair (Aarohan Healthcare) via Chief Agent".
+     *
+     * The company is in there as well as the person because a recipient may be invited by more
+     * than one, and because "Priya Nair" alone, arriving from an address they have never seen,
+     * is less recognisable than it looks. See `OutboundEmail.fromName` for why the *address*
+     * cannot be Priya's.
+     */
+    const fromName =
+      sender === null
+        ? undefined
+        : `${sender.name} (${input.companyName}) via ${MAIL_PRODUCT_NAME}`;
+    const replyTo = sender?.email ?? undefined;
+    const invitedByLine = sender === null ? 'You have been invited' : `${sender.name} invited you`;
 
     try {
       await this.email.send({
         to: input.to,
+        ...(fromName === undefined ? {} : { fromName }),
+        ...(replyTo === undefined ? {} : { replyTo }),
         subject: input.resent
           ? `Your invitation to ${input.companyName} on UBoss`
           : `You have been invited to ${input.companyName} on UBoss`,
         text:
           `${input.displayName},\n\n` +
-          `You have been invited to ${input.companyName} on UBoss.\n\n` +
+          `${invitedByLine} to ${input.companyName} on UBoss.\n\n` +
           `Open this link to set a password and activate your account:\n${link}\n\n` +
           'The link can be used once, and it expires.\n\n' +
           'If you were not expecting this, you can ignore it — nothing has been created for you ' +
@@ -92,9 +119,20 @@ export class IdentityMailService {
         html: renderEmailHtml({
           preheader: `Set a password and activate your ${input.companyName} account.`,
           heading: `You have been invited to ${input.companyName}`,
+          /*
+           * Named, because "an administrator" is not a person.
+           *
+           * An unsigned message asking somebody to set a password is the shape of every phishing
+           * attempt they have been trained to delete. The name of a colleague they recognise is
+           * the single thing that makes it credible, and the reply-to above means they can ask
+           * that colleague without leaving their inbox.
+           */
           paragraphs: [
-            `${input.displayName}, an administrator at ${input.companyName} has invited you to ` +
-              'UBoss. Setting a password is the last step.',
+            sender === null
+              ? `${input.displayName}, an administrator at ${input.companyName} has invited you ` +
+                'to UBoss. Setting a password is the last step.'
+              : `${input.displayName}, ${sender.name} has invited you to ${input.companyName} ` +
+                'on UBoss. Setting a password is the last step.',
           ],
           action: { label: 'Set your password', url: link },
           footnote:

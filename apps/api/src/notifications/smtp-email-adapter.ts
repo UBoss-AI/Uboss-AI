@@ -203,7 +203,18 @@ export class SmtpEmailAdapter extends EmailAdapter {
     }
 
     const info = await this.transporter.sendMail({
-      from: { name: this.config.fromName, address: this.config.fromEmail },
+      /*
+       * The name may be the sender's; the address is always this deployment's.
+       *
+       * See `OutboundEmail.fromName` for why that split is not a compromise but the only
+       * arrangement that delivers: SPF and DKIM are checked against the address's domain, and
+       * putting a customer's own address here would fail both.
+       */
+      from: {
+        name: email.fromName ?? this.config.fromName,
+        address: this.config.fromEmail,
+      },
+      ...(email.replyTo === undefined ? {} : { replyTo: email.replyTo }),
       to: email.to,
       subject: email.subject,
       text: email.text,
