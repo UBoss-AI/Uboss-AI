@@ -156,6 +156,8 @@ export default function HierarchyPage() {
    * UBoss and this screen is not where one employer rewrites it.
    */
   const [employSubject, setEmploySubject] = useState<{ userId: string; name: string } | null>(null);
+  /** Narrows the reporting-manager list. Its own state: it is a lens, not a field being saved. */
+  const [managerSearch, setManagerSearch] = useState('');
   /** People with an account here and no employment record — the gap this screen can close. */
   const [unemployedAccounts, setUnemployedAccounts] = useState<
     { userId: string; name: string; guest: boolean }[]
@@ -363,9 +365,50 @@ export default function HierarchyPage() {
         .map((row) => ({
           value: row.userId,
           label: `${row.displayName} — ${row.designation}`,
+          // By name, not by id: the list row carries only the name, and a department name is
+          // unique within a company, so the two identify the same thing.
+          departmentName: row.departmentName,
         })),
     [view],
   );
+
+  /*
+   * The reporting manager list, made findable in a company of a hundred and fifty.
+   *
+   * One flat `<select>` of every employed person is unusable past about twenty: the client has a
+   * hundred and fifty and reported exactly that — no way to find anybody.
+   *
+   * Two changes, and **not** a hard filter on the chosen department. The field's own hint says a
+   * reporting line may cross departments, and that is true of this company: a Production
+   * supervisor reports to the Managing Director. Hiding everyone outside the department would
+   * make the common case fast and the real case impossible.
+   *
+   * So the department's own people are grouped first, where somebody looking for the obvious
+   * answer finds it without scrolling, and everybody else stays reachable underneath. The search
+   * box narrows both groups at once by name and by designation, because "who is the QA head"
+   * is as likely a question as "where is Lokesh".
+   */
+  const managerGroups = useMemo(() => {
+    const term = managerSearch.trim().toLowerCase();
+    const matching =
+      term === ''
+        ? managerOptions
+        : managerOptions.filter((option) => option.label.toLowerCase().includes(term));
+
+    const chosenName =
+      form.departmentId === ''
+        ? null
+        : (departments.find((department) => department.id === form.departmentId)?.name ?? null);
+
+    return {
+      inDepartment:
+        chosenName === null ? [] : matching.filter((o) => o.departmentName === chosenName),
+      elsewhere:
+        chosenName === null ? matching : matching.filter((o) => o.departmentName !== chosenName),
+      total: matching.length,
+      departmentName: chosenName ?? 'this department',
+    };
+  }, [managerOptions, managerSearch, form.departmentId, departments]);
 
   const filteredList = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -1289,24 +1332,63 @@ export default function HierarchyPage() {
               }
             >
               {(wiring) => (
-                <select
-                  {...wiring}
-                  className="uboss-input"
-                  value={form.reportingManagerUserId}
-                  onChange={(event) => set('reportingManagerUserId', event.target.value)}
-                  disabled={managerOptions.length === 0}
-                >
-                  <option value="">
-                    {managerOptions.length === 0
-                      ? 'Top of the reporting tree'
-                      : 'Choose a reporting manager…'}
-                  </option>
-                  {managerOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
+                <>
+                  {/* Only once there are enough people for the list to be a problem. */}
+                  {managerOptions.length > 8 ? (
+                    <input
+                      type="search"
+                      className="uboss-input uboss-manager-search"
+                      value={managerSearch}
+                      onChange={(event) => setManagerSearch(event.target.value)}
+                      placeholder={`Search ${managerOptions.length} people by name or job title…`}
+                      aria-label="Search for a reporting manager"
+                    />
+                  ) : null}
+
+                  <select
+                    {...wiring}
+                    className="uboss-input"
+                    value={form.reportingManagerUserId}
+                    onChange={(event) => set('reportingManagerUserId', event.target.value)}
+                    disabled={managerOptions.length === 0}
+                  >
+                    <option value="">
+                      {managerOptions.length === 0
+                        ? 'Top of the reporting tree'
+                        : managerGroups.total === 0
+                          ? 'Nobody matches that search'
+                          : 'Choose a reporting manager…'}
                     </option>
-                  ))}
-                </select>
+
+                    {/* The department's own people first — the answer most of the time. */}
+                    {managerGroups.inDepartment.length > 0 ? (
+                      <optgroup label={`In ${managerGroups.departmentName}`}>
+                        {managerGroups.inDepartment.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ) : null}
+
+                    {/* And everybody else, because a reporting line may cross departments. */}
+                    {managerGroups.elsewhere.length > 0 ? (
+                      <optgroup
+                        label={
+                          managerGroups.inDepartment.length > 0
+                            ? 'Elsewhere in the company'
+                            : 'Everybody'
+                        }
+                      >
+                        {managerGroups.elsewhere.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label} · {option.departmentName}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ) : null}
+                  </select>
+                </>
               )}
             </FormField>
 

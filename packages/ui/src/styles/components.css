@@ -11918,3 +11918,13 @@ tr[data-drop-target='true'] td {
 .uboss-list > li {
   margin-bottom: 2px;
 }
+
+/*
+   The search box above the reporting-manager list.
+
+   Sits directly on top of the select it narrows, so the two read as one
+   control rather than as a stray field — hence the small gap and nothing else.
+ */
+.uboss-manager-search {
+  margin-bottom: var(--uboss-space-2);
+}

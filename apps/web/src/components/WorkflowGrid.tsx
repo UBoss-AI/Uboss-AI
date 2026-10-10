@@ -132,6 +132,40 @@ function renumber(steps: readonly Form2WorkflowStep[]): Form2WorkflowStep[] {
  * deleting the last one would leave a grid with no way to start typing again, so Delete is
  * disabled at a single row rather than silently refusing.
  */
+/**
+ * Grow a cell to fit what somebody is typing, the way a spreadsheet does.
+ *
+ * ## Why a measurement rather than CSS
+ *
+ * A `textarea` does not size to its content: it is `rows={1}` for ever, and the rest of a long
+ * sentence scrolls out of sight inside a 26px box. There is no CSS for "be as tall as your
+ * value" on a form control, so the height has to be measured — set to `auto` first, because
+ * `scrollHeight` on an element that is already tall reports the height it has, not the height it
+ * needs, and a cell that grew could then never shrink again.
+ *
+ * ## The ceiling
+ *
+ * Ten lines. A cell holding two thousand characters would otherwise push one row taller than the
+ * screen and leave the fourteen columns beside it as a stripe of whitespace — the grid stops
+ * being a grid. Past that it scrolls, which is also what a spreadsheet does.
+ *
+ * The existing "Expand long text" control is untouched and still does its own thing: it sets a
+ * **floor** under every cell at once, so a reader can see the whole sheet's long text without
+ * clicking into each one. This sets the height of the cell being typed in. They compose — the
+ * floor wins when the content is shorter, the measurement wins when it is longer.
+ */
+const MAX_CELL_HEIGHT_PX = 200;
+
+function autoSize(element: HTMLTextAreaElement | null): void {
+  if (element === null) return;
+
+  element.style.height = 'auto';
+  const needed = Math.min(element.scrollHeight, MAX_CELL_HEIGHT_PX);
+  element.style.height = `${needed}px`;
+  // Only the cell that outgrew the ceiling gets a scrollbar; the rest stay clean.
+  element.style.overflowY = element.scrollHeight > MAX_CELL_HEIGHT_PX ? 'auto' : 'hidden';
+}
+
 export function WorkflowGrid({
   steps,
   onChange,
@@ -404,6 +438,7 @@ export function WorkflowGrid({
       <td key={column.key}>
         <textarea
           rows={1}
+          ref={autoSize}
           className={cn(
             'uboss-wfg-editable',
             'uboss-wfg-cell',
@@ -413,6 +448,7 @@ export function WorkflowGrid({
           value={typeof value === 'string' ? value : ''}
           readOnly={readOnly}
           maxLength={column.maxLength}
+          onInput={(event) => autoSize(event.currentTarget)}
           onChange={(event) => {
             // Empty means "cleared", which for an optional column is null rather than "". Exact
             // Work is required, so it stays a string and the server refuses a blank one.
