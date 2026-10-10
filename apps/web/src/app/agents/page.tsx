@@ -538,7 +538,20 @@ export default function EngineAgentsPage() {
                 key: 'owner',
                 header: 'Owner',
                 render: (row) => (
-                  <span className="uboss-mono uboss-muted-3">{row.ownerUserId.slice(0, 8)}</span>
+                  /*
+                    The person, not their id.
+
+                    This column showed `row.ownerUserId.slice(0, 8)` — eight hex characters in a
+                    monospace font under a heading that says "Owner". It named nobody, and the
+                    one thing a reader wants from this column is whose agent it is.
+
+                    The id stays as the fallback for a response that did not resolve a name, so
+                    the column is never empty; it is the old behaviour, kept where it is the only
+                    thing there is.
+                  */
+                  <span className={row.ownerName ? undefined : 'uboss-mono uboss-muted-3'}>
+                    {row.ownerName ?? row.ownerUserId.slice(0, 8)}
+                  </span>
                 ),
               },
               {

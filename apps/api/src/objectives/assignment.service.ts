@@ -95,7 +95,12 @@ export interface AssignmentResult {
  *     somebody's behalf.
  *   * **It does not create Engine Agents.** Recurring work creates Runs, not agents. An AI node
  *     either maps to an agent that already exists or records that setup is still needed.
- *   * **It does not execute anything.** The Run Engine is a later prompt.
+ *   * **It does not execute anything**, and that is still true now that the Run Engine exists.
+ *     It said "the Run Engine is a later prompt", which stopped being true when
+ *     `RunEngineService` was built — and a comment deferring to something already here is worse
+ *     than no comment, because the next reader goes looking for the missing piece. Assigning
+ *     publishes a plan; a run is started by the scheduler on the agent's own trigger, or by
+ *     somebody pressing it. Nothing here starts one.
  */
 @Injectable()
 export class AssignmentService {

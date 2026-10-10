@@ -15,6 +15,7 @@ import {
   mayCancelAnalysis,
   upgradeWorkflowDraft,
   nodeShapeFor,
+  TOOL_ACTION_CATEGORIES,
   validateWorkflowDraft,
   type AiUsageEstimate,
   type AnalysisEdge,
@@ -22,6 +23,7 @@ import {
   type AnalysisRisk,
   type AnalysisRunStatus,
   type AnalysisStage,
+  type ToolActionCategory,
   type WorkflowDraft,
 } from '@uboss/types';
 
@@ -141,6 +143,57 @@ interface PipelineState {
  * between stages — a cancellation from another tab stops it at the next boundary rather than
  * being ignored.
  */
+/**
+ * Read a model's answer about action categories, and believe only the part that is already ours.
+ *
+ * ## The shape it is asked for, and why it is not trusted
+ *
+ * One line per step, `"<number>: Read, Write"`. That is what the instruction asks for and it is
+ * not what every reply will be — a model may number from zero, wrap the list in prose, repeat a
+ * step, invent an eighth category or answer in a paragraph. None of that is an error worth
+ * failing an analysis over, so each line is taken only as far as it parses and anything else is
+ * ignored. A step with no usable line keeps the caller's fallback.
+ *
+ * ## Why matching against the enum is the whole safety argument
+ *
+ * `TOOL_ACTION_CATEGORIES` is seven fixed words. A reply can only ever select from them, so the
+ * worst outcome is a category chosen badly — never a tool the company does not have, which is
+ * the risk that kept this answer discarded for so long. Case is ignored because a model writes
+ * `write` as readily as `Write`, and that difference carries no meaning.
+ */
+export function parseToolCategories(
+  answer: string,
+  stepCount: number,
+): (ToolActionCategory[] | undefined)[] {
+  const chosen: (ToolActionCategory[] | undefined)[] = new Array(stepCount).fill(undefined);
+  const known = new Map(
+    TOOL_ACTION_CATEGORIES.map((category) => [category.toLowerCase(), category]),
+  );
+
+  for (const line of answer.split('\n')) {
+    const match = /^\s*(\d+)\s*[:.)-]\s*(.+)$/.exec(line);
+    if (!match) continue;
+
+    // The instruction asks for 1-based numbering, which is what a person reading the grid uses.
+    const position = Number(match[1]) - 1;
+    if (!Number.isInteger(position) || position < 0 || position >= stepCount) continue;
+
+    const categories = [
+      ...new Set(
+        match[2]!
+          .split(/[,/|]/)
+          .map((word) => known.get(word.trim().toLowerCase()))
+          .filter((category): category is ToolActionCategory => category !== undefined),
+      ),
+    ];
+
+    // A line that named nothing recognisable is not an answer of "no categories".
+    if (categories.length > 0) chosen[position] = categories;
+  }
+
+  return chosen;
+}
+
 @Injectable()
 export class ObjectiveAnalysisService {
   private readonly logger = new Logger(ObjectiveAnalysisService.name);
@@ -426,13 +479,15 @@ export class ObjectiveAnalysisService {
   // The stages
   // -------------------------------------------------------------------------
 
-  /** Read the objective and make the Goal node. The Goal is what the whole plan is for. */
+  /**
+   * Read the objective and make the Goal node. The Goal is what the whole plan is for.
+   *
+   * No model call. There was one — "Summarise the objective" — and its answer went nowhere: the
+   * Goal node below is built from the objective's own name and expected final result, which the
+   * company typed and which need no summarising. A paid call whose reply is discarded is not a
+   * stage doing less than it looks; it is a stage that was doing nothing extra at all.
+   */
   private async understandObjective(state: PipelineState): Promise<void> {
-    await this.ask(state, 'objective.analysis.understand', 'Summarise the objective.', [
-      state.objectiveName,
-      state.expectedFinalResult,
-    ]);
-
     state.nodes.push({
       id: 'goal',
       kind: 'Goal',
@@ -461,12 +516,14 @@ export class ObjectiveAnalysisService {
     });
   }
 
-  /** Read the hierarchy, so owners can be assigned to real people later. */
+  /**
+   * Read the hierarchy, so owners can be assigned to real people later.
+   *
+   * No model call. "Read the team structure" was asked of a model and discarded; the structure
+   * is then read from the database below, which is the only place it exists. A model cannot know
+   * a company's reporting lines and was never being asked to — it was handed a department id.
+   */
   private async readTeamStructure(state: PipelineState): Promise<void> {
-    await this.ask(state, 'objective.analysis.team', 'Read the team structure.', [
-      state.departmentId,
-    ]);
-
     state.teamUserIds = await this.organization.reportingSubtreeUserIds({
       tenantId: state.scope.tenantId,
       managerUserId: state.objectiveOwnerUserId,
@@ -576,21 +633,37 @@ export class ObjectiveAnalysisService {
     );
 
     /*
-     * This call's answer is still discarded, and that is a known defect rather than a decision.
+     * This call's answer is now read, and the reason it was safe to start reading it is that the
+     * answer cannot be anything the product does not already recognise.
      *
-     * Six of the seven stages ask a model something and read nothing back; only the
-     * classification above consumes its reply today. The tool list this stage asks for has no
-     * field to land in yet, and inventing one from an unvalidated reply is how a plan ends up
-     * citing tools a company does not have. Recorded in the findings document.
+     * It used to be discarded, on the stated grounds that the tool list had "no field to land in
+     * yet" and that inventing one from an unvalidated reply is how a plan ends up citing tools a
+     * company does not have. The first half was wrong — `dod.tools` has always been that field —
+     * and the second half does not apply, because `TOOL_ACTION_CATEGORIES` is a **closed set of
+     * seven**. A model choosing from a fixed vocabulary cannot name a tool nobody has; the worst
+     * it can do is choose badly, and anything outside the seven is dropped below.
+     *
+     * What it replaces mattered more than the saving. Every AI node was given
+     * `['Read']` or `['Read', 'Write']` from one line of guesswork — whether the step had an
+     * input — so **no AI step in any plan was ever marked `FinancialChange`, `ProductionChange`
+     * or `SensitiveExport`**, and those are exactly the categories `isHighRiskToolCategory`
+     * exists to flag. A step that moves money looked, to every later check, like a step that
+     * reads a file.
      */
-    await this.ask(
+    const answer = await this.ask(
       state,
       'objective.analysis.ai-work',
-      'Identify which steps are AI work and what tools they need.',
-      machine.map((step) => step.whatExactWork),
+      'For each numbered step, say which of these action categories the work needs: ' +
+        `${TOOL_ACTION_CATEGORIES.join(', ')}. ` +
+        'Answer one line per step, as "<number>: <categories, comma separated>". ' +
+        'Use only those words. Read is the safe default; name a stronger category only when ' +
+        'the step plainly does that thing.',
+      machine.map((step, index) => `${index + 1}. ${step.whatExactWork}`),
     );
 
-    for (const step of machine) {
+    const chosen = parseToolCategories(answer, machine.length);
+
+    for (const [index, step] of machine.entries()) {
       // An Executor step is a checking step, never a doing-the-work step — the locked naming
       // rule. It is still an AI node, and the risk note says what it is for. This is the one
       // thing `whoEngine` still decides, and it is a layer rather than a doer.
@@ -616,7 +689,14 @@ export class ObjectiveAnalysisService {
             'The AI output, its inputs and the Skill version that produced it, recorded for ' +
             'review.',
           dependencies: [],
-          tools: step.inputReceivedFrom === null ? ['Read'] : ['Read', 'Write'],
+          /*
+           * What the model chose, when it chose something this product recognises.
+           *
+           * The old guess is kept as the fallback rather than deleted: a model that returns
+           * nothing usable must not leave a step with no categories at all, because an empty
+           * list reads downstream as "this does nothing" rather than as "nobody knows".
+           */
+          tools: chosen[index] ?? (step.inputReceivedFrom === null ? ['Read'] : ['Read', 'Write']),
           approval: step.approval === 'NotRequired' ? null : step.approval,
           failureCondition: '',
         },
@@ -650,13 +730,14 @@ export class ObjectiveAnalysisService {
   private async matchSkills(state: PipelineState): Promise<void> {
     const aiNodes = state.nodes.filter((node) => node.kind === 'Ai');
 
-    await this.ask(
-      state,
-      'objective.analysis.match-skills',
-      'Match approved Skills to the AI work.',
-      aiNodes.map((node) => node.label),
-    );
-
+    /*
+     * No model call, and this was the clearest of the six.
+     *
+     * "Match approved Skills to the AI work" was asked of a model, discarded, and then answered
+     * properly three lines below by `skillRouter.route` — the Prompt 18 router, which matches
+     * against this company's published Skills and refuses to return a draft one. The model was
+     * being asked a question the product already answers correctly, and paid for.
+     */
     for (const node of aiNodes) {
       const step = state.steps.find((candidate) => candidate.position === node.fromStepPosition);
       if (!step) continue;
@@ -722,12 +803,15 @@ export class ObjectiveAnalysisService {
     }
   }
 
-  /** Match the grid's named people to real members of the team. */
+  /**
+   * Match the grid's named people to real members of the team.
+   *
+   * No model call. "Assign owners to human work" was asked with one piece of context — the
+   * *number* of people on the team, as a string — so the model was handed `"7"` and invited to
+   * assign owners it had never been shown. The matching below is done against the company's own
+   * employment records, by name, which is the only way it could ever have been right.
+   */
   private async assignOwners(state: PipelineState): Promise<void> {
-    await this.ask(state, 'objective.analysis.assign-owners', 'Assign owners to human work.', [
-      String(state.teamUserIds.length),
-    ]);
-
     const employments = await this.prisma.runInTenantTransaction(state.scope, () =>
       this.prisma.client.employmentRecord.findMany({
         // `(tenant_id, user_id)` is the only index covering this column (ADR-271).
@@ -778,12 +862,16 @@ export class ObjectiveAnalysisService {
     }
   }
 
-  /** Assemble the draft: approval gates, edges, usage, then validate and store. */
+  /**
+   * Assemble the draft: approval gates, edges, usage, then validate and store.
+   *
+   * No model call. "Assemble the workflow" was asked with the *number* of nodes as its only
+   * context, and discarded. The assembly below is deterministic and has to be: the gates come
+   * from the grid's Approval column, the edges from step order, and the result is put through
+   * `validateWorkflowDraft` before it is stored. A model has nothing to add to that and could
+   * only disagree with it.
+   */
   private async buildWorkflow(state: PipelineState): Promise<void> {
-    await this.ask(state, 'objective.analysis.build-workflow', 'Assemble the workflow.', [
-      String(state.nodes.length),
-    ]);
-
     // Approval gates, from the grid's own Approval column. A gate is a node so the diagram shows
     // where a decision sits, rather than an attribute somebody has to hover to discover.
     for (const step of state.steps) {

@@ -4437,6 +4437,8 @@ export interface EngineAgentView {
   id: string;
   name: string;
   ownerUserId: string;
+  /** The owner's name. Absent on a single-agent read, where the id is all the list carries. */
+  ownerName?: string | null;
   status: EngineAgentStatus;
   memoryMode: AgentMemoryMode;
   pausedReason: string | null;

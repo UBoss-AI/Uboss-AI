@@ -545,16 +545,44 @@ describe('objective AI analysis (e2e)', () => {
       assert.ok(run.stages.every((entry) => entry.state === 'done'));
     });
 
-    it('calls the Model Gateway once per stage', async () => {
-      // Not decorative: the seam is on the path of every stage, so a real provider changes the
-      // analysis everywhere at once rather than in whichever stage somebody remembered to wire.
+    it('asks a model only where the answer is read', async () => {
+      /*
+       * Two calls for seven stages, and the number is the point.
+       *
+       * It used to be one per stage, and this test asserted that — which made a defect look like
+       * a design. Five of the seven asked a model a question and discarded the reply: the Skill
+       * match was answered properly by `skillRouter.route` three lines below, the owners by the
+       * company's own employment records, the workflow by deterministic assembly, and two more
+       * were handed a bare count (`"7"`) and invited to answer something they had not been
+       * shown. Across ninety real analyses that was four-fifths of the spend producing nothing.
+       *
+       * What remains is the human/AI split and the action categories — the two whose answers
+       * land somewhere a later screen reads.
+       */
       const objective = await draftObjective();
       await analysis().start({
         scope: scope(),
         actorUserId: ownerUserId,
         objectiveId: objective.id,
       });
-      assert.equal(gateway.calls.length, ANALYSIS_STAGES.length);
+
+      assert.equal(gateway.calls.length, 2);
+
+      assert.deepEqual(
+        [...gateway.calls].sort(),
+        ['objective.analysis.ai-work', 'objective.analysis.human-work'],
+        'and these are the two, named — not just a count that any two would satisfy',
+      );
+    });
+
+    it('still marks every stage done, because each one still does real work', () => {
+      /*
+       * The client's rule is that the progress is real — "no fake completion" — so removing the
+       * model calls had to leave each stage with something of its own. It does: the Goal node,
+       * the reporting subtree, the classification, the AI nodes, the Skill routing, the owner
+       * matching and the assembly. The stage list is unchanged and still seven.
+       */
+      assert.equal(ANALYSIS_STAGES.length, 7);
     });
 
     it('produces a draft that satisfies its own schema', async () => {

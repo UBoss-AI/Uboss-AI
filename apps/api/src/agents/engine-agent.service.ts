@@ -61,6 +61,14 @@ export interface EngineAgentView {
   id: string;
   name: string;
   ownerUserId: string;
+  /**
+   * The owner's name, for the column that says "Owner".
+   *
+   * Null when the list did not resolve it — a single agent read by id does not pay for the
+   * lookup, and a screen showing one agent has the person in front of it anyway. The screen
+   * falls back to the id, which is what it used to show for everybody.
+   */
+  ownerName?: string | null;
   status: EngineAgentStatus;
   memoryMode: AgentMemoryMode;
   pausedReason: string | null;
@@ -184,7 +192,7 @@ export class EngineAgentService {
     const context = await this.authorization.contextFor(input.scope, input.actorUserId);
     await this.authorization.assertCan(context, { module: 'agents', action: 'View' });
 
-    return this.prisma.runInTenantTransaction(input.scope, async () => {
+    const agents = await this.prisma.runInTenantTransaction(input.scope, async () => {
       const rows = await this.prisma.client.engineAgent.findMany({
         where: {
           tenantId: input.scope.tenantId,
@@ -193,22 +201,61 @@ export class EngineAgentService {
         orderBy: { createdAt: 'desc' },
       });
 
-      const agents: EngineAgentView[] = [];
+      const visible: EngineAgentView[] = [];
       for (const row of rows) {
         // Sequential, not `Promise.all`: concurrent work inside an open tenant transaction loses
         // the AsyncLocalStorage scope, and an unscoped read under RLS returns nothing rather than
         // failing loudly.
         if (!(await this.mayTouch(context, row, 'View'))) continue;
-        agents.push(await this.viewOf(input.scope, row));
+        visible.push(await this.viewOf(input.scope, row));
       }
-
-      return {
-        agents,
-        note:
-          'One agent per reusable job. Recurring work creates Runs on the agent it already has; ' +
-          'it never creates another agent.',
-      };
+      return visible;
     });
+
+    /*
+     * Who owns each agent, by name — and **after** the transaction, not inside it.
+     *
+     * The list carried `ownerUserId` and nothing else, so the Owner column on screen showed the
+     * first eight characters of a UUID: `01a0a8fb`, under a heading that says "Owner". The id
+     * stays, because the screen still needs it; the name is what a person reads.
+     *
+     * Resolved out here because a name lives on the platform plane, and
+     * `runAsPlatformOperation` switches scope — doing that inside an open tenant transaction
+     * returned a 500 for the whole list. Caught by the suite, which is the same hazard the
+     * comment on the loop above already warns about from the other direction.
+     */
+    const names = await this.names(agents.map((agent) => agent.ownerUserId));
+    for (const agent of agents) {
+      agent.ownerName = names.get(agent.ownerUserId) ?? null;
+    }
+
+    return {
+      agents,
+      note:
+        'One agent per reusable job. Recurring work creates Runs on the agent it already has; ' +
+        'it never creates another agent.',
+    };
+  }
+
+  /**
+   * Display names for a set of people.
+   *
+   * On the platform plane, like every other read of `users`: a name belongs to the human and not
+   * to one of their companies. The ids come from this company's own agents, and only the name is
+   * read — not an address, not a role, nothing a list of agents has any business carrying.
+   */
+  private async names(userIds: readonly string[]): Promise<Map<string, string>> {
+    const unique = [...new Set(userIds)];
+    if (unique.length === 0) return new Map();
+
+    const rows = await this.prisma.runAsPlatformOperation(() =>
+      this.prisma.client.user.findMany({
+        where: { id: { in: unique } },
+        select: { id: true, displayName: true },
+      }),
+    );
+
+    return new Map(rows.map((row) => [row.id, row.displayName]));
   }
 
   async view(input: {
