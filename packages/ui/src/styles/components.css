@@ -1461,32 +1461,47 @@
   box-shadow: none;
 }
 
-/* A filled button keeps its identity when disabled rather than turning into a grey
-   slab — you can still see which one was the primary action, which matters when it
-   is disabled precisely because the form is incomplete. Opacity rather than a flat
-   grey, and 0.55 rather than 0.5, because the label still has to be readable: a
-   disabled control is exempt from the contrast minimum, but nobody can act on an
-   instruction they cannot read. */
+/* A filled button that cannot be pressed stops looking pressable.
+
+   It used to keep its full fill at `opacity: 0.55`, so that you could still see which
+   one had been the primary action — reasonable for the case that argument was written
+   about, a Save disabled because the form is not finished yet.
+
+   It does not survive the other case. On an approval addressed to a role you do not
+   hold, Approve, Reject and Send back are all disabled for the same reason, and they
+   came out looking like two different states: Approve kept its violet, Reject its red,
+   and Send back — a plain button — went properly grey. A saturated fill at 55% still
+   reads as the thing to press, so the only control that looked switched off was the
+   one with nothing special about it. Reported by somebody who concluded that Send back
+   alone was unavailable.
+
+   So: a tint of the button's own colour rather than the colour itself. Identity
+   survives — the primary is still the violet one — and nothing on the row looks live.
+   The label is mixed toward the muted text colour instead of being dimmed wholesale,
+   which keeps it readable: a disabled control is exempt from the contrast minimum, but
+   nobody can act on an instruction they cannot read. */
 .uboss-btn--primary[disabled],
 .uboss-btn--navy[disabled],
 .uboss-btn--danger[disabled] {
-  opacity: 0.55;
-  color: var(--uboss-text-on-dark);
+  opacity: 1;
 }
 
 .uboss-btn--primary[disabled] {
-  background: var(--uboss-blue-solid);
-  border-color: var(--uboss-blue-solid);
+  background: color-mix(in srgb, var(--uboss-blue-solid) 10%, var(--uboss-bg-2));
+  border-color: color-mix(in srgb, var(--uboss-blue-solid) 26%, var(--uboss-border));
+  color: color-mix(in srgb, var(--uboss-blue-solid) 55%, var(--uboss-text-3));
 }
 
 .uboss-btn--navy[disabled] {
-  background: var(--uboss-navy);
-  border-color: var(--uboss-navy);
+  background: color-mix(in srgb, var(--uboss-navy) 10%, var(--uboss-bg-2));
+  border-color: color-mix(in srgb, var(--uboss-navy) 26%, var(--uboss-border));
+  color: color-mix(in srgb, var(--uboss-navy) 55%, var(--uboss-text-3));
 }
 
 .uboss-btn--danger[disabled] {
-  background: var(--uboss-danger-solid);
-  border-color: var(--uboss-danger-solid);
+  background: color-mix(in srgb, var(--uboss-danger-solid) 10%, var(--uboss-bg-2));
+  border-color: color-mix(in srgb, var(--uboss-danger-solid) 26%, var(--uboss-border));
+  color: color-mix(in srgb, var(--uboss-danger-solid) 55%, var(--uboss-text-3));
 }
 
 .uboss-btn--ghost[disabled] {
@@ -2772,7 +2787,53 @@ textarea.uboss-input,
 */
 .uboss-modal--settings {
   width: min(1120px, 95vw);
-  max-height: 90vh;
+
+  /*
+     A height, not a ceiling — and the dialog itself never scrolls.
+
+     `max-height` let the dialog grow to whatever the navigation column asked for, and that column
+     was sized against the *viewport* because the same shell also renders as a full page. Inside a
+     dialog that is shorter than the viewport the list did not fit, so the dialog grew its own
+     scrollbar beside the panel's: two bars on one screen, and whichever one you reached for, the
+     thing you were reading was moved by the other.
+
+     Fixed here, so the head stays put and the two halves below scroll inside their own boxes. The
+     min() keeps it off a short laptop screen; the 560px floor stops it collapsing to nothing on a
+     very short window, where the panel scrolls as it always did.
+   */
+  height: min(90vh, 760px);
+  min-height: min(560px, 90vh);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.uboss-modal--settings .uboss-overlay-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/*
+   Inside the dialog the navigation is bounded by the dialog, not by the window.
+
+   `sticky` and a viewport height are right for the full-page settings screen and wrong here —
+   there is nothing to stick to, because the dialog no longer scrolls.
+ */
+.uboss-modal--settings .uboss-settings {
+  height: 100%;
+  min-height: 0;
+}
+
+.uboss-modal--settings .uboss-settings-nav {
+  position: static;
+  max-height: none;
+  height: 100%;
+}
+
+.uboss-modal--settings .uboss-settings-panel {
+  height: 100%;
+  overflow-y: auto;
 }
 
 @keyframes uboss-pop {
@@ -3068,10 +3129,38 @@ textarea.uboss-input,
   border: 1px solid var(--uboss-border);
   border-radius: var(--uboss-radius-card);
   max-height: calc(100vh - 120px);
-  overflow: auto;
   padding: 8px;
   position: sticky;
   top: 16px;
+
+  /*
+     A column with a fixed head and one scrolling part, rather than one scrolling box.
+
+     The search box used to scroll with the categories and was held in place with `sticky`, which
+     put both in the same scroll flow: the 8px of nav padding above the box could not be painted
+     over, so a category name travelling past showed through it. Two things drawn on top of each
+     other, every time anybody scrolled the list.
+
+     Here nothing overlaps because nothing can: the box is a flex item that never moves and the
+     list below it is the only thing with a scrollbar.
+   */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* The scrolling half. `min-height: 0` because a flex item will not shrink below its content
+   without it, which would push the list's full height back out through the nav. */
+.uboss-settings-nav-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* `min-width: 0` for the same reason the grid column has it: the panel holds metric rows and long
+   selects, and without this it refuses to shrink and pushes the dialog sideways. */
+.uboss-settings-panel {
+  min-width: 0;
 }
 
 /*
@@ -3085,17 +3174,15 @@ textarea.uboss-input,
   }
 }
 
-/* The settings filter. It sits inside the scrolling nav rather than above it, so it stays with
-   the list it filters; sticky so it does not scroll away from a long category list. */
+/* The settings filter. Fixed at the head of the nav, above the list it filters — see the note on
+   `.uboss-settings-nav` for why it is no longer sticky inside it. */
 .uboss-settings-search {
-  position: sticky;
-  top: 0;
-  z-index: 1;
+  position: relative;
   max-width: none;
   flex: none;
-  background: var(--uboss-surface);
   padding-bottom: 8px;
-  margin-bottom: 2px;
+  border-bottom: 1px solid var(--uboss-border);
+  margin-bottom: 6px;
 }
 
 .uboss-settings-search input {
@@ -3108,13 +3195,26 @@ textarea.uboss-input,
   color: var(--uboss-text-3);
 }
 
+/* The arrow on the three sections that leave the dialog for a screen of their own.
+
+   Quiet, and out at the edge: it answers "where will this take me" for somebody who looks, and
+   stays out of the way of somebody who already knows. */
+.uboss-settings-nav-leaves {
+  float: right;
+  margin-left: 8px;
+  font-size: 11px;
+  line-height: 1.6;
+  opacity: 0.5;
+}
+
 .uboss-settings-nav-item {
   display: block;
   width: 100%;
   text-align: left;
   border: 0;
   background: transparent;
-  color: var(--uboss-text-2);
+  /* The darker half of the list — see the note on `.uboss-settings-nav-group`. */
+  color: var(--uboss-text);
   padding: 9px 12px;
   border-radius: 9px;
   margin: 1px 0;
@@ -5286,6 +5386,155 @@ table.uboss-wfg {
   align-items: center;
 }
 
+/* The last of the names that were written into markup and never defined.
+
+   Each of these was on the known-unstyled list in `design-system-classes.test.ts`, whose own
+   note says that taking a name off the list is the fix and putting one on is not. They are
+   defined here rather than deleted because each is doing a job the markup clearly intended —
+   a border, a label, a margin — and the element had simply been rendering without it. */
+
+/* A stack with an outline, for one request or note among several. */
+.uboss-bordered {
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-card);
+  padding: var(--uboss-space-3);
+}
+
+/* A label above a control that is not inside a `FormField`. Matches the one that is. */
+.uboss-field-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: var(--uboss-font-size-sm);
+  font-weight: 600;
+  color: var(--uboss-text);
+}
+
+/* Things that sit on one line together: a word, a chip, a count. */
+.uboss-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--uboss-space-1);
+}
+
+/* Separation above a block that follows body text. */
+.uboss-mt-4 {
+  margin-top: var(--uboss-space-4);
+}
+
+/* The outermost element of a screen that does not use the app shell. */
+.uboss-page {
+  padding: var(--uboss-space-4);
+}
+
+/* The status chip beside a page heading, rather than in a row of its own. */
+.uboss-page-status {
+  margin-left: var(--uboss-space-2);
+  vertical-align: middle;
+}
+
+/* One finding in the pre-publish readiness list, under the notice that frames them. */
+.uboss-readiness-finding {
+  margin-top: var(--uboss-space-1);
+}
+
+/* The wash under a line chart.
+
+   Painted by its `fill` attribute, so it had no rule of its own and nothing to say it should not
+   take the pointer. It covers the whole area beneath the line, including the line, so without
+   this it is the thing a hover lands on rather than the series it belongs to. */
+.uboss-line-area {
+  pointer-events: none;
+}
+
+/* Three fields across, stacking when there is no room. Used by the skill filters. */
+.uboss-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  gap: var(--uboss-space-3);
+}
+
+/* A button that reads as a link, for a table cell that opens a record.
+
+   A real `<button>` rather than an anchor, because it opens a drawer rather than navigating, and
+   a link that does not go anywhere is a link that breaks the middle-click. It is drawn as a link
+   because that is what a subject line in a table is: the way into the thing. */
+.uboss-linkish {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  color: var(--uboss-blue);
+  cursor: pointer;
+}
+
+.uboss-linkish:hover {
+  text-decoration: underline;
+}
+
+/* A heading inside a panel, below the card's own title. */
+.uboss-subhead {
+  margin: 0;
+  font-size: var(--uboss-font-size-body);
+  font-weight: 700;
+  color: var(--uboss-text);
+}
+
+/* One selectable row in the Skill picker: a checkbox, then the version and what it is for. */
+.uboss-pick-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+/* A row of buttons inside a card or a drawer.
+
+   This class was written in three files and defined in none, so every row using it rendered as
+   inline buttons with no gap at all — "Pay monthly / Pay annually / Manage billing" sat shoulder
+   to shoulder with nothing between them, which reads as one segmented control rather than three
+   separate decisions, one of which opens the payment provider's portal.
+
+   Full width rather than `inline-flex`, because these rows sit on their own line under a
+   paragraph; `.uboss-actions` above is the inline variant, used in drawer footers beside other
+   content. */
+.uboss-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--uboss-space-2);
+  align-items: center;
+  margin: var(--uboss-space-2) 0;
+}
+
+/* A drawer footer that has something to say before its buttons.
+
+   Used where a decision cannot be taken: the reason sits directly above the controls it
+   explains, because that is where the hand already is. Quiet — it is an explanation, not a
+   warning, and the buttons beside it are already showing that they are off. */
+.uboss-decision-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--uboss-space-2);
+}
+
+.uboss-decision-why {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--uboss-space-1);
+  margin: 0;
+  max-width: 54ch;
+  text-align: left;
+  font-size: var(--uboss-font-size-sm);
+  line-height: 1.45;
+  color: var(--uboss-text-2);
+}
+
+.uboss-decision-why svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--uboss-text-3);
+}
+
 /* ---- Access & Permissions step (§1) ---- */
 
 .access-step-title {
@@ -5821,8 +6070,17 @@ table.uboss-wfg {
   list-style: none;
 }
 
+/*
+   A row is a face, two lines of text, and a count — not one line of text.
+
+   Six conversations were six identical grey lines, so finding one meant reading all of them. The
+   three parts across: the avatar never moves, the text takes whatever is left, and the unread
+   badge sits at the end.
+ */
 .chat-item {
-  display: block;
+  align-items: center;
+  display: flex;
+  gap: var(--uboss-space-2);
   width: 100%;
   padding: var(--uboss-space-2) var(--uboss-space-3);
   text-align: left;
@@ -5832,6 +6090,25 @@ table.uboss-wfg {
   border: 0;
   border-radius: var(--uboss-radius-input);
   cursor: pointer;
+}
+
+/* `min-width: 0` so a long group title ellipses instead of pushing the badge off the row. */
+.chat-item-text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+/* When it last moved. Quiet: it is the answer to a question nobody asked out loud, and it must
+   not compete with the name above it. */
+.chat-item-sub {
+  color: var(--uboss-text-3);
+  font-size: var(--uboss-font-size-xs);
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chat-item:hover {
@@ -5851,12 +6128,13 @@ table.uboss-wfg {
   box-shadow: inset 2px 0 0 var(--uboss-teal-bright);
 }
 
+/* No longer the whole row — the row is a flex line now and this is the first of its two text
+   lines, so it lays itself out and lets a long name ellipse. */
 .chat-item-name {
-  display: flex;
-  gap: var(--uboss-space-2);
-  align-items: center;
-  justify-content: space-between;
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chat-title {
@@ -5882,11 +6160,67 @@ table.uboss-wfg {
   list-style: none;
 }
 
+/*
+   An exchange, not a log.
+
+   Every message was the same bordered box in one column, so the only thing distinguishing the
+   person you are talking to from yourself was a name printed above each one. The row is now an
+   avatar beside a bubble, and whose it is decides which way the row runs.
+ */
 .chat-message {
-  padding: var(--uboss-space-3);
-  border: 1px solid var(--uboss-border);
-  border-radius: var(--uboss-radius-input);
+  align-items: flex-end;
+  background: none;
+  border: 0;
+  display: flex;
+  gap: var(--uboss-space-2);
+  padding: 0;
+}
+
+/* Fixed width whether or not a circle is drawn in it, so a run of messages from one person stays
+   in a single line down the page instead of each one sliding left under the last. */
+.chat-avatar {
+  flex: none;
+  width: 28px;
+}
+
+/*
+   A bubble, with the corner nearest its speaker squared off.
+
+   Four equal corners is a rounded rectangle, which is a card. The one tight corner on the side
+   the message came from is what a chat bubble is — it points at whoever said it, and it is why
+   you can tell the two sides apart at a glance without reading a name.
+ */
+.chat-bubble {
   background: var(--uboss-surface);
+  border: 1px solid var(--uboss-border);
+  border-radius: 16px 16px 16px 4px;
+  box-shadow: var(--uboss-shadow-1);
+  max-width: min(68%, 560px);
+  padding: 8px 12px;
+}
+
+/*
+   Mine run the other way and carry the fill.
+
+   Right-aligned and tinted is the one convention every messaging product shares, so it needs no
+   explaining — and once it is there the name above your own messages is noise, which is why the
+   meta line says "You" instead of repeating it.
+ */
+.chat-message-mine {
+  flex-direction: row-reverse;
+}
+
+.chat-message-mine .chat-bubble {
+  background: var(--uboss-blue-050);
+  border-color: var(--uboss-blue-100);
+  /* The tight corner moves to the other side, because the message now comes from the right. */
+  border-radius: 16px 16px 4px;
+}
+
+/* A message continuing a run sits closer to the one above it than to the next person's. The list
+   gap is the gap between speakers; this takes most of it back. */
+.chat-message-runon {
+  margin-top: calc(var(--uboss-space-3) * -1 + 3px);
 }
 
 .chat-message-meta {
@@ -9283,11 +9617,58 @@ tr[data-drop-target='true'] td {
   width: 0;
 }
 
-.chat-compose-actions {
+/* `.chat-compose-actions` was the row of buttons under the message box. The buttons moved onto
+   the typing line itself, so the row no longer exists — see `.chat-compose-row`. */
+
+/*
+   The people `@` offers, above the box rather than below it.
+
+   The composer sits at the foot of the pane, so a list under it would open off the bottom of the
+   window. In the flow rather than floating: it is inside the composer's own box, which already
+   knows how wide it is, and nothing here has to escape an ancestor's overflow.
+ */
+.chat-mentions {
+  display: grid;
+  gap: 2px;
+  list-style: none;
+  margin: 0;
+  max-height: 212px;
+  overflow-y: auto;
+  padding: 0 0 6px;
+}
+
+.chat-mention {
   align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--uboss-radius-input);
+  color: inherit;
+  cursor: pointer;
   display: flex;
-  gap: 8px;
-  justify-content: flex-end;
+  font: inherit;
+  gap: var(--uboss-space-2);
+  padding: 6px 8px;
+  text-align: left;
+  width: 100%;
+}
+
+.chat-mention:hover,
+.chat-mention.is-active {
+  background: var(--uboss-bg-2);
+}
+
+.chat-mention-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The text that will actually go in the message, so nobody is surprised by it afterwards. */
+.chat-mention-handle {
+  color: var(--uboss-text-3);
+  font-size: var(--uboss-font-size-xs);
+  margin-left: auto;
 }
 
 .chat-attached {
@@ -9347,20 +9728,164 @@ tr[data-drop-target='true'] td {
      history takes whatever the title above and the composer below leave, either way. */
   flex: 1;
   overflow-y: auto;
-  padding-bottom: 12px;
+
+  /*
+     The room the conversation happens in.
+
+     White bubbles on a white card had nothing to sit on, so the pane read as a list inside a
+     panel — the same shape as every other card in the product. A recessed, tinted surface between
+     the head and the composer is what makes it read as somewhere people talk, and it is what the
+     bubbles need to be visible at all.
+   */
+  background: var(--uboss-bg);
+  border-radius: var(--uboss-radius-card);
+  margin: 10px 0;
+  padding: 14px 14px 16px;
+}
+
+/*
+   The head of the conversation: circle, name, who is in it.
+ */
+.chat-head {
+  align-items: center;
+  border-bottom: 1px solid var(--uboss-border);
+  display: flex;
+  gap: var(--uboss-space-2);
+  padding-bottom: 10px;
+}
+
+.chat-head-text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.chat-head-sub {
+  color: var(--uboss-text-3);
+  font-size: var(--uboss-font-size-xs);
+  margin: 0;
 }
 
 /* Pinned to the foot of the pane rather than following the last message up it. */
+/*
+   The composer is the box, rather than a box with a row of buttons under it.
+
+   It used to be a bordered textarea, then a separator, then "Attach" and "Send" side by side and
+   identically weighted. Two problems: the end of writing a message looked like submitting a form,
+   and the control pressed most often was the harder of the two to pick out.
+
+   Now the border belongs to this element, the textarea inside it has none of its own, and the two
+   controls sit in the bottom-right corner of the same box — the shape every message composer has.
+   The box takes the focus ring when anything inside it has focus, so the whole thing lights up as
+   one control rather than a field lighting up inside a frame.
+ */
 .chat-compose {
-  border-top: 1px solid var(--uboss-border-2);
   display: grid;
-  gap: 8px;
-  padding-top: 12px;
+  gap: 6px;
+  padding: 5px 5px 5px 16px;
+  background: var(--uboss-surface);
+  border: 1px solid var(--uboss-border-control);
+  /*
+     A bar, not a panel.
+
+     It was a square three-row box, which is the shape of a form field — and a form field under a
+     conversation reads as something to fill in rather than somewhere to talk. The radius is half
+     the collapsed height, so at one line it is a true pill and stays softly rounded as it grows.
+   */
+  border-radius: 22px;
+  transition: border-color var(--uboss-motion-fast) var(--uboss-ease);
+}
+
+.chat-compose:focus-within {
+  border-color: var(--uboss-blue);
+  box-shadow: var(--uboss-focus-ring);
+}
+
+/* The typing line: the message, then the two controls, on one row. `flex-end` so that as the
+   message grows upward the controls stay on the last line, beside the cursor. */
+.chat-compose-row {
+  align-items: flex-end;
+  display: flex;
+  gap: 2px;
 }
 
 .chat-compose textarea {
-  min-height: 76px;
-  width: 100%;
+  flex: 1;
+  /* One line. The height is then set from the content — see the note in the chat page. */
+  height: 34px;
+  min-height: 34px;
+  /* About six lines, after which it scrolls rather than eating the conversation above it. */
+  max-height: 148px;
+  border: 0;
+  background: transparent;
+  padding: 7px 4px;
+  line-height: 20px;
+  resize: none;
+  overflow-y: auto;
+}
+
+/* The box already shows focus — a second ring on the textarea inside it would draw two. */
+.chat-compose textarea:focus,
+.chat-compose textarea:hover {
+  border: 0;
+  outline: none;
+  box-shadow: none;
+}
+
+/*
+   A control with no word on it, so it has to read as pressable from its shape alone: a round
+   target the size of a thumb, quiet until the pointer is on it.
+ */
+.chat-compose-icon {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  color: var(--uboss-text-2);
+  cursor: pointer;
+  display: inline-flex;
+  flex: none;
+  height: 34px;
+  justify-content: center;
+  padding: 0;
+  transition:
+    background var(--uboss-motion-micro) var(--uboss-ease-standard),
+    color var(--uboss-motion-micro) var(--uboss-ease-standard);
+  width: 34px;
+}
+
+.chat-compose-icon:hover:not(:disabled) {
+  background: var(--uboss-bg);
+  color: var(--uboss-text);
+}
+
+.chat-compose-icon:focus-visible {
+  outline: none;
+  box-shadow: var(--uboss-focus-ring);
+}
+
+/*
+   Send is the one filled control on this screen.
+
+   Disabled it keeps its shape and loses its fill, rather than going to the browser's grey: a
+   round plate that changes colour says "not yet", where a greyed slab says "broken".
+ */
+.chat-compose-send {
+  /* The same pair the primary button uses, so the one filled control here is the product's
+     filled control rather than a second blue invented for this screen. */
+  background: var(--uboss-blue-solid);
+  color: var(--uboss-text-on-dark);
+}
+
+.chat-compose-send:hover:not(:disabled) {
+  background: var(--uboss-blue-solid-hover);
+  color: var(--uboss-text-on-dark);
+}
+
+.chat-compose-send:disabled {
+  background: var(--uboss-bg-2);
+  color: var(--uboss-text-3);
+  cursor: default;
 }
 
 /*
@@ -10319,12 +10844,21 @@ tr[data-drop-target='true'] td {
    every time to find one. These headings are the sidebar's own, in the colour a settings panel
    needs rather than the sidebar's ink — the nav sits on a card here, not on the violet chrome.
  */
+/*
+   A band name has to be unmistakably not a thing you can press.
+
+   Reported from a walkthrough: the headings and the categories under them read as one list. They
+   already differed in case and colour, which is not enough at a glance — so the air above a
+   heading is now wider than the gap between two categories, which is what actually groups them.
+   The categories move the other way, to the full text colour, so the pressable half of the list
+   is the darker half.
+ */
 .uboss-settings-nav-group {
   color: var(--uboss-text-3);
   font-size: var(--uboss-font-size-xs);
   font-weight: 600;
   letter-spacing: var(--uboss-tracking-caps);
-  margin: 16px 10px 4px;
+  margin: 18px 10px 6px;
   text-transform: uppercase;
 }
 
@@ -10385,6 +10919,16 @@ tr[data-drop-target='true'] td {
   right: 0;
   top: calc(100% + 4px);
   z-index: 40;
+}
+
+/* Opened upward, because there was no room below it.
+
+   Set by `RowMenu` after it measures itself against the window — the rows near the bottom of a
+   table are most of them, and a menu that always drops downward puts its lower items, including
+   the destructive one under the separator, past the bottom of the screen. */
+.uboss-rowmenu-panel.is-above {
+  top: auto;
+  bottom: calc(100% + 4px);
 }
 
 .uboss-rowmenu-item {
@@ -10501,11 +11045,20 @@ tr[data-drop-target='true'] td {
    `minmax(0, 1fr)` rather than `1fr`: a `1fr` track has an implicit `auto` minimum, so a long
    plan name would push the row wider than its container instead of wrapping.
 */
+/* What this company is on now, above the plans it could move to. */
+.uboss-plan-current {
+  margin: 0 0 16px;
+  font-size: var(--uboss-font-size-sm);
+  color: var(--uboss-text-2);
+}
+
 .uboss-plan-choices {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(0, 220px));
-  gap: 12px;
-  margin-bottom: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(0, 230px));
+  /* 12px put the cards close enough to read as one block rather than as separate offers, which
+     on a row of priced choices is the wrong impression: each is its own decision. */
+  gap: 20px;
+  margin-bottom: 20px;
 }
 
 .uboss-plan-choice {

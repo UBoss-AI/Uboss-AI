@@ -86,23 +86,20 @@ describe('the classes the application writes exist in the design system', () => 
    * **Taking one off this list is the fix.** Adding one is not: a new name here means a new piece
    * of dead styling, and the whole point of the check is that it fails the moment that happens.
    */
-  const KNOWN_UNSTYLED = new Set([
-    'uboss-bordered',
-    'uboss-button',
-    'uboss-field-label',
-    'uboss-grid-3',
-    'uboss-inline',
-    'uboss-line-area',
-    'uboss-linkish',
-    'uboss-mt-4',
-    'uboss-page',
-    'uboss-page-status',
-    'uboss-pick-row',
-    'uboss-readiness-finding',
-    'uboss-row-actions',
-    'uboss-select',
-    'uboss-subhead',
-    'uboss-textarea',
+  const KNOWN_UNSTYLED = new Set<string>([
+    // Empty, and worth keeping empty.
+    //
+    // Sixteen names sat here, each one a class written into markup that no stylesheet defined —
+    // so each element rendered with browser defaults while the build stayed green. Two were
+    // doing visible damage on the Billing screen alone: `uboss-button` left its two primary
+    // actions as the browser's grey slab, and `uboss-row-actions` left "Pay monthly / Pay
+    // annually / Manage billing" with no gap between them, reading as one segmented control
+    // rather than three separate decisions.
+    //
+    // They are gone three ways: a rule where the markup meant something (a border, a label, a
+    // margin), the right existing component where one already did the job, and the class deleted
+    // where it was decoration nothing referenced. The note above still holds — taking a name off
+    // this list is the fix, adding one is not.
   ]);
 
   it('finds classes to check, so a silent zero cannot pass', () => {

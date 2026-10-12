@@ -83,6 +83,114 @@ export async function ubossTokenMinorUnits(prisma: PrismaService, logger: Logger
   }
 }
 
+/** How many tokens one price row covers. See `tokenSalePriceMinorPer1000`. */
+export const TOKEN_PRICE_BLOCK = 1000;
+
+/** The key a currency's top-up price lives under. */
+export function tokenPriceSettingKey(currency: string): string {
+  return `commercial.uboss_token_price_minor_per_1000.${currency.trim().toUpperCase()}`;
+}
+
+/**
+ * What a company is charged for **a thousand tokens**, in their own currency's minor units — or
+ * null when top-ups are not priced in that currency.
+ *
+ * ## The defect this exists to stop
+ *
+ * There was one rate and it was multiplied by the token count whatever the company's currency
+ * was, with the currency stamped on afterwards. The rate is ten *paise* — the constant above says
+ * so — so an Indian company bought fifty thousand tokens for ₹5,000 and an American one bought
+ * the same fifty thousand for $5,000, roughly eighty-eight times as much. Not a display fault:
+ * `start()` hands that figure to the payment provider as `unit_amount`, so the card would have
+ * been charged it. Eleven of the eighteen companies in the local database are on USD.
+ *
+ * Plan prices were never wrong this way, because a plan has a price row per currency. This is the
+ * same idea for the top-up.
+ *
+ * ## Why a thousand tokens and not one
+ *
+ * Because one token does not cost a whole minor unit in every currency, and a price in minor
+ * units is an integer.
+ *
+ * UBoss does not price USD at the day's exchange rate — it prices it the way the plans already
+ * do. Growth is ₹49,999 and $1,900, so a dollar stands for about twenty-six rupees here, not the
+ * market's eighty-eight. Carry ₹0.10 a token across at that ratio and a token costs $0.0038:
+ * less than half a cent. Rounded to the nearest whole cent it becomes $0.01, and the American
+ * company pays about two and a half times what the ratio says — a smaller version of the same
+ * bug, baked in by the unit rather than by a mistake.
+ *
+ * A thousand tokens is the unit that survives: ₹100 and $3.80 are both whole numbers of minor
+ * units, and the smallest top-up anyone can buy is ten thousand tokens anyway.
+ */
+export async function tokenSalePriceMinorPer1000(
+  prisma: PrismaService,
+  logger: Logger,
+  currency: string,
+): Promise<number | null> {
+  const code = currency.trim().toUpperCase();
+
+  try {
+    const row = await prisma.runAsPlatformOperation(() =>
+      prisma.client.platformSetting.findUnique({
+        where: { key: tokenPriceSettingKey(code) },
+        select: { value: true },
+      }),
+    );
+
+    const value = Number(row?.value);
+    if (Number.isFinite(value) && value >= 1) return Math.round(value);
+
+    /*
+     * No fallback, and in particular not to the accounting rate.
+     *
+     * There is no safe number to guess: converting at some rate of the day would charge a figure
+     * nobody agreed and that no invoice could be reconciled against, and falling back to the INR
+     * rate is the bug this replaces. A currency with no price is one UBoss has not priced top-ups
+     * in yet, and every caller turns that into a refusal rather than a charge.
+     */
+    logger.warn(
+      `No UBoss Token price is set for ${code}, so top-ups are refused in that currency. ` +
+        `Set ${tokenPriceSettingKey(code)} in the Master Console.`,
+    );
+    return null;
+  } catch (error) {
+    /*
+     * A read that failed is not a currency without a price, and must not be charged as if the
+     * price were something else. Refusing is the only safe answer: a top-up can be retried, a
+     * wrong charge cannot be taken back without a refund.
+     */
+    logger.warn(
+      `Could not read the UBoss Token price for ${code}, so top-ups are refused until it reads: ` +
+        `${error instanceof Error ? error.message : String(error)}`,
+    );
+    return null;
+  }
+}
+
+/**
+ * What to charge for a given number of tokens, from a per-thousand price.
+ *
+ * Rounded to the nearest minor unit, once, on the total. The smallest top-up is ten thousand
+ * tokens and the step people actually buy in is a thousand, so the rounding only bites on an odd
+ * figure typed by hand — and then by less than one paisa or cent on the whole purchase.
+ *
+ * The quote and the charge both come through here, so the number on the screen and the number on
+ * the card are the same arithmetic rather than two copies of it.
+ */
+export function topUpAmountMinor(tokens: number, priceMinorPer1000: number): number {
+  return Math.round((tokens * priceMinorPer1000) / TOKEN_PRICE_BLOCK);
+}
+
+/**
+ * The accounting rate carried across to the new unit, for the migration that seeds INR.
+ *
+ * Ten paise a token is ₹100 a thousand. Written here rather than as a literal in SQL so the two
+ * cannot drift apart: if the accounting rate ever changes, this says what the INR top-up price
+ * was derived from.
+ */
+export const DEFAULT_INR_TOKEN_PRICE_MINOR_PER_1000 =
+  DEFAULT_UBOSS_TOKEN_MINOR_UNITS * TOKEN_PRICE_BLOCK;
+
 /**
  * An amount of sell value, as the number of UBoss Tokens a company sees.
  *

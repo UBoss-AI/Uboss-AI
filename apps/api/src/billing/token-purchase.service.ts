@@ -3,7 +3,7 @@ import { validateTopUpTokens } from '@uboss/types';
 
 import { AuditEventService } from '../audit/audit-event.service.js';
 import { CreditService } from '../cost/credit.service.js';
-import { ubossTokenMinorUnits } from '../cost/uboss-token.js';
+import { tokenSalePriceMinorPer1000, topUpAmountMinor } from '../cost/uboss-token.js';
 import { PrismaService } from '../persistence/prisma.service.js';
 import {
   tenantScopeForPlatformOperation,
@@ -59,12 +59,33 @@ export class TokenPurchaseService {
     reason: string;
   }> {
     const check = validateTopUpTokens(tokens);
-    const rate = await ubossTokenMinorUnits(this.prisma, this.logger);
     const currency = await this.currencyFor(scope);
+    const price = await tokenSalePriceMinorPer1000(this.prisma, this.logger, currency);
+
+    /*
+     * No price in this company's currency means no quote, not a converted one.
+     *
+     * The rate used to be applied whatever the currency was, so the same fifty thousand tokens
+     * were quoted at ₹5,000 to one company and $5,000 to another. A figure the screen cannot
+     * stand behind must not be on the screen: this returns the refusal the screen already knows
+     * how to show, in the same shape as a token count that is out of range.
+     */
+    if (price === null) {
+      return {
+        tokens,
+        amountMinor: 0,
+        currency,
+        ok: false,
+        reason:
+          `Top-ups are not priced in ${currency} yet. Talk to us and we will set it up — ` +
+          'nothing is converted here, because a converted price is not the price you would be ' +
+          'charged.',
+      };
+    }
 
     return {
       tokens,
-      amountMinor: check.ok ? tokens * rate : 0,
+      amountMinor: check.ok ? topUpAmountMinor(tokens, price) : 0,
       currency,
       ok: check.ok,
       reason: check.reason,
@@ -88,9 +109,25 @@ export class TokenPurchaseService {
     const check = validateTopUpTokens(input.tokens);
     if (!check.ok) throw new BadRequestException(check.reason);
 
-    const rate = await ubossTokenMinorUnits(this.prisma, this.logger);
     const currency = await this.currencyFor(input.scope);
-    const amountMinor = input.tokens * rate;
+
+    /*
+     * The same refusal as the quote, enforced here rather than trusted from there.
+     *
+     * The screen asks for a quote first and will not offer the button without one, but this is
+     * the call that moves money: it takes a token count from the request and hands an amount to
+     * the payment provider. A caller that skipped the quote must not be able to buy at a price
+     * that does not exist.
+     */
+    const price = await tokenSalePriceMinorPer1000(this.prisma, this.logger, currency);
+    if (price === null) {
+      throw new BadRequestException(
+        `Top-ups are not priced in ${currency} yet. Talk to us and we will set it up — nothing ` +
+          'is converted here, because a converted price is not the price you would be charged.',
+      );
+    }
+
+    const amountMinor = topUpAmountMinor(input.tokens, price);
 
     /*
      * The row first, then the provider.
@@ -108,7 +145,16 @@ export class TokenPurchaseService {
           tokens: input.tokens,
           amountMinor,
           currency,
-          tokenMinorUnits: rate,
+          /*
+           * The column still reads `tokenMinorUnits` and now holds a price for a *thousand*
+           * tokens — see the note on `tokenSalePriceMinorPer1000` for why the unit had to change.
+           *
+           * Renaming it is a schema change on a table that already has rows, and the figure is
+           * platform-plane: it is never sent to a company, and the audit event beside it carries
+           * the same number under the name that says what it is. The rename belongs with the next
+           * change to this table rather than riding along with a pricing fix.
+           */
+          tokenMinorUnits: price,
           status: 'Pending',
           requestedByUserId: input.userId,
         },
@@ -176,9 +222,16 @@ export class TokenPurchaseService {
         tokens: String(input.tokens),
         amountMinor: String(amountMinor),
         currency,
-        // The rate is recorded here too, because this event is what an auditor reads when a
-        // company disputes what it was charged for a top-up.
-        tokenMinorUnits: String(rate),
+        /*
+         * The price is recorded here too, because this event is what an auditor reads when a
+         * company disputes what it was charged for a top-up.
+         *
+         * Named for what it holds. It used to be `tokenMinorUnits`, a price for one token; it is
+         * now a price for a thousand, because one token costs less than a whole cent at the ratio
+         * the plans are priced at. An auditor reading the old name against the new number would
+         * be out by a factor of a thousand, so the name changed with the meaning.
+         */
+        priceMinorPer1000: String(price),
       },
     });
 

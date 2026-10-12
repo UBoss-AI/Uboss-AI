@@ -4695,6 +4695,8 @@ export interface ExceptionView {
   detail: string;
   evidence: unknown;
   ownerUserId: string | null;
+  /** The owner's name. Null when nobody is routed to, or when they have left the company. */
+  ownerName: string | null;
   /** The source document's default owner for this kind, shown when routing named nobody. */
   defaultOwner: string;
   attempts: number;

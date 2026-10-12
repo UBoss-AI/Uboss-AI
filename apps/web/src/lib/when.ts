@@ -43,6 +43,33 @@ export function formatMoment(value: string | Date | null | undefined): string | 
 }
 
 /**
+ * How long something has been waiting, from a count of hours.
+ *
+ * The approval queue printed the raw figure with an `h` after it — `623.2h`, `566.7h`, `619.5h`
+ * — on fifteen requests of which every single one was more than a day old. The unit never once
+ * helped: a reader had to divide by 24 to learn that the oldest had been waiting twenty-six days,
+ * and the decimal offered a tenth of an hour of precision on something a month old.
+ *
+ * Hours while hours are the useful unit, days after that, and days all the way to two months,
+ * because "26 days" is the figure that makes somebody act and "3 weeks" is the figure that lets
+ * them put it down. Rounded, never truncated: this describes elapsed time, which is known, not a
+ * projection.
+ */
+export function formatElapsedHours(hours: number | null | undefined): string | null {
+  if (hours === null || hours === undefined || !Number.isFinite(hours) || hours < 0) return null;
+
+  if (hours < 1) return 'under an hour';
+  if (hours < 2) return '1 hour';
+  if (hours < 24) return `${Math.round(hours)} hours`;
+
+  const days = hours / 24;
+  if (days < 2) return '1 day';
+  if (days < 60) return `${Math.round(days)} days`;
+  if (days < 730) return `about ${Math.floor(days / 30)} months`;
+  return `about ${Math.floor(days / 365)} years`;
+}
+
+/**
  * How far off something is, at a precision the figure can carry.
  *
  * Returns null for a span in the past: "in −4 days" is not a phrase, and a caller that has one is

@@ -88,6 +88,17 @@ const ICON_PATHS = {
   // Prompt 40A (CR-03): Workspace Chat. A speech bubble with a tail, in the same stroke idiom as
   // the rest of the set rather than a filled glyph borrowed from elsewhere.
   chat: 'M21 12a8 8 0 0 1-8 8H8l-5 3 1.5-4.5A8 8 0 1 1 21 12z',
+  /*
+   * The composer's send control.
+   *
+   * It was a button reading "Send" sitting under the message box, beside one reading "Attach" and
+   * weighted the same — so the end of writing a message looked like a form being submitted. Both
+   * moved inside the box, which leaves no room for a word and no need for one: a paper plane is
+   * what every message composer uses, and the button keeps its accessible name.
+   *
+   * Two subpaths, like `arrow-up`, in the set's own 24x24 stroke idiom rather than a glyph.
+   */
+  send: 'M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z',
   target: '',
   /*
    * Prompt 45: reordering a Form 2 row was drawn with the literal characters ↑ and ↓.

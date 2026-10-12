@@ -425,40 +425,19 @@ export default function CompanySettingsPage() {
         ) : (
           <>
             {/*
-            Counted for an administrator, not for everybody.
+            The two counts of categories this reader does not get are deliberately not drawn.
 
-            An employee opening Settings does not need to be told that thirteen categories exist
-            which they cannot read — it is a list of doors with their names on, and none of them
-            is a door they wanted. For somebody who does administer, the count is worth having:
-            a shorter list than they expected means a permission boundary rather than a missing
-            feature, and that is a real question they would otherwise raise.
+            They were a pair of full-width info banners above the navigation — the first thing
+            anybody saw on opening Settings, every time, explaining an absence they had not
+            noticed. A dialog whose opening sentence is about what is missing from it reads as a
+            product apologising for itself, and the reader still has to scroll past both to reach
+            the thing they came for.
+
+            Nothing about the boundary changed. `withheldCategories` and `administrativeCategories`
+            still come back from the server, every category still carries its own permission, and
+            the server still refuses what this role may not read — the list here was never what
+            enforced it. What went is the announcement, not the rule.
           */}
-            {mayAdministerAnything && view.withheldCategories > 0 ? (
-              <Banner tone="info">
-                {view.withheldCategories} categor
-                {view.withheldCategories === 1 ? 'y is' : 'ies are'} not shown because your role
-                cannot read {view.withheldCategories === 1 ? 'it' : 'them'}. Every setting carries
-                its own permission and the server enforces it — a shorter list here is a permission
-                boundary, not a missing feature.
-              </Banner>
-            ) : null}
-
-            {/*
-            A separate sentence, because it is a separate fact.
-
-            These are not withheld from anybody. They are company administration, and this screen
-            leaves them out for somebody who cannot change them rather than listing policy they
-            can only look at. Saying "your role cannot read it" here would be untrue, and a
-            refusal a person can catch out is worse than no message at all.
-          */}
-            {mayAdministerAnything && view.administrativeCategories > 0 ? (
-              <Banner tone="info">
-                {view.administrativeCategories} further categor
-                {view.administrativeCategories === 1 ? 'y holds' : 'ies hold'} company
-                administration only, so {view.administrativeCategories === 1 ? 'it is' : 'they are'}{' '}
-                not listed here. Nothing is hidden from you that you could act on.
-              </Banner>
-            ) : null}
 
             <SettingsShell
               sections={sections}

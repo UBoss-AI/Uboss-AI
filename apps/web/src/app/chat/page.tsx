@@ -10,11 +10,21 @@ import {
   Card,
   CardBody,
   Icon,
+  initials,
   PageHeader,
   SearchField,
   StatusBadge,
   transition,
 } from '@uboss/ui';
+
+import { avatarTint } from '../../lib/avatar-tint';
+import {
+  applyMention,
+  handleFor,
+  matchMentions,
+  mentionQueryAt,
+  mentionResolutionsFor,
+} from '../../lib/mentions';
 
 import {
   ApiError,
@@ -84,6 +94,26 @@ function WorkspaceChatInner() {
   /** Files uploaded and waiting to go with the next message. */
   const [attached, setAttached] = useState<{ id: string; filename: string }[]>([]);
   const fileInput = useRef<HTMLInputElement | null>(null);
+  const composer = useRef<HTMLTextAreaElement | null>(null);
+
+  /*
+   * The typing line is one row tall and grows with what is in it.
+   *
+   * A fixed three-row box took a quarter of the pane to hold the four words most messages are,
+   * and still ran out on a long one. Measuring is the only way: a textarea has no intrinsic
+   * height, so the height is cleared first — otherwise `scrollHeight` reports the height it
+   * already has and the box can only ever grow.
+   *
+   * The ceiling is in the stylesheet, as `max-height`, which takes over once a message is long
+   * enough to be worth scrolling instead of swallowing the conversation above it. Runs on `draft`
+   * so it shrinks back to one line when a sent message clears it.
+   */
+  useEffect(() => {
+    const box = composer.current;
+    if (box === null) return;
+    box.style.height = 'auto';
+    box.style.height = `${box.scrollHeight}px`;
+  }, [draft]);
   /**
    * The colleagues this person may start a conversation with, named.
    *
@@ -126,6 +156,52 @@ function WorkspaceChatInner() {
    * a second request for the same answer.
    */
   const otherPeople = colleagues.filter((person) => person.userId !== me?.user.userId);
+
+  /*
+   * Who `@` can reach from here: the people in this conversation, named.
+   *
+   * The conversation carries ids; `colleagues` carries the names. Anybody in the room whose name
+   * this person cannot see is left out rather than offered as an id — and the server drops a
+   * mention of somebody outside the conversation anyway, and says that it did, so offering a
+   * colleague who is not in the room would only produce that notice.
+   */
+  const mentionable = useMemo(() => {
+    if (open === null) return [];
+    const inRoom = new Set(open.participantUserIds ?? []);
+    return otherPeople.filter((person) => inRoom.has(person.userId));
+    // `otherPeople` is derived from `colleagues` and `me`, which are both listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, colleagues, me?.user.userId]);
+
+  /*
+   * Where the cursor is, which is the only way to know whether an `@` is still being typed.
+   *
+   * Kept in state rather than read during render: a textarea's `selectionStart` is only correct
+   * after the browser has applied the keystroke, so it is captured from the events that follow
+   * one.
+   */
+  const [caret, setCaret] = useState(0);
+  const [mentionIndex, setMentionIndex] = useState(0);
+
+  const mentionRange = mentionQueryAt(draft, caret);
+  const mentionOptions =
+    mentionRange === null ? [] : matchMentions(mentionable, mentionRange.query);
+
+  /** Put the chosen person in the draft and leave the cursor after them. */
+  const pickMention = (person: { userId: string; displayName: string }) => {
+    if (mentionRange === null) return;
+    const next = applyMention(draft, mentionRange, person);
+    setDraft(next.text);
+    setMentionIndex(0);
+    // After React has written the new value, or the browser puts the cursor back at the end.
+    requestAnimationFrame(() => {
+      const box = composer.current;
+      if (box === null) return;
+      box.focus();
+      box.setSelectionRange(next.caret, next.caret);
+      setCaret(next.caret);
+    });
+  };
 
   const signedInUser = useSignedInUser(me);
 
@@ -314,9 +390,21 @@ function WorkspaceChatInner() {
     setBusy(true);
     setError(null);
     try {
+      /*
+       * Who the `@`s in this message actually are.
+       *
+       * This was never sent. The server parses handles out of the body and looks each one up in
+       * this map; with no map every mention resolved to nobody, so the placeholder's promise was
+       * never kept for a single message. Read from the body at send time rather than collected as
+       * people are picked, because a draft gets edited — a mention taken back out must not
+       * notify anybody.
+       */
+      const mentionResolutions = mentionResolutionsFor(draft, mentionable);
+
       const sent = await chatApi.send(tenantId, openId, {
         body: draft,
         ...(attached.length === 0 ? {} : { attachmentIds: attached.map((file) => file.id) }),
+        ...(Object.keys(mentionResolutions).length === 0 ? {} : { mentionResolutions }),
       });
       setDraft('');
       setAttached([]);
@@ -438,18 +526,30 @@ function WorkspaceChatInner() {
                   />
                 ) : null}
 
-                <div className="chat-search">
+                {/*
+                  Enter searches. The button that used to sit under the box has gone.
+
+                  This is a search of what was *said* — it asks the server — so it cannot run on
+                  every keystroke, and that is why there was a button at all. But a box with a
+                  magnifier in it already promises Enter, and the button sitting below it on its
+                  own line was the second widest thing in the rail. The placeholder says which
+                  key, so nothing about it has to be guessed.
+                */}
+                <form
+                  className="chat-search"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void runSearch();
+                  }}
+                >
                   <SearchField
                     label="Search your conversations"
                     hideLabel
                     value={search}
-                    placeholder="Search your conversations"
+                    placeholder="Search messages, then press Enter"
                     onChange={(event) => setSearch(event.target.value)}
                   />
-                  <Button variant="default" onClick={() => void runSearch()}>
-                    Search
-                  </Button>
-                </div>
+                </form>
 
                 {found !== null ? (
                   <div data-testid="chat-search-results">
@@ -495,9 +595,44 @@ function WorkspaceChatInner() {
                   <p className="chat-muted">Choose a conversation.</p>
                 ) : (
                   <>
-                    <h2 className="chat-title">
-                      {conversationLabel(open, me?.user.userId ?? null)}
-                    </h2>
+                    {/*
+                      The head of the conversation, not a heading above a card.
+
+                      It was the name on its own in bold — the same thing every other card on the
+                      product puts at its top, which is why this screen read as a panel rather
+                      than as somewhere people talk. The same circle the rail draws for this
+                      conversation, the name, and who is in it: the three things a chat window has
+                      had at its top for twenty years.
+                    */}
+                    {(() => {
+                      const label = conversationLabel(open, me?.user.userId ?? null);
+                      // `participantUserIds` is what this view carries; the named list belongs to
+                      // the rail's summary. A count needs no names.
+                      const people = open.participantUserIds?.length ?? 0;
+
+                      return (
+                        <header className="chat-head">
+                          <span
+                            className="uboss-avatar"
+                            style={{ background: avatarTint(label) }}
+                            aria-hidden="true"
+                          >
+                            {initials(label)}
+                          </span>
+                          <div className="chat-head-text">
+                            <h2 className="chat-title">{label}</h2>
+                            {/* Never a presence claim. There is no socket here and a test
+                                enforces that nothing on this screen says "online". Who is in the
+                                room is a fact the server already sent. */}
+                            {people > 0 ? (
+                              <p className="chat-head-sub">
+                                {people} {people === 1 ? 'person' : 'people'} in this conversation
+                              </p>
+                            ) : null}
+                          </div>
+                        </header>
+                      );
+                    })()}
 
                     {/* ---- what this conversation is about ---- */}
                     {open.context.length > 0 ? (
@@ -551,66 +686,115 @@ function WorkspaceChatInner() {
                           Nothing has been said here yet. Start the conversation.
                         </li>
                       ) : null}
-                      {open.messages.map((message) => (
+                      {open.messages.map((message, index) => {
                         /*
-                         * A message arrives rather than appearing. Keyed by its id, so this runs
-                         * once when the message is first rendered and never again on a re-fetch.
+                         * Who said it decides which side it sits on.
                          *
-                         * This is not a liveness claim. There is no socket bound and this screen
-                         * deliberately has no typing indicator, presence dot or "live" badge — a
-                         * test enforces that. A message easing in says "this is new to the list",
-                         * which is true of a message that has just been loaded.
+                         * Every message used to be the same bordered box in one column, so a
+                         * conversation read as a log rather than as an exchange — you had to read
+                         * the name above each one to work out who was talking. Mine go right and
+                         * carry the filled tint; everybody else's stay left behind their avatar.
                          */
-                        <motion.li
-                          key={message.id}
-                          className="chat-message"
-                          initial={{ opacity: 0, y: 6 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={transition('small', 'enter')}
-                        >
-                          <div className="chat-message-meta">
-                            <span>{message.authorName}</span>
-                            <time dateTime={message.sentAt}>
-                              {new Date(message.sentAt).toLocaleString()}
-                            </time>
-                          </div>
-                          {message.deleted ? (
-                            // The row stays so the reply beneath it still makes sense.
-                            <p className="chat-deleted">Message deleted</p>
-                          ) : (
-                            <p className="chat-body">{message.body}</p>
-                          )}
-                          {message.attachments.map((attachment) => (
-                            <p key={attachment.storedFileId} className="chat-attachment">
-                              <Icon name="file" />
-                              <span>{attachment.filename}</span>
-                              {attachment.downloadable ? null : (
-                                // Shown as attached and not openable. Hiding it would make the
-                                // conversation misleading; serving it would make chat the way
-                                // malware moves around a company.
-                                <StatusBadge status="Checking" tone="warn" />
+                        const mine = message.authorUserId === me?.user.userId;
+
+                        /*
+                         * A run by one person is one block, not a stack of labelled cards.
+                         *
+                         * Three messages sent in a row repeated the name and the timestamp three
+                         * times, which is most of what was on the screen. Five minutes is the
+                         * usual boundary: past that the gap is long enough that the time is worth
+                         * printing again.
+                         */
+                        const previous = open.messages[index - 1];
+                        const runOn =
+                          previous !== undefined &&
+                          previous.authorUserId === message.authorUserId &&
+                          new Date(message.sentAt).getTime() - new Date(previous.sentAt).getTime() <
+                            5 * 60 * 1000;
+
+                        return (
+                          /*
+                           * A message arrives rather than appearing. Keyed by its id, so this runs
+                           * once when the message is first rendered and never again on a re-fetch.
+                           *
+                           * This is not a liveness claim. There is no socket bound and this screen
+                           * deliberately has no typing indicator, presence dot or "live" badge — a
+                           * test enforces that. A message easing in says "this is new to the
+                           * list", which is true of a message that has just been loaded.
+                           */
+                          <motion.li
+                            key={message.id}
+                            className={[
+                              'chat-message',
+                              mine ? 'chat-message-mine' : '',
+                              runOn ? 'chat-message-runon' : '',
+                            ]
+                              .filter(Boolean)
+                              .join(' ')}
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={transition('small', 'enter')}
+                          >
+                            {/*
+                              The avatar column keeps its width even when no avatar is drawn, so a
+                              run of messages stays in one line down the page instead of the second
+                              one sliding left under the first.
+                            */}
+                            <span className="chat-avatar" aria-hidden="true">
+                              {mine || runOn ? null : (
+                                <span
+                                  className="uboss-avatar uboss-avatar--sm"
+                                  style={{ background: avatarTint(message.authorName) }}
+                                >
+                                  {initials(message.authorName)}
+                                </span>
                               )}
-                            </p>
-                          ))}
-                        </motion.li>
-                      ))}
+                            </span>
+
+                            <div className="chat-bubble">
+                              {runOn ? null : (
+                                <div className="chat-message-meta">
+                                  <span>{mine ? 'You' : message.authorName}</span>
+                                  <time dateTime={message.sentAt}>
+                                    {messageTime(message.sentAt)}
+                                  </time>
+                                </div>
+                              )}
+                              {message.deleted ? (
+                                // The row stays so the reply beneath it still makes sense.
+                                <p className="chat-deleted">Message deleted</p>
+                              ) : (
+                                <p className="chat-body">{message.body}</p>
+                              )}
+                              {message.attachments.map((attachment) => (
+                                <p key={attachment.storedFileId} className="chat-attachment">
+                                  <Icon name="file" />
+                                  <span>{attachment.filename}</span>
+                                  {attachment.downloadable ? null : (
+                                    // Shown as attached and not openable. Hiding it would make the
+                                    // conversation misleading; serving it would make chat the way
+                                    // malware moves around a company.
+                                    <StatusBadge status="Checking" tone="warn" />
+                                  )}
+                                </p>
+                              ))}
+                            </div>
+                          </motion.li>
+                        );
+                      })}
                     </ul>
 
                     <div className="chat-compose">
-                      <textarea
-                        aria-label="Message"
-                        value={draft}
-                        rows={3}
-                        onChange={(event) => setDraft(event.target.value)}
-                        placeholder="Write a message. Use @name to mention somebody in this conversation."
-                      />
-
                       {/*
                       What is attached, before it is sent.
 
                       Listed rather than counted: "2 files" is not something somebody can check,
                       and the one thing they want to do at this moment is take the wrong one off
                       again.
+
+                      Above the typing line rather than below it, because the line is now a single
+                      row that grows with the message and anything under it would be pushed about
+                      as somebody types.
                     */}
                       {attached.length === 0 ? null : (
                         <ul className="chat-attached" data-testid="chat-attached">
@@ -634,7 +818,107 @@ function WorkspaceChatInner() {
                         </ul>
                       )}
 
-                      <div className="chat-compose-actions">
+                      {/*
+                      The people `@` can reach, while one is being typed.
+
+                      The placeholder has always said "use @name to mention somebody" and nothing
+                      implemented it: the server resolves handles through a `mentionResolutions`
+                      map the client sends, and the client never sent one, so every mention
+                      resolved to nobody. Picking from a list is also the only way to get the
+                      handle right — the server's pattern has no spaces in it, so "@Aman Singh" is
+                      a mention of "Aman" and then a word.
+
+                      Above the box rather than below: the composer sits at the foot of the pane,
+                      and a list under it would open off the bottom of the window.
+                    */}
+                      {mentionOptions.length > 0 ? (
+                        <ul className="chat-mentions" role="listbox" aria-label="Mention somebody">
+                          {mentionOptions.map((person, index) => (
+                            <li key={person.userId}>
+                              <button
+                                type="button"
+                                className={
+                                  index === mentionIndex ? 'chat-mention is-active' : 'chat-mention'
+                                }
+                                role="option"
+                                aria-selected={index === mentionIndex}
+                                /* The textarea must not lose focus before the click lands, or the
+                                   cursor position the insert depends on is gone. */
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => pickMention(person)}
+                              >
+                                <span
+                                  className="uboss-avatar uboss-avatar--sm"
+                                  style={{ background: avatarTint(person.displayName) }}
+                                  aria-hidden="true"
+                                >
+                                  {initials(person.displayName)}
+                                </span>
+                                <span className="chat-mention-name">{person.displayName}</span>
+                                <span className="chat-mention-handle">
+                                  @{handleFor(person.displayName)}
+                                </span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+
+                      {/*
+                      One line: what you are typing, and the two things you can do with it.
+
+                      The box was three rows tall and square, with the controls on their own line
+                      underneath — a form, sat under a conversation. It is a rounded bar now,
+                      one line high, that grows as the message does and goes back to one line once
+                      it is sent. Both controls sit on that line rather than below it.
+
+                      Neither carries a word: a paper clip and a paper plane are what every
+                      composer uses, and the accessible name carries the meaning for anyone who
+                      cannot see them. Send is the only filled control on the screen.
+                    */}
+                      <div className="chat-compose-row">
+                        <textarea
+                          ref={composer}
+                          aria-label="Message"
+                          value={draft}
+                          rows={1}
+                          onChange={(event) => {
+                            setDraft(event.target.value);
+                            setCaret(event.target.selectionStart);
+                            setMentionIndex(0);
+                          }}
+                          /* Clicking or arrowing moves the cursor without changing the text, and
+                             the picker depends on where the cursor is. */
+                          onSelect={(event) => setCaret(event.currentTarget.selectionStart ?? 0)}
+                          onKeyDown={(event) => {
+                            if (mentionOptions.length === 0) return;
+                            /*
+                              The picker takes these keys only while it is open, so the textarea
+                              keeps them the rest of the time: Enter still makes a new line in a
+                              message, and Escape still does nothing.
+                            */
+                            if (event.key === 'ArrowDown') {
+                              event.preventDefault();
+                              setMentionIndex((at) => (at + 1) % mentionOptions.length);
+                            } else if (event.key === 'ArrowUp') {
+                              event.preventDefault();
+                              setMentionIndex(
+                                (at) => (at - 1 + mentionOptions.length) % mentionOptions.length,
+                              );
+                            } else if (event.key === 'Enter' || event.key === 'Tab') {
+                              const chosen = mentionOptions[mentionIndex];
+                              if (chosen === undefined) return;
+                              event.preventDefault();
+                              pickMention(chosen);
+                            } else if (event.key === 'Escape') {
+                              event.preventDefault();
+                              // Closes it without touching the text: moving the cursor past the
+                              // handle is what ends the mention.
+                              setCaret(draft.length);
+                            }
+                          }}
+                          placeholder="Write a message. Use @name to mention somebody."
+                        />
                         <input
                           ref={fileInput}
                           type="file"
@@ -646,21 +930,28 @@ function WorkspaceChatInner() {
                             event.target.value = '';
                           }}
                         />
-                        <Button
-                          variant="default"
+                        <button
+                          type="button"
+                          className="chat-compose-icon"
                           disabled={busy}
                           onClick={() => fileInput.current?.click()}
                           data-testid="chat-attach"
+                          aria-label="Attach a file"
+                          title="Attach a file"
                         >
-                          <Icon name="file" size={16} />
-                          Attach
-                        </Button>
-                        <Button
+                          <Icon name="file" size={18} />
+                        </button>
+                        <button
+                          type="button"
+                          className="chat-compose-icon chat-compose-send"
                           onClick={() => void send()}
                           disabled={busy || (draft.trim() === '' && attached.length === 0)}
+                          /* The word the button no longer shows is the name it still carries. */
+                          aria-label="Send"
+                          title="Send"
                         >
-                          Send
-                        </Button>
+                          <Icon name="send" size={18} />
+                        </button>
                       </div>
                     </div>
                   </>
@@ -717,6 +1008,35 @@ function WorkspaceChatInner() {
  * The boundary exists because Discuss deep-links here: `/chat?conversation=<id>` is how a
  * conversation started from an Objective or an Exception opens on the one screen that owns chat.
  */
+/**
+ * The time above a message.
+ *
+ * `toLocaleString()` printed `10/12/2026, 3:08:47 PM` inside every bubble — a date, a year and a
+ * second's precision on something said a moment ago, taking more room than most messages. Today's
+ * messages carry the time alone; older ones earn their date back, because that is the point at
+ * which the date is the part you need.
+ *
+ * Seconds never appear. Nobody reading a conversation is placing two messages within one minute
+ * of each other, and the order on the screen already answers it if they are.
+ */
+function messageTime(sentAt: string): string {
+  const at = new Date(sentAt);
+  const today = new Date();
+  const sameDay =
+    at.getFullYear() === today.getFullYear() &&
+    at.getMonth() === today.getMonth() &&
+    at.getDate() === today.getDate();
+
+  return sameDay
+    ? at.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+    : at.toLocaleString(undefined, {
+        day: 'numeric',
+        month: 'short',
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+}
+
 /**
  * What to call a conversation.
  *

@@ -626,6 +626,17 @@ export class ApprovalService {
           fourEyesGate: this.sodPoliciesFor(request).length > 0,
           onBehalfOf: delegation?.fromUserId ?? '',
           priorDecisions: this.priorDecidersOf(history).length,
+          /*
+           * Whether the person who decided this is the person who asked for it.
+           *
+           * `NoSelfApproval` used to make this impossible, so there was nothing to record. A
+           * Company Admin is now exempt — the company's own decision — which means the trail is
+           * the only thing standing between "an administrator settled their own request" and
+           * nobody ever knowing. Written on every decision rather than only when true, so a
+           * query for it returns the whole population and not just the rows somebody chose to
+           * flag.
+           */
+          selfApproved: request.requestedByUserId === input.actorUserId,
         },
       });
 

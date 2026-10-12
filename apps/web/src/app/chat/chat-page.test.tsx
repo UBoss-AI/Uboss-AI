@@ -266,8 +266,18 @@ describe('Workspace Chat', () => {
     render(<WorkspaceChatPage />);
     await screen.findByTestId('chat-conversations');
 
-    await userEvent.type(screen.getByPlaceholderText('Search your conversations'), 'invoice');
-    await userEvent.click(screen.getByRole('button', { name: 'Search' }));
+    /*
+     * Enter, not a button.
+     *
+     * The search box had a "Search" button under it on its own line — the second widest thing in
+     * the rail, for a box that already promises the key. It is a server search, so it still has
+     * to be asked for rather than running on every keystroke; the box is a form and Enter submits
+     * it, which is what this types.
+     */
+    await userEvent.type(
+      screen.getByPlaceholderText('Search messages, then press Enter'),
+      'invoice{Enter}',
+    );
 
     await waitFor(() => expect(search).toHaveBeenCalledWith('tenant-1', 'invoice'));
     expect(await screen.findByTestId('chat-search-results')).toHaveTextContent(

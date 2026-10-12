@@ -264,6 +264,62 @@ describe('routing: who a request is addressed to', () => {
     assert.match(outcome.reason, /Head/);
   });
 
+  it('addresses a role-addressed request to the company administrator', () => {
+    /*
+     * The one person who can always decide it.
+     *
+     * `COMPANY_GRANTABLE_ROLES` is `['CompanyAdmin', 'Employee']`, so no company can hand out
+     * `Manager`, `Head` or `Approver` any more. A request addressed to one of those was
+     * therefore addressed to nobody who can exist: fifteen were found waiting in one company,
+     * the oldest twenty-six days old, and no person in the product could settle any of them.
+     *
+     * The permission was already granted for this — `CompanyAdmin` holds `approvals: Approve`
+     * and the note beside that grant gives this exact reason — and this function was what kept
+     * refusing the holder.
+     */
+    const outcome = isAddressedTo({
+      ...base,
+      actorUserId: 'the-admin',
+      actorRoleKinds: ['CompanyAdmin'],
+      status: 'Pending',
+      namedApproverUserId: null,
+      approverRoleKind: 'Manager',
+    });
+    assert.equal(outcome.addressed, true);
+    assert.match(outcome.reason, /administrator/i);
+  });
+
+  it('still refuses a role-addressed request from an ordinary employee', () => {
+    // The administrator is the exception, not the beginning of one. Everybody else is unchanged.
+    const outcome = isAddressedTo({
+      ...base,
+      actorUserId: 'somebody',
+      actorRoleKinds: ['Employee'],
+      status: 'Pending',
+      namedApproverUserId: null,
+      approverRoleKind: 'Manager',
+    });
+    assert.equal(outcome.addressed, false);
+  });
+
+  it('does not let the administrator take a request named for somebody else', () => {
+    /*
+     * A named approver still excludes everybody, the administrator included. The reason the role
+     * case opens up is that the role cannot be held; naming a person has no such problem, and
+     * routing their request elsewhere would defeat the point of naming them. The admin's way in
+     * is delegation, which that person arranges.
+     */
+    const outcome = isAddressedTo({
+      ...base,
+      actorUserId: 'the-admin',
+      actorRoleKinds: ['CompanyAdmin'],
+      status: 'Pending',
+      namedApproverUserId: 'somebody-else',
+      approverRoleKind: null,
+    });
+    assert.equal(outcome.addressed, false);
+  });
+
   it('falls closed on a request addressed to nobody at all', () => {
     // Open season on a misconfigured row would be the worst possible reading of it.
     const outcome = isAddressedTo({

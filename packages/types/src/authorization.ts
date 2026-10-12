@@ -215,6 +215,44 @@ export const PLATFORM_MODULES = [
 
 export const MODULE_KEYS = [...COMPANY_MODULES, ...PLATFORM_MODULES] as const;
 export type ModuleKey = (typeof MODULE_KEYS)[number];
+
+/**
+ * What each company module is called in front of a person.
+ *
+ * The keys above are the code's vocabulary: lower case, hyphenated, chosen to be typed. They were
+ * reaching screens as themselves. Billing listed what a plan includes as
+ * `dashboard · hierarchy · objective · agent-builder · todo · agents · executor …` — the code's
+ * own keys, hyphens and all, on the page that justifies the invoice — and an approval's "Governed
+ * by" row read `approvals:Approve`, a permission string printed as though it were a sentence.
+ *
+ * The words here are the words in the sidebar, deliberately. A customer reading "Engine Agents"
+ * on their plan and "Engine Agents" in the navigation is reading about one thing; a plan that
+ * says `agents` and a sidebar that says Engine Agents is a plan somebody has to decode.
+ *
+ * Company modules only. The platform keys are seen by UBoss staff, who are the people the code's
+ * vocabulary belongs to.
+ */
+export const COMPANY_MODULE_LABELS: Record<CompanyModuleKey, string> = {
+  dashboard: 'Dashboard',
+  hierarchy: 'Hierarchy',
+  objective: 'Objective Optimization',
+  'agent-builder': 'Agent Builder',
+  todo: 'To-do List',
+  agents: 'Engine Agents',
+  executor: 'Executor Agent',
+  approvals: 'Approvals',
+  performance: 'Performance',
+  reports: 'Reports',
+  users: 'Users & Access',
+  roles: 'Roles & Permissions',
+  'profile-search': 'UBoss Profile Search',
+  settings: 'Settings',
+};
+
+/** The label for a module key, falling back to the key itself for a platform one. */
+export function moduleLabel(key: string): string {
+  return (COMPANY_MODULE_LABELS as Record<string, string>)[key] ?? key;
+}
 export type CompanyModuleKey = (typeof COMPANY_MODULES)[number];
 export type PlatformModuleKey = (typeof PLATFORM_MODULES)[number];
 

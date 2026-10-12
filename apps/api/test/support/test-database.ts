@@ -500,6 +500,11 @@ export async function resetTestDatabase(context: TestContext): Promise<void> {
         'provisioning.default_currency', 'governance.company_creation',
         'governance.data_residency', 'governance.aadhaar_handling',
         'commercial.ai_sell_multiplier', 'commercial.uboss_token_minor_units',
+        -- What a top-up costs, per currency. Without these the quote has no price to give and
+        -- refuses — which is correct behaviour for a currency UBoss has not priced, and wrong
+        -- for INR, where the figure has existed all along.
+        'commercial.uboss_token_price_minor_per_1000.INR',
+        'commercial.uboss_token_price_minor_per_1000.USD',
         -- Where a service alert is POSTed. Empty by default and kept for the same reason as the
         -- multiplier above: a platform-plane table has no tenant to cascade from, so the truncate
         -- never reaches it and a row one test writes is still there on the next run.
@@ -536,6 +541,29 @@ export async function resetTestDatabase(context: TestContext): Promise<void> {
              'Minor units of sell value to one UBoss Token. Never shown to a company.',
              'Commercial', false, NOW(), NOW(), 1)
      ON CONFLICT ("key") DO UPDATE SET "value" = '10'::jsonb`,
+  );
+
+  /*
+   * What a top-up costs, per currency, back at what its migration seeds.
+   *
+   * Sparing them from the delete is not enough, for the reason the multiplier above gives: a run
+   * from before they existed has already removed them, and an allow-list only protects a row that
+   * is there.
+   *
+   * Their absence is not neutral either, and it is not neutral in the *safe* direction here: with
+   * no price the quote refuses, so a top-up test would fail on a refusal that is correct for a
+   * currency nobody has priced and wrong for INR, which has had a price all along. ₹100 and $3.80
+   * for a thousand tokens — the same two figures the migration writes.
+   */
+  await context.admin.unsafeRootClient.$executeRawUnsafe(
+    `INSERT INTO "platform_settings"
+       ("id", "key", "value", "description", "section", "locked", "created_at", "updated_at", "row_version")
+     VALUES
+       (gen_random_uuid(), 'commercial.uboss_token_price_minor_per_1000.INR', '10000'::jsonb,
+        'Paise for a thousand UBoss Tokens.', 'Commercial', false, NOW(), NOW(), 1),
+       (gen_random_uuid(), 'commercial.uboss_token_price_minor_per_1000.USD', '380'::jsonb,
+        'Cents for a thousand UBoss Tokens.', 'Commercial', false, NOW(), NOW(), 1)
+     ON CONFLICT ("key") DO UPDATE SET "value" = EXCLUDED."value"`,
   );
 
   // The Prompt 11 commercial columns, back to the values the migration gives them.

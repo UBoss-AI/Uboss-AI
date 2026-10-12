@@ -182,9 +182,22 @@ const GENERAL: SettingDefinition[] = [
     key: 'general.display_name',
     category: 'general',
     label: 'Workspace display name',
+    /*
+     * Described rather than drawn.
+     *
+     * This read "Shown in the header as UBOSS AI AMS | {name}", which was wrong twice. `{name}`
+     * is a template placeholder that nothing ever substituted, so every administrator who opened
+     * General was shown the brace and all. And the header does not say "UBOSS AI AMS" — the
+     * product calls itself Chief Agent on screen, and the workspace name sits beside the page
+     * title, not after a product name.
+     *
+     * So it says where the name appears instead of trying to reproduce a layout in a sentence. A
+     * description that mimics the screen goes stale the first time the screen changes; one that
+     * names the place does not.
+     */
     description:
-      'Shown in the header as UBOSS AI AMS | {name}. Changing it changes what every person in ' +
-      'the company sees at the top of every screen.',
+      'The company name beside the page title, at the top of every screen, and in the workspace ' +
+      'switcher. Changing it changes what everybody in the company sees.',
     type: { kind: 'string', maxLength: 200 },
     defaultValue: '',
     writePermission: { module: 'settings', action: 'Administer' },

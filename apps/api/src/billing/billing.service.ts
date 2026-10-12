@@ -442,7 +442,26 @@ export class BillingService {
                 ? 'Not yet available to buy online. Talk to us and we will set it up.'
                 : null,
         }))
-        .filter((plan) => plan.current || plan.priceMinor !== null),
+        /*
+         * What a company is allowed to see: their own plan, anything priced in their currency,
+         * and the negotiated plan.
+         *
+         * A plan with no seat limit and no price is not an unfinished row — it is the one that
+         * is agreed per company rather than sold off a page, and `plans` holds exactly one of
+         * them. Filtering on price alone dropped it, so a company on the largest *sold* plan was
+         * told nothing bigger existed while another company was already on the bigger one. They
+         * cannot buy it here — `buyable` is false and the card says who to ask — but they are
+         * entitled to know it is there.
+         *
+         * Unpriced plans that do cap seats stay out: those are either not published yet in this
+         * currency or smaller than what the company holds, and neither is an offer.
+         */
+        .filter(
+          (plan) =>
+            plan.current ||
+            plan.priceMinor !== null ||
+            (plan.seatLimit === null && plan.entitledModules.length > 0),
+        ),
     };
   }
 

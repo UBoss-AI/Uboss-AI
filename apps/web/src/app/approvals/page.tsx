@@ -7,6 +7,7 @@ import {
   AGING_BUCKET_TONES,
   APPROVAL_RISK_TONES,
   APPROVAL_TYPE_RISK,
+  moduleLabel,
   type ApprovalRequestType,
 } from '@uboss/types';
 import {
@@ -32,6 +33,7 @@ import {
   type ApprovalsMetaView,
   type MeResponse,
 } from '../../lib/api-client';
+import { formatElapsedHours, formatMoment } from '../../lib/when';
 import { useAccountMenu } from '../../lib/use-account-menu';
 import { useSignedInUser } from '../../lib/use-signed-in-user';
 import { RoutedAppShell } from '../../components/RoutedAppShell';
@@ -210,6 +212,28 @@ export default function ApprovalsPage() {
     }
   };
 
+  /*
+   * One sentence saying why a decision cannot be taken, or null when it can.
+   *
+   * The server gives a reason per option. In practice the blocked ones share it — an approval
+   * addressed to a role you do not hold blocks all three at once — so a single line is what a
+   * reader needs, and repeating it under each button would be noise. Where the reasons genuinely
+   * differ, each is named with the decision it belongs to.
+   *
+   * Nothing is shown when every option is open: a note that only ever says "you may proceed" is
+   * a note people stop reading.
+   */
+  const blockedOptions = (selected?.available ?? []).filter(
+    (option) => !option.allowed && (option.reason ?? '').trim() !== '',
+  );
+  const distinctReasons = [...new Set(blockedOptions.map((option) => option.reason))];
+  const blockedNote =
+    blockedOptions.length === 0
+      ? null
+      : distinctReasons.length === 1
+        ? distinctReasons[0]!
+        : blockedOptions.map((option) => `${option.label}: ${option.reason}`).join(' ');
+
   return (
     <RoutedAppShell
       variant="company"
@@ -289,7 +313,15 @@ export default function ApprovalsPage() {
                 <>
                   <b>{row.title}</b>
                   <br />
-                  <small className="uboss-muted-3 uboss-mono">{row.id.slice(0, 8)}</small>
+                  {/*
+                    When it was raised, where eight characters of the request id used to be.
+
+                    Not simply deleted: fifteen rows shared eleven titles here, several of them
+                    the identical words "Manager sign-off", and that id was the only thing telling
+                    two of them apart — the one part of the row a person could not read. The date
+                    does the same job and answers a question somebody actually has.
+                  */}
+                  <small className="uboss-muted-3">Raised {formatMoment(row.submittedAt)}</small>
                 </>
               ),
             },
@@ -331,7 +363,7 @@ export default function ApprovalsPage() {
                     dot
                   />
                   <br />
-                  <small className="uboss-muted-3">{row.hoursOpen}h</small>
+                  <small className="uboss-muted-3">{formatElapsedHours(row.hoursOpen)}</small>
                 </>
               ),
             },
@@ -404,43 +436,63 @@ export default function ApprovalsPage() {
         title={selected === null ? 'Approval decision' : selected.title}
         footer={
           selected === null ? null : (
-            <div className="uboss-actions">
+            <div className="uboss-decision-footer">
               {/*
-                Prompt 40A (CR-03) §6 — Discuss, beside the decision rather than instead of it.
-                An approver who needs to ask something should not have to decide first.
+                Why the buttons are off, on the screen.
+
+                The server's sentence was already here — in `title` on each disabled button, and
+                nowhere else. A `title` is the wrong place for it twice over: a touch or keyboard
+                user never produces a hover at all, and a browser will not show the native tooltip
+                of a control it has disabled. Reported by a reviewer who moved the pointer onto
+                Approve to find out why it would not take, and was told nothing.
+
+                Rendered beside the buttons rather than up in the body, because the question is
+                asked with a hand already on the control.
               */}
-              <DiscussButton
-                tenantId={tenantId}
-                contextType="ApprovalRequest"
-                resourceId={selected.id}
-              />
-              {selected.available.map((option) => (
-                <Button
-                  key={option.decision}
-                  size="sm"
-                  variant={
-                    option.decision === 'Approve'
-                      ? 'primary'
-                      : option.decision === 'Reject'
-                        ? 'danger'
-                        : 'default'
-                  }
-                  disabled={!option.allowed || busy}
-                  // The server's own sentence. Not a paraphrase, and not this screen's guess at
-                  // what the rule is.
-                  title={option.reason}
-                  // Only the pressed control reports work, and only while the request is open.
-                  // aria-busy rather than a changed label: the label is what was chosen, and
-                  // rewriting it mid-flight loses that.
-                  aria-busy={deciding === option.decision}
-                  onClick={() => void decide(option.decision)}
-                >
-                  {option.label}
-                  {deciding === option.decision ? (
-                    <span className="uboss-sr-only"> — sending, waiting for the server</span>
-                  ) : null}
-                </Button>
-              ))}
+              {blockedNote !== null && (
+                <p className="uboss-decision-why">
+                  <Icon name="shield" size={14} />
+                  <span>{blockedNote}</span>
+                </p>
+              )}
+              <div className="uboss-actions">
+                {/*
+                  Prompt 40A (CR-03) §6 — Discuss, beside the decision rather than instead of it.
+                  An approver who needs to ask something should not have to decide first.
+                */}
+                <DiscussButton
+                  tenantId={tenantId}
+                  contextType="ApprovalRequest"
+                  resourceId={selected.id}
+                />
+                {selected.available.map((option) => (
+                  <Button
+                    key={option.decision}
+                    size="sm"
+                    variant={
+                      option.decision === 'Approve'
+                        ? 'primary'
+                        : option.decision === 'Reject'
+                          ? 'danger'
+                          : 'default'
+                    }
+                    disabled={!option.allowed || busy}
+                    // Kept, for the browsers and assistive tools that do surface it. It is no
+                    // longer the only place the reason lives — see `blockedNote` above.
+                    title={option.reason}
+                    // Only the pressed control reports work, and only while the request is open.
+                    // aria-busy rather than a changed label: the label is what was chosen, and
+                    // rewriting it mid-flight loses that.
+                    aria-busy={deciding === option.decision}
+                    onClick={() => void decide(option.decision)}
+                  >
+                    {option.label}
+                    {deciding === option.decision ? (
+                      <span className="uboss-sr-only"> — sending, waiting for the server</span>
+                    ) : null}
+                  </Button>
+                ))}
+              </div>
             </div>
           )
         }
@@ -452,7 +504,7 @@ export default function ApprovalsPage() {
               {' · '}
               {selected.typeLabel}
               {' · '}
-              {selected.bucketLabel}, open {selected.hoursOpen}h
+              {selected.bucketLabel}, open {formatElapsedHours(selected.hoursOpen)}
             </p>
 
             {selected.actingUnderDelegationFrom !== null && (
@@ -474,7 +526,16 @@ export default function ApprovalsPage() {
 
             <div className="uboss-kv">
               <span className="uboss-kv-key">Governed by</span>
-              <span className="uboss-kv-value uboss-mono">{selected.module}:Approve</span>
+              {/*
+                `approvals:Approve` is the code's own permission string — module and action joined
+                by a colon — and it was printed as though it were a sentence. The row is worth
+                keeping: it answers "what decides whether I may do this", which is exactly the
+                question somebody looking at a disabled button has. So it keeps the answer and
+                drops the syntax.
+              */}
+              <span className="uboss-kv-value">
+                The <b>Approve</b> permission on {moduleLabel(selected.module)}
+              </span>
             </div>
             <div className="uboss-kv">
               <span className="uboss-kv-key">Addressed to</span>
@@ -563,7 +624,13 @@ export default function ApprovalsPage() {
                     )}
                     {entry.note === '' ? null : <> — {entry.note}</>}
                     <br />
-                    <small className="uboss-muted-3">{entry.occurredAt}</small>
+                    {/*
+                      `when.ts` has existed for this since it was written — its own docblock opens
+                      with an ISO timestamp as the thing it replaces — and this trail was still
+                      printing `2026-09-23T12:37:02.678Z`, milliseconds and the Z, to somebody
+                      deciding an approval.
+                    */}
+                    <small className="uboss-muted-3">{formatMoment(entry.occurredAt)}</small>
                   </li>
                 ))}
               </ul>

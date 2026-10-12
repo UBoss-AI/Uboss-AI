@@ -51,6 +51,14 @@ export interface ExceptionView {
   detail: string;
   evidence: unknown;
   ownerUserId: string | null;
+  /**
+   * The owner's name, for the screen to show instead of their id.
+   *
+   * Null when nobody is routed to, and null when the id belongs to somebody who is no longer a
+   * member of this company — a different fact from "unassigned", and the screen says so rather
+   * than falling back to the id.
+   */
+  ownerName: string | null;
   /** The source document's default owner for this kind, shown when routing named nobody. */
   defaultOwner: string;
   attempts: number;
@@ -972,6 +980,27 @@ export class ExecutorService {
     const kind = exception.kind as ExceptionKind;
     const state = exception.state as ExceptionState;
 
+    /*
+     * Who the owner is, rather than what their row is called.
+     *
+     * The Exception Center showed `ownerUserId.slice(0, 8)` — eight hex characters of a UUID, on
+     * the one screen whose whole job is getting an exception to a person. Every open exception in
+     * a real company read `01a0a903`, and a reviewer could not tell whose any of them were.
+     *
+     * Read through `tenantMembership` rather than `user`, which is the pattern the approvals
+     * service already uses: it is tenant-scoped, so it cannot answer for somebody outside this
+     * company, and a stale id therefore comes back null instead of leaking a name across the
+     * boundary. Every caller of `viewOf` is already inside the tenant transaction, so this is a
+     * plain read — the same per-row shape as the history query above it.
+     */
+    const owner =
+      exception.ownerUserId === null
+        ? null
+        : await this.prisma.client.tenantMembership.findFirst({
+            where: { tenantId: exception.tenantId, userId: exception.ownerUserId },
+            select: { user: { select: { displayName: true } } },
+          });
+
     return {
       id: exception.id,
       kind,
@@ -985,6 +1014,7 @@ export class ExecutorService {
       detail: exception.detail,
       evidence: exception.evidence,
       ownerUserId: exception.ownerUserId,
+      ownerName: owner?.user.displayName ?? null,
       defaultOwner: EXCEPTION_DEFAULT_OWNER[kind],
       attempts: exception.attempts,
       escalationHours: exception.escalationHours,

@@ -10,6 +10,9 @@
 
 /* ---- Utilities ---- */
 export { cn } from './lib/class-names';
+/* Chat draws an avatar per author and must use the same two letters the top bar and the sidebar
+   footer already show for the same person. */
+export { initials } from './lib/initials';
 export type { ClassValue } from './lib/class-names';
 export { useFocusTrap } from './lib/use-focus-trap';
 

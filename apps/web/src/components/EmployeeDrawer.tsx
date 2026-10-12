@@ -562,7 +562,6 @@ export function EmployeeDrawer({
               {(field) => (
                 <select
                   {...field}
-                  className="uboss-select"
                   value={successor}
                   onChange={(event) => setSuccessor(event.target.value)}
                 >
@@ -612,7 +611,6 @@ export function EmployeeDrawer({
               {(field) => (
                 <textarea
                   {...field}
-                  className="uboss-textarea"
                   rows={3}
                   value={reason}
                   onChange={(event) => setReason(event.target.value)}

@@ -603,6 +603,9 @@ export class AuthorizationService {
       module: input.module,
       actorUserId: context.userId,
       resource,
+      // The company's administrator answers for everything in their own company, including work
+      // they raised. Exempts `NoSelfApproval` only; `FourEyes` still wants two distinct people.
+      actorHoldsCompanyAdmin: context.roleSummary.some((role) => role.roleKind === 'CompanyAdmin'),
       ...(input.actingAsAgent === undefined ? {} : { actingAsAgent: input.actingAsAgent }),
     });
 

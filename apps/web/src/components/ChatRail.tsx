@@ -3,7 +3,9 @@
 import { motion } from 'motion/react';
 
 import type { ChatConversationSummary } from '../lib/api-client';
-import { StatusBadge, transition } from '@uboss/ui';
+import { initials, StatusBadge, transition } from '@uboss/ui';
+import { avatarTint } from '../lib/avatar-tint';
+import { formatElapsedHours } from '../lib/when';
 
 /**
  * The conversation rail, grouped the way people think about it.
@@ -58,6 +60,7 @@ export function ChatRail({
             key={row.id}
             id={row.id}
             label={directLabel(row, meUserId)}
+            subtitle={subtitleFor(row)}
             unread={row.unread}
             open={row.id === openId}
             onOpen={onOpen}
@@ -71,6 +74,7 @@ export function ChatRail({
             key={row.id}
             id={row.id}
             label={row.title ?? 'Untitled group'}
+            subtitle={subtitleFor(row)}
             unread={row.unread}
             open={row.id === openId}
             onOpen={onOpen}
@@ -84,6 +88,7 @@ export function ChatRail({
             key={row.id}
             id={row.id}
             label={row.title ?? 'Workshop'}
+            subtitle={subtitleFor(row)}
             unread={row.unread}
             open={row.id === openId}
             onOpen={onOpen}
@@ -98,7 +103,20 @@ export function ChatRail({
                 className="chat-item chat-item-unopened"
                 onClick={() => onOpenWorkshop(department.id)}
               >
-                <span className="chat-item-name">{department.name} Workshop</span>
+                {/* Same shape as a room that exists, because it is the same room — it just has
+                    not been opened yet. A row half the height of the ones around it would read as
+                    a different kind of thing. */}
+                <span
+                  className="uboss-avatar uboss-avatar--sm"
+                  style={{ background: avatarTint(department.name) }}
+                  aria-hidden="true"
+                >
+                  {initials(department.name)}
+                </span>
+                <span className="chat-item-text">
+                  <span className="chat-item-name">{department.name} Workshop</span>
+                  <span className="chat-item-sub">Not opened yet</span>
+                </span>
               </button>
             </li>
           ))}
@@ -132,15 +150,25 @@ function Section({
   );
 }
 
+/**
+ * One conversation in the rail: a face, a name, and when it last moved.
+ *
+ * It was a single line of text per row, so six conversations were six identical grey lines and
+ * the only way to find one was to read all of them. The circle is what makes the list scannable —
+ * the same colour for the same person everywhere in the product — and the second line answers the
+ * question somebody actually opens this list with, which is whether anything has happened.
+ */
 function Row({
   id,
   label,
+  subtitle,
   unread,
   open,
   onOpen,
 }: {
   id: string;
   label: string;
+  subtitle: string;
   unread: number;
   open: boolean;
   onOpen: (conversationId: string) => void;
@@ -152,7 +180,19 @@ function Row({
         className={open ? 'chat-item chat-item-open' : 'chat-item'}
         onClick={() => onOpen(id)}
       >
-        <span className="chat-item-name">{label}</span>
+        <span
+          className="uboss-avatar uboss-avatar--sm"
+          style={{ background: avatarTint(label) }}
+          aria-hidden="true"
+        >
+          {initials(label)}
+        </span>
+
+        <span className="chat-item-text">
+          <span className="chat-item-name">{label}</span>
+          <span className="chat-item-sub">{subtitle}</span>
+        </span>
+
         {unread > 0 ? (
           // A badge, not a concatenated label — the locked rule for counts. Keyed by the count,
           // so it moves when the count really changes rather than on every render.
@@ -172,12 +212,44 @@ function Row({
 }
 
 /**
+ * The second line: when it last moved, and for a room, how many people are in it.
+ *
+ * "No messages yet" rather than an empty line or a dash. A department workshop exists because the
+ * department does, so an empty one is the normal case on a first visit and saying so is the
+ * difference between a quiet room and a row that failed to load.
+ */
+function subtitleFor(row: ChatConversationSummary): string {
+  const elapsed =
+    row.lastMessageAt === null || row.lastMessageAt === undefined
+      ? null
+      : formatElapsedHours((Date.now() - new Date(row.lastMessageAt).getTime()) / 3_600_000);
+
+  const moved = elapsed === null ? 'No messages yet' : `${elapsed} ago`;
+  if (row.kind === 'Direct') return moved;
+
+  /*
+   * Counted from whichever list is there, and left out when neither is.
+   *
+   * `participants` is declared as required and is not always sent: reading `.length` from it
+   * threw, and because the rail renders all three sections in one pass, one group without it took
+   * down every conversation on the screen rather than one row. Caught by the page's own tests.
+   *
+   * A room with no count still gets a second line — when it last moved is the useful half anyway.
+   */
+  const people = row.participants?.length ?? row.participantUserIds?.length ?? 0;
+  if (people === 0) return moved;
+  return `${people} ${people === 1 ? 'person' : 'people'} · ${moved}`;
+}
+
+/**
  * Who a direct conversation is with.
  *
  * The other person, by name. Falling back to the title and then to a plain word rather than to a
  * user id: an id in a conversation list is not a person, and a reader cannot act on one.
  */
 function directLabel(row: ChatConversationSummary, meUserId: string | null): string {
-  const other = row.participants.find((person) => person.userId !== meUserId);
+  // Optional for the same reason as in `subtitleFor`: the field is declared required and is not
+  // always sent, and one row without it must not take the whole rail down.
+  const other = row.participants?.find((person) => person.userId !== meUserId);
   return other?.displayName ?? row.title ?? 'Direct message';
 }

@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
+import { moduleLabel } from '@uboss/types';
+
 import {
   Banner,
   Button,
@@ -37,6 +39,7 @@ import {
 } from '../../../lib/api-client';
 
 import { AccessRefused, isRefusal } from '../../../components/AccessRefused';
+import { largerPlansThan } from '../../../lib/plan-choices';
 import { useAccountMenu } from '../../../lib/use-account-menu';
 import { useSignedInUser } from '../../../lib/use-signed-in-user';
 import { RoutedAppShell } from '../../../components/RoutedAppShell';
@@ -61,6 +64,9 @@ function requestStateTone(state: CommercialRequestRow['state']): StatusTone {
       return 'grey';
   }
 }
+
+/** Anchor for the "Ask for a change" card, so a plan card further up can send a reader to it. */
+const ASK_FORM_ID = 'ask-for-a-change';
 
 const REQUEST_KINDS = [
   { value: 'MoreSeats', label: 'More seats' },
@@ -126,6 +132,32 @@ export default function CompanyBillingSettingsPage() {
   const [tokenPurchases, setTokenPurchases] = useState<TokenPurchaseRow[] | null>(null);
   const [tokenAmount, setTokenAmount] = useState('50000');
   const [tokenQuote, setTokenQuote] = useState<TokenQuote | null>(null);
+
+  /*
+   * The plans worth offering: the ones above the plan they are on.
+   *
+   * The rules are in `plan-choices` with their tests. They were inline here, and the one that
+   * matters — where the negotiated plan ranks — is the kind of mistake that leaves no mark on the
+   * screen: a plan sorted to the bottom and filtered out looks exactly like a plan that does not
+   * exist, so a company on the largest sold plan was told the catalogue ended there.
+   */
+  const currentPlanOption = upgradeOptions?.plans.find((plan) => plan.current) ?? null;
+  const largerPlans = upgradeOptions === null ? [] : largerPlansThan(upgradeOptions.plans);
+
+  /*
+   * Seats this company's plan includes but their contract does not give them.
+   *
+   * Null when there is no gap, so the card only mentions it when there is one. The figure matters
+   * because it is the one upgrade available to a company already on the largest plan sold in
+   * their currency: not a different plan, but the rest of the one they have.
+   */
+  const seatsHeldBack =
+    position !== null &&
+    currentPlanOption?.seatLimit != null &&
+    position.seats.ceiling !== null &&
+    currentPlanOption.seatLimit > position.seats.ceiling
+      ? currentPlanOption.seatLimit - position.seats.ceiling
+      : null;
 
   const tenantId =
     resolveActiveWorkspace(me?.workspaces, readRememberedWorkspace())?.tenantId ?? null;
@@ -240,6 +272,28 @@ export default function CompanyBillingSettingsPage() {
     },
     [tenantId],
   );
+
+  /**
+   * Start a request for a plan that is not sold on this page.
+   *
+   * No payment and no plan change: it fills in the request form below and takes the reader to it.
+   * The plan the card named is the plan the form asks for, so the code is set here rather than
+   * typed from the hint — "e.g. growth, enterprise" is a reasonable hint and a poor instruction
+   * when the screen already knows which one was pressed.
+   *
+   * Focus moves with the scroll. Scrolling alone leaves a keyboard reader where they were, which
+   * on this page is a button that has just stopped being the thing in front of them.
+   */
+  const askAboutPlan = useCallback((code: string) => {
+    setKind('PlanUpgrade');
+    setPlanCode(code);
+
+    const form = document.getElementById(ASK_FORM_ID);
+    if (form === null) return;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    form.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+    form.querySelector('select')?.focus({ preventScroll: true });
+  }, []);
 
   /**
    * Price the number in the box, as it is typed.
@@ -397,9 +451,12 @@ export default function CompanyBillingSettingsPage() {
         </Card>
       ) : (
         <>
+          {/* 200px tracks with the grid's default 14px gap put four cards shoulder to shoulder,
+              reading as one strip rather than four figures. Wider tracks and a wider gap give
+              each number its own space. */}
           <div
             className="uboss-grid"
-            style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))' }}
+            style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '20px' }}
           >
             {/*
               The plan, with what it costs.
@@ -560,19 +617,21 @@ export default function CompanyBillingSettingsPage() {
               <CardHeader title="What this plan includes" />
               <CardBody>
                 <div className="uboss-section-label">Modules this company has</div>
-                <p>{position.entitlements.effectiveModules.join(' · ') || 'None'}</p>
+                <p>
+                  {position.entitlements.effectiveModules.map(moduleLabel).join(' · ') || 'None'}
+                </p>
 
                 {position.entitlements.extraModules.length > 0 ? (
                   <>
                     <div className="uboss-section-label">Added for this company</div>
-                    <p>{position.entitlements.extraModules.join(' · ')}</p>
+                    <p>{position.entitlements.extraModules.map(moduleLabel).join(' · ')}</p>
                   </>
                 ) : null}
 
                 {position.entitlements.removedModules.length > 0 ? (
                   <>
                     <div className="uboss-section-label">Withheld despite the plan</div>
-                    <p>{position.entitlements.removedModules.join(' · ')}</p>
+                    <p>{position.entitlements.removedModules.map(moduleLabel).join(' · ')}</p>
                   </>
                 ) : null}
 
@@ -607,7 +666,7 @@ export default function CompanyBillingSettingsPage() {
           */}
           <Card>
             <CardHeader
-              title="Move to a different plan"
+              title="Move to a larger plan"
               aside={
                 upgradeOptions === null ? null : (
                   <StatusBadge status={`Priced in ${upgradeOptions.currency}`} tone="grey" />
@@ -615,6 +674,48 @@ export default function CompanyBillingSettingsPage() {
               }
             />
             <CardBody>
+              {/*
+                What they are on now, before what they could move to.
+
+                The current plan used to be one of the cards in the row, carrying a "Current"
+                badge and the sentence "This is the current plan." — a card you cannot press,
+                taking a third of the row. It belongs in a line above the choices: it is context
+                for the decision, not one of the options in it.
+              */}
+              {position !== null && (
+                <p className="uboss-plan-current">
+                  On <b>{position.plan.name}</b>
+                  {position.seats.ceiling === null ? null : <> · {position.seats.ceiling} seats</>}
+                  {position.plan.priceMinor !== null && position.plan.priceCurrency !== null ? (
+                    <>
+                      {' · '}
+                      {formatMinor(position.plan.priceMinor, position.plan.priceCurrency)}{' '}
+                      {position.plan.billingCycleLabel ?? ''}
+                    </>
+                  ) : null}
+                </p>
+              )}
+
+              {/*
+                Two seat numbers, named.
+
+                A company can hold fewer seats than its plan allows: Growth caps at forty, this
+                contract bought twenty-five. Both figures are real and the page printed both —
+                twenty-five here, forty on a plan card — with nothing saying which was which, so
+                it read as the product contradicting itself. Reported exactly that way.
+
+                It says so wherever there is a gap, not only when no larger plan exists. That
+                sentence lived in the empty state below, which the negotiated plan now fills, and
+                a company on Growth would never have seen it again.
+              */}
+              {seatsHeldBack !== null && (
+                <p className="uboss-muted-3">
+                  {position?.plan.name} includes up to {currentPlanOption?.seatLimit} seats; this
+                  company is contracted for {position?.seats.ceiling}. Ask below for the other{' '}
+                  {seatsHeldBack} — no change of plan needed.
+                </p>
+              )}
+
               {/*
                 The list is shown whenever there is anything besides the current plan — not only
                 when something is buyable.
@@ -627,25 +728,49 @@ export default function CompanyBillingSettingsPage() {
               */}
               {upgradeOptions === null ? (
                 <p className="uboss-muted-3">Loading…</p>
-              ) : upgradeOptions.plans.filter((plan) => !plan.current).length === 0 ? (
+              ) : largerPlans.length === 0 ? (
+                /*
+                  Nothing above the plan they are on.
+
+                  This card used to list every other plan, which on the top plan meant its only
+                  offer was a *smaller* one: a company paying for Growth was shown Starter, ten
+                  seats against the twenty-five they hold, with a button to take it. No product
+                  offers a customer less than they are buying. It reads as a mistake at best and
+                  as a downsell at worst.
+
+                  Moving down is still possible and still supported — it is "A smaller plan" in
+                  the request form further down this page, which is where a change that needs a
+                  conversation belongs. What changed is that it stopped being the headline.
+                */
                 <EmptyState
-                  title="Nothing else is sold in your currency yet"
+                  /*
+                    Who actually reaches this now.
+
+                    The negotiated plan is listed above whenever a company is not on it, so the
+                    only readers left are companies already on the top of the catalogue. The old
+                    title — "X is the largest we sell in INR" — was written for a company on
+                    Growth, and it was hiding the thing it should have offered. For a company on
+                    the negotiated plan it would also have been false: that plan is not sold in a
+                    currency, it is agreed.
+                  */
+                  title={`${position?.plan.name ?? 'Your plan'} is the largest plan there is`}
                   description={
-                    'Every other plan is priced in a different currency. We do not convert ' +
-                    'prices — a converted figure is not what your card would be charged — so ' +
-                    'talk to us and we will price them for you.'
+                    'Need more seats, a bigger AI allowance or a module that is not included? ' +
+                    'Ask below and we will come back to you — at this level everything is agreed ' +
+                    'with you rather than bought off a page.'
                   }
                 />
               ) : (
                 <div className="uboss-plan-choices">
-                  {upgradeOptions.plans.map((plan) => (
+                  {largerPlans.map((plan) => (
                     <div
                       key={plan.code}
                       className={`uboss-plan-choice${plan.current ? ' uboss-plan-choice--current' : ''}`}
                     >
+                      {/* No "Current" badge: the current plan is the line above this row now,
+                          and every card here is one they could move to. */}
                       <div className="uboss-row uboss-row--between">
                         <b>{plan.name}</b>
-                        {plan.current ? <StatusBadge status="Current" tone="success" /> : null}
                       </div>
 
                       <p className="uboss-plan-choice__price">
@@ -668,6 +793,15 @@ export default function CompanyBillingSettingsPage() {
                         )}
                       </p>
 
+                      {/*
+                        Every card here is a plan they are not on, so the catalogue figure is the
+                        right one: it is what moving to this plan would give them.
+
+                        The contracted figure belongs to the plan they *are* on, and is in the
+                        line above the row. Printing "40 seats" on the current plan was the
+                        original defect — the company holds twenty-five, which is what the server
+                        enforces (`seatsLicensed ?? plan.seatLimit`), so forty described nobody.
+                      */}
                       <p className="uboss-muted-3 uboss-plan-choice__seats">
                         {plan.seatLimit === null
                           ? 'Seats agreed with you'
@@ -675,16 +809,36 @@ export default function CompanyBillingSettingsPage() {
                       </p>
 
                       {plan.buyable ? (
-                        <button
-                          type="button"
-                          className="uboss-button"
+                        /*
+                          A class that did not exist in the stylesheet was named here, so this
+                          stylesheet, so this rendered as the browser's default button: a grey
+                          slab among a page of designed ones. The whole product uses the `Button`
+                          component, and these two on this page were the only exceptions.
+                        */
+                        <Button
+                          size="sm"
                           disabled={paying}
-                          onClick={() => upgradeTo(plan.code)}
+                          onClick={() => void upgradeTo(plan.code)}
                         >
                           {paying ? 'Opening…' : `Move to ${plan.name}`}
-                        </button>
+                        </Button>
                       ) : (
-                        <small className="uboss-muted-3">{plan.unavailableReason}</small>
+                        /*
+                          A plan that cannot be bought here still needs a way to ask for it.
+
+                          "Talk to us and we will set it up" with nothing to press is an
+                          instruction without a door: the form that raises exactly this request is
+                          four hundred pixels further down the page, under a heading that does not
+                          mention the plan. The button is the door, and it arrives at the form with
+                          the right thing already chosen so nobody has to work out which of the
+                          four kinds of request this was.
+                        */
+                        <>
+                          <small className="uboss-muted-3">{plan.unavailableReason}</small>
+                          <Button size="sm" variant="ghost" onClick={() => askAboutPlan(plan.code)}>
+                            Ask about {plan.name}
+                          </Button>
+                        </>
                       )}
                     </div>
                   ))}
@@ -739,14 +893,14 @@ export default function CompanyBillingSettingsPage() {
                 <p className="uboss-muted-3">{tokenQuote.reason}</p>
               )}
 
-              <button
-                type="button"
-                className="uboss-button"
+              {/* The second of the two unstyled slabs. See the plan card above. */}
+              <Button
+                variant="primary"
                 disabled={paying || tokenQuote === null || !tokenQuote.ok}
                 onClick={buyTokens}
               >
                 {paying ? 'Opening…' : 'Buy tokens'}
-              </button>
+              </Button>
 
               {tokenPurchases !== null && tokenPurchases.length > 0 ? (
                 <ul className="uboss-topup-history">
@@ -782,7 +936,7 @@ export default function CompanyBillingSettingsPage() {
             </CardBody>
           </Card>
 
-          <Card>
+          <Card id={ASK_FORM_ID}>
             <CardHeader title="Ask for a change" />
             <CardBody>
               <p className="uboss-muted-3">
@@ -877,70 +1031,84 @@ export default function CompanyBillingSettingsPage() {
             </CardBody>
           </Card>
 
-          <Card>
-            <CardHeader title="Requests from this company" />
-            <CardBody>
-              {requests === null ? (
-                <SkeletonText lines={3} />
-              ) : requests.length === 0 ? (
-                <EmptyState
-                  title="No requests yet"
-                  description="Anything this company has asked for appears here with the decision."
-                />
-              ) : (
-                <DataTable
-                  caption="Commercial requests, newest first"
-                  columns={[
-                    { key: 'kind', header: 'Asked for', render: (row) => row.kind },
-                    {
-                      key: 'detail',
-                      header: 'Detail',
-                      render: (row) =>
-                        row.requestedSeats !== null
-                          ? `${row.requestedSeats} seats`
-                          : row.requestedPlanCode !== null
-                            ? row.requestedPlanCode
-                            : row.requestedAllowanceMinor !== null
-                              ? formatMinor(
-                                  row.requestedAllowanceMinor,
-                                  position.allowance.currency,
-                                )
-                              : row.requestedModules.join(' · '),
-                    },
-                    {
-                      key: 'state',
-                      header: 'State',
-                      render: (row) => (
-                        <StatusBadge status={row.state} tone={requestStateTone(row.state)} />
-                      ),
-                    },
-                    {
-                      key: 'decision',
-                      header: 'Decision',
-                      render: (row) => row.decisionNote ?? '—',
-                    },
-                    {
-                      key: 'raised',
-                      header: 'Raised',
-                      render: (row) => new Date(row.requestedAt).toLocaleDateString(),
-                    },
-                    {
-                      key: 'action',
-                      header: '',
-                      render: (row) =>
-                        row.state === 'Requested' ? (
-                          <Button variant="ghost" disabled={busy} onClick={() => withdraw(row.id)}>
-                            Withdraw
-                          </Button>
-                        ) : null,
-                    },
-                  ]}
-                  rows={requests}
-                  rowKey={(row) => row.id}
-                />
-              )}
-            </CardBody>
-          </Card>
+          {/*
+            Nothing to show, so nothing shown.
+
+            This card used to render an empty state — "No requests yet", with a sentence
+            explaining what would appear if anything ever did. That is worth saying on a screen
+            whose *job* is the thing that is missing, where the emptiness is the answer somebody
+            came for. This is not that screen. Billing is read top to bottom for the plan, the
+            seats and the spend, and a company that has never asked UBoss for anything was being
+            given a card, a heading and three lines of prose to tell them so, between the form
+            that raises a request and the invoices below it.
+
+            It comes back the moment there is a row, carrying its own heading with it.
+          */}
+          {requests !== null && requests.length === 0 ? null : (
+            <Card>
+              <CardHeader title="Requests from this company" />
+              <CardBody>
+                {requests === null ? (
+                  <SkeletonText lines={3} />
+                ) : (
+                  <DataTable
+                    caption="Commercial requests, newest first"
+                    columns={[
+                      { key: 'kind', header: 'Asked for', render: (row) => row.kind },
+                      {
+                        key: 'detail',
+                        header: 'Detail',
+                        render: (row) =>
+                          row.requestedSeats !== null
+                            ? `${row.requestedSeats} seats`
+                            : row.requestedPlanCode !== null
+                              ? row.requestedPlanCode
+                              : row.requestedAllowanceMinor !== null
+                                ? formatMinor(
+                                    row.requestedAllowanceMinor,
+                                    position.allowance.currency,
+                                  )
+                                : row.requestedModules.join(' · '),
+                      },
+                      {
+                        key: 'state',
+                        header: 'State',
+                        render: (row) => (
+                          <StatusBadge status={row.state} tone={requestStateTone(row.state)} />
+                        ),
+                      },
+                      {
+                        key: 'decision',
+                        header: 'Decision',
+                        render: (row) => row.decisionNote ?? '—',
+                      },
+                      {
+                        key: 'raised',
+                        header: 'Raised',
+                        render: (row) => new Date(row.requestedAt).toLocaleDateString(),
+                      },
+                      {
+                        key: 'action',
+                        header: '',
+                        render: (row) =>
+                          row.state === 'Requested' ? (
+                            <Button
+                              variant="ghost"
+                              disabled={busy}
+                              onClick={() => withdraw(row.id)}
+                            >
+                              Withdraw
+                            </Button>
+                          ) : null,
+                      },
+                    ]}
+                    rows={requests}
+                    rowKey={(row) => row.id}
+                  />
+                )}
+              </CardBody>
+            </Card>
+          )}
 
           {/*
             Payment.

@@ -207,6 +207,19 @@ export interface SettingsSection {
   description: string;
   /** Which band it belongs to. The list is drawn in `SETTINGS_GROUPS` order. */
   group: SettingsGroup;
+  /**
+   * True when choosing this leaves the dialog for a screen of its own.
+   *
+   * Three of these are real pages — Users & Access, Billing and UBoss Profile Search — because
+   * each is far too big to read in a dialog that is 433px tall on a laptop. That is the right
+   * call. What was wrong is that the list gave no sign of it: ten entries swapped a panel in
+   * place and three closed the dialog and navigated, and the only way to find out which was to
+   * press one and lose your place.
+   *
+   * Declared here rather than in the page that routes, so the list and the routing cannot come
+   * to disagree about which is which.
+   */
+  opensScreen?: boolean;
 }
 
 /**
@@ -243,6 +256,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'Users & Access',
     description: 'Employees, guests and invitations.',
     group: 'People',
+    opensScreen: true,
   },
   {
     key: 'roles',
@@ -341,7 +355,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
    * over it. Offering a door to the diagnostic was worse than offering none, because it looked
    * like the feature.
    */
-  { key: 'billing', label: 'Billing', description: 'Plan and invoices.', group: 'Money' },
+  {
+    key: 'billing',
+    label: 'Billing',
+    description: 'Plan and invoices.',
+    group: 'Money',
+    opensScreen: true,
+  },
   /*
    * Help & Support, out of Security and into a band of its own.
    *
@@ -393,6 +413,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: 'UBoss Profile Search',
     description: 'Look somebody up across the companies on UBoss.',
     group: 'People',
+    opensScreen: true,
   },
   // performance: Scoring and badge thresholds are the product’s, and identical everywhere.
 ] as const;

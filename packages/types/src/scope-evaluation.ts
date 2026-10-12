@@ -317,6 +317,18 @@ export function checkSeparationOfDuties(input: {
   resource: ResourceDescriptor;
   /** True when the actor is an automated agent rather than a person. */
   actingAsAgent?: boolean | undefined;
+  /**
+   * True when the actor holds `CompanyAdmin`, which exempts them from `NoSelfApproval`.
+   *
+   * The company's decision, taken knowingly: an administrator has every authority in their own
+   * company, including over work they raised themselves. Optional and defaulting to false, so a
+   * caller that does not pass it gets the behaviour this control has always had.
+   *
+   * It exempts **only** `NoSelfApproval`. `FourEyes` is untouched: a gate that asks for two
+   * distinct people still gets two, and an administrator counts as one of them rather than as
+   * both.
+   */
+  actorHoldsCompanyAdmin?: boolean | undefined;
 }): SodOutcome {
   const applicable = input.policies.filter(
     (policy) =>
@@ -329,6 +341,24 @@ export function checkSeparationOfDuties(input: {
 
   for (const policy of applicable) {
     if (policy.rule === 'NoSelfApproval') {
+      /*
+       * The administrator is exempt, by the company's own decision.
+       *
+       * Everybody else is not: the rule still refuses the person who wrote the thing, which is
+       * what it is for. What changed is that a Company Admin is now the one authority that
+       * answers for everything inside their company, their own work included — asked for
+       * explicitly, after being shown what it costs.
+       *
+       * It costs this: a four-eyes guarantee no longer holds *for an administrator*, because one
+       * person can now both raise and settle. That is visible rather than silent — the decision
+       * record names who decided and `approvals.decided` carries `selfApproved` when the decider
+       * and the requester are the same person, so an auditor reading the trail can find every
+       * one of them without knowing to look.
+       */
+      if (input.actorHoldsCompanyAdmin === true) {
+        continue;
+      }
+
       // Keyed on the creator, not the owner: work is reassigned routinely, and the person who
       // wrote a thing is the one who must not wave it through.
       if (

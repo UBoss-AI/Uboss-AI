@@ -297,9 +297,25 @@ export default function ExecutorPage() {
                         <span className="uboss-muted-3" title={row.defaultOwner}>
                           Unassigned — {row.defaultOwner}
                         </span>
+                      ) : row.ownerName !== null ? (
+                        <span>{row.ownerName}</span>
                       ) : (
-                        <span className="uboss-mono uboss-muted-3">
-                          {row.ownerUserId.slice(0, 8)}
+                        /*
+                          Routed to somebody this company no longer has.
+
+                          This column used to print `ownerUserId.slice(0, 8)` for everybody, so
+                          every open exception read as eight hex characters and nobody could tell
+                          whose any of them were — on the one screen whose job is getting an
+                          exception to a person.
+
+                          The id survives only here, where there is genuinely nothing else to say:
+                          the owner has left or was never a member, and a queue that silently said
+                          "Unassigned" would hide work that is routed at somebody unreachable. The
+                          words carry the meaning; the id is there for whoever has to go and look.
+                        */
+                        <span className="uboss-muted-3">
+                          Left the company —{' '}
+                          <span className="uboss-mono">{row.ownerUserId.slice(0, 8)}</span>
                         </span>
                       ),
                   },

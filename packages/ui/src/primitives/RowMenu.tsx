@@ -61,8 +61,22 @@ export function RowMenu({ subject, items, className }: RowMenuProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const menuId = useId();
+  /**
+   * Which way the menu opens.
+   *
+   * It only ever opened downward, which is right until the row is near the bottom of the window
+   * — and on a table the rows near the bottom are most of them. A four-item menu on the last
+   * visible row ran off the screen with two of its items unreachable, and the one below the
+   * separator is the destructive one, so the item most worth reaching deliberately was the item
+   * hardest to reach at all.
+   *
+   * Measured on open rather than guessed from a row index, because the caller knows nothing
+   * about the window and the menu's own height depends on how many items it was given.
+   */
+  const [placement, setPlacement] = useState<'below' | 'above'>('below');
 
   const close = (returnFocus: boolean) => {
     setOpen(false);
@@ -88,6 +102,37 @@ export function RowMenu({ subject, items, className }: RowMenuProps) {
       document.removeEventListener('pointerdown', onPointerDown);
       document.removeEventListener('keydown', onKeyDown);
     };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      // Back to the default for the next opening, so a menu opened once near the bottom does not
+      // keep opening upward after the table has scrolled.
+      setPlacement('below');
+      return;
+    }
+
+    const panel = panelRef.current;
+    const trigger = triggerRef.current;
+    if (panel === null || trigger === null) return;
+
+    /*
+     * Up when there is no room down, and only then.
+     *
+     * Compared against the window rather than the table: the menu is drawn over whatever is
+     * beneath it and the thing that actually cuts it off is the bottom of the screen. The gap
+     * above the trigger has to be big enough as well — flipping a menu into a space it also does
+     * not fit is a different bug with the same symptom, so the default stands when neither side
+     * has room and the reader can at least scroll.
+     */
+    const panelHeight = panel.getBoundingClientRect().height;
+    const spaceBelow = window.innerHeight - trigger.getBoundingClientRect().bottom;
+    const spaceAbove = trigger.getBoundingClientRect().top;
+    const gutter = 8;
+
+    if (panelHeight + gutter > spaceBelow && panelHeight + gutter <= spaceAbove) {
+      setPlacement('above');
+    }
   }, [open]);
 
   useEffect(() => {
@@ -152,7 +197,13 @@ export function RowMenu({ subject, items, className }: RowMenuProps) {
       </button>
 
       {open ? (
-        <div className="uboss-rowmenu-panel" id={menuId} role="menu" aria-label={subject}>
+        <div
+          className={cn('uboss-rowmenu-panel', placement === 'above' && 'is-above')}
+          id={menuId}
+          role="menu"
+          aria-label={subject}
+          ref={panelRef}
+        >
           {items.map((item, index) => (
             <button
               key={item.key}

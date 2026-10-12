@@ -76,6 +76,12 @@ export function SettingsShell({
 
           Labelled rather than placeholder-only — a placeholder disappears the moment somebody
           types, leaving a screen reader and a distracted reader with an unnamed box.
+
+          It sits outside the scrolling list, not stuck to the top of it. Sticky put it in the
+          same scroll flow as the categories, and the band of nav padding it could not paint over
+          let a category name show through the box while the list moved under it — reported as the
+          search box and "Objective Rules" drawn on top of each other. A box that never scrolls
+          cannot be overlapped by what does.
         */}
         <div className="uboss-search uboss-settings-search">
           <label className="uboss-sr-only" htmlFor={searchId}>
@@ -107,49 +113,78 @@ export function SettingsShell({
           While searching, the headings go: a filtered list is already short, and grouping three
           results under three headings is more chrome than answer.
         */}
-        {(query.trim() === '' ? SETTINGS_GROUPS : ['' as const]).map((group) => {
-          const inGroup =
-            query.trim() === '' ? visible.filter((section) => section.group === group) : visible;
-          if (inGroup.length === 0) return null;
+        {/*
+          The one thing on this screen that scrolls on its own.
 
-          return (
-            <div key={group || 'results'}>
-              {group === '' ? null : <div className="uboss-settings-nav-group">{group}</div>}
-              {inGroup.map((section) => {
-                const active = section.key === activeKey;
+          Nineteen categories do not fit a dialog, and giving the whole dialog a scrollbar made
+          two of them: one for the dialog and one for the panel beside this, so a reader had to
+          work out which of them moved the thing they were looking at. The list scrolls here, the
+          panel scrolls in its own box, and the dialog itself does not move at all.
+        */}
+        <div className="uboss-settings-nav-list">
+          {(query.trim() === '' ? SETTINGS_GROUPS : ['' as const]).map((group) => {
+            const inGroup =
+              query.trim() === '' ? visible.filter((section) => section.group === group) : visible;
+            if (inGroup.length === 0) return null;
 
-                return (
-                  <button
-                    key={section.key}
-                    type="button"
-                    className="uboss-settings-nav-item"
-                    aria-current={active ? 'page' : undefined}
-                    onClick={() => onSelect(section.key)}
-                  >
-                    {active ? (
-                      <motion.span
-                        layoutId={indicatorId}
-                        className="uboss-settings-indicator"
-                        aria-hidden="true"
-                        transition={transition('panel', 'standard')}
-                      />
-                    ) : null}
-                    <span className="uboss-settings-nav-label">{labelFor(section)}</span>
-                  </button>
-                );
-              })}
-            </div>
-          );
-        })}
+            return (
+              <div key={group || 'results'}>
+                {group === '' ? null : <div className="uboss-settings-nav-group">{group}</div>}
+                {inGroup.map((section) => {
+                  const active = section.key === activeKey;
 
-        {visible.length === 0 ? (
-          <p className="uboss-settings-nav-empty" role="status">
-            No settings match “{query.trim()}”.
-          </p>
-        ) : null}
+                  return (
+                    <button
+                      key={section.key}
+                      type="button"
+                      className="uboss-settings-nav-item"
+                      aria-current={active ? 'page' : undefined}
+                      onClick={() => onSelect(section.key)}
+                    >
+                      {active ? (
+                        <motion.span
+                          layoutId={indicatorId}
+                          className="uboss-settings-indicator"
+                          aria-hidden="true"
+                          transition={transition('panel', 'standard')}
+                        />
+                      ) : null}
+                      <span className="uboss-settings-nav-label">{labelFor(section)}</span>
+                      {/*
+                      Marks the three entries that leave the dialog.
+
+                      Ten of these swap a panel in place; Users & Access, Billing and UBoss
+                      Profile Search are screens of their own and close the dialog to open one.
+                      That is the right call — each is far too big to read in a dialog 433px tall
+                      — but the list said nothing about it, so the only way to learn which was
+                      which was to press one and lose your place. The title carries the same
+                      sentence for anybody who cannot see the arrow.
+                    */}
+                      {section.opensScreen === true ? (
+                        <span
+                          className="uboss-settings-nav-leaves"
+                          aria-hidden="true"
+                          title="Opens its own screen"
+                        >
+                          ↗
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
+
+          {visible.length === 0 ? (
+            <p className="uboss-settings-nav-empty" role="status">
+              No settings match “{query.trim()}”.
+            </p>
+          ) : null}
+        </div>
       </nav>
 
-      <div>{children}</div>
+      <div className="uboss-settings-panel">{children}</div>
     </div>
   );
 }

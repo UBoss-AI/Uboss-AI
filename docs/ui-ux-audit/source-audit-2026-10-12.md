@@ -1,0 +1,155 @@
+﻿# Chief Agent UI/UX audit — source review
+
+Snapshot: 12 October 2026, local HEAD `5fc5972`. This is a **source and documentation audit**, not a completed browser audit. The worktree already contained uncommitted changes when reviewed. No application code, database, deployment, or package was changed for this report.
+
+## 1. Software discovery and coverage
+
+The Next.js app has 62 `page.tsx` routes. The company sidebar defines exactly the 12 destinations in the brief in `packages/ui/src/navigation/navigation-model.ts`. Route access can differ by person: `filterNavigation` uses server-provided `visibleModules` and `unavailableNavKeys`; direct routes still need their own authorization. `apps/web/src/lib/use-company-navigation.ts` adds scoped queue badges from the dashboard endpoint. The sidebar is therefore not a complete route inventory or an access-control boundary.
+
+| Area | Route and source-reviewed surface | Nested/additional routes discovered | Browser verified? |
+| --- | --- | --- | --- |
+| Authentication | `/login`: email-first sign-in, SSO/MFA paths; `/activate`, `/access-help`, `/sessions` | `/start` registration/terms, `/internal/login` | Partial: login visuals only; no auth submitted |
+| Dashboard | `/dashboard`: authorized two-slice counts, orchestration map, tile detail | `/operations` legacy/secondary route | Partial: local Chrome render and visible cards |
+| Hierarchy | `/hierarchy`: org chart, people list, departments, employee editing/import | `/hierarchy/[userId]` | Partial: main screen and controls |
+| Objective Optimization | `/objective`: list and permissions | `/objective/form`, `/analyze`, `/workflow`, `/prepublish`, `/versions`, `/closure` | Partial: main list; horizontal scroll required |
+| Agent Builder | `/agent-builder`: setup, skills, configuration, tests, activation | Panels within the route | Partial: entry screen and empty state |
+| To-do List | `/todo`: task list, search and actions | `/todo/detail` | Partial: My work empty state and Team table |
+| RIS | `/tracker`: spaces, folders and boards | `/tracker/[boardId]` | Partial: empty-board state |
+| Engine Agents | `/agents`: table, run strip, details, setup and history | Drawers/panels within the route | Partial: list and read-only detail drawer |
+| Executor Agent | `/executor`: exception queue, sweep, resolution history | Drawer within the route | Partial: queue and filters |
+| Workspace Chat | `/chat`: conversations, search, messages, attachments | Conversation states within the route | Partial: selected empty conversation and composer |
+| Approvals | `/approvals`: scoped queue and decision drawer | Drawer within the route | Partial: pending queue and aging indicators |
+| Performance | `/performance`: personal/team metrics | `/performance/badges` | Partial: personal score view |
+| Reports | `/reports`: catalogue, date range and CSV export | Report views within the route | Partial: overview charts and report catalogue tabs |
+| Company utilities | `/settings`, `/settings/users`, `/settings/billing`, `/notifications`, `/profile-search` | Settings sections via `?section=`; account menu | Partial: General, Appearance, Users & Access, account menu |
+| Platform/diagnostics | `/master` and its dashboard, companies, commercial, plans, billing, security, providers, credits, skills, support, health, release, testing and configuration pages; `/internal/audit`, `/internal/permissions`, `/health` | Platform-role and diagnostic access | No |
+| Design-system showcase | `/design-system` and five child routes | Mock component/shell states | No |
+
+The local Chrome walkthrough inspected the login page, dashboard, all 12 main modules, the Agent detail drawer, Settings (General and Appearance), Users & Access, and the account menu. It did not submit sign-in, create/edit records, run an agent, sweep queues, decide approvals, send chat, export reports, or sign out. Browser evidence is limited to this local session, this signed-in test workspace, and one desktop viewport; it is not a production or full-flow certification. Nested workflows, responsive widths, keyboard/focus, measured contrast, tooltips, notification behavior, and fine pixel alignment remain **unverified**.
+
+## 2. Screen and component inventory
+
+Shared shell: `AppShell`, `Sidebar`, `TopBar`, `PageHeader`, `Breadcrumbs`, account menu, notification bell and `RoutedAppShell`. Shared primitives include `DataTable`, `FilterBar`, `SearchField`, `Tabs`, `Modal`, `Drawer`, `ConfirmDialog`, `FormField`, `EmptyState`, `ErrorState`, `Skeleton`, `StatusBadge`, `ProgressStep`, `Card`, and the dashboard donut. These are defined under `packages/ui/src/`. Company pages generally assemble them under `apps/web/src/app/`.
+
+The account menu in `apps/web/src/lib/use-account-menu.ts` routes My Profile to Settings → General, Appearance to Settings → Appearance, offers workspace switching only for multiple memberships, and leaves Sign out to `TopBar`. The local test workspace displayed Aditi Sharma in the account menu and Company Admin in Users & Access; no credentials or personal email are included.
+
+Queue pills are `todo` ← dashboard `tasks`, `executor` ← `exceptions`, and `approvals` ← `approvals`; see `BADGED_TILES` in `use-company-navigation.ts`. Counts are fetched on mount, window focus, visibility return and every 60 seconds. The brief's 5/5/13 counts must not be treated as permanent values.
+
+## 3. Issue register — source-verified
+
+| ID | Severity | Evidence and effect | Proposed fix | Verification after implementation |
+| --- | --- | --- | --- | --- |
+| UX-01 | High | `apps/web/src/app/agents/page.tsx:1229-1235` still renders disabled **Run now** and **Open runs** buttons with “next prompt” tooltips in an agent detail view. The same page already contains `RunAgentPanel`, a run stream, and run history. This creates a contradictory, apparently unfinished path. | Route these detail actions into the existing run panel/history, subject to existing status and permission checks; remove obsolete copy. | Open an active agent detail and start/open runs by mouse and keyboard; check forbidden and draft states. |
+| UX-02 | Medium | `apps/web/src/app/agents/page.tsx:1242` and `apps/web/src/app/executor/page.tsx:469-474` use native `window.prompt` for pause reason and exception routing. The prompts lack the product's form guidance, validation layout and consistent decision context. | Use design-system modal/drawer forms with explicit labels, error text and confirmation context; preserve the same server authorization. | Exercise cancel, blank input, invalid user ID, loading and server refusal. |
+| UX-03 | Medium | `apps/web/src/lib/use-company-navigation.ts:128-155` refreshes badge counts on a 60-second timer/focus/visibility, but does not subscribe to local queue-decision completion. A decision made without changing window focus can leave its badge stale until the next poll. | Invalidate/refetch scoped counts after task, exception and approval mutations; retain polling for other users' work. | Complete one queue item and confirm the pill changes promptly, including a zero count disappearing. |
+| UX-04 | Medium | Sidebar says **RIS** (`navigation-model.ts:103`), while tracker page and API documentation call the feature **Task & Tracker** (`apps/web/src/app/tracker/page.tsx:49`, `apps/api/src/boards/board.service.ts:30`). The UI title itself is RIS, but the meaning is not explained. | Add a short user-facing description for RIS, based on its actual board/space/folder function; standardize user-facing supporting copy after product approval. Do not invent an expansion for the acronym. | Ask a new user to identify what RIS contains before opening it. |
+| UX-05 | Low | Several page titles differ from the official sidebar label: `/objective` uses “Objectives”, `/hierarchy` uses “Organization Hierarchy”, `/executor` uses “Executor — Exception Center”, `/approvals` uses “Approval Queue”, and `/objective/form` uses “Objective — Form 2”. Some are valid subpage specifics; the root-level differences can make current location less obvious. | Keep task-specific subtitles, but make the primary page title or breadcrumb consistently identify the parent module. | Compare sidebar, title, breadcrumb and browser title on all 12 routes. |
+| UX-06 | Low | `apps/web/src/app/objective/form/page.tsx:803` calls the main form “Form 2”, a reference-document name that tells new users little about their stage. | Lead with “Objective details” or another approved task name; retain “Form 2” as a small reference if needed. | First-time objective creation comprehension test. |
+
+These are source-observable inconsistencies or interaction risks. They are **not** pixel defects. `docs/OPEN_DEFECTS.md` contains older findings, but `apps/web/src/app/objective/analyze/page.tsx` now links to the workflow editor and groups gaps, so those entries must be revalidated before being counted as open defects.
+
+## 4. Navigation and terminology consistency
+
+| Official label | Route | Current title/breadcrumb evidence | Assessment |
+| --- | --- | --- | --- |
+| Dashboard | `/dashboard` | “Dashboard” | Aligned |
+| Hierarchy | `/hierarchy` | “Organization Hierarchy” | Parent term recognizable; normalize breadcrumb |
+| Objective Optimization | `/objective` | “Objectives” | Parent label absent in root title |
+| Agent Builder | `/agent-builder` | “Agent Builder”; breadcrumb through Engine Agents | Label aligned; relationship should be user-tested |
+| To-do List | `/todo` | “To-do List” | Aligned |
+| RIS | `/tracker` | “RIS”; implementation calls it Task & Tracker | UI aligned, purpose unclear |
+| Engine Agents | `/agents` | “Engine Agents” | Aligned |
+| Executor Agent | `/executor` | “Executor — Exception Center”; breadcrumb “Executor Agent” | Breadcrumb aligned; title uses another name |
+| Workspace Chat | `/chat` | “Workspace Chat” | Aligned |
+| Approvals | `/approvals` | “Approval Queue” | Specific queue title; parent term should remain visible |
+| Performance | `/performance` | “Performance” | Aligned |
+| Reports | `/reports` | “Reports” | Aligned |
+
+The code's Engine Agent and Executor Agent roles are distinct. `apps/web/src/app/executor/page.tsx` explicitly says Executor monitors work and routes exceptions; it does not perform the work or replace human approval. Do not rename these modules based on old documentation. “Objective Optimization” is the sidebar module; it owns a multi-step objective lifecycle, not merely an agent. “RIS” is a board workspace in this implementation, not an acronym whose expansion can be inferred safely.
+
+Tooltip, notification and dynamic label consistency remains browser-pending. A full terminology audit must also check permission-specific pages and the platform console with appropriate accounts.
+
+## 5. Enterprise design research and proposed system
+
+Preserve the existing design-token architecture in `packages/ui/src/styles/tokens.css`: violet identity/selection, a single primary-action treatment, semantic status colors always paired with text, local fonts and light/dark surfaces. Build a component specification for density, spacing, radii, typography, state behavior and responsive breakpoints rather than adding page-specific decoration. Use data tables for comparable records, diagrams for relationships, and drawers for contextual inspection. Empty states should distinguish “nothing exists”, “nothing matches filters”, “not permitted” and “failed to load”.
+
+Research basis: [W3C WCAG 2.2](https://www.w3.org/TR/WCAG22/) for focus visibility, contrast, names/roles and status messages; [W3C consistent visual design guidance](https://www.w3.org/WAI/WCAG2/supplemental/patterns/o1p03-consistent-design/) for repeated controls; [Atlassian empty-state guidance](https://atlassian.design/content/designing-messages/empty-state/) for concise recovery and next actions. These are design criteria, not evidence that the current UI passes them.
+
+Recommended design tokens and components to specify during design approval: an 8 px spacing scale with 4 px fine adjustment, 44 px minimum touch targets where applicable, visible focus rings in both themes, compact/comfortable table density, stable skeleton dimensions, text-plus-icon status, one clear primary action per form, and consistent overlay sizes. Measure actual contrast and target sizes in the browser before calling them compliant.
+
+## 6. Agent visualization blueprint
+
+Three directions:
+
+1. **Operational graph**: objective/workflow nodes with real dependencies, agent assignments, human steps, approvals and outputs. Best for diagnosing a single objective.
+2. **Mission-control overview**: company-wide agent lanes, currently running work, exceptions and searchable activity. Best for day-to-day oversight, but needs careful scope filtering and can become noisy.
+3. **Timeline-first inspector**: durable events and outcomes first, with a small contextual relationship graph. Best for investigation and auditability, less striking at a glance.
+
+Recommend a **hybrid of 1 and 3**: a focused graph for one objective or run, a persistent event timeline and a contextual inspector. Keep the company-wide overview as a compact entry point rather than a giant always-animated canvas. This fits existing `RunProgressEvent` fields (`runId`, `engineAgentId`, state, optional percent, attempt, time, correlation ID and assignment ID) and `use-run-stream.ts`'s EventSource plus durable-record seeding. The assignment ID can map a run to a workflow node. An event with `percent: null` must show a state, never an invented percentage. Human tasks and approval checkpoints need their own durable status reads and, for truly live updates, new event support. Missing stream connectivity must be labeled “last updated”, not shown as live.
+
+Per-module use: Hierarchy shows organizational reporting and ownership; Objective Optimization shows dependency graph and lifecycle; Agent Builder previews the agent's configuration and test path; Engine Agents shows run state and history; Executor Agent shows exception-to-owner resolution; Chat shows linked runs/artifacts only when the user can access them; Performance uses aggregate trends, not animated “thinking” effects. Provide list/table equivalents and reduced-motion behavior for every graph.
+
+## 7. Module redesign priorities
+
+| Module | Design direction |
+| --- | --- |
+| Login | Verify email-first states, recovery, MFA/SSO failures, autofill, keyboard path and mobile layout before changing the visual shell. |
+| Dashboard | Keep the contracted two-slice donut; clarify scope and tile-to-detail feedback, and measure the two lanes at real widths. |
+| Hierarchy | Make selection, reporting relationships, expansion and assignment controls legible; provide search and a table fallback for large trees. |
+| Objective Optimization | Show a stage rail from draft through analysis, workflow edit, review, publish and closure; preserve the exact state and permissions behind each step. |
+| Agent Builder | Guided sections for identity, inputs, tools/permissions, test, review and activation with save/resume clarity. |
+| To-do List | Unify task priority/status vocabulary and make filters, counts and bulk feedback explicit. |
+| RIS | Explain boards, spaces, folders and membership; test board editing and dense tables at narrow widths. |
+| Engine Agents | Remove obsolete disabled run controls; pair list, detail, configuration and real run history. |
+| Executor Agent | Replace native prompts; distinguish monitor, route, escalate and resolve actions with owner and audit context. |
+| Workspace Chat | Separate messages, tool/run context and attachments without simulating progress; test long threads, scroll and recovery. |
+| Approvals | Make risk, requester, consequence, decision reason and audit history visible before submission. |
+| Performance | Separate personal and team scopes, explain scoring and make trend comparisons readable. |
+| Reports | Clarify report catalogue, range, loading/empty state, export availability and column definitions. |
+
+## 8. Frontend/backend dependencies and roadmap
+
+**Phase 0 — verify:** restore browser control, inspect all accessible routes at desktop/tablet/mobile widths with an authorized pilot user and platform user; capture screenshots and keyboard/focus traces; compare queue counts to API responses. No redesign sign-off before this.
+
+**Phase 1 — interaction defects:** connect Engine Agent detail actions to existing run UI, replace native prompts, update queue pills immediately after local mutations, and standardize root-route terminology. Primarily frontend work; reuse existing API authorization.
+
+**Phase 2 — design-system pass:** document component geometry and states, then correct verified contrast, spacing, overflow, tooltip, focus and responsive defects. Use visual regression screenshots only after a baseline is inspected.
+
+**Phase 3 — agent visualization:** implement focused graph + durable timeline + inspector using existing run records and EventSource. Backend additions only for human/approval event delivery or missing cross-entity links; do not infer state from animation.
+
+**Phase 4 — acceptance:** validate each role and permission scope, keyboard-only paths, reduced motion, error/retry, empty data, slow data, screen widths and production-like event reconnection.
+
+## 9. Acceptance criteria and verification matrix
+
+| Criterion | Evidence required | Current status |
+| --- | --- | --- |
+| Every accessible route and nested flow inventoried | Browser walkthrough and screenshots for pilot, manager/admin, platform roles | Pending |
+| Sidebar, title, breadcrumb and account menu consistent | Route-by-route comparison under each role | Source comparison partial |
+| Badge reflects authorized queue and local mutation | Compare endpoint payload, displayed number and post-action refresh | Mapping verified in source; runtime pending |
+| No dead or misleading action | Click and keyboard test of visible controls | UX-01 source-confirmed; full sweep pending |
+| Responsive and pixel-quality layout | 360/768/1280/1600 px screenshots in light/dark modes | Pending |
+| Accessible focus, names and status updates | Keyboard and assistive-tech inspection against WCAG 2.2 AA | Pending |
+| Honest live agent display | Match each visual transition to durable event/run state; reconnect test | Architecture reviewed; runtime pending |
+| Permission and tenant isolation | Authorized/unauthorized role comparison and API proof | Pending for this audit |
+
+## 10. Browser evidence and remaining limits
+
+This is a partial visual smoke check only. The local login page and all 12 main modules rendered in the signed-in test workspace, with entry-level states recorded below. The login page showed a split brand/form layout; its Terms checkbox was unchecked and Sign In looked muted. Google, Apple and Microsoft buttons also looked muted, but their enabled/configured states were not tested. The dashboard showed 70 Objectives, 13 Engine Agents, 6 Hierarchy, 20 Agent Builder, 5 Tasks, 13 Approvals and 5 Exceptions. These are local seeded values, not production expectations. Approvals showed 13 pending with aging items; To-do My work was empty while Team showed rows. Objective Optimization displayed a dense table with a horizontal scrollbar at the tested viewport. RIS showed an empty Boards state and generic board examples. Engine Agents exposed an active-agent table and read-only detail drawer. Executor clearly stated that it monitors and routes exceptions and does not approve its own findings. Reports loaded charts after a short delay. Settings exposed General, Appearance and Users & Access. The account menu's My Profile item opened company General settings instead of a personal profile.
+
+No sign-in, persistent record creation, agent runs, queue sweeps, approval decisions, chat sends, exports or logout were completed. A new synthetic objective was entered in the local browser but remained unsaved after validation rejected the draft. This covers one desktop viewport and entry-level screens only; nested flows, responsive widths, keyboard/focus, measured contrast, tooltips, notification behavior and fine alignment remain unverified. No screenshots were saved as report artifacts. Platform-only routes and other roles were not accessible in this session. This is not production-readiness evidence or proof that every interaction works.
+
+### Additional browser-verified issues
+
+| ID | Severity | Evidence and effect | Proposed fix | Verification after implementation |
+| --- | --- | --- | --- | --- |
+| UX-07 | Medium | The account menu's **My Profile** opens `/settings?section=general`, which shows company workspace identity and timezone rather than personal profile settings. The source mapping in `apps/web/src/lib/use-account-menu.ts` matches the observed behavior. | Link to personal settings if available; otherwise rename the menu item to describe the company settings destination. | Follow My Profile under multiple roles and verify destination and breadcrumb. |
+| UX-08 | Medium | In the same Whole Company scope, Dashboard says Agent Builder has **20** items “Waiting to be built”, while `/agent-builder` says no objective needs an agent and no assigned AI work awaits setup. The relationship between these counts/states is unclear. | Define the card's population/scope; reconcile it with the builder empty state or label the separate queues. | Compare dashboard API payload and builder filters for this tenant and role. |
+| UX-09 | Low | The To-do List sidebar badge shows **5** while default **My work** says nothing is assigned; switching to **Team** reveals work items. The badge's personal/team scope is not explained beside the count. | Make badge scope explicit or default the page to the scope represented by the badge. | Compare badge payload to My work and Team counts across roles. |
+| UX-10 | Low | The new form starts with one blank workflow row. During the walkthrough, **Add Row** was clicked before the first step was complete; after only Step 1 had Exact Work, **Save Draft** correctly rejected the intentionally added empty Step 2 with “Step 2: exact work is required.” The message is actionable, but it appears in the page banner while the invalid cell is lower in a wide, horizontally scrolling grid; the step cell is not linked/focused by this form. | Keep the validation rule. Improve recovery by focusing/scrolling to the invalid row and column and marking the cell invalid; consider clearly indicating that **Add Row** creates another required step. | Add a second row, save it blank, and verify the error moves keyboard and visual focus to Step 2 Exact Work at desktop and narrow widths. |
+
+The objective walkthrough tested field entry (synthetic name, Operations, fixture owner, 18%, %, 90 calendar days), added a second workflow row, entered Exact Work only in Step 1, then tried to save. The specific Step 2 validation was expected for that intentionally added blank row; the remaining UX opportunity is direct focus and cell-level error feedback. **Analyze & Generate Workflow was not run** because the browser session was stopped before continuing. No persistent objective was created.
+
+## 11. Executive assessment
+
+The code has a substantial shared design system, permission-aware navigation and real run events, so a polished enterprise experience can build on what exists. Chrome confirmed the signed-in workspace routes render at the entry level and surfaced account navigation, dashboard/queue scope labels that need comparison, and an objective error-recovery opportunity. The Step 2 validation itself was expected because a second row had been added and left blank. The highest source-confirmed UI gap remains the disabled Engine Agent detail actions alongside a working run flow. Deep workflows, responsive and accessibility checks, nested routes and production behavior remain unverified; this is not a complete pixel-level audit. No application implementation was changed; this document is the reviewable analysis baseline.
+

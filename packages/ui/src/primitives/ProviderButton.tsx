@@ -95,7 +95,7 @@ export function ProviderButton({
       <span className="uboss-provider-mark" aria-hidden="true">
         {MARKS[kind]}
       </span>
-      <span className="uboss-provider-label">{label}</span>
+      <span>{label}</span>
     </button>
   );
 }

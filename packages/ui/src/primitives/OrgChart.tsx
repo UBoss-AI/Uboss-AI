@@ -1302,7 +1302,6 @@ function Card({
       */}
       {washed ? (
         <path
-          className="uboss-org-band"
           d={panelPath(x, y, bandWidth, BOX_HEIGHT, 16, 0)}
           fill={band}
           fillOpacity={bandOpacity}
@@ -1449,7 +1448,6 @@ function FoldToggle({
 
   return (
     <g
-      className="uboss-org-fold"
       role="button"
       tabIndex={0}
       aria-label={label}

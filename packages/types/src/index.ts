@@ -21,6 +21,8 @@ export {
   isSodRule,
   isUserType,
   isWriteAction,
+  COMPANY_MODULE_LABELS,
+  moduleLabel,
   MODULE_KEYS,
   narrowerScope,
   PLATFORM_MODULES,

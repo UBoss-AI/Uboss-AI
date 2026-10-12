@@ -372,12 +372,42 @@ export function isAddressedTo(input: {
     }
 
     case 'Role': {
-      return input.actorRoleKinds.includes(routing.role)
-        ? { addressed: true, reason: `You hold the ${routing.role} role it is sent to.` }
-        : {
-            addressed: false,
-            reason: `This request is addressed to a ${routing.role}, which you do not hold.`,
-          };
+      if (input.actorRoleKinds.includes(routing.role)) {
+        return { addressed: true, reason: `You hold the ${routing.role} role it is sent to.` };
+      }
+
+      /*
+       * The company's administrator is addressed by anything addressed to a role.
+       *
+       * Not a convenience. `COMPANY_GRANTABLE_ROLES` is `['CompanyAdmin', 'Employee']` — a
+       * company cannot hand out `Manager`, `Head` or `Approver` at all any more, at the route and
+       * not merely on the screen. So a request addressed to one of them was addressed to nobody
+       * who can exist, and it waited for ever. Fifteen of them were found in one company, the
+       * oldest twenty-six days old, with no person in the product able to decide any of them.
+       *
+       * The permission for this was granted long ago and for exactly this reason: `CompanyAdmin`
+       * holds `approvals: Approve`, and the note beside that grant says it is held because those
+       * roles "are no longer roles this product hands out, so a request addressed to one would
+       * wait for somebody who does not exist". The grant was dead, because this function kept
+       * refusing the holder on the grounds that they are not a Manager.
+       *
+       * What this does not do is decide anything else. The authorization engine still runs after
+       * this and still asks for the governing permission; this answers only "is it addressed to
+       * them".
+       */
+      if (input.actorRoleKinds.includes('CompanyAdmin')) {
+        return {
+          addressed: true,
+          reason:
+            `This is addressed to a ${routing.role}. You may decide it as the company's ` +
+            'administrator, because nobody can hold that role.',
+        };
+      }
+
+      return {
+        addressed: false,
+        reason: `This request is addressed to a ${routing.role}, which you do not hold.`,
+      };
     }
 
     case 'FourEyes': {
