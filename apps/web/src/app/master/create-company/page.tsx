@@ -186,11 +186,27 @@ export default function MasterCreateCompanyPage() {
         const defaultPlan = value.defaults.planCode;
         if (typeof defaultPlan === 'string') {
           const plan = value.plans.find((candidate) => candidate.code === defaultPlan);
+          /*
+            The same cascade as choosing a plan by hand — see the note on the plan select.
+
+            A default plan is still a chosen plan. Without this the wizard opens on one, shows its
+            seats and its currency, and leaves the allowance at zero: the commonest path through
+            this screen, and the one every company with no AI allowance came through.
+          */
+          const allowance = plan?.aiAllowanceMinor ?? null;
           setForm((previous) => ({
             ...previous,
             planCode: defaultPlan,
             seats: plan?.seatLimit ?? previous.seats,
             currency: plan?.currency ?? previous.currency,
+            ...(allowance === null
+              ? {}
+              : {
+                  commercialAllowance: allowance,
+                  monthlyAllowance: allowance,
+                  approvalThreshold: allowance,
+                  hardStop: Math.round(allowance * 1.2),
+                }),
           }));
         }
         if (typeof value.defaults.timezone === 'string') {
@@ -636,6 +652,32 @@ export default function MasterCreateCompanyPage() {
                           set('planCode', event.target.value);
                           if (plan?.seatLimit) set('seats', plan.seatLimit);
                           if (plan?.currency) set('currency', plan.currency);
+                          /*
+                            The allowance starts at what the plan includes, the same way seats and
+                            currency already do.
+
+                            It used to start at zero and stay there unless somebody typed in it,
+                            and nothing on the screen connected it to the plan above. Every company
+                            provisioned this way got no AI allowance at all: eleven of them in the
+                            development database, each on a plan that includes a hundred thousand.
+                            Their AI does not run and their Billing screen says "0 of 0" without
+                            saying why.
+
+                            The field below already cascades into the step-7 guardrails for exactly
+                            this reason — "the guardrails default to the commercial term they are
+                            guarding". That reasoning was one level short: the commercial term
+                            should default to the plan it is a term of.
+
+                            Still editable. A plan that genuinely includes nothing — Pilot is one —
+                            sets zero here, which is correct and stays correct.
+                          */
+                          if (plan !== undefined) {
+                            const allowance = plan.aiAllowanceMinor ?? 0;
+                            set('commercialAllowance', allowance);
+                            set('monthlyAllowance', allowance);
+                            set('approvalThreshold', allowance);
+                            set('hardStop', Math.round(allowance * 1.2));
+                          }
                         }}
                       >
                         <option value="">Choose a plan</option>

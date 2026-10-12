@@ -871,6 +871,8 @@ export interface CreateCompanyPrerequisites {
     entitledModules: string[];
     priceMinor: number | null;
     currency: string;
+    /** What the plan includes in AI allowance. The wizard's own field starts here. */
+    aiAllowanceMinor: number | null;
   }[];
   defaults: { planCode: unknown; timezone: unknown; currency: unknown };
   constraints: { companyCreation: unknown; note: string };

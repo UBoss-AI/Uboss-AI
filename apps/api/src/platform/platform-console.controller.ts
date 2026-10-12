@@ -273,6 +273,19 @@ export class PlatformConsoleController {
         entitledModules: plan.entitledModules,
         priceMinor: plan.priceMinor,
         currency: plan.currency,
+        /*
+         * What the plan includes in AI allowance, so the wizard can start its own field there.
+         *
+         * It was absent, and the wizard's allowance field therefore started at zero and stayed
+         * there unless somebody typed in it. Every company provisioned through that wizard got no
+         * AI allowance at all — eleven of them in the development database, each on a plan that
+         * defines a hundred thousand. Their AI simply does not run, and nothing on their Billing
+         * screen says why.
+         *
+         * The figure is already on the plan and already sent to the Plans screen beside this one.
+         * It is not a permission and grants nobody anything: it is what was bought.
+         */
+        aiAllowanceMinor: plan.aiAllowanceMinor,
       })),
       defaults: {
         planCode: setting('provisioning.default_plan_code'),
