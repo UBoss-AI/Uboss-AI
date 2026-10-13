@@ -108,6 +108,27 @@ function WorkspaceChatInner() {
    * second answer to it, and the two would disagree.
    */
   const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
+
+  /**
+   * One response, both lists.
+   *
+   * The conversations call now answers two questions — what this person is already in, and which
+   * department workshops they may open — and six places in this file read it. A helper so that
+   * adding a seventh cannot quietly leave the workshops stale, which is exactly the shape of the
+   * bug this replaces.
+   */
+  const applyConversations = useCallback(
+    (response: {
+      conversations: ChatConversationSummary[];
+      openableDepartments?: { id: string; name: string }[];
+    }) => {
+      setConversations(response.conversations);
+      if (response.openableDepartments !== undefined) {
+        setDepartments(response.openableDepartments);
+      }
+    },
+    [],
+  );
   const [requestingChange, setRequestingChange] = useState(false);
   const [openId, setOpenId] = useState<string | null>(requestedId);
   const [open, setOpen] = useState<ChatConversationView | null>(null);
@@ -252,7 +273,7 @@ function WorkspaceChatInner() {
       try {
         const opened = await chatApi.openDepartmentWorkshop(tenantId, departmentId);
         const refreshed = await chatApi.conversations(tenantId);
-        setConversations(refreshed.conversations);
+        applyConversations(refreshed);
         setOpenId(opened.id);
       } catch (caught) {
         setError(
@@ -262,7 +283,7 @@ function WorkspaceChatInner() {
         setBusy(false);
       }
     },
-    [tenantId],
+    [tenantId, applyConversations],
   );
 
   const load = useCallback(async () => {
@@ -291,7 +312,7 @@ function WorkspaceChatInner() {
         context: meta.contextStance,
         search: meta.searchStance,
       });
-      setConversations(list.conversations);
+      applyConversations(list);
       // Opening the newest is a convenience for somebody arriving at Chat directly. It must not
       // override a conversation named in the URL, which is a deliberate destination.
       if (list.conversations.length > 0 && openId === null && requestedId === null) {
@@ -302,7 +323,7 @@ function WorkspaceChatInner() {
     } finally {
       setLoading(false);
     }
-  }, [openId, requestedId]);
+  }, [openId, requestedId, applyConversations]);
 
   /*
    * The departments, read on their own.
@@ -319,11 +340,18 @@ function WorkspaceChatInner() {
       .hierarchy(tenantId)
       .then((view) => {
         if (!current) return;
-        setDepartments(
-          (view.departments ?? [])
-            .filter((department) => !department.archived)
-            .map((department) => ({ id: department.id, name: department.name })),
-        );
+        /*
+          The department list no longer comes from here.
+
+          It used to, and that was the defect: the hierarchy answers "which departments exist",
+          and the rail needs "which workshops may this person open" — nearly always a much
+          shorter list. An employee was shown every department in the company and most of them
+          refused when pressed. The conversations call answers the right question now, with the
+          same permission the open itself is checked against.
+
+          This read stays for `colleagues`, which the mention picker and the new-conversation
+          panel both need.
+        */
         setColleagues(
           (view.list ?? []).map((person) => ({
             userId: person.userId,
@@ -332,7 +360,9 @@ function WorkspaceChatInner() {
         );
       })
       .catch(() => {
-        if (current) setDepartments([]);
+        // Costs the mention picker its names and nothing else — the workshops in the rail come
+        // from the conversations call, which is a separate request with its own permission.
+        if (current) setColleagues([]);
       });
     return () => {
       current = false;
@@ -356,7 +386,7 @@ function WorkspaceChatInner() {
         // scroll listener and would still be wrong for somebody who opened and looked away.
         await chatApi.markRead(tenantId, openId);
         const refreshed = await chatApi.conversations(tenantId);
-        if (!cancelled) setConversations(refreshed.conversations);
+        if (!cancelled) applyConversations(refreshed);
       } catch (caught) {
         if (!cancelled) {
           setError(
@@ -369,7 +399,7 @@ function WorkspaceChatInner() {
     return () => {
       cancelled = true;
     };
-  }, [tenantId, openId]);
+  }, [tenantId, openId, applyConversations]);
 
   /*
    * The screen looks for new messages while it is open.
@@ -412,7 +442,7 @@ function WorkspaceChatInner() {
       try {
         const list = await chatApi.conversations(tenantId);
         if (stopped) return;
-        setConversations(list.conversations);
+        applyConversations(list);
 
         if (openId === null) return;
         const conversation = await chatApi.read(tenantId, openId);
@@ -434,7 +464,7 @@ function WorkspaceChatInner() {
         if (arrived) {
           await chatApi.markRead(tenantId, openId);
           const after = await chatApi.conversations(tenantId);
-          if (!stopped) setConversations(after.conversations);
+          if (!stopped) applyConversations(after);
         }
       } catch {
         /*
@@ -455,7 +485,7 @@ function WorkspaceChatInner() {
       stopped = true;
       clearInterval(timer);
     };
-  }, [tenantId, openId]);
+  }, [tenantId, openId, applyConversations]);
 
   /**
    * Put a file in the company's own store, then remember its id for the next message.
@@ -531,7 +561,7 @@ function WorkspaceChatInner() {
       setOpen(await chatApi.read(tenantId, openId));
       // The rail carries the last-activity line and the unread counts, and this message changed
       // both for everybody in the room — including this reader's own row.
-      setConversations((await chatApi.conversations(tenantId)).conversations);
+      applyConversations(await chatApi.conversations(tenantId));
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : 'That message could not be sent.');
     } finally {

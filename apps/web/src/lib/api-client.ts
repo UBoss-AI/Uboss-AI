@@ -6772,9 +6772,16 @@ export const chatApi = {
     }>(`/tenants/${encodeURIComponent(tenantId)}/chat/meta`),
 
   conversations: (tenantId: string) =>
-    call<{ conversations: ChatConversationSummary[] }>(
-      `/tenants/${encodeURIComponent(tenantId)}/chat/conversations`,
-    ),
+    call<{
+      conversations: ChatConversationSummary[];
+      /**
+       * The departments this person may open a workshop for — not every department there is.
+       *
+       * The server answers with the same permission it enforces on the open itself, so the rail
+       * can stop offering doors that refuse.
+       */
+      openableDepartments: { id: string; name: string }[];
+    }>(`/tenants/${encodeURIComponent(tenantId)}/chat/conversations`),
 
   /**
    * Open a department's workshop, creating it the first time anybody asks.

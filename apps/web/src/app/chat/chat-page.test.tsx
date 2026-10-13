@@ -139,6 +139,37 @@ describe('Workspace Chat', () => {
     expect(list).toHaveTextContent('2');
   });
 
+  /*
+   * Which department workshops appear.
+   *
+   * The rail used to read the hierarchy and offer a workshop for every department in the
+   * company. Opening one needs `hierarchy:View` over that department, which an ordinary employee
+   * does not hold, so they were shown a column of doors that refused when pressed. Reported from
+   * the live site. The server answers the right question now, with the permission it enforces.
+   */
+  it('offers only the workshops this person may open, not every department', async () => {
+    hierarchy.mockResolvedValue({
+      // Every department there is. None of this decides the rail any more.
+      departments: [
+        { id: 'dept-finance', name: 'Finance', archived: false },
+        { id: 'dept-hr', name: 'Human Resources', archived: false },
+        { id: 'dept-ops', name: 'Operations', archived: false },
+      ],
+      list: [],
+    });
+    conversations.mockResolvedValue({
+      conversations: [],
+      openableDepartments: [{ id: 'dept-ops', name: 'Operations' }],
+    });
+
+    render(<WorkspaceChatPage />);
+
+    const list = await screen.findByTestId('chat-conversations');
+    await waitFor(() => expect(list).toHaveTextContent('Operations Workshop'));
+    expect(list).not.toHaveTextContent('Finance Workshop');
+    expect(list).not.toHaveTextContent('Human Resources Workshop');
+  });
+
   it('opens a conversation and marks it read', async () => {
     render(<WorkspaceChatPage />);
 

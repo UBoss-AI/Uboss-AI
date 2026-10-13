@@ -361,6 +361,80 @@ export class ChatService {
   }
 
   /** The conversations this person is in, newest activity first. */
+  /**
+   * The departments this person may actually open a workshop for.
+   *
+   * ## What this replaces
+   *
+   * The rail listed **every** department in the company, read from the hierarchy, and offered to
+   * open a workshop for each. Most of them refuse: opening one you do not work in needs
+   * `hierarchy:View` over that department, which an administrator and a head hold and an ordinary
+   * employee does not. So an employee was shown a column of doors, nearly all of which answered
+   * "this is not a department you work in" when pressed. Reported from the live site.
+   *
+   * Nothing was leaking — the refusal is real and the server has always enforced it. What was
+   * wrong is that the screen could not tell which door was theirs, because it never asked.
+   *
+   * ## Why the same question the open path asks
+   *
+   * Asked of the authorization engine, with the identical module, action and resource that
+   * `openDepartmentWorkshop` checks. Re-deriving it here — "is this person an admin?" — would be
+   * a second permission engine, and the two would disagree eventually.
+   *
+   * The context is built before the transaction and the authorize calls are made after it, for
+   * the reason given on `openDepartmentWorkshop`: neither can run inside a tenant transaction.
+   */
+  async listOpenableWorkshopDepartments(input: {
+    scope: TenantScope;
+    actorUserId: string;
+  }): Promise<{ id: string; name: string }[]> {
+    const context = await this.authorization.contextFor(input.scope, input.actorUserId);
+
+    const { departments, worksIn } = await this.prisma.runInTenantTransaction(
+      input.scope,
+      async () => {
+        const rows = await this.prisma.client.department.findMany({
+          where: { tenantId: input.scope.tenantId, archivedAt: null },
+          select: { id: true, name: true },
+          orderBy: { name: 'asc' },
+        });
+
+        // Where this person works, read from employment rather than from roles: a role says what
+        // somebody may do, and this question is about where they sit.
+        const employment = await this.prisma.client.employmentRecord.findMany({
+          where: {
+            tenantId: input.scope.tenantId,
+            userId: input.actorUserId,
+            endedAt: null,
+          },
+          select: { departmentId: true },
+        });
+
+        return {
+          departments: rows,
+          worksIn: new Set(employment.map((row) => row.departmentId)),
+        };
+      },
+    );
+
+    const openable: { id: string; name: string }[] = [];
+    for (const department of departments) {
+      if (worksIn.has(department.id)) {
+        openable.push(department);
+        continue;
+      }
+
+      const allowed = await this.authorization.authorize(context, {
+        module: 'hierarchy',
+        action: 'View',
+        resource: { id: department.id, departmentId: department.id },
+      });
+      if (allowed.allowed) openable.push(department);
+    }
+
+    return openable;
+  }
+
   async listConversations(input: {
     scope: TenantScope;
     actorUserId: string;

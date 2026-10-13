@@ -7,6 +7,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import {
   FORM2_SECTION_LABELS,
   FORM2_WORKFLOW_COLUMN_COUNT,
+  mayTransitionObjective,
   REWARD_TYPE_LABELS,
   REWARD_TYPES,
   TIME_UNIT_LABELS,
@@ -117,9 +118,10 @@ function numberOrNull(value: string): number | null {
  *      Applicable, Type, Amount/Points, Eligibility Condition, Completion Deadline, Evidence,
  *      Approver — where the prototype's drawer predates that amendment and has three. The latest
  *      client amendment wins over the earlier prototype.
- *   3. **Analyze & Generate Workflow is present but disabled**, because the AI analysis it opens
- *      is a later prompt. A button that silently did nothing would be worse than one that says
- *      why it is not available.
+ *   3. **Analyze & Generate Workflow opens the AI analysis**, which the prototype has no notion
+ *      of. It is an alternative to Submit for Review rather than a step after it: review sends
+ *      the objective to a person as written, analysis has the AI break it into a workflow, and
+ *      both routes end at a decision. The transition table is where that is enforced.
  */
 function ObjectiveFormInner() {
   // Prompt 40A (CR-03): the sidebar follows this person's real grants, never a role label.
@@ -260,6 +262,21 @@ function ObjectiveFormInner() {
 
   const draft = objective?.openDraft ?? null;
   const readOnly = objective !== null && draft === null;
+
+  /*
+   * Whether review is a move this version can actually make.
+   *
+   * The form stays editable through `Draft`, `AiAnalysis` and `WorkflowDraft`, but only `Draft`
+   * may go to `UnderReview` — the other two reach a decision through `ReadyForApproval` instead.
+   * So from the moment somebody pressed Analyze & Generate Workflow, Submit for Review was still
+   * enabled and could only ever fail, with the server answering "a version that is Workflow Draft
+   * cannot be submitted for review". A button whose only outcome is a refusal should not invite
+   * the press.
+   *
+   * Asked of the same transition table the server enforces, rather than restated as a list of
+   * statuses here, so the screen cannot drift from the rule.
+   */
+  const maySubmitForReview = draft !== null && mayTransitionObjective(draft.status, 'UnderReview');
 
   useEffect(() => {
     authApi
@@ -950,18 +967,42 @@ function ObjectiveFormInner() {
             <Button size="sm" onClick={save} disabled={busy || readOnly}>
               Save Draft
             </Button>
-            <Button size="sm" onClick={submit} disabled={busy || readOnly}>
+            <Button
+              size="sm"
+              onClick={submit}
+              disabled={busy || readOnly || !maySubmitForReview}
+              title={
+                readOnly || maySubmitForReview
+                  ? 'Send this objective to a person to review as written.'
+                  : `A version that is ${draft?.statusLabel ?? 'past draft'} goes to a decision ` +
+                    'through the workflow rather than back to review.'
+              }
+            >
               Submit for Review
             </Button>
-            {/* Live at Prompt 21. Disabled until the objective is saved, because there is nothing
-                to analyse before that — the analysis reads the stored Form 2 grid. */}
+            {/*
+              The other route to the same place, and the screen now says which is which.
+
+              These two are alternatives, not steps: review sends the objective to a person as
+              written, analysis has the AI break it into a workflow first. Both end at
+              ReadyForApproval, and the transition table calls the analysis an optional detour
+              rather than the only way through. Side by side with nothing said, the purple one
+              read as the required next step.
+
+              Disabled until the objective is saved, because there is nothing to analyse before
+              that — the analysis reads the stored Form 2 grid.
+            */}
             {objective === null ? (
               <Button variant="primary" size="sm" disabled title="Save the draft first">
                 Analyze &amp; Generate Workflow
               </Button>
             ) : (
               <Link href={`/objective/analyze?objectiveId=${encodeURIComponent(objective.id)}`}>
-                <Button variant="primary" size="sm">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  title="Have the AI break this objective into a workflow. An alternative to sending it straight to review, not a step after it."
+                >
                   Analyze &amp; Generate Workflow
                 </Button>
               </Link>

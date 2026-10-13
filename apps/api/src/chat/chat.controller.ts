@@ -121,12 +121,23 @@ export class ChatController {
 
   @Get('conversations')
   async list(@Param('tenantId') tenantId: string): Promise<unknown> {
-    return {
-      conversations: await this.chat.listConversations({
-        scope: tenantScopeForPlatformOperation(tenantId),
-        actorUserId: this.me(),
-      }),
-    };
+    const scope = tenantScopeForPlatformOperation(tenantId);
+    const actorUserId = this.me();
+
+    const [conversations, openableDepartments] = await Promise.all([
+      this.chat.listConversations({ scope, actorUserId }),
+      /*
+       * Which department workshops this person may open, rather than every department there is.
+       *
+       * The rail used to read the whole hierarchy and offer a workshop for each, so an ordinary
+       * employee saw a column of doors that answered "this is not a department you work in". The
+       * server has always refused those; it had simply never been asked which ones it would
+       * allow.
+       */
+      this.chat.listOpenableWorkshopDepartments({ scope, actorUserId }),
+    ]);
+
+    return { conversations, openableDepartments };
   }
 
   /**
