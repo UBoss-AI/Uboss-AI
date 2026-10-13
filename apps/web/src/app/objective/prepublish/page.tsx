@@ -289,10 +289,29 @@ function PrePublishInner() {
             <MetricCard label="AI steps" value={String(summary.aiNodeCount)} />
             <MetricCard label="Approvals" value={String(summary.approvalGateCount)} />
             <MetricCard label="Skills reused" value={String(summary.skillVersionIds.length)} />
-            <MetricCard
-              label="Skills still needed"
-              value={String(summary.nodesNeedingNewSkill.length)}
-            />
+            {/*
+              The one number on this page that is somebody's next job, so it links to where that
+              job is done.
+
+              An AI step with no approved Skill behind it blocks the publish, and the whole screen
+              had exactly one link on it — to the workflow. So an administrator read "11 skills
+              still needed", and then had to know, unaided, that Skills are authored in Agent
+              Builder and that eleven of them stood between this plan and being published.
+
+              Only a link when there is something to go and do. A count of zero is a fact, not a
+              task, and making it pressable would invite a trip to build nothing.
+            */}
+            {summary.nodesNeedingNewSkill.length === 0 ? (
+              <MetricCard label="Skills still needed" value="0" />
+            ) : (
+              <Link href="/agent-builder" className="uboss-metric-link">
+                <MetricCard
+                  label="Skills still needed"
+                  value={String(summary.nodesNeedingNewSkill.length)}
+                  delta="Author them in Agent Builder"
+                />
+              </Link>
+            )}
             <MetricCard
               label="Missing connections"
               value={String(summary.missingConnections.length)}

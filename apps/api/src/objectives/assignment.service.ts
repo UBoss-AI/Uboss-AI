@@ -819,23 +819,54 @@ export class AssignmentService {
     // interactive transaction loses the AsyncLocalStorage scope, producing the same empty result
     // by a different route. This block ran outside a transaction at first and did exactly that —
     // the comment warning about it was already here.
-    const inactiveAssignees = await this.prisma.runInTenantTransaction(input.scope, async () => {
-      const inactive: string[] = [];
+    /*
+     * Not yet invited is not the same as cannot be given work.
+     *
+     * This asked for `accountState: 'Active'` and refused everything else, which made an
+     * administrator invite the whole company before a single objective could be published.
+     * Reported exactly that way: somebody is employed here, the work is theirs, and they have not
+     * opened their invitation yet. Queuing it is the normal case — the step is written against
+     * their name and appears the moment they accept.
+     *
+     * The two that still refuse are the two where waiting does not help. `Suspended` is somebody
+     * deliberately held out of the company, and `Offboarded` has left: new work in front of
+     * either is work nobody will ever do, and quietly assigning it would hide that from whoever
+     * published the plan.
+     *
+     * No membership row at all is a different thing again — not a person in this company — and
+     * says so separately, because the fix is different.
+     */
+    const assigneeStates = await this.prisma.runInTenantTransaction(input.scope, async () => {
+      const states = new Map<string, string | null>();
       for (const userId of assigneeIds) {
         const membership = await this.prisma.client.tenantMembership.findFirst({
-          where: { userId, accountState: 'Active' },
+          where: { userId },
+          select: { accountState: true },
         });
-        if (membership === null) inactive.push(userId);
+        states.set(userId, membership?.accountState ?? null);
       }
-      return inactive;
+      return states;
     });
 
-    for (const userId of inactiveAssignees) {
-      refuse(
-        'Permissions',
-        null,
-        `A step is assigned to somebody with no active membership in this company (${userId}).`,
-      );
+    for (const [userId, accountState] of assigneeStates) {
+      if (accountState === null) {
+        refuse(
+          'Permissions',
+          null,
+          `A step is assigned to somebody who is not a member of this company (${userId}).`,
+        );
+        continue;
+      }
+
+      if (accountState === 'Suspended' || accountState === 'Offboarded') {
+        refuse(
+          'Permissions',
+          null,
+          `A step is assigned to somebody whose access is ${accountState.toLowerCase()} ` +
+            `(${userId}), so the work would sit in front of nobody. Reassign the step, or ` +
+            'restore their access first.',
+        );
+      }
     }
 
     /*

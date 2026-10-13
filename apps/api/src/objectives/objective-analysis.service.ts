@@ -161,6 +161,55 @@ interface PipelineState {
  * the risk that kept this answer discarded for so long. Case is ignored because a model writes
  * `write` as readily as `Write`, and that difference carries no meaning.
  */
+/**
+ * The model's Definition of Done lines, read back into pairs.
+ *
+ * Same shape as `parseToolCategories` below, and for the same reasons: numbered lines, a tolerant
+ * separator, and anything it cannot read dropped rather than guessed at. A caller gets `undefined`
+ * for a step the model did not answer for, which is the signal to fall back rather than to write
+ * half a sentence.
+ *
+ * A pair is only returned when **both** halves are there. One half is not a Definition of Done —
+ * "it is done when the report exists" with no failure condition leaves the readiness gate
+ * refusing the publish anyway, and would do it while looking like the model had answered.
+ */
+export function parseDefinitionsOfDone(
+  answer: string,
+  stepCount: number,
+): ({ criteria: string; failureCondition: string } | undefined)[] {
+  const written: ({ criteria: string; failureCondition: string } | undefined)[] = new Array(
+    stepCount,
+  ).fill(undefined);
+
+  for (const line of answer.split('\n')) {
+    const match = /^\s*(\d+)\s*[:.)-]\s*(.+)$/.exec(line);
+    if (!match) continue;
+
+    // 1-based in the instruction, because that is what somebody reading the grid uses.
+    const position = Number(match[1]) - 1;
+    if (!Number.isInteger(position) || position < 0 || position >= stepCount) continue;
+
+    /*
+     * Tolerant about the labels and strict about the shape.
+     *
+     * A model asked for `done=… | failed=…` returns that most of the time and something close to
+     * it the rest — "Done: …, Failed: …", or the words capitalised. What it must not do is make
+     * this function guess which half is which, so both labels have to be present and in order.
+     */
+    const pair =
+      /done\s*[:=]\s*(.+?)\s*[|;]\s*fail(?:ed|ure)?\s*[:=]\s*(.+)$/i.exec(match[2]!) ?? null;
+    if (pair === null) continue;
+
+    const criteria = pair[1]?.trim() ?? '';
+    const failureCondition = pair[2]?.trim() ?? '';
+    if (criteria === '' || failureCondition === '') continue;
+
+    written[position] = { criteria, failureCondition };
+  }
+
+  return written;
+}
+
 export function parseToolCategories(
   answer: string,
   stepCount: number,
@@ -900,6 +949,8 @@ export class ObjectiveAnalysisService {
    * only disagree with it.
    */
   private async buildWorkflow(state: PipelineState): Promise<void> {
+    await this.writeDefinitionsOfDone(state);
+
     // Approval gates, from the grid's own Approval column. A gate is a node so the diagram shows
     // where a decision sits, rather than an attribute somebody has to hover to discover.
     for (const step of state.steps) {
@@ -1212,6 +1263,98 @@ export class ObjectiveAnalysisService {
    * from the plan, and either way the objective that gets approved is not the objective that was
    * written. So a missing position is a failed run, named by position so somebody can see which.
    */
+  /**
+   * What "done" means for every work step, and what would mean it failed.
+   *
+   * ## The defect this exists to end
+   *
+   * Nothing wrote these. `criteria` was the literal empty string on every human node and on every
+   * AI node, and `failureCondition` was empty on every AI node and came from the grid's "current
+   * problem" column — usually blank — on every human one. The approval gate was the only node
+   * kind that filled both, which is why a readiness report listed every node in a plan **except**
+   * the approval gates.
+   *
+   * The readiness gate then refuses to publish a plan whose Definition of Done is incomplete, and
+   * it is right to: a step nobody can tell is finished is a step nobody can be held to. So every
+   * analysis produced a workflow that could not be published until somebody filled in two boxes
+   * on eighteen nodes by hand — which reads, fairly, as the analysis not having done its job.
+   *
+   * ## Why it asks, and why it still writes something when the answer is useless
+   *
+   * The model has the step text and can say what finishing it looks like; nothing else here can.
+   * But an analysis must not depend on a model answering well, so every step that comes back
+   * unusable falls to a sentence derived from the grid: the step's own declared output. That is
+   * honest — "the output exists and is recorded" really is the minimum bar — and it is editable,
+   * which is the point. A sentence somebody corrects is worth more than a blank they must invent
+   * from nothing.
+   *
+   * What it will not do is leave the field empty, because empty is the thing that blocks the
+   * publish, and the whole failure above was empty being written silently and called an answer.
+   */
+  private async writeDefinitionsOfDone(state: PipelineState): Promise<void> {
+    const work = state.nodes.filter((node) => node.kind === 'Human' || node.kind === 'Ai');
+    if (work.length === 0) return;
+
+    /*
+     * One call for the whole plan rather than one per node.
+     *
+     * Eighteen calls would be eighteen times the latency and the spend for an answer that is
+     * better when the model can see the steps beside each other — a failure condition is often
+     * "the thing the next step needs did not arrive".
+     *
+     * The instruction names the format and nothing else. No `${}` in it, which is the rule this
+     * service is held to and which `prompt-injection.spec.ts` checks; this note sits above the
+     * call rather than inside the argument list because that test reads a comment between the
+     * arguments as the instruction.
+     */
+    const answer = await this.ask(
+      state,
+      'objective.analysis.definition-of-done',
+      'For each numbered step, write what must be true for it to count as finished, and what ' +
+        'would mean it failed. ' +
+        'Answer one line per step, as "<number>: done=<one sentence> | failed=<one sentence>". ' +
+        'Be concrete and checkable: name the thing produced, not the effort. ' +
+        'Write nothing else.',
+      work.map((node, index) => `${index + 1}. ${node.label}`),
+    );
+
+    const written = parseDefinitionsOfDone(answer, work.length);
+
+    for (const [index, node] of work.entries()) {
+      const given = written[index];
+
+      if (node.dod.criteria.trim() === '') {
+        node.dod.criteria =
+          given?.criteria ??
+          (node.dod.expectedOutput.trim() === ''
+            ? 'The work described by this step has been completed and recorded against it.'
+            : `${node.dod.expectedOutput} exists and has been recorded against this step.`);
+      }
+
+      if (node.dod.failureCondition.trim() === '') {
+        node.dod.failureCondition =
+          given?.failureCondition ??
+          (node.dod.expectedOutput.trim() === ''
+            ? 'The step cannot be completed, or what it produces does not meet the criteria above.'
+            : `${node.dod.expectedOutput} is not produced, or does not meet the criteria above.`);
+      }
+    }
+
+    /*
+     * The goal's own failure condition, for the same reason.
+     *
+     * `understandObjective` sets the goal's criteria from the objective's expected final result
+     * and leaves this empty, so "goal: missing failure condition" appeared on every plan.
+     */
+    const goal = state.nodes.find((node) => node.kind === 'Goal');
+    if (goal !== undefined && goal.dod.failureCondition.trim() === '') {
+      goal.dod.failureCondition =
+        goal.dod.criteria.trim() === ''
+          ? 'The objective is not achieved.'
+          : `The objective closes without this being true: ${goal.dod.criteria}`;
+    }
+  }
+
   private async classifyWork(state: PipelineState): Promise<void> {
     if (state.steps.length === 0) return;
 

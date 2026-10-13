@@ -10863,6 +10863,25 @@ tr[data-drop-target='true'] td {
 }
 
 /*
+   A metric card that is also a link.
+
+   The card keeps its own look; this only stops the anchor around it adding underlines and a link
+   colour, and lets the whole card carry the pointer and the focus ring — a number somebody is
+   meant to press should be pressable across its whole face, not on three words inside it.
+ */
+.uboss-metric-link {
+  border-radius: var(--uboss-radius-card);
+  color: inherit;
+  display: block;
+  text-decoration: none;
+}
+
+.uboss-metric-link:focus-visible {
+  outline: var(--uboss-focus-outline);
+  outline-offset: var(--uboss-focus-offset);
+}
+
+/*
    The strip above the workflow drawing: which way the plan runs, and nothing else.
 
    Separated from the canvas by a rule rather than floated over it, because the canvas is a

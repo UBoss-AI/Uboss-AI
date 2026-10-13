@@ -628,30 +628,41 @@ describe('approve & assign and the human to-do list (e2e)', () => {
       }
     }
 
-    if (fillDods) {
-      // The analysis leaves criteria and failure conditions blank on purpose — Form 2's grid does
-      // not say — so a manager fills them. That is the journey, not a workaround.
-      for (const node of draft.graph.nodes) {
-        draft = await workflow().editNode({
-          scope: scope(),
-          actorUserId: managerUserId,
-          objectiveId: created.id,
-          revision: draft.revision,
-          nodeId: node.id,
-          patch: {
-            dod: {
-              criteria: 'The reviewer accepts the output against the Annex I list.',
-              failureCondition: 'A required item cannot be evidenced.',
-              ...(node.dod.expectedOutput.trim() === ''
-                ? { expectedOutput: 'A recorded outcome for this step.' }
-                : {}),
-              ...(node.dod.evidence.trim() === ''
-                ? { evidence: 'The output, filed against this step.' }
-                : {}),
-            },
-          },
-        });
-      }
+    /*
+     * The analysis now writes a Definition of Done for every node, so a plan arrives here with
+     * both halves already filled.
+     *
+     * It used to leave them blank — `criteria` was the empty string on every human and AI node —
+     * and this helper's comment called that "the journey, not a workaround". It was neither: a
+     * manager was made to fill in two boxes on eighteen nodes before any analysed plan could be
+     * published, and the readiness report said so every time.
+     *
+     * Which means `fillDods: false` has to do real work now. Blanking them deliberately is what
+     * keeps the readiness gate's own test about the gate rather than about what the pipeline
+     * happens to produce — the gate must still refuse an incomplete plan, however it got that way.
+     */
+    for (const node of draft.graph.nodes) {
+      draft = await workflow().editNode({
+        scope: scope(),
+        actorUserId: managerUserId,
+        objectiveId: created.id,
+        revision: draft.revision,
+        nodeId: node.id,
+        patch: {
+          dod: fillDods
+            ? {
+                criteria: 'The reviewer accepts the output against the Annex I list.',
+                failureCondition: 'A required item cannot be evidenced.',
+                ...(node.dod.expectedOutput.trim() === ''
+                  ? { expectedOutput: 'A recorded outcome for this step.' }
+                  : {}),
+                ...(node.dod.evidence.trim() === ''
+                  ? { evidence: 'The output, filed against this step.' }
+                  : {}),
+              }
+            : { criteria: '', failureCondition: '' },
+        },
+      });
     }
 
     await objectives().completeReview({

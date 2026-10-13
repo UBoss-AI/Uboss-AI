@@ -547,7 +547,7 @@ describe('objective AI analysis (e2e)', () => {
 
     it('asks a model only where the answer is read', async () => {
       /*
-       * Two calls for seven stages, and the number is the point.
+       * Three calls for seven stages, and the number is the point.
        *
        * It used to be one per stage, and this test asserted that — which made a defect look like
        * a design. Five of the seven asked a model a question and discarded the reply: the Skill
@@ -556,8 +556,15 @@ describe('objective AI analysis (e2e)', () => {
        * were handed a bare count (`"7"`) and invited to answer something they had not been
        * shown. Across ninety real analyses that was four-fifths of the spend producing nothing.
        *
-       * What remains is the human/AI split and the action categories — the two whose answers
-       * land somewhere a later screen reads.
+       * The third is new and earns its place by the same rule. Nothing wrote a Definition of
+       * Done: `criteria` was the empty string on every human and AI node and `failureCondition`
+       * was empty on every AI one, so the readiness gate refused to publish any analysed plan
+       * until somebody filled in two boxes on eighteen nodes by hand. That answer is read
+       * straight onto the nodes, and what the model cannot say falls back to a sentence derived
+       * from the step's own declared output rather than to a blank.
+       *
+       * So: the human/AI split, the action categories, and the Definition of Done — the three
+       * whose answers land somewhere a later screen reads.
        */
       const objective = await draftObjective();
       await analysis().start({
@@ -566,12 +573,16 @@ describe('objective AI analysis (e2e)', () => {
         objectiveId: objective.id,
       });
 
-      assert.equal(gateway.calls.length, 2);
+      assert.equal(gateway.calls.length, 3);
 
       assert.deepEqual(
         [...gateway.calls].sort(),
-        ['objective.analysis.ai-work', 'objective.analysis.human-work'],
-        'and these are the two, named — not just a count that any two would satisfy',
+        [
+          'objective.analysis.ai-work',
+          'objective.analysis.definition-of-done',
+          'objective.analysis.human-work',
+        ],
+        'and these are the three, named — not just a count that any three would satisfy',
       );
     });
 
@@ -583,6 +594,40 @@ describe('objective AI analysis (e2e)', () => {
        * matching and the assembly. The stage list is unchanged and still seven.
        */
       assert.equal(ANALYSIS_STAGES.length, 7);
+    });
+
+    it('gives every node a Definition of Done, so the plan can actually be published', async () => {
+      /*
+       * The defect this guards against, in the terms the person who hit it used.
+       *
+       * An administrator pressed Approve & Assign and got fourteen blockers, eighteen of the
+       * lines being "Definition of Done is incomplete". Nothing had written one: `criteria` was
+       * the literal empty string on every human and AI node, `failureCondition` was empty on
+       * every AI one, and the approval gate was the only node kind that filled both — which is
+       * why the readiness report named every node in the plan except the approval gates.
+       *
+       * The readiness gate is right to refuse: a step nobody can tell is finished is a step
+       * nobody can be held to. So the analysis has to produce one, and this asserts it does for
+       * every node — including when the model says nothing usable, which is what the local
+       * gateway in this suite does.
+       */
+      const objective = await draftObjective();
+      const run = await analysis().start({
+        scope: scope(),
+        actorUserId: ownerUserId,
+        objectiveId: objective.id,
+      });
+
+      assert.ok(run.draft);
+      const empty = run.draft.nodes.filter(
+        (node) => node.dod.criteria.trim() === '' || node.dod.failureCondition.trim() === '',
+      );
+
+      assert.deepEqual(
+        empty.map((node) => node.id),
+        [],
+        'every node needs both halves, or Approve & Assign refuses the plan',
+      );
     });
 
     it('produces a draft that satisfies its own schema', async () => {
