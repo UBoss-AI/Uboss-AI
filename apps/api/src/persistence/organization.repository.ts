@@ -16,6 +16,13 @@ export interface HierarchyRow {
   displayName: string;
   employeeId: string;
   designation: string;
+  /**
+   * What this person actually covers — areas, sub-departments, disciplines.
+   *
+   * Null on records created before the field existed, and on imports that left it out, so every
+   * reader has to treat its absence as ordinary rather than as a fault.
+   */
+  specialization: string | null;
   departmentId: string;
   departmentName: string;
   reportingManagerUserId: string | null;
@@ -230,6 +237,7 @@ export class OrganizationRepository {
            u."display_name"               AS "displayName",
            e."employee_id"                AS "employeeId",
            e."designation"                AS "designation",
+           e."specialization"             AS "specialization",
            e."department_id"              AS "departmentId",
            d."name"                       AS "departmentName",
            e."reporting_manager_user_id"  AS "reportingManagerUserId",

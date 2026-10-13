@@ -800,6 +800,16 @@ function ObjectiveFormInner() {
       }}
     >
       <PageHeader
+        /*
+          Stays put while the grid scrolls.
+
+          This page is a fifteen-column grid that runs well past one screen, and every action it
+          has — Save Draft, Submit for Review, Analyze & Generate Workflow — lives in this strip.
+          Without this, the further somebody got into the work, the further they had to scroll
+          back to do anything with it. The status badge travels with the buttons, so what the
+          objective currently is stays readable too.
+        */
+        className="uboss-page-head-sticky"
         title="Objective — Form 2"
         description="The original Form 2, field-for-field, before AI decomposition."
         breadcrumbs={[

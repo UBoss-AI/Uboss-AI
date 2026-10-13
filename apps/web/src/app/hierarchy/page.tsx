@@ -3,6 +3,8 @@
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { byDesignationThenName } from '@uboss/types';
+
 import {
   Banner,
   Button,
@@ -425,6 +427,31 @@ export default function HierarchyPage() {
     });
   }, [departmentFilter, search, view]);
 
+  /**
+   * Siblings in the order a company thinks of them: senior first, then alphabetical.
+   *
+   * The chart already nests a person under the manager they report to, so the *structure* was
+   * never wrong. What was wrong was the order within one level: it came back alphabetical, which
+   * put a junior engineer above the senior manager standing next to them and made a row of cards
+   * read as a list of names rather than as a rung of the organisation.
+   *
+   * Only people are reordered. Departments and the company keep the order the server sent, where
+   * alphabetical is the right answer and seniority means nothing.
+   *
+   * `designation` is free text with no grade behind it anywhere in the schema, so the ranking is
+   * a reading of the words — see `byDesignationThenName`. It falls back to alphabetical for a
+   * title it does not recognise, which means the worst case here is the order this already had.
+   */
+  const sortedForChart = (nodes: HierarchyView['tree']['children']) => {
+    if (!nodes.every((node) => node.kind === 'person')) return nodes;
+    return [...nodes].sort((a, b) =>
+      byDesignationThenName(
+        { name: a.name, designation: a.person?.designation },
+        { name: b.name, designation: b.person?.designation },
+      ),
+    );
+  };
+
   /** The API's tree, mapped to the chart's shape and narrowed by the department filter. */
   const chartRoot = useMemo<OrgChartNode | null>(() => {
     if (!view) {
@@ -458,8 +485,19 @@ export default function HierarchyPage() {
           ? `Company · ${node.children.length} department${node.children.length === 1 ? '' : 's'}`
           : node.kind === 'department'
             ? `Department · ${node.headcount ?? 0} ${node.headcount === 1 ? 'person' : 'people'}`
-            : (node.person?.designation ?? ''),
-      children: node.children.map(toChart),
+            : /*
+                 What they are called, and what they cover.
+
+                 The card carried the designation alone, and a designation cannot tell two
+                 managers apart — the client's own example is a manager over two sub-departments
+                 beside a manager over one. Joined with a middot, like the other two kinds of node
+                 here, and the designation stands alone where nobody filled the second one in.
+               */
+              [node.person?.designation, node.person?.specialization]
+                .map((part) => part?.trim())
+                .filter((part) => part !== undefined && part !== '')
+                .join(' · '),
+      children: sortedForChart(node.children).map(toChart),
     });
 
     const root = toChart(view.tree);

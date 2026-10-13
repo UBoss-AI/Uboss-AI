@@ -34,6 +34,14 @@ export interface HierarchyNode {
     ubossUniqueId: string;
     employeeId: string;
     designation: string;
+    /**
+     * What this person covers, beside what they are called.
+     *
+     * On the card with the designation, because a title alone cannot tell two managers apart —
+     * the client's own example is a manager over two sub-departments next to a manager over one.
+     * Null where nobody filled it in, which is the ordinary case on older records.
+     */
+    specialization: string | null;
     departmentName: string;
     reportingManagerName: string | null;
     employmentState: string;
@@ -313,6 +321,7 @@ export class HierarchyService {
           ubossUniqueId: row.ubossUniqueId,
           employeeId: row.employeeId,
           designation: row.designation,
+          specialization: row.specialization,
           departmentName: row.departmentName,
           reportingManagerName: row.reportingManagerName,
           employmentState: row.state,

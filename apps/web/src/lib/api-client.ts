@@ -1857,6 +1857,8 @@ export interface HierarchyNode {
     ubossUniqueId: string;
     employeeId: string;
     designation: string;
+    /** What this person covers, beside what they are called. Null where nobody filled it in. */
+    specialization: string | null;
     departmentName: string;
     reportingManagerName: string | null;
     employmentState: string;

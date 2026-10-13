@@ -185,6 +185,12 @@
     the padding is the only arrangement where changing one cannot silently leave the other behind.
   */
   --uboss-content-pad-y: 82px;
+  /*
+    The side padding, as a number something else can read, and for the same reason as the line
+    above it: a sticky page header has to cancel this padding to reach both edges and then put it
+    back inside, and a literal 24px there would be wrong at the narrower breakpoint.
+  */
+  --uboss-content-pad-x: 24px;
   max-width: var(--uboss-content-max-width);
   width: 100%;
   margin: 0 auto;
@@ -1267,6 +1273,34 @@
   color: var(--uboss-text-2);
   font-size: var(--uboss-font-size-sm);
   margin-top: 3px;
+}
+
+/*
+   A page header that stays while the page scrolls.
+
+   Opt-in, by passing this class to `PageHeader`, because it is only right where the actions are
+   needed throughout the page rather than read once at the top. The Objective form is the case
+   it was built for: a fifteen-column grid that runs well past one screen, with Save Draft,
+   Submit for Review and Analyze & Generate at the top of it — so the further somebody got into
+   the work, the further they had to scroll back to do anything with it.
+
+   `top` is the top bar's own height, because the top bar is itself sticky and this has to come
+   to rest underneath it rather than slide behind it. The z-index sits below the top bar's for
+   the same reason, and above the cards so the grid passes under this rather than through it.
+
+   The background and the rule along the bottom are what make it readable once content is moving
+   underneath; without them the buttons sit on whatever happens to be behind them.
+ */
+.uboss-page-head-sticky {
+  position: sticky;
+  top: var(--uboss-topbar-height);
+  z-index: 15;
+  background: var(--uboss-bg);
+  border-bottom: 1px solid var(--uboss-border);
+  /* Cancels the shell's own side padding so the strip reaches both edges, then puts it back
+     inside, which is what stops a sliver of scrolling content showing down either side. */
+  margin: 0 calc(var(--uboss-content-pad-x) * -1);
+  padding: 10px var(--uboss-content-pad-x) 0;
 }
 
 .uboss-page-actions {
@@ -3737,6 +3771,7 @@ tr:hover .uboss-row-name .uboss-btn,
   .uboss-content {
     padding: 18px 16px 48px;
     --uboss-content-pad-y: 66px;
+    --uboss-content-pad-x: 16px;
   }
 }
 

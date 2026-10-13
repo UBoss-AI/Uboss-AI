@@ -90,6 +90,14 @@ export type {
   SodPolicy,
 } from './scope-evaluation.js';
 
+/* Ordering an org chart by seniority instead of by name. Shared because what a title is worth is
+   domain knowledge about designations, not a decision the chart component should be making. */
+export {
+  DEFAULT_DESIGNATION_RANK,
+  byDesignationThenName,
+  designationRank,
+} from './designation-rank.js';
+
 // ---- Platform roles (Prompt 9) ----
 //
 // The Master Console filters its own navigation from these, and the server enforces the same

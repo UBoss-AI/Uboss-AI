@@ -1906,6 +1906,16 @@ function OrgNode({
         {truncate(node.name, nameLimit(actions.length, PERSON_TEXT_X))}
       </text>
       <text x={x + PERSON_TEXT_X} y={y + 57} fill="var(--uboss-text-2)" fontSize={11}>
+        {/*
+          Truncated to the card, with the whole of it on hover.
+
+          A person's second line is their designation and what they specialise in, and a card this
+          wide fits about half of that — "Logistics Manager · Cold chain, D…". A screen reader has
+          always had the full line from the group's `aria-label`; somebody looking at it had no
+          way to read the rest without opening the person. `<title>` is the one tooltip SVG has of
+          its own, and it carries exactly what the label says.
+        */}
+        <title>{`${node.name} — ${node.subtitle}`}</title>
         {truncate(node.subtitle, 34)}
       </text>
 
