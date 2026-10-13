@@ -209,8 +209,16 @@ export function LoginPresentation({
               </li>
             ))}
 
+            {/*
+              The product's name at the centre, not the platform's initials.
+
+              It read "UB". Everything arranged around it — map, optimise, build, operate, govern,
+              manage — is what CXO does, so the thing they all point at should be called what the
+              rest of this screen calls it. "UB" was the last place the old naming survived on the
+              signed-out screens, and it is the one a visitor looks at longest.
+            */}
             <li className="uboss-mm-center" aria-hidden="true">
-              <b>UB</b>
+              <b>CXO</b>
             </li>
 
             {right.map((capability, index) => (

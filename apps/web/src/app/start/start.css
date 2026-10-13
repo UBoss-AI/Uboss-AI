@@ -17,6 +17,24 @@
   gap: 18px;
 }
 
+/*
+ * The same short-viewport problem the sign-in screen has, for the same reason.
+ *
+ * Registration is the taller of the two screens — four fields, two hints, a consent line and a
+ * footnote — and it inherits the login's left panel, so it overflowed a 1280×585 viewport by
+ * 57px. The login styles tighten themselves at this breakpoint; these are the rows that belong
+ * to this page and have to come with them.
+ */
+@media (max-height: 820px) {
+  .start {
+    gap: 10px;
+  }
+
+  .start__note {
+    margin-top: 10px;
+  }
+}
+
 .start__form {
   display: grid;
   gap: 2px;

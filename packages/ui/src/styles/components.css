@@ -3882,6 +3882,133 @@ tr:hover .uboss-row-name .uboss-btn,
   margin-top: 20px;
 }
 
+/*
+ * The sign-in screen on a short viewport.
+ *
+ * ## The measurement this exists because of
+ *
+ * A 1920×1080 screen at Windows' 150% display scaling — the default on most laptops sold with
+ * that panel — gives the browser about **1280×600 CSS pixels**, not 1920×1080. The sign-in screen
+ * needed **733px**, so roughly 130px of it sat below the fold and the page scrolled. Zooming the
+ * browser to 80% made it fit, which is what people were doing, and is not a thing to ask of
+ * somebody who has arrived to type a password.
+ *
+ * Both columns had to come down, because `.uboss-login` is a grid and the taller one sets the
+ * height. They were 732px each, from opposite causes: on the left a 430px floor under the
+ * illustration, on the right ten stacked blocks of vertical rhythm.
+ *
+ * ## Why a height query and not smaller numbers everywhere
+ *
+ * The spacing is right on a screen that has the room. A 27-inch monitor should not inherit a
+ * laptop's compromise, so nothing changes until the viewport is actually short. The breakpoint is
+ * 820px rather than 600px so the tightening has happened well before the point where it is
+ * needed — a layout that only just fits is one browser-chrome change away from scrolling again.
+ *
+ * The illustration keeps a 360px floor. Below roughly 280px its three rows of cards start
+ * overlapping the centre disc, so this is a reduction with room left, not a squeeze.
+ */
+@media (max-height: 820px) {
+  .uboss-login-left {
+    padding: 30px 52px;
+  }
+
+  /*
+   * The illustration gets smaller by making its cards smaller, not by squeezing its box.
+   *
+   * Squeezing was tried and it is worth recording why it fails. `.uboss-mm-grid` is positioned
+   * absolutely inside `.uboss-mindmap`, so it contributes nothing to that box's height — the
+   * `min-height` here is the only thing holding the box open. Set it below what the cards
+   * actually need and the cards do not shrink: they spill out of the bottom of the box and land
+   * on top of the "Tenant-isolated · Human governed · Fully audited" strip, which is a sibling
+   * below it. At 324px that overlap was 8px at a 1000px-wide window, and it is the kind of defect
+   * that looks like a rendering accident rather than a layout mistake.
+   *
+   * So the cards themselves come down — less padding, a smaller icon, a point off each of the two
+   * type sizes. The tallest card ("Manage Task", whose description wraps to three lines) goes from
+   * 113px to 101px, and the smaller icon and tighter gap give the text more width, which is what
+   * removes the wrap rather than merely making it smaller.
+   *
+   * 340px is then three rows of 101 plus two 16px gaps, with 15px of clearance measured above the
+   * strip at 1280px. Below about 1150px wide the panel needs more than a 585px viewport has and
+   * the page scrolls a little; at 980px the left panel is hidden altogether by the width query
+   * further up, so that band is narrow.
+   */
+  .uboss-mindmap {
+    min-height: 340px;
+    margin-top: 12px;
+  }
+
+  /*
+   * Qualified by the panel, and that is not decoration.
+   *
+   * `.uboss-mmc` is declared again further down this file — twice — and a later rule of equal
+   * specificity wins. Written as plain `.uboss-mmc` here, every one of these was silently
+   * discarded: the query matched, `min-height` applied, and the cards stayed exactly as they
+   * were, which measured as the illustration overflowing by 14px and nothing in the stylesheet
+   * looking wrong. The parent selector makes these (0,2,0) and takes order out of it.
+   */
+  .uboss-login-left .uboss-mmc {
+    padding: 9px 12px;
+    gap: 10px;
+  }
+
+  .uboss-login-left .uboss-mmc-icon {
+    width: 30px;
+    height: 30px;
+    flex: 0 0 30px;
+  }
+
+  .uboss-login-left .uboss-mmc b {
+    font-size: 14px;
+  }
+
+  .uboss-login-left .uboss-mmc small {
+    font-size: 11px;
+    margin-top: 2px;
+  }
+
+  .uboss-login-right {
+    padding: 10px 40px;
+  }
+
+  .uboss-login-card h1 {
+    font-size: 21px;
+  }
+
+  .uboss-login-card-sub {
+    margin-bottom: 8px;
+  }
+
+  /* Qualified for the same reason as the cards below: `.uboss-auth-switch` is declared later in
+     this file with a `margin` shorthand, which would overwrite this one on source order. */
+  .uboss-login-card .uboss-auth-switch {
+    margin-top: 8px;
+  }
+
+  /*
+   * The session-ended banner is the reason this number is here.
+   *
+   * It is two lines of text and 75px with its gap, and it appears on exactly the arrival this
+   * screen most needs to fit: somebody who was thrown out mid-task and is reading an explanation
+   * before they type. The form has to hold it without scrolling, not merely hold itself.
+   */
+  .uboss-login-notice {
+    --uboss-login-notice-gap: 10px;
+  }
+
+  .uboss-login-card .uboss-field {
+    margin-bottom: 6px;
+  }
+
+  .uboss-consent {
+    margin: 6px 0 8px;
+  }
+
+  .uboss-or {
+    margin: 10px 0;
+  }
+}
+
 .uboss-mm-rings {
   position: absolute;
   inset: 0;
@@ -9219,24 +9346,37 @@ table.uboss-wfg {
  * returning person to read past an offer that is not for them.
  */
 /*
- * "No workspace yet?" and the way to start one.
+ * "New company?" and the way to register one.
  *
- * It was a sentence with a link in it, under the form, and somebody looking for where to register
- * did not find it on a screen they were already reading. The question stays small and the action
- * became a control, separated by a rule so it reads as the other thing you might have come here
- * to do rather than as a footnote to signing in.
+ * ## Why it is one line directly under Sign In
+ *
+ * It was a stacked question and a button at the foot of the card: 92px, below the divider and
+ * three provider buttons. Everything above it comes to more than a short viewport has, so the
+ * only control a first-time visitor needs sat below the fold on the ordinary Windows default of
+ * a 1920×1080 screen at 150% scaling.
+ *
+ * Under the Sign In button it is a sentence with a link in it — 30px instead of 92px, above the
+ * fold, and beside the decision it belongs to. Right-aligned and quiet: signing in is what almost
+ * everybody came to do, and a second control with the weight of a button would make every
+ * returning person read past an offer that is not for them.
  */
 .uboss-auth-switch {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  margin: 18px 0 0;
-  padding-top: 16px;
-  border-top: 1px solid var(--uboss-border);
-  text-align: center;
+  margin: 10px 0 0;
+  text-align: right;
   font-size: 13px;
   color: var(--uboss-text-3);
+}
+
+/*
+ * What a banner above the sign-in form sits in.
+ *
+ * Seven of these were `style={{ marginBottom: 16 }}` written out by hand, which is fine until the
+ * screen has to fit in a short viewport and the one number that would help is spread across seven
+ * JSX attributes that no stylesheet can reach. One class, so the height query below can tighten
+ * every notice at once.
+ */
+.uboss-login-notice {
+  margin-bottom: var(--uboss-login-notice-gap, 16px);
 }
 
 .uboss-provider-row {

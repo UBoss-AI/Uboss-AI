@@ -747,10 +747,12 @@ describe('LoginPresentation', () => {
   it('renders the radial mind-map exactly as the reference does', () => {
     const { container } = render(<LoginPresentation />);
 
-    // Four concentric rings, six connectors, a central UB node and three cards per side.
+    // Four concentric rings, six connectors, a central CXO node and three cards per side.
     expect(container.querySelectorAll('.uboss-mm-rings span')).toHaveLength(4);
     expect(container.querySelectorAll('.uboss-mm-links path')).toHaveLength(6);
-    expect(container.querySelector('.uboss-mm-center')).toHaveTextContent('UB');
+    // The reference drew "UB" here. The product is CXO, and this is the glyph a visitor looks at
+    // longest, so it carries the product's name rather than the platform's initials.
+    expect(container.querySelector('.uboss-mm-center')).toHaveTextContent('CXO');
     expect(container.querySelectorAll('.uboss-mmc--left')).toHaveLength(3);
     expect(container.querySelectorAll('.uboss-mmc--right')).toHaveLength(3);
   });
@@ -941,7 +943,14 @@ describe('LoginPresentation — two front doors, one visual system', () => {
     );
 
     expect(container.querySelector('.uboss-mindmap')).not.toBeNull();
-    expect(screen.getByText('CXO')).toBeInTheDocument();
+    /*
+      Scoped to the brand block rather than `getByText('CXO')`.
+
+      The name now appears twice on this door — in the brand line at the top and on the node at
+      the centre of the mind-map — and a bare text query throws on two matches. Naming the element
+      also makes the assertion say what it means: the brand block carries the product's name.
+    */
+    expect(container.querySelector('.uboss-login-brand b')).toHaveTextContent('CXO');
     // The six locked sections stay until the client approves a different grouping.
     for (const capability of ['MAP', 'Optimize', 'Build', 'Operate', 'Govern', 'Manage Task']) {
       expect(screen.getByText(capability)).toBeInTheDocument();

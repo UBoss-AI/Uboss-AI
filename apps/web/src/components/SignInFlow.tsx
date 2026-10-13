@@ -485,7 +485,7 @@ export function SignInFlow({ plane }: SignInFlowProps) {
         <p className="uboss-login-card-sub">Signed in as {step.displayName}.</p>
 
         {step.kind === 'recovery-codes' ? (
-          <div style={{ marginBottom: 16 }}>
+          <div className="uboss-login-notice">
             <Banner tone="warn">
               Save these recovery codes now. Each one works once, and they are shown only here —
               only hashes are stored, so they cannot be displayed again.
@@ -499,7 +499,7 @@ export function SignInFlow({ plane }: SignInFlowProps) {
         ) : null}
 
         {step.kind === 'signed-in' && step.newDevice ? (
-          <div style={{ marginBottom: 16 }}>
+          <div className="uboss-login-notice">
             <Banner tone="warn">
               This is the first sign-in from this device or location. If it was not you, change your
               password from Access Help.
@@ -705,7 +705,7 @@ export function SignInFlow({ plane }: SignInFlowProps) {
         <p className="uboss-login-card-sub">{step.message}</p>
 
         {step.graceUntil ? (
-          <div style={{ marginBottom: 16 }}>
+          <div className="uboss-login-notice">
             <Banner tone="info">
               Your company allows sign-in without this until{' '}
               {new Date(step.graceUntil).toLocaleString()}.
@@ -853,7 +853,7 @@ export function SignInFlow({ plane }: SignInFlowProps) {
           still be wrong, and both are things the person needs to be told.
         */}
         {sessionEnded ? (
-          <div style={{ marginBottom: 16 }}>
+          <div className="uboss-login-notice">
             <Banner tone="info">
               Your session ended, so you were signed out. Sign in and you will be taken back to
               where you were.
@@ -862,7 +862,7 @@ export function SignInFlow({ plane }: SignInFlowProps) {
         ) : null}
 
         {step.kind === 'error' ? (
-          <div style={{ marginBottom: 16 }}>
+          <div className="uboss-login-notice">
             <Banner tone="danger">
               {step.message}
               {step.retryAfterSeconds !== undefined
@@ -873,7 +873,7 @@ export function SignInFlow({ plane }: SignInFlowProps) {
         ) : null}
 
         {ssoError ? (
-          <div style={{ marginBottom: 16 }}>
+          <div className="uboss-login-notice">
             <Banner tone="danger">{ssoError}</Banner>
           </div>
         ) : null}
@@ -919,7 +919,7 @@ export function SignInFlow({ plane }: SignInFlowProps) {
             )}
           </FormField>
         ) : (
-          <div style={{ marginBottom: 16 }}>
+          <div className="uboss-login-notice">
             <Banner tone="info">
               Your company signs in through its own identity provider. Use the button below.
             </Banner>
@@ -1019,6 +1019,54 @@ export function SignInFlow({ plane }: SignInFlowProps) {
           </p>
         ) : null}
 
+        {/*
+          The way in for a company that has no workspace yet.
+
+          This space held nothing, under a note explaining that "nobody can sign themselves up".
+          That stopped being true: self-serve registration is built, tested and live — a company
+          proves its work address and its domain, and the workspace is created with nobody to
+          approve it.
+
+          ## Where it sits, and why that moved twice
+
+          It used to be the last thing on the card: below the password, the terms, the Sign In
+          button, the divider and three provider buttons. On a 1280×585 viewport — what a
+          1920×1080 screen gives you at Windows' 150% display scaling, which is the ordinary
+          default — all of that is below the fold. The one control a first-time visitor needs was
+          the one control they could not see.
+
+          It sits directly under Sign In now, aligned right. That keeps it above the fold and next
+          to the decision it belongs to — "sign in, or, if you have no workspace, register" — in
+          the order a person actually reads. Right-aligned and small, because signing in stays the
+          primary action: almost everybody arriving here already has an account, and a second
+          full-width control would make every returning person read past an offer not meant for
+          them.
+
+          ## What it does not say
+
+          No "free trial", no price, no promise about what the workspace can do. A signup gets the
+          Pilot plan and the server decides what that is — one seat, no AI allowance, five modules.
+          A screen that named any of that would be promising on the server's behalf, and the
+          server is free to change its mind.
+        */}
+        <p className="uboss-auth-switch">
+          <span>New company?</span>{' '}
+          {/*
+            A `Link`, not a `Button`.
+
+            This is a navigation, so it has to be a real anchor: openable in a new tab, copyable,
+            and present in a screen reader's list of links. The words carry the action — "Register
+            your company" says what happens, which "Get started" does not.
+
+            `uboss-link` rather than styling this anchor on its own: it is the same kind of thing
+            as "Forgot password" above it, and two link treatments on one small card is how a form
+            starts looking assembled rather than designed.
+          */}
+          <Link href="/start" className="uboss-link">
+            Register your company
+          </Link>
+        </p>
+
         {showPassword ? <div className="uboss-or">or</div> : null}
 
         {showPassword ? (
@@ -1088,49 +1136,6 @@ export function SignInFlow({ plane }: SignInFlowProps) {
             ))}
           </div>
         ) : null}
-
-        {/*
-          The way in for a company that has no workspace yet.
-
-          This space held nothing, under a note explaining that "nobody can sign themselves up".
-          That stopped being true: self-serve registration is built, tested and live — a company
-          proves its work address and its domain and the workspace is created, on the Pilot plan,
-          with nobody to approve it. The flow simply had no door, and a visitor who had read the
-          pricing page could reach it only with a tool like curl.
-
-          Under the form rather than beside the heading: somebody arriving here almost always has
-          an account, and the one who does not is looking for exactly this sentence.
-
-          It does not say "free trial" or name a price. What a signup gets is the Pilot plan, and
-          the server decides that — a screen that promised anything else would be promising on the
-          server's behalf.
-        */}
-        {/*
-          A button, not a sentence.
-
-          This was a line of small text under the form, and the first person who went looking for
-          "where do I register" did not find it — on a screen they were already staring at. The
-          two things somebody arrives here to do are sign in and start a workspace, and only one
-          of them looked like something you could press.
-
-          Secondary, with a rule above it: signing in stays the primary action, because almost
-          everybody who reaches this screen already has an account. It is the one who does not
-          that this is for.
-        */}
-        <div className="uboss-auth-switch">
-          <span>No workspace yet?</span>
-          {/*
-            A `Link` wearing the button's classes rather than a `Button`.
-
-            `Button` renders a `<button>` and takes no `href`, and this is a navigation: it has to
-            be a real anchor so it can be opened in a new tab, copied, and read as a link by a
-            screen reader. Giving it the button classes is the honest way round — it looks like a
-            control because it is one, and it behaves like a link because that is what it does.
-          */}
-          <Link href="/start" className="uboss-btn uboss-btn--sm">
-            Start one for your company
-          </Link>
-        </div>
       </form>
 
       {/*

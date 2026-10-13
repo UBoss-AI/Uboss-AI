@@ -273,10 +273,29 @@ function StartInner() {
 
   return shell(
     <>
-      <h1>Start a workspace.</h1>
+      {/*
+        The same words the link that got them here used.
+
+        The sign-in screen says "Register your company" and this page said "Start a workspace." —
+        two names for one thing, on two screens one click apart. Somebody who presses a link and
+        lands on a page with a different name has to stop and check they are in the right place,
+        and that half-second is the whole of a stranger's patience.
+      */}
+      <h1>Register your company.</h1>
+      {/*
+        What is left after the duplication came out.
+
+        It used to run to three lines, and two of its clauses — "you prove your work address" and
+        "your company's domain" — are said again, more usefully, in the hints under the two fields
+        that take them. A subtitle that pre-announces the form it sits above is read twice and
+        trusted once, and on a short viewport those three lines were part of why this screen
+        scrolled.
+
+        What is only true here stays: the plan, that it costs nothing to begin, and that nobody
+        stands between them and the workspace.
+      */}
       <p className="uboss-login-card-sub">
-        On the Pilot plan, free to begin. You prove your work address and your company&rsquo;s
-        domain, and the workspace is yours — nobody has to approve it.
+        Free to begin, on the Pilot plan. Nobody has to approve it.
       </p>
 
       {/*
@@ -323,10 +342,20 @@ function StartInner() {
             autoComplete="email"
             onChange={(event) => setWorkEmail(event.target.value)}
           />
-          <span className="uboss-field-hint">
-            Your company&rsquo;s own address. A free mailbox cannot prove which company it speaks
-            for, so those are refused.
-          </span>
+          {/*
+            No hint here any more.
+
+            It read "Your company's own address. A free mailbox cannot prove which company it
+            speaks for, so those are refused" — two lines of grey text, under the placeholder
+            `you@company.com`, which already says it, warning every single person about a mistake
+            most of them were never going to make.
+
+            The rule is not lost: `validateRegistrationAddress` refuses a free provider with a
+            fuller explanation than this ever gave — "Use your work address. A workspace belongs
+            to a company, and the way UBoss knows which company is a domain you can prove you
+            control — which nobody can do for a free mail provider." That arrives at the moment it
+            is relevant, to the one person it is relevant to.
+          */}
         </label>
 
         <label className="uboss-field">
