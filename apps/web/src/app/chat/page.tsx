@@ -71,6 +71,28 @@ import { useCompanyNavigation } from '../../lib/use-company-navigation';
  * honest presentation is a refresh — and `realtimeStance` is printed at the foot of the screen in
  * the server's own words rather than paraphrased into something reassuring.
  */
+/**
+ * How often the open screen asks whether anything was said.
+ *
+ * Five seconds is the slowest a reply can feel immediate and the fastest worth asking at: two
+ * small reads per interval per open tab, and only while the tab is in front of somebody. One
+ * second would quintuple that for a difference nobody in a conversation would notice.
+ */
+const CHAT_REFRESH_MS = 5000;
+
+/**
+ * Whether a refetched conversation holds the same messages as the one on screen.
+ *
+ * The count and the newest id together. Not a deep comparison: the only things that change in a
+ * conversation are a message arriving at the end and one being deleted, and both move one of
+ * these two. Returning true here is what keeps a quiet room from re-rendering every five seconds.
+ */
+function sameMessages(previous: ChatConversationView | null, next: ChatConversationView): boolean {
+  if (previous === null || previous.id !== next.id) return false;
+  if (previous.messages.length !== next.messages.length) return false;
+  return previous.messages.at(-1)?.id === next.messages.at(-1)?.id;
+}
+
 function WorkspaceChatInner() {
   // Prompt 40A (CR-03): the sidebar follows this person's real grants, never a role label.
   const navGroups = useCompanyNavigation();
@@ -95,6 +117,8 @@ function WorkspaceChatInner() {
   const [attached, setAttached] = useState<{ id: string; filename: string }[]>([]);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const composer = useRef<HTMLTextAreaElement | null>(null);
+  /** True while a message is on its way, so the refresh below does not race it. */
+  const sending = useRef(false);
 
   /*
    * The typing line is one row tall and grows with what is in it.
@@ -347,6 +371,92 @@ function WorkspaceChatInner() {
     };
   }, [tenantId, openId]);
 
+  /*
+   * The screen looks for new messages while it is open.
+   *
+   * There was nothing. No socket, no polling, no refresh of any kind: the rail and the open
+   * conversation were fetched when the page loaded, when a conversation was chosen, and when this
+   * reader sent something — and never again. So a message from somebody else simply did not
+   * arrive. You found out by reloading the page. Reported from the live site: one employee sent
+   * to another and it appeared only after a refresh.
+   *
+   * ## Why polling and not a socket
+   *
+   * Because the product says, in the server's own words at the foot of this screen, that nothing
+   * here is a live socket — and that sentence should stay true. Asking again every few seconds is
+   * not a liveness claim and does not become one: there is still no typing indicator, no presence
+   * dot and no "live" badge, and a test enforces all three.
+   *
+   * It is also the honest shape for this. A socket here would need the rate limiter taught about
+   * long-lived connections, and would still have to fall back to exactly this.
+   *
+   * ## What it does not do
+   *
+   * It does not touch the draft, so typing is never interrupted. It skips a turn while a message
+   * of this reader's own is in flight, so a reply cannot briefly vanish and come back. It stops
+   * while the tab is in the background, because a chat nobody is looking at does not need asking
+   * about. And it replaces the open conversation only when the messages actually changed, so a
+   * quiet room re-renders nothing at all.
+   */
+  useEffect(() => {
+    if (tenantId === null) return;
+
+    let stopped = false;
+    let inFlight = false;
+
+    const look = async () => {
+      if (stopped || inFlight || sending.current) return;
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+
+      inFlight = true;
+      try {
+        const list = await chatApi.conversations(tenantId);
+        if (stopped) return;
+        setConversations(list.conversations);
+
+        if (openId === null) return;
+        const conversation = await chatApi.read(tenantId, openId);
+        if (stopped) return;
+
+        let arrived = false;
+        setOpen((previous) => {
+          if (sameMessages(previous, conversation)) return previous;
+          arrived = previous !== null;
+          return conversation;
+        });
+
+        /*
+         * Read, because it is on the screen in front of somebody.
+         *
+         * Only when something actually arrived: marking read on every turn would be a write
+         * every few seconds per open tab, for a marker that had not moved.
+         */
+        if (arrived) {
+          await chatApi.markRead(tenantId, openId);
+          const after = await chatApi.conversations(tenantId);
+          if (!stopped) setConversations(after.conversations);
+        }
+      } catch {
+        /*
+         * A refresh that fails is not something to put on the screen.
+         *
+         * The reader did not ask for it, nothing they did has failed, and a banner appearing by
+         * itself over a conversation would be worse than the one turn that was missed. A real
+         * failure — sending, opening — still reports itself, because those are things somebody
+         * asked for and is waiting on.
+         */
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const timer = setInterval(() => void look(), CHAT_REFRESH_MS);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [tenantId, openId]);
+
   /**
    * Put a file in the company's own store, then remember its id for the next message.
    *
@@ -388,6 +498,9 @@ function WorkspaceChatInner() {
     if (tenantId === null || openId === null) return;
     if (draft.trim() === '' && attached.length === 0) return;
     setBusy(true);
+    // A ref rather than `busy`, because the refresh below reads it from inside an interval that
+    // was created once: state captured there would be whatever it was when the timer started.
+    sending.current = true;
     setError(null);
     try {
       /*
@@ -416,9 +529,13 @@ function WorkspaceChatInner() {
         );
       }
       setOpen(await chatApi.read(tenantId, openId));
+      // The rail carries the last-activity line and the unread counts, and this message changed
+      // both for everybody in the room — including this reader's own row.
+      setConversations((await chatApi.conversations(tenantId)).conversations);
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : 'That message could not be sent.');
     } finally {
+      sending.current = false;
       setBusy(false);
     }
   };
@@ -891,11 +1008,39 @@ function WorkspaceChatInner() {
                              the picker depends on where the cursor is. */
                           onSelect={(event) => setCaret(event.currentTarget.selectionStart ?? 0)}
                           onKeyDown={(event) => {
+                            /*
+                              Enter sends. Shift+Enter makes a new line.
+
+                              It did neither: the composer had a Send button and nothing else, so
+                              somebody typed a message, pressed Enter, and watched it do nothing.
+                              Reported from the live site within a day of the composer shipping,
+                              and fairly — every chat anybody uses sends on Enter, so not doing it
+                              is not a neutral choice.
+
+                              Checked before the picker below, because the picker only wants Enter
+                              while it is open, and after `isComposing`, which is the one case
+                              where Enter means something else: an input method uses it to accept
+                              the characters being composed, and sending there would cut a word in
+                              half for anybody typing Hindi, Japanese or Chinese.
+                            */
+                            if (
+                              event.key === 'Enter' &&
+                              !event.shiftKey &&
+                              !event.nativeEvent.isComposing &&
+                              mentionOptions.length === 0
+                            ) {
+                              event.preventDefault();
+                              if (!busy && (draft.trim() !== '' || attached.length > 0)) {
+                                void send();
+                              }
+                              return;
+                            }
+
                             if (mentionOptions.length === 0) return;
                             /*
                               The picker takes these keys only while it is open, so the textarea
-                              keeps them the rest of the time: Enter still makes a new line in a
-                              message, and Escape still does nothing.
+                              keeps them the rest of the time: Escape does nothing, and Enter
+                              sends rather than choosing a name.
                             */
                             if (event.key === 'ArrowDown') {
                               event.preventDefault();

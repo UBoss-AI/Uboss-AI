@@ -262,6 +262,93 @@ describe('Workspace Chat', () => {
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
   });
 
+  /*
+   * Enter.
+   *
+   * Reported from the live site: somebody typed a message, pressed Enter, and watched nothing
+   * happen. The composer had a Send button and no key handling at all, which is not a neutral
+   * choice — every chat anybody uses sends on Enter.
+   */
+  it('sends on Enter', async () => {
+    render(<WorkspaceChatPage />);
+    await screen.findByTestId('chat-messages');
+
+    await userEvent.type(screen.getByLabelText('Message'), 'On it.{Enter}');
+
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith('tenant-1', 'conversation-1', { body: 'On it.' }),
+    );
+  });
+
+  it('makes a new line on Shift+Enter instead of sending', async () => {
+    render(<WorkspaceChatPage />);
+    await screen.findByTestId('chat-messages');
+
+    const box = screen.getByLabelText('Message');
+    await userEvent.type(box, 'first{Shift>}{Enter}{/Shift}second');
+
+    expect(send).not.toHaveBeenCalled();
+    expect(box).toHaveValue('first\nsecond');
+  });
+
+  it('does not send on Enter while the mention picker is open', async () => {
+    /*
+     * Enter belongs to whichever thing is in front of you. With the picker open it chooses the
+     * person being typed; sending there would post a half-written handle to the conversation.
+     */
+    hierarchy.mockResolvedValue({
+      departments: [],
+      list: [{ userId: 'user-2', displayName: 'Aman Singh' }],
+    });
+    render(<WorkspaceChatPage />);
+    await screen.findByTestId('chat-messages');
+
+    const box = screen.getByLabelText('Message');
+    await userEvent.type(box, 'ping @am{Enter}');
+
+    expect(send).not.toHaveBeenCalled();
+    expect(box).toHaveValue('ping @Aman.Singh ');
+  });
+
+  /*
+   * A message from somebody else, with nobody touching the screen.
+   *
+   * There was no refresh of any kind: the conversation was fetched on open and never again, so a
+   * reply simply did not arrive until the page was reloaded. Reported from the live site, where
+   * one employee sent to another and it showed up only after a refresh.
+   */
+  it('shows a message that arrived while the screen was open', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      render(<WorkspaceChatPage />);
+      await screen.findByTestId('chat-messages');
+      expect(screen.queryByText('Hi Pranav')).toBeNull();
+
+      readConversation.mockResolvedValue({
+        ...CONVERSATION,
+        messages: [
+          ...CONVERSATION.messages,
+          {
+            id: 'message-9',
+            authorUserId: 'user-000002',
+            authorName: 'Nikhil Rao',
+            body: 'Hi Pranav',
+            deleted: false,
+            mentionedUserIds: [],
+            attachments: [],
+            sentAt: '2026-09-01T09:05:00.000Z',
+          },
+        ],
+      });
+
+      await vi.advanceTimersByTimeAsync(6000);
+
+      expect(await screen.findByText('Hi Pranav')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('searches, and prints the stance about what search covers', async () => {
     render(<WorkspaceChatPage />);
     await screen.findByTestId('chat-conversations');
