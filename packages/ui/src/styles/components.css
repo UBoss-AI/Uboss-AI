@@ -10837,6 +10837,18 @@ tr[data-drop-target='true'] td {
 }
 
 /*
+   The strip above the workflow drawing: which way the plan runs, and nothing else.
+
+   Separated from the canvas by a rule rather than floated over it, because the canvas is a
+   scrolling surface and a control sitting on top of a plan is a control that covers a step.
+ */
+.uboss-canvas-toolbar {
+  border-bottom: 1px solid var(--uboss-border);
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+}
+
+/*
    A field sitting among a header's controls is a control, not a form row.
 
    `.uboss-field` carries a bottom margin for stacked forms, which pushed the period selector out

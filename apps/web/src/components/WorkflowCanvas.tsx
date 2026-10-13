@@ -153,7 +153,23 @@ export interface WorkflowCanvasProps {
    * editable, which is also what hides the control.
    */
   onAddAfter?: ((nodeId: string) => void) | undefined;
+  /**
+   * Which way the work travels. Defaults to down the page, which is what this always did.
+   *
+   * The caller owns it rather than the canvas, because the control that changes it belongs in
+   * the screen's toolbar beside the zoom, not floating over the drawing.
+   */
+  orientation?: CanvasOrientation | undefined;
 }
+
+/**
+ * Which way the work travels across the drawing.
+ *
+ * `vertical` runs it down the page, `horizontal` across. Neither is more correct: a plan with
+ * many steps and few branches is a long thin column one way and fits a wide screen the other,
+ * and which of those a reader wants depends on the plan in front of them.
+ */
+export type CanvasOrientation = 'vertical' | 'horizontal';
 
 const NODE_W = 196;
 const NODE_H = 68;
@@ -187,7 +203,11 @@ interface Placed {
  * so counting them would push every recovery node below the thing it recovers to and invert the
  * picture. They are drawn, but they do not decide the layout.
  */
-function layout(nodes: readonly CanvasNode[], edges: readonly CanvasEdge[]) {
+function layout(
+  nodes: readonly CanvasNode[],
+  edges: readonly CanvasEdge[],
+  orientation: CanvasOrientation,
+) {
   const forward = edges.filter((edge) => edge.kind !== 'Failure');
 
   const incoming = new Map<string, string[]>();
@@ -223,18 +243,51 @@ function layout(nodes: readonly CanvasNode[], edges: readonly CanvasEdge[]) {
   }
 
   const widest = Math.max(1, ...[...rows.values()].map((row) => row.length));
-  const width = PAD_X * 2 + widest * NODE_W + (widest - 1) * COL_GAP;
-  const height = PAD_Y * 2 + rows.size * NODE_H + Math.max(0, rows.size - 1) * (ROW_GAP - NODE_H);
+
+  /*
+   * The same graph, with the two axes exchanged.
+   *
+   * Depth is what the drawing is about: steps at the same depth happen at the same time, and
+   * everything else follows from where depth goes. Down the page gives a tall plan a reader
+   * scrolls through; across gives a wide one, which suits a plan with many steps and few
+   * branches — and a screen that is wider than it is tall, which every screen is.
+   *
+   * Nothing about the graph changes — not the depths, not the grouping, not which nodes are
+   * siblings. Only which coordinate each of those becomes.
+   */
+  const down = orientation === 'vertical';
+
+  /** Along the direction work travels. */
+  const levelStep = down ? ROW_GAP : NODE_W + COL_GAP;
+  /** Across it, where steps that happen together sit beside each other. */
+  const siblingStep = down ? NODE_W + COL_GAP : ROW_GAP;
+
+  const levelSpan =
+    PAD_Y * 2 +
+    rows.size * (down ? NODE_H : NODE_W) +
+    Math.max(0, rows.size - 1) * (levelStep - (down ? NODE_H : NODE_W));
+  const siblingSpan =
+    PAD_X * 2 +
+    widest * (down ? NODE_W : NODE_H) +
+    (widest - 1) * (siblingStep - (down ? NODE_W : NODE_H));
+
+  const width = down ? siblingSpan : levelSpan;
+  const height = down ? levelSpan : siblingSpan;
 
   const placed = new Map<string, Placed>();
   for (const [level, row] of [...rows.entries()].sort((a, b) => a[0] - b[0])) {
-    const rowWidth = row.length * NODE_W + (row.length - 1) * COL_GAP;
-    const startX = (width - rowWidth) / 2;
+    // Centred across the axis work does not travel along, so a narrow row sits under the middle
+    // of a wide one rather than hugging an edge.
+    const rowExtent =
+      row.length * (down ? NODE_W : NODE_H) +
+      (row.length - 1) * (siblingStep - (down ? NODE_W : NODE_H));
+    const start = ((down ? width : height) - rowExtent) / 2;
+
     row.forEach((node, index) => {
       placed.set(node.id, {
         node,
-        x: startX + index * (NODE_W + COL_GAP),
-        y: PAD_Y + level * ROW_GAP,
+        x: down ? start + index * siblingStep : PAD_X + level * levelStep,
+        y: down ? PAD_Y + level * levelStep : start + index * siblingStep,
       });
     });
   }
@@ -242,8 +295,22 @@ function layout(nodes: readonly CanvasNode[], edges: readonly CanvasEdge[]) {
   return { placed, width, height };
 }
 
-/** The curve between two nodes, leaving the bottom of one and entering the top of the next. */
-function connector(from: Placed, to: Placed): string {
+/**
+ * The curve between two nodes, leaving the face work travels out of and entering the next.
+ *
+ * Down the page that is bottom to top; across, right to left. The control points bend along the
+ * same axis, which is what keeps the curve reading as travel rather than as a loop.
+ */
+function connector(from: Placed, to: Placed, orientation: CanvasOrientation): string {
+  if (orientation === 'horizontal') {
+    const x1 = from.x + NODE_W;
+    const y1 = from.y + NODE_H / 2;
+    const x2 = to.x;
+    const y2 = to.y + NODE_H / 2;
+    const mid = (x1 + x2) / 2;
+    return `M${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`;
+  }
+
   const x1 = from.x + NODE_W / 2;
   const y1 = from.y + NODE_H;
   const x2 = to.x + NODE_W / 2;
@@ -252,8 +319,29 @@ function connector(from: Placed, to: Placed): string {
   return `M${x1} ${y1} C ${x1} ${mid}, ${x2} ${mid}, ${x2} ${y2}`;
 }
 
-/** A failure edge returns to a step above, so it goes round the side rather than through. */
-function returnPath(from: Placed, to: Placed, width: number): string {
+/**
+ * A failure edge returns to a step the work has already passed, so it goes round the outside
+ * rather than back through the middle of the plan.
+ *
+ * Round the side when the plan runs down the page, and under it when the plan runs across —
+ * either way, out past everything drawn and back in.
+ */
+function returnPath(
+  from: Placed,
+  to: Placed,
+  width: number,
+  height: number,
+  orientation: CanvasOrientation,
+): string {
+  if (orientation === 'horizontal') {
+    const x1 = from.x + NODE_W / 2;
+    const y1 = from.y + NODE_H;
+    const x2 = to.x + NODE_W / 2;
+    const y2 = to.y + NODE_H;
+    const out = Math.min(height - 8, Math.max(y1, y2) + 40);
+    return `M${x1} ${y1} V${out} H${x2} V${y2}`;
+  }
+
   const x1 = from.x + NODE_W;
   const y1 = from.y + NODE_H / 2;
   const x2 = to.x + NODE_W;
@@ -291,8 +379,12 @@ export function WorkflowCanvas({
   live,
   onOpenNode,
   onAddAfter,
+  orientation = 'vertical',
 }: WorkflowCanvasProps) {
-  const { placed, width, height } = useMemo(() => layout(nodes, edges), [nodes, edges]);
+  const { placed, width, height } = useMemo(
+    () => layout(nodes, edges, orientation),
+    [nodes, edges, orientation],
+  );
 
   /*
    * How large the plan is drawn.
@@ -313,14 +405,20 @@ export function WorkflowCanvas({
             edge,
             from,
             to,
-            d: edge.kind === 'Failure' ? returnPath(from, to, width) : connector(from, to),
+            d:
+              edge.kind === 'Failure'
+                ? returnPath(from, to, width, height, orientation)
+                : connector(from, to, orientation),
             // An edge is carrying work when the step it leaves is working: that is what makes the
             // light on it true rather than decorative.
             carrying: activity?.get(edge.fromNodeId)?.state === 'working',
           };
         })
         .filter((item): item is NonNullable<typeof item> => item !== null),
-    [edges, placed, width, activity],
+    // `height` and `orientation` as well as the rest: both decide the path a failure edge takes
+    // round the outside, and leaving them out left every edge drawn for the previous direction
+    // after the toggle had already moved the nodes.
+    [edges, placed, width, height, orientation, activity],
   );
 
   if (nodes.length === 0) return null;

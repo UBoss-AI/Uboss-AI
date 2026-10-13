@@ -22,10 +22,15 @@ import {
   Icon,
   Modal,
   PageHeader,
+  SegmentedControl,
   StatusBadge,
 } from '@uboss/ui';
 
-import { WorkflowCanvas, type NodeActivity } from '../../../components/WorkflowCanvas';
+import {
+  WorkflowCanvas,
+  type CanvasOrientation,
+  type NodeActivity,
+} from '../../../components/WorkflowCanvas';
 import { useRunStream } from '../../../lib/use-run-stream';
 
 import { useAccountMenu } from '../../../lib/use-account-menu';
@@ -81,6 +86,8 @@ function WorkflowEditorInner() {
   const [objective, setObjective] = useState<ObjectiveView | null>(null);
   const [draft, setDraft] = useState<WorkflowDraftView | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  /* Down the page, as this always drew. See the note beside the control. */
+  const [orientation, setOrientation] = useState<CanvasOrientation>('vertical');
   /*
    * The people an owner can be set to, from the same place Form 2's owner list comes from — the
    * company's own hierarchy. Loaded here because the draft carries an owner's id, and an id is
@@ -433,11 +440,37 @@ function WorkflowEditorInner() {
                 draws each edge as what it is, and shows what every node is doing.
               */
               <div style={{ padding: '18px 10px' }}>
+                {/*
+                  Which way the plan runs.
+
+                  It only ever ran down the page. That is right for a plan with few steps and
+                  several branches, and wrong for the commoner one — a long chain with hardly any
+                  — which becomes a thin column somebody scrolls for a screen and a half while
+                  two thirds of a wide monitor stays empty.
+
+                  Not persisted, for the same reason the zoom beside it is not: it is about the
+                  plan being read now, and the next objective is a different shape.
+                */}
+                <div className="uboss-row uboss-row--between uboss-canvas-toolbar">
+                  <span className="uboss-muted-3">
+                    {orientation === 'vertical' ? 'Top to bottom' : 'Left to right'}
+                  </span>
+                  <SegmentedControl
+                    label="Workflow direction"
+                    value={orientation}
+                    onChange={(next) => setOrientation(next as CanvasOrientation)}
+                    options={[
+                      { value: 'vertical', label: 'Vertical' },
+                      { value: 'horizontal', label: 'Horizontal' },
+                    ]}
+                  />
+                </div>
                 <WorkflowCanvas
                   nodes={canvasNodes}
                   edges={draft.graph.edges}
                   activity={activity}
                   live={runStream.live}
+                  orientation={orientation}
                   {...(draft.editable
                     ? {
                         onOpenNode: setSelected,
