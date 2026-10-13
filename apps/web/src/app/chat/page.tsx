@@ -121,14 +121,33 @@ function WorkspaceChatInner() {
     (response: {
       conversations: ChatConversationSummary[];
       openableDepartments?: { id: string; name: string }[];
+      activeUserIds?: string[];
+      activeWindowMinutes?: number;
     }) => {
       setConversations(response.conversations);
       if (response.openableDepartments !== undefined) {
         setDepartments(response.openableDepartments);
       }
+      if (response.activeUserIds !== undefined) {
+        setActive(new Set(response.activeUserIds));
+      }
+      if (response.activeWindowMinutes !== undefined) {
+        setActiveWindow(response.activeWindowMinutes);
+      }
     },
     [],
   );
+
+  /*
+   * Who has been working in the last few minutes.
+   *
+   * Kept fresh by the same five-second look that fetches new messages, so there is no second
+   * timer and no heartbeat of its own. The window comes from the server rather than being
+   * written here, because the screen must not state a number the data cannot support — it is
+   * the session's last-seen stamp, which is itself only written once a minute.
+   */
+  const [active, setActive] = useState<ReadonlySet<string>>(new Set());
+  const [activeWindow, setActiveWindow] = useState(5);
   const [requestingChange, setRequestingChange] = useState(false);
   const [openId, setOpenId] = useState<string | null>(requestedId);
   const [open, setOpen] = useState<ChatConversationView | null>(null);
@@ -722,6 +741,7 @@ function WorkspaceChatInner() {
                   departments={departments}
                   openId={openId}
                   meUserId={me?.user.userId ?? null}
+                  active={active}
                   onOpen={setOpenId}
                   onOpenWorkshop={(departmentId) => void openWorkshop(departmentId)}
                 />
@@ -757,6 +777,15 @@ function WorkspaceChatInner() {
                       // the rail's summary. A count needs no names.
                       const people = open.participantUserIds?.length ?? 0;
 
+                      /*
+                        How many of them were seen lately — this reader included, because they
+                        plainly are here. Counted against this room's own participants rather
+                        than the whole set the server sent, which covers every conversation.
+                      */
+                      const activeHere = (open.participantUserIds ?? []).filter((id) =>
+                        active.has(id),
+                      ).length;
+
                       return (
                         <header className="chat-head">
                           <span
@@ -768,12 +797,25 @@ function WorkspaceChatInner() {
                           </span>
                           <div className="chat-head-text">
                             <h2 className="chat-title">{label}</h2>
-                            {/* Never a presence claim. There is no socket here and a test
-                                enforces that nothing on this screen says "online". Who is in the
-                                room is a fact the server already sent. */}
+                            {/*
+                              Who is in the room, and how many have been working lately.
+
+                              Still not a presence claim, and the wording is the whole of the
+                              care taken here. There is no socket and nothing knows who is
+                              "online"; what the server has is the last time each person's
+                              session was seen, which every request refreshes. So this says
+                              "active in the last N minutes" — a sentence the data supports —
+                              rather than a green dot meaning something it cannot.
+
+                              The window comes from the server with the figure, so the number of
+                              minutes on the screen is the number the query actually used.
+                            */}
                             {people > 0 ? (
                               <p className="chat-head-sub">
                                 {people} {people === 1 ? 'person' : 'people'} in this conversation
+                                {activeHere === 0
+                                  ? null
+                                  : ` · ${activeHere} active in the last ${activeWindow} minutes`}
                               </p>
                             ) : null}
                           </div>

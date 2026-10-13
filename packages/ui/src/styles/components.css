@@ -6127,6 +6127,32 @@ table.uboss-wfg {
   cursor: pointer;
 }
 
+/*
+   The avatar, and the mark that somebody is at the other end of this conversation.
+
+   A ring in the surface colour around the dot, so it reads as sitting on the circle rather than
+   as part of the initials behind it — the same trick the photo ring uses in the org chart.
+
+   Teal, not green. Green is the universal "online" light and this is not that: the server knows
+   when somebody's session was last seen, not whether they are at their desk. The wording in the
+   title and for a screen reader says so; the colour does not pretend otherwise.
+ */
+.chat-item-avatar {
+  flex: none;
+  position: relative;
+}
+
+.chat-item-active {
+  background: var(--uboss-teal-bright);
+  border: 2px solid var(--uboss-surface);
+  border-radius: 50%;
+  bottom: -1px;
+  height: 11px;
+  position: absolute;
+  right: -1px;
+  width: 11px;
+}
+
 /* `min-width: 0` so a long group title ellipses instead of pushing the badge off the row. */
 .chat-item-text {
   display: grid;

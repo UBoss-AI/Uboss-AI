@@ -170,6 +170,65 @@ describe('Workspace Chat', () => {
     expect(list).not.toHaveTextContent('Human Resources Workshop');
   });
 
+  /*
+   * Who has been working lately.
+   *
+   * Worded as what the data is — the last time the server saw each person's session — and never
+   * as "online", which nothing here can know. The test below that forbids the word still stands;
+   * this one guards the sentence that replaced it.
+   */
+  it('says how many people in the room were seen recently, without claiming anyone is online', async () => {
+    conversations.mockResolvedValue({
+      conversations: [
+        {
+          id: 'conversation-1',
+          kind: 'Group',
+          title: 'Late payments',
+          participantUserIds: ['user-1', 'user-2', 'user-3'],
+          lastMessageAt: '2026-09-01T09:00:00.000Z',
+          unread: 0,
+        },
+      ],
+      openableDepartments: [],
+      // The reader and one colleague; the third person has not been seen.
+      activeUserIds: ['user-1', 'user-2'],
+      activeWindowMinutes: 5,
+    });
+    readConversation.mockResolvedValue({
+      ...CONVERSATION,
+      participantUserIds: ['user-1', 'user-2', 'user-3'],
+    });
+
+    render(<WorkspaceChatPage />);
+
+    expect(await screen.findByText(/3 people in this conversation/)).toHaveTextContent(
+      '2 active in the last 5 minutes',
+    );
+  });
+
+  it('counts nobody as active when the server reports nobody', async () => {
+    conversations.mockResolvedValue({
+      conversations: [
+        {
+          id: 'conversation-1',
+          kind: 'Group',
+          title: 'Late payments',
+          participantUserIds: ['user-1', 'user-2'],
+          lastMessageAt: '2026-09-01T09:00:00.000Z',
+          unread: 0,
+        },
+      ],
+      openableDepartments: [],
+      activeUserIds: [],
+      activeWindowMinutes: 5,
+    });
+
+    render(<WorkspaceChatPage />);
+
+    const head = await screen.findByText(/2 people in this conversation/);
+    expect(head).not.toHaveTextContent('active in the last');
+  });
+
   it('opens a conversation and marks it read', async () => {
     render(<WorkspaceChatPage />);
 

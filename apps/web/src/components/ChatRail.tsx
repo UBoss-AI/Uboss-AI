@@ -31,6 +31,7 @@ export function ChatRail({
   departments,
   openId,
   meUserId,
+  active,
   onOpen,
   onOpenWorkshop,
 }: {
@@ -39,6 +40,13 @@ export function ChatRail({
   departments: { id: string; name: string }[];
   openId: string | null;
   meUserId: string | null;
+  /**
+   * Colleagues the server has seen in the last few minutes.
+   *
+   * Not presence and not a socket — see the note where it is fetched. The rail uses it only to
+   * mark a row as having somebody at the other end of it right now.
+   */
+  active?: ReadonlySet<string> | undefined;
   onOpen: (conversationId: string) => void;
   onOpenWorkshop: (departmentId: string) => void;
 }): React.JSX.Element {
@@ -63,6 +71,7 @@ export function ChatRail({
             subtitle={subtitleFor(row)}
             unread={row.unread}
             open={row.id === openId}
+            activeHere={activeIn(row, meUserId, active)}
             onOpen={onOpen}
           />
         ))}
@@ -77,6 +86,7 @@ export function ChatRail({
             subtitle={subtitleFor(row)}
             unread={row.unread}
             open={row.id === openId}
+            activeHere={activeIn(row, meUserId, active)}
             onOpen={onOpen}
           />
         ))}
@@ -91,6 +101,7 @@ export function ChatRail({
             subtitle={subtitleFor(row)}
             unread={row.unread}
             open={row.id === openId}
+            activeHere={activeIn(row, meUserId, active)}
             onOpen={onOpen}
           />
         ))}
@@ -158,12 +169,31 @@ function Section({
  * the same colour for the same person everywhere in the product — and the second line answers the
  * question somebody actually opens this list with, which is whether anything has happened.
  */
+/**
+ * How many people in this conversation, other than the reader, were seen in the last few
+ * minutes.
+ *
+ * Excluding the reader on purpose: a row that says "1 active" because you are looking at it is
+ * noise on every row you own. What is worth marking is somebody at the *other* end.
+ */
+function activeIn(
+  row: ChatConversationSummary,
+  meUserId: string | null,
+  active: ReadonlySet<string> | undefined,
+): number {
+  if (active === undefined) return 0;
+  return (row.participantUserIds ?? []).filter(
+    (userId) => userId !== meUserId && active.has(userId),
+  ).length;
+}
+
 function Row({
   id,
   label,
   subtitle,
   unread,
   open,
+  activeHere,
   onOpen,
 }: {
   id: string;
@@ -171,6 +201,8 @@ function Row({
   subtitle: string;
   unread: number;
   open: boolean;
+  /** Somebody other than the reader has been working in the last few minutes. */
+  activeHere?: number | undefined;
   onOpen: (conversationId: string) => void;
 }): React.JSX.Element {
   return (
@@ -180,12 +212,31 @@ function Row({
         className={open ? 'chat-item chat-item-open' : 'chat-item'}
         onClick={() => onOpen(id)}
       >
-        <span
-          className="uboss-avatar uboss-avatar--sm"
-          style={{ background: avatarTint(label) }}
-          aria-hidden="true"
-        >
-          {initials(label)}
+        {/*
+          The circle, with a mark when somebody at the other end has been working lately.
+
+          Deliberately not a green "online" dot. Nothing here knows who is online; what the
+          server knows is when each person's session was last seen. The mark is described in
+          words for anybody who cannot see it, and those words say exactly that.
+        */}
+        <span className="chat-item-avatar">
+          <span
+            className="uboss-avatar uboss-avatar--sm"
+            style={{ background: avatarTint(label) }}
+            aria-hidden="true"
+          >
+            {initials(label)}
+          </span>
+          {activeHere !== undefined && activeHere > 0 ? (
+            <span
+              className="chat-item-active"
+              title={`${activeHere} ${activeHere === 1 ? 'person' : 'people'} here seen working in the last few minutes`}
+            >
+              <span className="uboss-sr-only">
+                {activeHere} seen working in the last few minutes
+              </span>
+            </span>
+          ) : null}
         </span>
 
         <span className="chat-item-text">

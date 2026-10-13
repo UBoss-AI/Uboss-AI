@@ -6781,6 +6781,16 @@ export const chatApi = {
        * can stop offering doors that refuse.
        */
       openableDepartments: { id: string; name: string }[];
+      /**
+       * Colleagues seen by the server within `activeWindowMinutes`, among the people this
+       * person shares a conversation with.
+       *
+       * Not a presence protocol and not a socket: it is the session's own last-seen stamp,
+       * which every authenticated request refreshes. "Seen recently" is the only claim it
+       * supports, and the screen is worded that way.
+       */
+      activeUserIds: string[];
+      activeWindowMinutes: number;
     }>(`/tenants/${encodeURIComponent(tenantId)}/chat/conversations`),
 
   /**

@@ -43,7 +43,7 @@ import { actorUserId } from '../request-context/authenticated-actor.js';
 import { getActor } from '../request-context/request-context.js';
 import { tenantScopeForPlatformOperation } from '../persistence/tenant-context.js';
 import { TenantScoped } from '../tenancy/tenancy.decorators.js';
-import { ChatService } from './chat.service.js';
+import { CHAT_ACTIVE_WINDOW_MINUTES, ChatService } from './chat.service.js';
 
 class StartConversationDto {
   @IsIn(CONVERSATION_KINDS as readonly string[]) kind!: ConversationKind;
@@ -137,7 +137,25 @@ export class ChatController {
       this.chat.listOpenableWorkshopDepartments({ scope, actorUserId }),
     ]);
 
-    return { conversations, openableDepartments };
+    /*
+     * Who among these people has been working in the last few minutes.
+     *
+     * Asked only about people the caller already shares a conversation with, which is the
+     * boundary the product already draws — you learn nothing about somebody you are not in a
+     * room with. Read from the session the server already refreshes on every request, so there
+     * is no heartbeat and nothing here claims a socket: the honest sentence is "seen recently",
+     * and the screen says it that way.
+     */
+    const activeUserIds = await this.chat.activeAmong(
+      conversations.flatMap((conversation) => conversation.participantUserIds),
+    );
+
+    return {
+      conversations,
+      openableDepartments,
+      activeUserIds,
+      activeWindowMinutes: CHAT_ACTIVE_WINDOW_MINUTES,
+    };
   }
 
   /**

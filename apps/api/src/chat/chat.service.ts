@@ -64,6 +64,16 @@ export interface ConversationSummary {
  * conversation, adding somebody, and attaching a context reference — because those change who can
  * see what.
  */
+/**
+ * How recently somebody must have been seen to count as working right now.
+ *
+ * Five minutes, and the floor is set by the session layer rather than chosen for feel:
+ * `lastSeenAt` is only written when it is more than `AUTH_LAST_SEEN_REFRESH_SECONDS` stale — a
+ * minute by default — so anything near that would report people as away because their last write
+ * had not happened yet, not because they had stopped.
+ */
+export const CHAT_ACTIVE_WINDOW_MINUTES = 5;
+
 @Injectable()
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
@@ -361,6 +371,48 @@ export class ChatService {
   }
 
   /** The conversations this person is in, newest activity first. */
+  /**
+   * Which of these people have used UBoss in the last few minutes.
+   *
+   * ## What this is, and what it deliberately is not
+   *
+   * It is not a socket, a heartbeat or a presence protocol, and it does not say anybody is
+   * "online" — nothing here can know that. It is the last time each person's session was seen by
+   * the server, which every authenticated request already refreshes, read back and compared
+   * against a window. So it answers "has this colleague been working in the last five minutes",
+   * which is the question somebody looking at a conversation is actually asking.
+   *
+   * Five minutes because `lastSeenAt` is only written when it is more than `lastSeenRefreshSeconds`
+   * stale — sixty seconds by default — so a tighter window would report somebody as away purely
+   * because their last write had not happened yet. Five is comfortably clear of that.
+   *
+   * ## The boundary
+   *
+   * Only people the caller already shares a conversation with. This is information about
+   * colleagues, and the right limit on it is the one the product already draws: you learn nothing
+   * about somebody you are not in a room with.
+   */
+  async activeAmong(userIds: readonly string[]): Promise<string[]> {
+    const distinct = [...new Set(userIds)];
+    if (distinct.length === 0) return [];
+
+    const since = new Date(Date.now() - CHAT_ACTIVE_WINDOW_MINUTES * 60 * 1000);
+
+    const sessions = await this.prisma.runAsPlatformOperation(() =>
+      this.prisma.client.session.findMany({
+        where: {
+          userId: { in: distinct },
+          revokedAt: null,
+          lastSeenAt: { gte: since },
+        },
+        select: { userId: true },
+        distinct: ['userId'],
+      }),
+    );
+
+    return sessions.map((row) => row.userId);
+  }
+
   /**
    * The departments this person may actually open a workshop for.
    *
