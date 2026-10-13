@@ -14,6 +14,17 @@
   min-height: 100vh;
 }
 
+/*
+   The Master Console's rail stays wider, because its labels are.
+
+   "Development & Operations" is 167px and needs 240; the company's longest is 142 and needs 215.
+   Set on the shell rather than in the token file so the grid above reads it from the element it
+   is actually on.
+ */
+.uboss-shell--master {
+  --uboss-sidebar-width: 248px;
+}
+
 .uboss-shell--collapsed,
 :root[data-uboss-sidebar='collapsed'] .uboss-shell {
   grid-template-columns: var(--uboss-sidebar-width-collapsed) 1fr;
@@ -250,6 +261,19 @@
   color: var(--uboss-sidebar-text-2);
   position: sticky;
   top: 0;
+  /*
+     Above the page it sits beside, and below anything that covers the whole screen.
+
+     `position: sticky` establishes a stacking context whatever its z-index, so everything inside
+     this element paints as one layer. With `z-index: auto` that layer sits at 0 and `.uboss-main`
+     — static, and later in the document — painted over it. Nothing showed until the account menu
+     moved into the footer: the menu is 248px wide and the rail is 74px, so the dashboard behind
+     it covered two thirds of every entry, and it read exactly like clipping.
+
+     30 clears the page and stays under the modal scrim at 50, the notification panel at 60 and
+     the toasts at 80 — each of which is meant to cover the navigation, and still does.
+   */
+  z-index: 30;
   height: 100vh;
   display: flex;
   flex-direction: column;
@@ -511,6 +535,15 @@
 }
 
 .uboss-side-foot {
+  /*
+     Its height, as a number something else can read.
+
+     The account menu rises from here and is positioned `fixed` to escape the rail's clipping, so
+     it has no ancestor to measure against and needs this. Declared beside the padding that makes
+     it, for the same reason `--uboss-content-pad-y` is: changing one must not silently leave the
+     other behind.
+   */
+  --uboss-side-foot-h: 57px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   padding: 12px 14px;
   display: flex;
@@ -624,6 +657,28 @@
   display: none;
 }
 
+/*
+   The avatar sits in the middle of the rail when there is nothing beside it.
+
+   Expanded, the footer is a left-aligned row — avatar, then the name — and its 14px side padding
+   is what sets that row in from the edge. Collapsed, the avatar is the only thing left, so that
+   same padding pushed it off-centre in a 74px rail: it sat left of the icons in the column above
+   it, which is what was reported.
+ */
+.uboss-shell--collapsed .uboss-side-foot,
+:root[data-uboss-sidebar='collapsed'] .uboss-side-foot {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.uboss-shell--collapsed .uboss-side-foot-account,
+:root[data-uboss-sidebar='collapsed'] .uboss-side-foot-account {
+  display: flex;
+  justify-content: center;
+  width: auto;
+}
+
 .uboss-shell--collapsed .uboss-sidebar-toggle,
 :root[data-uboss-sidebar='collapsed'] .uboss-sidebar-toggle {
   margin-left: 0;
@@ -650,6 +705,22 @@
   color: transparent;
   font-size: 0;
   overflow: hidden;
+}
+
+/*
+   Collapsed, the icon column has to agree with the avatar under it.
+
+   The items already centre themselves, but they centre inside `.uboss-side-scroll`, and that
+   element's scrollbar takes its width out of the right-hand side. So the icons sat 5px left of
+   the rail's middle while the footer avatar — which is outside the scroll area — sat exactly in
+   it, and the column read as bent at the bottom.
+
+   `both-edges` reserves the same width on the left as the scrollbar takes on the right, so the
+   content box stays centred whether or not the navigation is currently long enough to scroll.
+ */
+.uboss-shell--collapsed .uboss-side-scroll,
+:root[data-uboss-sidebar='collapsed'] .uboss-side-scroll {
+  scrollbar-gutter: stable both-edges;
 }
 
 .uboss-shell--collapsed .uboss-nav-item,
@@ -6643,6 +6714,44 @@ table.uboss-wfg {
 }
 
 /* The master console's dark chrome. */
+/*
+   The same account menu, at the foot of the sidebar instead of the top of the page.
+
+   It opens upward, because the trigger is the last thing above the bottom edge and a menu
+   growing downward from there would open off the screen. Anchored to the left for the matching
+   reason: the sidebar is the left edge, so a menu hanging right of its trigger is the one that
+   stays on the page.
+
+   Wider than the rail it sits in — 56px collapsed — and that is the point of taking it out of
+   the flow: the menu is readable at its own size while the trigger stays a circle.
+ */
+.uboss-side-foot-account {
+  position: relative;
+  width: 100%;
+}
+
+/*
+   Fixed, so the menu is not cut off by the rail it rises from.
+
+   `.uboss-sidebar` clips its own overflow — it has to, or a label caught mid-collapse paints
+   outside the rail — and an absolutely positioned menu inside it is clipped with everything else.
+   Collapsed that rail is 74px and the menu is 248px, so two thirds of every entry was sliced off:
+   "My P…", "Setti…", "Sign…". Fixed positioning leaves the clipping ancestor behind entirely.
+
+   The offsets are measured rather than guessed. The footer is flush to the bottom of the viewport
+   and 57px tall in **both** states — expanded and collapsed render the same trigger — so one pair
+   of numbers anchors the menu above it either way, and the left gutter matches the rail's own.
+ */
+.uboss-side-foot-account .uboss-account-menu {
+  position: fixed;
+  bottom: calc(var(--uboss-side-foot-h) + 8px);
+  left: 12px;
+  right: auto;
+  top: auto;
+  /* The viewport minus the footer it rises from, rather than minus the top bar it is not under. */
+  max-height: calc(100vh - var(--uboss-side-foot-h) - 32px);
+}
+
 .uboss-shell--master .uboss-account-menu {
   background: var(--uboss-navy);
   border-color: rgba(255, 255, 255, 0.12);

@@ -206,6 +206,13 @@ export function AppShell(props: AppShellProps) {
         // navigation carries what it needs; pointing its sidebar at a tenant's `/settings` would
         // be a door to the wrong building.
         settings={isMaster ? undefined : SETTINGS_DESTINATION}
+        /*
+          The same menu the top bar's avatar opens, not a second one.
+
+          Company shells only: the Master Console's footer is its own chrome and its sidebar has
+          never carried a Settings link, so it keeps the plain footer.
+        */
+        {...(isMaster || accountMenu === undefined ? {} : { accountMenu })}
         open={mobileOpen}
       />
 

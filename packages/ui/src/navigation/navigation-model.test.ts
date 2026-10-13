@@ -109,15 +109,18 @@ describe('filterNavigation', () => {
     /*
      * Source order, and chat sits where COMPANY_NAV puts it rather than being appended.
      *
-     * `tracker` appears from the `todo` grant: Task & Tracker is gated on that module, so one
-     * grant offers both entries — and it lands between To-do List and Engine Agents, which is
-     * where the source puts it and not where the grant list does.
+     * `tracker` appears from the `todo` grant: RIS is gated on that module, so one grant offers
+     * both entries. It is **last** here even though `todo` is the first grant named, which is the
+     * whole point of this test — the order is the source's, not the caller's.
+     *
+     * It used to come second, beside To-do List. The client asked for RIS lower in the group, so
+     * the expectation moved with the source; what is being asserted did not change.
      */
     expect(operations?.items.map((item) => item.key)).toEqual([
       'todo',
-      'tracker',
       'agents',
       'chat',
+      'tracker',
     ]);
   });
 

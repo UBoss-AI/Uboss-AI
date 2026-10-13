@@ -89,18 +89,6 @@ export const COMPANY_NAV: readonly NavGroup[] = [
     group: 'Operations',
     items: [
       { key: 'todo', label: 'To-do List', icon: 'list', href: '/todo' },
-      /*
-       * Task & Tracker — boards.
-       *
-       * `module: 'todo'`, which every plan entitles and every role template grants, so the entry
-       * is everybody's. What somebody sees once they are inside is decided per board: a Main
-       * board is the company's, a Private one is its members'. That is a rule about a row, so the
-       * server enforces it rather than this file hiding anything.
-       *
-       * Beside To-do List on purpose. Both are work somebody has been given; the difference is
-       * that a to-do comes from an objective and a board item is arranged by the people doing it.
-       */
-      { key: 'tracker', label: 'RIS', icon: 'panel', href: '/tracker', module: 'todo' },
       { key: 'agents', label: 'Engine Agents', icon: 'bot', href: '/agents' },
       { key: 'executor', label: 'Executor Agent', icon: 'shield', href: '/executor' },
       // Prompt 40A (CR-03). Under OPERATIONS, where the client put it.
@@ -108,6 +96,24 @@ export const COMPANY_NAV: readonly NavGroup[] = [
       // role grants. See the design note at the top of apps/api/src/chat/chat.controller.ts.
       { key: 'chat', label: 'Workspace Chat', icon: 'chat', href: '/chat', module: null },
       { key: 'approvals', label: 'Approvals', icon: 'govern', href: '/approvals' },
+      /*
+       * RIS — spaces, folders and boards.
+       *
+       * `module: 'todo'`, which every plan entitles and every role template grants, so the entry
+       * is everybody's. What somebody sees once they are inside is decided per board: a Main
+       * board is the company's, a Private one is its members'. That is a rule about a row, so the
+       * server enforces it rather than this file hiding anything.
+       *
+       * It used to sit second, beside To-do List, on the reasoning that both are work somebody
+       * has been given. The client asked for it lower: a to-do and an approval arrive and wait
+       * for you, while a board is somewhere you go when you choose to organise work — so it reads
+       * better below the things that come to you, above the two that are only ever read.
+       *
+       * The icon moved with it. `panel` is a blank rectangle and said nothing about what is
+       * inside; `folder` is what the screen itself is — spaces holding folders holding boards —
+       * and nothing else in the navigation uses it.
+       */
+      { key: 'tracker', label: 'RIS', icon: 'folder', href: '/tracker', module: 'todo' },
       { key: 'performance', label: 'Performance', icon: 'medal', href: '/performance' },
       { key: 'reports', label: 'Reports', icon: 'chart', href: '/reports' },
     ],

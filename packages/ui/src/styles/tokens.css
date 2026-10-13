@@ -355,7 +355,19 @@
      Layout
      ========================================================================== */
 
-  --uboss-sidebar-width: 248px;
+  /*
+     Wide enough for the longest label a company sees, and no wider.
+
+     Measured rather than chosen: the company sidebar's longest entry is "Objective Optimization"
+     at 142px, starting 46px in with a 19px gutter after it — 215px of need against the 248px it
+     used to take, so a quarter of the rail was holding nothing and the page beside it was that
+     much narrower for no reason.
+
+     The Master Console keeps 248 below, because its vocabulary is longer: "Development &
+     Operations" is 167px and does not fit this. One token with two values beats one value that
+     is wrong for one of the two shells.
+   */
+  --uboss-sidebar-width: 220px;
   --uboss-sidebar-width-collapsed: 74px;
   --uboss-topbar-height: 56px;
   --uboss-content-max-width: 1440px;

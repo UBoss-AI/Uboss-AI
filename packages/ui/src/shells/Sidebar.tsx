@@ -8,6 +8,7 @@ import { transition } from '../motion/motion';
 import { initials } from '../lib/initials';
 import type { NavGroup } from '../navigation/navigation-model';
 import { Icon } from '../primitives/Icon';
+import { AccountMenu, type AccountMenuItem } from './AccountMenu';
 
 export interface SidebarUser {
   name: string;
@@ -51,6 +52,16 @@ export interface SidebarProps {
    * person's name has the better claim on it.
    */
   settings?: { href: string; label: string } | undefined;
+  /**
+   * The person's own menu, behind the footer avatar.
+   *
+   * The same list the top bar's avatar opens — passed rather than rebuilt, because two menus
+   * claiming to be "your account" that drift apart is worse than either of them. When it is
+   * given, it replaces the footer's name, Sign out and Settings gear: all three live inside it.
+   *
+   * Omitted by a shell that builds its own chrome, and then the footer renders as it always did.
+   */
+  accountMenu?: readonly AccountMenuItem[] | undefined;
   /** Open state on small screens, where the sidebar becomes an off-canvas drawer. */
   open?: boolean;
   className?: string;
@@ -74,6 +85,7 @@ export function Sidebar({
   onToggleCollapse,
   onSignOut,
   settings,
+  accountMenu,
   open = false,
   className,
 }: SidebarProps) {
@@ -197,42 +209,82 @@ export function Sidebar({
         ))}
       </div>
 
+      {/*
+        One profile control, with everything that belongs to a person inside it.
+
+        It used to be three things in a row: an avatar that was decoration, the name with Sign out
+        under it, and a gear at the far end — a second way to reach Settings, which the account
+        menu in the top bar has always had. Collapsed, the name and Sign out are hidden and the
+        avatar and the gear were left squeezed into a 56px rail, which is what was reported.
+
+        The avatar is the control now, and it opens the same menu the top bar's does: My Profile,
+        Settings, Appearance, workspaces and Sign out, from the same list. So the gear is gone
+        rather than hidden — the duplicate was the problem, not its position — and collapsed there
+        is one round avatar where there were two half-fitting controls.
+
+        The caller passes the items. Where it does not — the Master Console builds its own
+        chrome — the footer stays as it was, which is why the old markup is still here below.
+      */}
       <div className="uboss-side-foot">
-        <div className="uboss-avatar" aria-hidden="true">
-          {initials(user.name)}
-        </div>
-        <div className="uboss-stack uboss-side-foot-stack">
-          <b className="uboss-side-foot-name">{user.name}</b>
-          {/* The reference's footer puts a sign-out control on this second line; the role it
-              shows there instead is carried by the top bar's scope pill. */}
-          {onSignOut ? (
-            <button type="button" className="uboss-side-foot-signout" onClick={onSignOut}>
-              Sign out
-            </button>
-          ) : (
-            <span className="uboss-side-foot-role">{user.role}</span>
-          )}
-        </div>
+        {accountMenu !== undefined && accountMenu.length > 0 ? (
+          <AccountMenu
+            className="uboss-side-foot-account"
+            user={user}
+            {...(user.role === undefined ? {} : { scopeLabel: user.role })}
+            /*
+              Sign out appended here, exactly as the top bar does it.
 
-        {/*
-          Settings, at the far end of the person's own row.
+              The host's list deliberately leaves it out — "Sign out is not here: TopBar appends
+              it" — so a menu that only spread the host's items would offer Profile, Settings and
+              Appearance and no way to leave. Last and below the separator, which is what the
+              audit brief asks for: the one control that ends a session should not sit a pixel
+              from the one that changes a theme.
+            */
+            items={[
+              ...accountMenu,
+              ...(onSignOut
+                ? [
+                    {
+                      key: 'sign-out',
+                      label: 'Sign out',
+                      icon: 'key' as const,
+                      onSelect: onSignOut,
+                      separated: true,
+                    },
+                  ]
+                : []),
+            ]}
+          />
+        ) : (
+          <>
+            <div className="uboss-avatar" aria-hidden="true">
+              {initials(user.name)}
+            </div>
+            <div className="uboss-stack uboss-side-foot-stack">
+              <b className="uboss-side-foot-name">{user.name}</b>
+              {/* The reference's footer puts a sign-out control on this second line; the role it
+                  shows there instead is carried by the top bar's scope pill. */}
+              {onSignOut ? (
+                <button type="button" className="uboss-side-foot-signout" onClick={onSignOut}>
+                  Sign out
+                </button>
+              ) : (
+                <span className="uboss-side-foot-role">{user.role}</span>
+              )}
+            </div>
 
-          `title` carries the word rather than a bespoke tooltip: it is what a browser already
-          shows on hover and what assistive technology already reads, and a hand-built tooltip
-          here would be a second implementation of something the platform does correctly.
-          `aria-label` repeats it because the control has no text of its own — an icon alone is
-          an unlabelled link.
-        */}
-        {settings === undefined ? null : (
-          <a
-            className="uboss-side-foot-settings"
-            href={settings.href}
-            title={settings.label}
-            aria-label={settings.label}
-            onClick={(event) => onNavigate?.('settings', settings.href, event)}
-          >
-            <Icon name="gear" size={17} />
-          </a>
+            {settings === undefined ? null : (
+              <a
+                className="uboss-side-foot-settings"
+                href={settings.href}
+                title={settings.label}
+                aria-label={settings.label}
+                onClick={(event) => onNavigate?.('settings', settings.href, event)}
+              >
+                <Icon name="gear" size={17} />
+              </a>
+            )}
+          </>
         )}
       </div>
     </nav>
