@@ -16,7 +16,7 @@ export default function NotFound() {
           work.
         </Lede>
         <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <Button href="/">Back to Chief Agent</Button>
+          <Button href="/">Back to CXO</Button>
           <Button href="/demo" variant="ghost">
             Book a Demo
           </Button>

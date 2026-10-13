@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import nodemailer, { type Transporter } from 'nodemailer';
 
+import { MAIL_PRODUCT_NAME } from './email-layout.js';
+
 import {
   EmailAdapter,
   LoggingEmailAdapter,
@@ -106,7 +108,14 @@ export function readSmtpConfig(
     username,
     password,
     fromEmail,
-    fromName: env['UBOSS_SMTP_FROM_NAME']?.trim() ?? 'UBoss',
+    /*
+     * The product's own name, so the From line and the masthead agree.
+     *
+     * It was 'UBoss' while the message drawn inside said "Chief Agent", which is the mismatch
+     * `MAIL_PRODUCT_NAME` exists to warn about — one name in the mailbox list and another at the
+     * top of the message is a reason to doubt the message. Both are CXO now.
+     */
+    fromName: env['UBOSS_SMTP_FROM_NAME']?.trim() ?? MAIL_PRODUCT_NAME,
     allowedRecipientDomains: (env['UBOSS_SMTP_ALLOWED_RECIPIENT_DOMAINS'] ?? '')
       .split(',')
       .map((domain) => domain.trim().toLowerCase())

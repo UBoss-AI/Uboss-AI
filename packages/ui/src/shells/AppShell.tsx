@@ -66,7 +66,7 @@ interface AppShellCommonProps {
  * `company` renders the Company Workspace shell and requires the active workspace name, because
  * every authenticated company screen must display the workspace it belongs to. That display is
  * the **top bar**, which names the section, the workspace and the person's scope together. The
- * sidebar's brand line reads `Chief Agent` over `powered by UBoss AI` — the product naming itself,
+ * sidebar's brand line reads `CXO` over `powered by UBoss AI` — the product naming itself,
  * which is what a brand block is for, and the same line the marketing site opens with.
  * `master` renders the UBoss Master Console shell, a separate platform control plane with its
  * own dark treatment and no tenant workspace name.
@@ -181,11 +181,11 @@ export function AppShell(props: AppShellProps) {
       </a>
 
       <Sidebar
-        brand={isMaster ? 'UBoss' : 'Chief Agent'}
+        brand={isMaster ? 'UBoss' : 'CXO'}
         /*
          * The product's own line under its name, not the company's.
          *
-         * This read the workspace name, which put *Aarohan Healthcare* under *Chief Agent* and
+         * This read the workspace name, which put *Aarohan Healthcare* under *CXO* and
          * made the brand block look like it belonged to the customer. The top bar already names
          * the workspace, beside the section and the scope chip, so nothing is lost by saying here
          * what this product is instead — and it matches how the marketing site introduces it.

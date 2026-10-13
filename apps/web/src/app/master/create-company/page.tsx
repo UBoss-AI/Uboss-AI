@@ -507,7 +507,7 @@ export default function MasterCreateCompanyPage() {
                   <FormField
                     label="Display name"
                     required
-                    // Was "Shown as Chief Agent | {name}" — the same unsubstituted placeholder as
+                    // Was "Shown as CXO | {name}" — the same unsubstituted placeholder as
                     // the company's own setting, on the screen that creates the company.
                     hint="What the company is called at the top of every screen in its workspace."
                   >

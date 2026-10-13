@@ -50,10 +50,10 @@ const PAGE = '#f4f5f8';
  *
  * Exported because two places say it and they must not disagree: the masthead this file draws,
  * and the sender name on a message sent on somebody's behalf — "Priya Nair (Aarohan Healthcare)
- * via Chief Agent". A reader who sees one name in the From line and another at the top of the
+ * via CXO". A reader who sees one name in the From line and another at the top of the
  * message has been given a reason to doubt the message.
  */
-export const MAIL_PRODUCT_NAME = 'Chief Agent';
+export const MAIL_PRODUCT_NAME = 'CXO';
 
 export interface EmailLayoutInput {
   /** The one line at the top, and the one thing the message is about. */

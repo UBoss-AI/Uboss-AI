@@ -19,7 +19,7 @@ export function DemoRequestForm({ initialPlan }: { initialPlan: string }) {
     const body = fields
       .map(([label, value]) => `${label}: ${String(value ?? '').trim()}`)
       .join('\n\n');
-    window.location.href = `mailto:dev@ubossai.com?subject=${encodeURIComponent('Chief Agent workflow demo request')}&body=${encodeURIComponent(body)}`;
+    window.location.href = `mailto:dev@ubossai.com?subject=${encodeURIComponent('CXO workflow demo request')}&body=${encodeURIComponent(body)}`;
   }
 
   return (

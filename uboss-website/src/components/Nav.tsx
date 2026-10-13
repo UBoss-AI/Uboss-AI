@@ -74,13 +74,13 @@ export function Nav() {
         <Link
           href="/"
           className="flex items-center gap-2.5"
-          aria-label="Chief Agent — Powered by UBoss AI — home"
+          aria-label="CXO — Powered by UBoss AI — home"
         >
           <span className="grid h-7 w-7 place-items-center rounded-[9px] bg-gradient-to-br from-[#a78bfa] to-[#7c3aed] text-[13px] font-bold text-white">
             U
           </span>
           <span className="text-[15px] font-semibold leading-tight tracking-[-0.01em]">
-            Chief Agent
+            CXO
             <small className="block pt-0.5 text-[9px] font-medium tracking-normal text-[#a1a1aa]">
               Powered by UBoss AI
             </small>

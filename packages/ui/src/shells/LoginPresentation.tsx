@@ -107,7 +107,7 @@ export function LoginPresentation({
             U
           </div>
           <div>
-            <b>Chief Agent</b>
+            <b>CXO</b>
             <span>Powered by UBoss AI</span>
           </div>
         </div>

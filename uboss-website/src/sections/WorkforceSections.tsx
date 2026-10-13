@@ -478,11 +478,11 @@ export function ClosingCTA() {
   return (
     <section className="closing-cta" id="company">
       <div className="section-shell">
-        <span className="section-kicker">SEE CHIEF AGENT WITH YOUR OWN USE CASE</span>
+        <span className="section-kicker">SEE CXO WITH YOUR OWN USE CASE</span>
         <h2>
           Your workflow.
           <br />
-          <span>Inside Chief Agent.</span>
+          <span>Inside CXO.</span>
         </h2>
         <p>
           Bring a recurring report, a review process or an operational task. We’ll walk through its
@@ -492,7 +492,7 @@ export function ClosingCTA() {
           Book a Workflow Demo <ArrowUpRight size={17} />
         </Link>
         <span className="closing-wordmark" aria-hidden="true">
-          Chief Agent
+          CXO
         </span>
       </div>
     </section>

@@ -82,7 +82,7 @@ property of the company's permissions, not something a person can tidy away.
 1. **Make each lane a grid rather than a column.** `repeat(auto-fit, minmax(240px, 1fr))` turns
    seven tiles into two columns of four and four into two of two; both lanes end up short and
    level. Needs the lanes to be wider than they are today.
-2. **Move the Chief Agent core out of the middle.** It is what keeps both lanes narrow. As a
+2. **Move the CXO core out of the middle.** It is what keeps both lanes narrow. As a
    header strip it would free the width that (1) needs. Costs the "everything connects here"
    reading, and the core's placement comes from the locked UI reference — a client decision, not
    a developer one.

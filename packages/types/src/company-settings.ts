@@ -188,7 +188,7 @@ const GENERAL: SettingDefinition[] = [
      * This read "Shown in the header as UBOSS AI AMS | {name}", which was wrong twice. `{name}`
      * is a template placeholder that nothing ever substituted, so every administrator who opened
      * General was shown the brace and all. And the header does not say "UBOSS AI AMS" — the
-     * product calls itself Chief Agent on screen, and the workspace name sits beside the page
+     * product calls itself CXO on screen, and the workspace name sits beside the page
      * title, not after a product name.
      *
      * So it says where the name appears instead of trying to reproduce a layout in a sentence. A

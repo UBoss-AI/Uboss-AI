@@ -31,7 +31,7 @@ import './hero.css';
  *
  * ## The name
  *
- * **Chief Agent, powered by UBoss AI.** The product is Chief Agent; UBoss is the platform under it.
+ * **CXO, powered by UBoss AI.** The product is CXO; UBoss is the platform under it.
  * Both appear, and in that order, everywhere the name is set.
  */
 
@@ -51,7 +51,7 @@ const marks = [
   'Audit trail',
 ] as const;
 
-export function ChiefAgentHero(): React.JSX.Element {
+export function CxoHero(): React.JSX.Element {
   return (
     <section className="hero" aria-labelledby="hero-title">
       {/*
@@ -75,7 +75,7 @@ export function ChiefAgentHero(): React.JSX.Element {
           <p className="hero__note">
             <ShieldCheck className="hero__note-icon" aria-hidden="true" />
             <span>
-              Chief Agent
+              CXO
               <br />
               powered by UBoss AI
             </span>

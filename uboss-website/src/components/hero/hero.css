@@ -4,7 +4,7 @@
  * Geometry taken from the reference the client supplied — display caps around 6.4vw at a 0.9 line
  * height, copy anchored hard left in a ~33ch column and riding slightly high, glass cards sitting
  * below it, a foot strip along the bottom. The colour is this product's own: the reference is
- * ember orange over black, and Chief Agent is violet for AI and cyan for human work, the same two
+ * ember orange over black, and CXO is violet for AI and cyan for human work, the same two
  * the rest of the site uses.
  *
  * The two scales exist so the whole block can be tuned at once. `--scale` moves the display type

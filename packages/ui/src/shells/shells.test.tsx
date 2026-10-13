@@ -941,7 +941,7 @@ describe('LoginPresentation — two front doors, one visual system', () => {
     );
 
     expect(container.querySelector('.uboss-mindmap')).not.toBeNull();
-    expect(screen.getByText('Chief Agent')).toBeInTheDocument();
+    expect(screen.getByText('CXO')).toBeInTheDocument();
     // The six locked sections stay until the client approves a different grouping.
     for (const capability of ['MAP', 'Optimize', 'Build', 'Operate', 'Govern', 'Manage Task']) {
       expect(screen.getByText(capability)).toBeInTheDocument();

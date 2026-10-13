@@ -844,7 +844,7 @@ export function SignInFlow({ plane }: SignInFlowProps) {
     <LoginPresentation variant={plane === 'platform' ? 'platform' : 'customer'}>
       <form onSubmit={handlePassword} noValidate>
         <h1>Welcome back</h1>
-        <p className="uboss-login-card-sub">Sign in to Chief Agent, powered by UBoss AI.</p>
+        <p className="uboss-login-card-sub">Sign in to CXO, powered by UBoss AI.</p>
 
         {/*
           Why they are looking at this page, when they did not ask to.

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import net from 'node:net';
 import { after, before, describe, it } from 'node:test';
 
+import { MAIL_PRODUCT_NAME } from '../src/notifications/email-layout.js';
 import {
   chooseEmailAdapter,
   readSmtpConfig,
@@ -386,6 +387,29 @@ describe('SMTP email adapter', () => {
             UBOSS_SMTP_PORT: 'not-a-port',
           }),
         /is not a port/,
+      );
+    });
+
+    it('names the sender after the product, so the mailbox list and the masthead agree', () => {
+      // The one line a recipient reads before they open anything. It used to be hard-coded to
+      // 'UBoss' while the message drawn inside said something else, and a name in the mailbox list
+      // that disagrees with the name at the top of the message is a reason to doubt the message.
+      const base = {
+        UBOSS_SMTP_HOST: 'smtp.example.com',
+        UBOSS_SMTP_USERNAME: 'someone@example.com',
+        UBOSS_SMTP_PASSWORD: 'secret',
+      };
+
+      assert.equal(readSmtpConfig(base)?.fromName, MAIL_PRODUCT_NAME);
+      // Asserted against the literal too: reading the same constant the source reads would pass
+      // even if somebody renamed the product in one place and not the other.
+      assert.equal(readSmtpConfig(base)?.fromName, 'CXO');
+
+      // A deployment may still say something else — a reseller, or a staging environment that
+      // wants its own name in the list.
+      assert.equal(
+        readSmtpConfig({ ...base, UBOSS_SMTP_FROM_NAME: '  Acme Operations  ' })?.fromName,
+        'Acme Operations',
       );
     });
 

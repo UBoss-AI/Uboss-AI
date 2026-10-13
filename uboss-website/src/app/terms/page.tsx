@@ -6,7 +6,7 @@ import { RouteIntro } from '@/components/RouteIntro';
 export const metadata: Metadata = {
   title: 'How it is sold',
   description:
-    'How Chief Agent is bought and used: what a plan decides, how AI work is paid for, what happens when an allowance runs out, and what happens to your data when you leave.',
+    'How CXO is bought and used: what a plan decides, how AI work is paid for, what happens when an allowance runs out, and what happens to your data when you leave.',
 };
 
 /**

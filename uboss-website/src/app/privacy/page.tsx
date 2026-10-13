@@ -6,7 +6,7 @@ import { RouteIntro } from '@/components/RouteIntro';
 export const metadata: Metadata = {
   title: 'Data and privacy',
   description:
-    'What Chief Agent stores, where it lives, who can see it and how long it is kept — described from how the product actually behaves.',
+    'What CXO stores, where it lives, who can see it and how long it is kept — described from how the product actually behaves.',
 };
 
 /**
@@ -82,7 +82,7 @@ export default function PrivacyPage() {
         eyebrow="DATA AND PRIVACY"
         title="What the product does"
         accent="with your data."
-        description="Described from how Chief Agent actually behaves, not from what a policy would like to be true. Each of the statements below is enforced in the software and can be shown to you in the product."
+        description="Described from how CXO actually behaves, not from what a policy would like to be true. Each of the statements below is enforced in the software and can be shown to you in the product."
         primary="Ask us anything about this"
         secondary={{ label: 'How access is controlled', href: '/security' }}
       />
@@ -126,8 +126,8 @@ export default function PrivacyPage() {
         </ul>
         <p className="legal__note">
           Until those are supplied by the company, this page is a description and not an
-          undertaking. If you are evaluating Chief Agent and need the notice for procurement, ask
-          and it will come from the company rather than from this website.
+          undertaking. If you are evaluating CXO and need the notice for procurement, ask and it
+          will come from the company rather than from this website.
         </p>
       </Section>
     </div>

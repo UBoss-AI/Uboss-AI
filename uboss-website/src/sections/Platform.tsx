@@ -343,7 +343,7 @@ export function Closing() {
   return (
     <Section id="company" tone="ink-0" glow>
       <Reveal className="mx-auto max-w-[760px] text-center">
-        <Pill tone="ai">Chief Agent · Powered by UBoss AI</Pill>
+        <Pill tone="ai">CXO · Powered by UBoss AI</Pill>
         <Heading className="mt-7">
           Humans decide.
           <br />

@@ -80,7 +80,7 @@ export function Footer() {
               <span className="grid h-7 w-7 place-items-center rounded-[9px] bg-gradient-to-br from-[#a78bfa] to-[#7c3aed] text-[13px] font-bold text-white">
                 U
               </span>
-              <span className="text-[15px] font-semibold tracking-[-0.01em]">Chief Agent</span>
+              <span className="text-[15px] font-semibold tracking-[-0.01em]">CXO</span>
             </Link>
             <p className="mt-1 text-[12px] text-[#8b8b93]">Powered by UBoss AI</p>
             <p className="mt-4 max-w-[30ch] text-[13.5px] leading-relaxed text-[#7f7f89]">
@@ -111,11 +111,11 @@ export function Footer() {
 
         <div className="mt-14 flex flex-col gap-3 border-t border-white/8 pt-7 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-[12.5px] text-[#8b8b93]">
-            © {new Date().getFullYear()} Chief Agent. Powered by UBoss AI.
+            © {new Date().getFullYear()} CXO. Powered by UBoss AI.
           </p>
           <p className="text-[12.5px] text-[#8b8b93]">
-            Product illustrations on this site depict Chief Agent screens and workflows. They are
-            not customer data.
+            Product illustrations on this site depict CXO screens and workflows. They are not
+            customer data.
           </p>
         </div>
       </div>

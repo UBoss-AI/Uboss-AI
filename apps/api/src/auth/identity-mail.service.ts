@@ -85,7 +85,7 @@ export class IdentityMailService {
     const sender = input.invitedBy ?? null;
 
     /*
-     * "Priya Nair (Aarohan Healthcare) via Chief Agent".
+     * "Priya Nair (Aarohan Healthcare) via CXO".
      *
      * The company is in there as well as the person because a recipient may be invited by more
      * than one, and because "Priya Nair" alone, arriving from an address they have never seen,

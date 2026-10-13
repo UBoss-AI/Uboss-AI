@@ -45,7 +45,7 @@ const NODES: readonly Node[] = [
   },
   {
     id: 'core',
-    label: 'Chief Agent',
+    label: 'CXO',
     sub: 'Powered by UBoss AI',
     kind: 'core',
     x: 450,
@@ -258,7 +258,7 @@ export function FlowDiagram() {
       <ol className="space-y-2 sm:hidden" aria-label="How UBOSS works, in order">
         {[
           { label: 'Objective', tone: 'neutral' },
-          { label: 'Chief Agent analyses it', tone: 'core' },
+          { label: 'CXO analyses it', tone: 'core' },
           { label: 'Human work → To-do', tone: 'human' },
           { label: 'AI work → Skills → Job Agent', tone: 'ai' },
           { label: 'Approvals', tone: 'gate' },

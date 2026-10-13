@@ -11,13 +11,13 @@ import type { SidebarUser } from './Sidebar';
  *
  * ## What changed, and why it is worth saying
  *
- * It used to read `UBOSS AI AMS | {Active Workspace Name}`. The current product name is Chief Agent.
+ * It used to read `UBOSS AI AMS | {Active Workspace Name}`. The current product name is CXO.
  * from the approved reference. The client asked for the product name to give up that slot to the
  * name of the section the person is actually in, because every screen was announcing itself twice
  * — once here and again in the page heading immediately below.
  *
  * The workspace name stays, so the bar still answers "whose data am I looking at". The product
- * name has not left the screen either: the sidebar's header carries `Chief Agent` above the same
+ * name has not left the screen either: the sidebar's header carries `CXO` above the same
  * workspace name, which is where it now lives.
  *
  * The variant is a discriminated union so it is impossible to render a company header without
@@ -96,7 +96,7 @@ export type TopBarProps = (
  * The product name. No longer in the top bar — the sidebar's header renders it — and kept exported
  * because that is where the tests and the design-system page name it from.
  */
-export const COMPANY_HEADER_PREFIX = 'Chief Agent';
+export const COMPANY_HEADER_PREFIX = 'CXO';
 export const MASTER_HEADER_LABEL = 'UBoss Master Console';
 
 export function TopBar(props: TopBarProps) {

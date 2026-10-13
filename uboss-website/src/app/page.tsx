@@ -1,4 +1,4 @@
-import { ChiefAgentHero } from '@/components/hero/ChiefAgentHero';
+import { CxoHero } from '@/components/hero/CxoHero';
 import {
   ProductTour,
   SkillsLibrary,
@@ -21,7 +21,7 @@ import { FAQ } from '@/sections/FAQ';
 export default function Home() {
   return (
     <>
-      <ChiefAgentHero />
+      <CxoHero />
       <ProductTour />
       <SkillsLibrary />
       <DepartmentSolutions />

@@ -8,7 +8,7 @@ import { API_FACTS } from '@/lib/api-surface';
 export const metadata: Metadata = {
   title: 'Connect',
   description:
-    'Connect Chief Agent to the systems you already run: your directory keeps deciding who exists, your identity provider keeps deciding how they sign in, and your own systems can reach the work through a documented API.',
+    'Connect CXO to the systems you already run: your directory keeps deciding who exists, your identity provider keeps deciding how they sign in, and your own systems can reach the work through a documented API.',
 };
 
 /**

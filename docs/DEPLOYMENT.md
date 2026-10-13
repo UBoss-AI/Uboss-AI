@@ -1,6 +1,6 @@
 # Deployment architecture and the promotion checklist
 
-Production deployment for Chief Agent, powered by UBoss AI.
+Production deployment for CXO, powered by UBoss AI.
 
 ## The honest frame, first
 
@@ -331,7 +331,7 @@ It cost a production outage to learn, so the procedure is written down.
    **Settings → Secrets and variables → Actions → the `Variables` tab.** Not Secrets: the workflow
    reads `vars.`, and a value placed under Secrets is never seen.
 3. Deploy. Either push to `main`, or
-   **Actions → Deploy Chief Agent to Hostinger VPS → Run workflow**.
+   **Actions → Deploy CXO to Hostinger VPS → Run workflow**.
 4. Confirm, on the VPS:
 
    ```

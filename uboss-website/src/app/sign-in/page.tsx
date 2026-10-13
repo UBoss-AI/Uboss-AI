@@ -12,7 +12,7 @@ import {
 
 export const metadata: Metadata = {
   title: 'Sign in',
-  description: 'Sign in to Chief Agent, powered by UBoss AI.',
+  description: 'Sign in to CXO, powered by UBoss AI.',
 };
 
 /**
@@ -41,7 +41,7 @@ export default function SignInPage() {
     <div className="subpage">
       <RouteIntro
         eyebrow="SIGN IN"
-        title="Chief Agent runs at"
+        title="CXO runs at"
         accent="your company's address."
         description="Each company's workspace is its own. This website never asks for a password and never holds one — sign-in happens on your own workspace, with whatever your company uses to sign in everywhere else."
         primary="Ask us for your workspace address"
@@ -59,7 +59,7 @@ export default function SignInPage() {
       >
         <div className="card-grid" style={{ ['--card-min' as string]: '320px' }}>
           <div className="card">
-            <p className="card__eyebrow">If you already use Chief Agent</p>
+            <p className="card__eyebrow">If you already use CXO</p>
             <h3 className="card__title">Ask your administrator</h3>
             <p className="card__body">
               They set up the workspace and can invite you or resend the link. If your company signs

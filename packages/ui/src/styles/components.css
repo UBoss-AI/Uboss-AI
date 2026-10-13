@@ -318,9 +318,13 @@
 /*
   The product name, which must fit rather than be cut.
 
-  The company brand line reads "Chief Agent" — eight characters longer than
-  the rail was sized for, so a nowrap line ellipsised it to "UBOSS AI Chief Ag…". A truncated
-  product name in the top-left corner is the worst place in the application to run out of room.
+  It used to read "Chief Agent", which was longer than the rail had been sized for, so a nowrap
+  line ellipsised it to "UBOSS AI Chief Ag…". A truncated product name in the top-left corner is
+  the worst place in the application to run out of room.
+
+  "CXO" fits with room to spare, and these rules stay anyway: the Master Console's brand is set
+  from the same styles, a company can rename what sits beside it, and a product name is not a
+  thing to leave one rename away from being clipped again.
 
   Two lines are allowed and the size steps down a little. The workspace name under it keeps its
   single ellipsised line: a company name genuinely can be long, and that one is a value rather
@@ -333,7 +337,7 @@
   letter-spacing: 0.1px;
   line-height: 1.25;
   display: block;
-  /* Breaks between words only; "Chief" is never split. */
+  /* Breaks between words only, so a two-word brand is never split mid-word. */
   overflow-wrap: break-word;
 }
 
@@ -828,7 +832,7 @@
   border-bottom-color: rgba(255, 255, 255, 0.08);
 }
 
-/* The company workspace mark: Chief Agent | {Active Workspace Name} */
+/* The company workspace mark: CXO | {Active Workspace Name} */
 .uboss-ws-mark {
   display: flex;
   align-items: center;

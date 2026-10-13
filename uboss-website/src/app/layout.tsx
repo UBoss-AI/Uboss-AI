@@ -15,8 +15,8 @@ import './globals.css';
 export const metadata: Metadata = {
   metadataBase: new URL('https://ubossai.com'),
   title: {
-    default: 'Chief Agent | Powered by UBoss AI',
-    template: '%s | Chief Agent',
+    default: 'CXO | Powered by UBoss AI',
+    template: '%s | CXO',
   },
   description:
     'UBOSS connects human teams and governed AI Agents in one operating system — from objectives and workflows to approvals, execution, monitoring and measurable outcomes.',
@@ -30,8 +30,8 @@ export const metadata: Metadata = {
   ],
   openGraph: {
     type: 'website',
-    siteName: 'Chief Agent',
-    title: 'Chief Agent | Powered by UBoss AI',
+    siteName: 'CXO',
+    title: 'CXO | Powered by UBoss AI',
     description:
       'Turn business objectives into work that gets done. Humans stay accountable; governed AI handles approved repeatable work.',
   },

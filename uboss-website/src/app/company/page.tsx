@@ -8,7 +8,7 @@ import { CATALOG } from '@/lib/catalog';
 export const metadata: Metadata = {
   title: 'Company',
   description:
-    'Who builds Chief Agent, what it is for, and the rules the product is built to — human authority over AI execution, recorded decisions, and a company’s data kept to itself.',
+    'Who builds CXO, what it is for, and the rules the product is built to — human authority over AI execution, recorded decisions, and a company’s data kept to itself.',
 };
 
 /**
@@ -63,7 +63,7 @@ export default function CompanyPage() {
         eyebrow="COMPANY"
         title="Software that keeps"
         accent="people in charge."
-        description="Chief Agent is built by UBoss AI. It exists because AI can do a great deal of a company’s work, and none of it should happen without somebody accountable for the outcome."
+        description="CXO is built by UBoss AI. It exists because AI can do a great deal of a company’s work, and none of it should happen without somebody accountable for the outcome."
         primary="Talk to us"
         secondary={{ label: 'How that is enforced', href: '/security' }}
       />
@@ -75,7 +75,7 @@ export default function CompanyPage() {
             An AI workforce with an <em>owner</em> for every outcome.
           </>
         }
-        lead="Most AI tools help one person work faster. Chief Agent is for the work a company owes somebody else — where a task has a deadline, a standard and a person whose name is on it. That work can be done by an agent. It cannot be done unaccountably."
+        lead="Most AI tools help one person work faster. CXO is for the work a company owes somebody else — where a task has a deadline, a standard and a person whose name is on it. That work can be done by an agent. It cannot be done unaccountably."
       >
         {/*
           The portrait sits here and nowhere else on the site, and the placement is the argument.
@@ -120,7 +120,7 @@ export default function CompanyPage() {
             Early, and <em>specific</em> about it.
           </>
         }
-        lead="Chief Agent is a new product. There is no customer list on this website and no logo wall, because putting one up before it is earned is the fastest way to lose the first real conversation."
+        lead="CXO is a new product. There is no customer list on this website and no logo wall, because putting one up before it is earned is the fastest way to lose the first real conversation."
       >
         <CardGrid as="ul" min={280}>
           <Card as="li" index={0}>

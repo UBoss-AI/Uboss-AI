@@ -10,7 +10,7 @@ import type { DashboardMeta, DashboardTileView } from '../lib/api-client';
  *
  * ## What it says
  *
- * One coordinating layer in the middle — the Chief Agent — with the work areas this person is
+ * One coordinating layer in the middle — the CXO — with the work areas this person is
  * authorized to see branching off it, split into the side where work is carried out and the side
  * where it is decided on and reviewed. Each branch ends in a real count, taken by the server in
  * this person's own scope.
@@ -431,7 +431,7 @@ export function OrchestrationMap({
         is. The scope sentence is the server's own words and it is load-bearing — without it a
         manager and an employee see different numbers on the same screen with no way to tell why.
 
-        It is a label, not a report. Nothing here claims the Chief Agent did anything; it names the
+        It is a label, not a report. Nothing here claims the CXO did anything; it names the
         layer the work areas belong to.
       */}
       <div className="uboss-orch-core">
@@ -439,7 +439,7 @@ export function OrchestrationMap({
           <span className="uboss-orch-core-halo" aria-hidden="true" />
           <Icon name="bot" size={24} />
         </span>
-        <span className="uboss-orch-core-name">Chief Agent</span>
+        <span className="uboss-orch-core-name">CXO</span>
         <span className="uboss-orch-core-scope">{scope}</span>
       </div>
 

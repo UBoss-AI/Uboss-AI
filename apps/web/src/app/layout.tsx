@@ -97,15 +97,15 @@ const jetBrainsMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: 'Chief Agent | Powered by UBoss AI',
-  description: 'Chief Agent, powered by UBoss AI — governed AI workforce and operations platform.',
+  title: 'CXO | Powered by UBoss AI',
+  description: 'CXO, powered by UBoss AI — governed AI workforce and operations platform.',
 };
 
 /**
  * Root layout.
  *
  * This is a bootstrap shell only. The real application shells — UBoss Master Console sidebar,
- * Company Workspace sidebar (with the `Chief Agent | {Active Workspace Name}` header) and the
+ * Company Workspace sidebar (with the `CXO | {Active Workspace Name}` header) and the
  * Settings shell — are built at Prompt 2 from the client's approved UI reference.
  */
 export default function RootLayout({ children }: { children: ReactNode }) {

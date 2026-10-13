@@ -110,7 +110,7 @@ services:
       UBOSS_SMTP_USERNAME: ${UBOSS_SMTP_USERNAME:-}
       UBOSS_SMTP_PASSWORD: ${UBOSS_SMTP_PASSWORD:-}
       UBOSS_SMTP_FROM_EMAIL: ${UBOSS_SMTP_FROM_EMAIL:-}
-      UBOSS_SMTP_FROM_NAME: ${UBOSS_SMTP_FROM_NAME:-UBoss AI}
+      UBOSS_SMTP_FROM_NAME: ${UBOSS_SMTP_FROM_NAME:-CXO}
       # Empty in production: the product mails whoever it is meant to mail. A staging deployment
       # sets it, because staging's people are either fixtures at domains that do not exist — whose
       # mail is accepted and then bounces, one per message, into the sending mailbox — or real

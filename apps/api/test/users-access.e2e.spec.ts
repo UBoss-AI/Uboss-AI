@@ -689,7 +689,7 @@ describe('users & access (e2e)', () => {
 
       assert.match(
         activation.fromName ?? '',
-        /^Access Admin \(.+\) via Chief Agent$/,
+        /^Access Admin \(.+\) via CXO$/,
         'the sender name names neither the administrator nor the product',
       );
       assert.equal(
@@ -752,7 +752,7 @@ describe('users & access (e2e)', () => {
 
       const activation = adapter.sent.find((mail) => /invited/i.test(mail.subject));
       assert.ok(activation, 'no invitation email was sent');
-      assert.match(activation.fromName ?? '', /^Legacy Admin \(.+\) via Chief Agent$/);
+      assert.match(activation.fromName ?? '', /^Legacy Admin \(.+\) via CXO$/);
       assert.equal(
         activation.replyTo,
         undefined,
