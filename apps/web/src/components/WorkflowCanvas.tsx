@@ -62,6 +62,8 @@ export interface CanvasNode {
   skillName?: string | null;
   ownerUserId?: string | null;
   ownerDesignation?: string | null;
+  /** The owner's name, resolved by the screen — the node itself only stores an id. */
+  ownerName?: string | null;
   /** Where somebody put it. Absent means the layout decides — see `layout`. */
   position?: { x: number; y: number } | null;
 }

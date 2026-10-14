@@ -13138,6 +13138,19 @@ tr[data-drop-target='true'] td {
 }
 
 /*
+ * Who answers for the agent — one line, because a name is one line.
+ *
+ * The diamond's usable area is about 150x150 and every block in it competes for the same space.
+ * The Skill is allowed to wrap because "Cash reconciliation summary against the branch register"
+ * is a Skill name; a person is "Meera Iyer". Giving this the same two lines would take room off
+ * the title for an allowance it would never use.
+ */
+.uboss-wf-ai-label .uboss-wf-ai-owner {
+  -webkit-line-clamp: 1;
+  color: var(--uboss-text-2);
+}
+
+/*
  * "After: …" joins whole step titles, so it is the line most likely to run away.
  *
  * `min-width: 0` is what makes the clamp work at all here. The meta row is a flex container, and

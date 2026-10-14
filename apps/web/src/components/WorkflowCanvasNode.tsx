@@ -18,6 +18,14 @@ export interface DrawableNode {
   skillName?: string | null;
   ownerUserId?: string | null;
   ownerDesignation?: string | null;
+  /**
+   * The owner's name, which is the thing a reader is actually looking for.
+   *
+   * Not on the analysis node — that stores the id — so the screen drawing the canvas resolves it
+   * from the people list it already loads for the owner dropdown. Optional, because the agent
+   * canvas has no such list and a designation is still better than an id.
+   */
+  ownerName?: string | null;
 }
 
 export interface WorkflowCanvasNodeProps {
@@ -65,6 +73,19 @@ export function WorkflowCanvasNode({
    */
   const subtitle = (fallback: string) => activityLabel ?? fallback;
 
+  /*
+   * Who the step belongs to, in the order a reader wants it.
+   *
+   * The name first, because "Meera Iyer" is what somebody is scanning the canvas for and
+   * "Field Operations Supervisor" is not. The designation is the fallback rather than the
+   * headline — the node used to print it alone, so a plan of nine steps read as a list of job
+   * titles and the question "who is doing this" needed a click on every box to answer.
+   */
+  const ownerLine =
+    node.ownerUserId === null || node.ownerUserId === undefined
+      ? null
+      : (node.ownerName ?? node.ownerDesignation ?? 'Assigned');
+
   const body =
     node.shape === 'goal' ? (
       <div className="uboss-wf-goal" data-shape="goal">
@@ -78,6 +99,21 @@ export function WorkflowCanvasNode({
           {/* Named honestly: an AI step with no approved Skill cannot run, and the Pre-Publish
               Summary reports it as a blocker. Hiding that here would make the canvas look ready. */}
           <small>{subtitle(node.skillName ?? 'No approved Skill')}</small>
+          {/*
+            Who answers for the agent.
+
+            An AI step has nobody performing the work and somebody accountable for it, and the
+            grid names them on the Engine row for exactly that reason. The canvas drew the Skill
+            and stopped, so the one question a reader has about an agent — whose is it — could
+            only be answered by opening the node.
+
+            Its own line rather than appended to the Skill: an unowned agent is a different
+            problem from an agent with no Skill, and running them together hides whichever is
+            missing.
+          */}
+          <small className="uboss-wf-ai-owner">
+            {ownerLine === null ? 'Nobody accountable' : `Accountable: ${ownerLine}`}
+          </small>
         </div>
       </div>
     ) : node.shape === 'gate' ? (
@@ -92,10 +128,10 @@ export function WorkflowCanvasNode({
           <span className="uboss-wf-node-tag">HUMAN</span>
         </div>
         <div className="uboss-wf-node-body">
-          {node.ownerUserId === null ? (
+          {ownerLine === null ? (
             <span className="uboss-muted-3">No owner assigned</span>
           ) : (
-            <>{subtitle(`Owner: ${node.ownerDesignation ?? 'assigned'}`)}</>
+            <>{subtitle(`Owner: ${ownerLine}`)}</>
           )}
         </div>
       </div>

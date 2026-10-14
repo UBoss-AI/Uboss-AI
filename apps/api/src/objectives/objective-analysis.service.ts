@@ -566,11 +566,15 @@ export class ObjectiveAnalysisService {
   }
 
   /**
-   * Read the hierarchy, so owners can be assigned to real people later.
+   * Read the hierarchy, so the plan can say which steps cross a reporting line.
    *
    * No model call. "Read the team structure" was asked of a model and discarded; the structure
    * is then read from the database below, which is the only place it exists. A model cannot know
    * a company's reporting lines and was never being asked to — it was handed a department id.
+   *
+   * It used to be the list owners were matched *against*, which meant an owner whose team was
+   * empty produced a plan with nobody on any step. It describes the assignment now rather than
+   * deciding it — see `assignOwners`.
    */
   private async readTeamStructure(state: PipelineState): Promise<void> {
     state.teamUserIds = await this.organization.reportingSubtreeUserIds({
@@ -580,8 +584,9 @@ export class ObjectiveAnalysisService {
 
     if (state.teamUserIds.length === 0) {
       state.gaps.push(
-        'The objective owner has no reporting subtree on record, so human owners could not be ' +
-          'matched to people. Assign them by hand, or complete the hierarchy and re-analyse.',
+        'The objective owner has nobody reporting to them on record, so every step this plan ' +
+          'assigns will be noted as crossing a team. Owners are still matched by name; complete ' +
+          'the hierarchy if those lines should be the owner’s own.',
       );
     }
   }
@@ -889,13 +894,50 @@ export class ObjectiveAnalysisService {
    * employment records, by name, which is the only way it could ever have been right.
    */
   private async assignOwners(state: PipelineState): Promise<void> {
-    const employments = await this.prisma.runInTenantTransaction(state.scope, () =>
-      this.prisma.client.employmentRecord.findMany({
-        // `(tenant_id, user_id)` is the only index covering this column (ADR-271).
-        where: { tenantId: state.scope.tenantId, userId: { in: state.teamUserIds } },
-        include: { user: { select: { id: true, displayName: true } } },
-      }),
-    );
+    /*
+     * Looked up by the names the grid actually holds, across the whole company.
+     *
+     * This used to search only the objective owner's reporting subtree, and that is what made an
+     * analysed plan come back with nobody on it. Measured on a real objective: the grid named
+     * Aman Singh, Meera Iyer and Neha Verma, all three employed in the company, and all nine
+     * human steps came out unowned — because the objective's owner has nobody reporting to her,
+     * so the subtree was a list containing only herself.
+     *
+     * Pre-Publish then said "Employees affected: 0" and raised a blocker on every human step, on
+     * a plan whose own form named five people. The form is where a person says who does the
+     * work; refusing that silently at analysis time is the product disagreeing with itself.
+     *
+     * Reporting lines are not thrown away — see the note at the cross-team gap below. They
+     * describe the assignment now instead of deciding it.
+     *
+     * Queried by name rather than by fetching the company: a tenant can hold thousands of
+     * employment records and the grid names a handful. `mode: 'insensitive'` does in the
+     * database what the comparison below used to do in memory.
+     */
+    const namesInGrid = [
+      ...new Set(
+        state.steps
+          .map((step) => step.whoPersonName?.trim() ?? '')
+          .filter((name) => name !== '' && name !== '—'),
+      ),
+    ];
+
+    const employments =
+      namesInGrid.length === 0
+        ? []
+        : await this.prisma.runInTenantTransaction(state.scope, () =>
+            this.prisma.client.employmentRecord.findMany({
+              where: {
+                tenantId: state.scope.tenantId,
+                user: {
+                  OR: namesInGrid.map((name) => ({
+                    displayName: { equals: name, mode: 'insensitive' as const },
+                  })),
+                },
+              },
+              include: { user: { select: { id: true, displayName: true } } },
+            }),
+          );
 
     // Human **and** AI nodes. An AI node has no person performing the work, but it does have an
     // accountable one, and the grid names them on the Engine row for exactly that reason: the
@@ -930,10 +972,26 @@ export class ObjectiveAnalysisService {
       if (match) {
         node.ownerUserId = match.userId;
         node.ownerDesignation = match.designation ?? node.ownerDesignation;
+
+        /*
+         * Said, not refused.
+         *
+         * A step owned by somebody outside the objective owner's reporting line is a real thing
+         * a reviewer should know about — the owner cannot chase it through their own hierarchy —
+         * and it is also completely normal on anything cross-functional. It used to be the
+         * reason the assignment was dropped; it is now the reason it is pointed out.
+         */
+        if (!state.teamUserIds.includes(match.userId)) {
+          state.gaps.push(
+            `Step ${node.fromStepPosition} is owned by "${match.user.displayName}", who is ` +
+              'outside the objective owner’s reporting line. The assignment stands — this is ' +
+              'noted so the reviewer knows the step crosses a team.',
+          );
+        }
       } else {
         state.gaps.push(
-          `Step ${node.fromStepPosition} names "${named}", who is not in the objective owner’s ` +
-            'team on record. The owner was left unassigned rather than guessed at.',
+          `Step ${node.fromStepPosition} names "${named}", who is not employed in this company ` +
+            'on record. The owner was left unassigned rather than guessed at.',
         );
       }
     }

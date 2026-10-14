@@ -114,7 +114,7 @@ function WorkflowEditorInner() {
    * company's own hierarchy. Loaded here because the draft carries an owner's id, and an id is
    * not something a manager can choose between.
    */
-  const [people, setPeople] = useState<{ userId: string; label: string }[]>([]);
+  const [people, setPeople] = useState<{ userId: string; label: string; name: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -215,13 +215,28 @@ function WorkflowEditorInner() {
         skillName: node.skillName,
         ownerUserId: node.ownerUserId,
         ownerDesignation: node.ownerDesignation,
+        /*
+          The name behind the id, so the box can say who it is for.
+
+          Resolved here rather than sent by the server: the draft stores an id, and this screen
+          already holds the company's hierarchy for the owner dropdown. Null while that list is
+          still loading, which the node reads as "fall back to the designation" rather than as
+          "nobody" — an owner blinking in and out of existence on first paint would be worse
+          than a job title for a moment.
+        */
+        ownerName:
+          node.ownerUserId === null
+            ? null
+            : (people.find((person) => person.userId === node.ownerUserId)?.name ?? null),
         // Absent until somebody drags it, and then the canvas draws it there instead of where
         // the layout would have put it.
         ...(node.position === undefined || node.position === null
           ? {}
           : { position: node.position }),
       })),
-    [draft],
+    // `people` as well as the draft: the owner's name is resolved through it, so a canvas built
+    // before the hierarchy arrived would keep showing job titles after it had.
+    [draft, people],
   );
 
   /**
@@ -265,6 +280,9 @@ function WorkflowEditorInner() {
         setPeople(
           view.list.map((row) => ({
             userId: row.userId,
+            // The dropdown wants both; the canvas wants the name on its own, so it is kept rather
+            // than parsed back out of the label by splitting on an em dash.
+            name: row.displayName,
             label:
               row.designation === '' ? row.displayName : `${row.displayName} — ${row.designation}`,
           })),
@@ -300,6 +318,19 @@ function WorkflowEditorInner() {
 
   const node = draft?.graph.nodes.find((candidate) => candidate.id === selected) ?? null;
   const shownVersion = objective?.openDraft ?? objective?.versions[0] ?? null;
+
+  /**
+   * The objective owner's name and designation, for the panel that currently prints their id.
+   *
+   * Null until the hierarchy has loaded, or when the owner has no employment record and so is
+   * not in it — both of which the row renders as the id it used to show, rather than pretending
+   * there is no owner.
+   */
+  const ownerLabel = useMemo(() => {
+    const ownerId = shownVersion?.content.objectiveOwnerUserId ?? null;
+    if (ownerId === null) return null;
+    return people.find((person) => person.userId === ownerId)?.label ?? null;
+  }, [shownVersion, people]);
 
   /*
     The journey rail's links, as a spread rather than a value.
@@ -463,11 +494,27 @@ function WorkflowEditorInner() {
                   <span className="uboss-kv-key">Objective</span>
                   <span className="uboss-kv-value">{shownVersion.content.objectiveName}</span>
                 </div>
+                {/*
+                  The owner, by name.
+
+                  This printed the first eight characters of the owner's UUID in a monospace
+                  face — "01a0a903" — on the one row of the panel whose whole job is to say who
+                  is accountable for the objective. Nobody can read an id, and the screen already
+                  holds the company's hierarchy for the owner dropdown beside it.
+
+                  The id survives as the fallback rather than being replaced by a dash: an owner
+                  who is a member of the company but has no employment record is not in that
+                  list, and a truncated id at least says somebody is set.
+                */}
                 <div className="uboss-kv">
                   <span className="uboss-kv-key">Owner</span>
-                  <span className="uboss-kv-value uboss-mono uboss-muted-3">
-                    {shownVersion.content.objectiveOwnerUserId.slice(0, 8)}
-                  </span>
+                  {ownerLabel === null ? (
+                    <span className="uboss-kv-value uboss-mono uboss-muted-3">
+                      {shownVersion.content.objectiveOwnerUserId.slice(0, 8)}
+                    </span>
+                  ) : (
+                    <span className="uboss-kv-value">{ownerLabel}</span>
+                  )}
                 </div>
                 <div className="uboss-kv">
                   <span className="uboss-kv-key">Workload</span>

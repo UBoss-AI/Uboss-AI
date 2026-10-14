@@ -877,6 +877,68 @@ describe('objective AI analysis (e2e)', () => {
       assert.equal(collected?.ownerUserId, workerId);
     });
 
+    /*
+     * The defect, in the words it was reported in: "publish karne ja rahe hain to human ek bhi
+     * nahi dikh raha hai, zero aa raha hai, but us form 5-6 log hai".
+     *
+     * Owners were matched only inside the objective owner's reporting subtree. On a real
+     * objective whose owner has nobody reporting to her, that subtree is a list of one — herself
+     * — so all nine human steps came back unowned although the grid named three people who are
+     * all employed in the company. Pre-Publish then read "Employees affected: 0" and raised a
+     * blocker on every human step.
+     *
+     * The form is where somebody says who does the work. This asserts the analysis honours that
+     * even when the named person is nowhere near the owner's part of the org chart.
+     */
+    it('assigns a named person who is outside the objective owner’s reporting line', async () => {
+      const outsider = await ctx.prisma.runAsPlatformOperation(async () => {
+        const user = await ctx.users.createForPlatform({
+          ubossUniqueId: 'UB-ANXT-0001',
+          email: 'outsider@ana.example',
+          displayName: 'Farida Qureshi',
+          isPlatformActor: false,
+        });
+        await ctx.prisma.client.tenantMembership.create({
+          data: { tenantId, userId: user.id, accountState: 'Active' },
+        });
+        // Employed in the company, reporting to nobody — so no subtree of the objective's owner
+        // can ever contain them.
+        await ctx.prisma.client.employmentRecord.create({
+          data: {
+            tenantId,
+            userId: user.id,
+            departmentId,
+            employeeId: 'EMP-9001',
+            designation: 'Treasury Analyst',
+            joinedOn: new Date('2026-01-01'),
+          },
+        });
+        return user;
+      });
+
+      const objective = await draftObjective([
+        step({ position: 1, whoPersonName: 'Farida Qureshi' }),
+      ]);
+      const run = await analysis().start({
+        scope: scope(),
+        actorUserId: ownerUserId,
+        objectiveId: objective.id,
+      });
+      assert.ok(run.draft);
+
+      const node = run.draft.nodes.find((candidate) => candidate.fromStepPosition === 1);
+      assert.equal(node?.ownerUserId, outsider.id);
+      assert.equal(node?.ownerDesignation, 'Treasury Analyst');
+
+      // The reporting line is not thrown away — it is reported instead of being enforced.
+      assert.ok(
+        run.draft.gaps.some(
+          (gap) => gap.includes('Farida Qureshi') && /outside the objective owner/i.test(gap),
+        ),
+        'crossing a team should be stated, not silently dropped',
+      );
+    });
+
     it('records a gap rather than guessing when the named person is unknown', async () => {
       const objective = await draftObjective([
         step({ position: 1, whoPersonName: 'Somebody Not Employed Here' }),

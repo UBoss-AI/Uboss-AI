@@ -107,6 +107,64 @@ describe('WorkflowCanvasNode', () => {
     expect(screen.getByRole('button', { name: 'Edit Gap-analysis review' })).toBeTruthy();
   });
 
+  /*
+   * "Node ke upar dikhna chahiye ki kaun sa AI kis person ke paas jayega."
+   *
+   * A human node printed the owner's *designation* — "Reg. Doc Specialist" — so a plan of nine
+   * steps read as a list of job titles and answering "who is doing this" meant opening every box.
+   * An AI node printed its Skill and stopped, so the one question a reader has about an agent,
+   * whose it is, could not be answered from the canvas at all.
+   */
+  it('names the person a human step belongs to, rather than their job title', () => {
+    render(
+      <WorkflowCanvasNode
+        node={node({
+          kind: 'Human',
+          ownerUserId: 'u-1',
+          ownerName: 'Meera Iyer',
+          ownerDesignation: 'Field Operations Supervisor',
+        })}
+        onOpen={() => {}}
+      />,
+    );
+    expect(screen.getByText(/Owner: Meera Iyer/)).toBeTruthy();
+  });
+
+  it('names the person accountable for an AI step, beside its Skill', () => {
+    render(
+      <WorkflowCanvasNode
+        node={node({
+          kind: 'Ai',
+          skillName: 'Cash reconciliation summary',
+          ownerUserId: 'u-2',
+          ownerName: 'Aman Singh',
+        })}
+        onOpen={() => {}}
+      />,
+    );
+    // Both, because an agent with no Skill and an agent with nobody behind it are different
+    // problems and running them together would hide whichever is missing.
+    expect(screen.getByText('Cash reconciliation summary')).toBeTruthy();
+    expect(screen.getByText('Accountable: Aman Singh')).toBeTruthy();
+  });
+
+  it('falls back to the designation while the hierarchy is still loading', () => {
+    render(
+      <WorkflowCanvasNode
+        node={node({ kind: 'Human', ownerUserId: 'u-3', ownerDesignation: 'Treasury Analyst' })}
+        onOpen={() => {}}
+      />,
+    );
+    // An owner blinking in and out of existence on first paint would be worse than a job title
+    // for a moment.
+    expect(screen.getByText(/Owner: Treasury Analyst/)).toBeTruthy();
+  });
+
+  it('says an AI step has nobody behind it when it has nobody behind it', () => {
+    render(<WorkflowCanvasNode node={node({ kind: 'Ai', ownerUserId: null })} onOpen={() => {}} />);
+    expect(screen.getByText('Nobody accountable')).toBeTruthy();
+  });
+
   it('does not offer editing on an assigned plan', () => {
     render(
       <WorkflowCanvasNode
