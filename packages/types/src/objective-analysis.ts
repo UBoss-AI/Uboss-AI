@@ -213,6 +213,29 @@ export interface AnalysisNode {
   approvalKind: string | null;
   /** For a `Trigger` node: what event starts it. Null for every other kind. */
   triggerEvent: string | null;
+  /**
+   * Where a person has put this node on the canvas, or absent if nobody has moved it.
+   *
+   * ## Why absent and auto-laid-out are different things
+   *
+   * Absent means "nobody has had an opinion", and the canvas lays the node out from the plan's own
+   * dependencies — which is the right answer for every node until somebody disagrees with it. A
+   * stored position means a person moved it deliberately, and that survives.
+   *
+   * Storing a position for every node the moment one is dragged would lose that distinction: the
+   * other nodes would be frozen where the algorithm happened to put them that day, and a later
+   * improvement to the layout could never reach them.
+   *
+   * ## What a new analysis does to it
+   *
+   * Nothing, because a new analysis does not touch an existing draft at all — the same rule that
+   * keeps a manager's edits. Positions are an edit like any other. A **new version** seeds a fresh
+   * draft, and a fresh draft has no positions, so its layout is computed anew.
+   *
+   * Optional, so it needs no schema bump: a reader of version 2 that has never heard of positions
+   * reads the node correctly and simply lays it out.
+   */
+  position?: { x: number; y: number } | null;
 }
 
 // ---------------------------------------------------------------------------

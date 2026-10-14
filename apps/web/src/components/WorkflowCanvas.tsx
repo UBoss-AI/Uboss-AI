@@ -4,6 +4,8 @@ import { useMemo, useState } from 'react';
 
 import type { AnalysisNodeKind, NodeShape, WorkflowEdgeKind } from '@uboss/types';
 
+import { WorkflowCanvasNode } from './WorkflowCanvasNode';
+
 import './workflow-canvas.css';
 
 /**
@@ -44,6 +46,19 @@ export interface CanvasNode {
   shape: NodeShape;
   /** The second line while the node is idle: who owns it, or what it is. */
   subtitle?: string | null;
+  /*
+   * The three facts the node draws for itself.
+   *
+   * They used to be flattened into `subtitle` by every caller, which was enough while a node was
+   * three lines of SVG text. `WorkflowCanvasNode` draws the real thing now and asks the node
+   * directly — an AI step with no approved Skill has to say so, and a human step should name its
+   * owner rather than the word "assigned".
+   */
+  skillName?: string | null;
+  ownerUserId?: string | null;
+  ownerDesignation?: string | null;
+  /** Where somebody put it. Absent means the layout decides — see `layout`. */
+  position?: { x: number; y: number } | null;
 }
 
 /** One connector. `condition` is the label on a `Condition` edge, where there is one. */
@@ -68,67 +83,17 @@ const ZOOM_STEP = 0.1;
 /** Tenths accumulate floating-point dust, and `0.7000000000000001` reaches the label. */
 const round = (value: number) => Math.round(value * 10) / 10;
 
-/** One line of a node's text, cut to what fits rather than to what reads well. */
-const clip = (value: string, max: number) =>
-  value.length > max ? `${value.slice(0, max - 1).trimEnd()}…` : value;
-
-/**
- * Where a node's three lines of text go, and how much of each fits.
+/*
+ * There used to be seventy lines here that worked out how many characters of a label fitted on
+ * each of a node's three lines of SVG text, per shape, from the shape's own geometry.
  *
- * ## Why this is not one answer for every node
- *
- * Every node drew its text at `x=14`, left-aligned, whatever shape it was. A box 196 wide and 68
- * tall has room at x=14. A **diamond** of the same bounds has its corners at (98,0), (196,34),
- * (98,68) and (0,34), so at the kind line — y=20 — the shape only spans x≈40 to x≈156. The text
- * started 26px outside its own node and ran past the far edge, over the connector beneath it.
- *
- * The widths below come from the geometry rather than from taste. At a height `dy` from the
- * centre a diamond is `196 × (1 − dy/34)` wide, so the three lines have about 115px, 161px and
- * 69px to work in; the hexagonal gate loses 14px at each end and keeps the rest. Divided by the
- * character widths of the three type sizes — 10px bold, 13px semibold, 11px regular — those come
- * to the limits here.
- *
- * Centred rather than inset, for the two shapes that narrow: a left inset on a diamond has to be
- * the inset of its *narrowest* line or it escapes, and that wastes the width the middle line has.
+ * All of it is gone because nodes are HTML now and clip themselves in CSS. The one thing in it
+ * worth carrying forward is the fact it was built on, because anything that ever has to fit
+ * inside one of these shapes meets it again: **a diamond of width `w` is only
+ * `w x (1 - dy / half)` wide at a height `dy` from its centre**, so a line near a point has almost
+ * no room at all. That is why the diamond's label is clamped to three lines rather than sized to
+ * its bounding box — the box is not the shape.
  */
-function textMetricsFor(shape: NodeShape): {
-  x: number;
-  anchor: 'start' | 'middle';
-  centred: boolean;
-  className: string;
-  whoClassName: string;
-  chars: { label: number; who: number };
-} {
-  if (shape === 'diamond') {
-    return {
-      x: NODE_W / 2,
-      anchor: 'middle',
-      centred: true,
-      className: 'wfc__kind',
-      whoClassName: 'wfc__who',
-      // The label line is the widest part of the shape; the subtitle sits near the bottom point.
-      chars: { label: 24, who: 12 },
-    };
-  }
-  if (shape === 'gate') {
-    return {
-      x: NODE_W / 2,
-      anchor: 'middle',
-      centred: true,
-      className: 'wfc__kind',
-      whoClassName: 'wfc__who',
-      chars: { label: 24, who: 22 },
-    };
-  }
-  return {
-    x: 14,
-    anchor: 'start',
-    centred: false,
-    className: 'wfc__kind',
-    whoClassName: 'wfc__who',
-    chars: { label: 26, who: 26 },
-  };
-}
 
 export interface WorkflowCanvasProps {
   nodes: readonly CanvasNode[];
@@ -160,6 +125,16 @@ export interface WorkflowCanvasProps {
    * the screen's toolbar beside the zoom, not floating over the drawing.
    */
   orientation?: CanvasOrientation | undefined;
+  /**
+   * Told where a node was dropped, so the caller can store it.
+   *
+   * The canvas does not persist anything itself — it does not know the objective, the revision or
+   * what a failed save should say. It reports the move; the screen owns what that means.
+   *
+   * Omitted where the plan is not editable, and that is also what stops the dragging: a read-only
+   * plan whose boxes slide around and spring back is worse than one that does not move.
+   */
+  onMoveNode?: ((nodeId: string, position: { x: number; y: number }) => void) | undefined;
 }
 
 /**
@@ -171,10 +146,36 @@ export interface WorkflowCanvasProps {
  */
 export type CanvasOrientation = 'vertical' | 'horizontal';
 
-const NODE_W = 196;
-const NODE_H = 68;
-const ROW_GAP = 116;
-const COL_GAP = 28;
+/*
+ * One node's box, and why it grew.
+ *
+ * These were 196x68 and the canvas drew three lines of SVG text inside them, clipped to a
+ * character count per shape. The same workflow on the analysis screen was drawn by
+ * `WorkflowCanvasNode` as real HTML — the full title, the owner, the shape in CSS — so the product
+ * showed one plan two different ways, and the editor's version was the poorer of the two by a
+ * long way. The client reported it as the editor not looking like the thing it edits.
+ *
+ * `WorkflowCanvasNode` already existed, already matched the analysis screen, and was used by
+ * nothing but its own test — it has been in the repository since the baseline commit. So the
+ * canvas renders it now, in a `foreignObject`, and the box is the size that component needs: the
+ * diamond is 240 across and the human rectangle 300, so 300x240 holds either.
+ *
+ * Everything downstream — the layout, the row heights, the edge endpoints — is written in terms of
+ * these two numbers, which is why changing them is a change in one place.
+ */
+const NODE_W = 300;
+const NODE_H = 240;
+/*
+ * The space between two nodes, not the distance between their origins.
+ *
+ * It used to be a step — `NODE_H + 116` — which was the only thing it could be while every node
+ * was the same height. Rows are measured now, so this is the gap itself and it reads as what it
+ * is. Keeping it as a step was what made the first version of the taller nodes look like the plan
+ * had been pulled apart: the step said 296 and the gap a person saw was that plus the empty half
+ * of each box.
+ */
+const ROW_GAP = 56;
+const COL_GAP = 40;
 const PAD_X = 24;
 const PAD_Y = 28;
 
@@ -182,6 +183,30 @@ interface Placed {
   node: CanvasNode;
   x: number;
   y: number;
+  /** This node's own height — see `nodeHeight`. Carried so the edges can meet its real edge. */
+  h: number;
+}
+
+/**
+ * How tall one node is, by shape.
+ *
+ * ## Why not one number for all of them
+ *
+ * It was one number, and the number had to be the tallest: a diamond needs 240px because its
+ * text sits in a shape with corners. Every other node then got a 240px box with its content
+ * centred in it — a goal pill is 70px tall, so 170px of its box was empty, and the gap a person
+ * saw between two nodes was the real gap *plus* the empty halves of both boxes either side of it.
+ * Reported as the steps being miles apart, which they were: about 300px between a goal and the
+ * step after it, for a 56px gap.
+ *
+ * So each shape is its own height and a row is as tall as the tallest thing in it. The horizontal
+ * orientation still uses one width for every node, which is true — they are all 300 wide.
+ */
+function nodeHeight(shape: NodeShape): number {
+  if (shape === 'diamond') return NODE_H;
+  if (shape === 'goal') return 64;
+  if (shape === 'gate') return 92;
+  return 124;
 }
 
 /**
@@ -258,41 +283,104 @@ function layout(
   const down = orientation === 'vertical';
 
   /** Along the direction work travels. */
-  const levelStep = down ? ROW_GAP : NODE_W + COL_GAP;
-  /** Across it, where steps that happen together sit beside each other. */
-  const siblingStep = down ? NODE_W + COL_GAP : ROW_GAP;
+  /*
+   * Only the horizontal plan steps evenly along the direction work travels.
+   *
+   * Down the page the rows are measured and accumulated below, because their heights differ —
+   * so there is no single step and asking for one would be asking the wrong question.
+   */
+  const levelStep = NODE_W + COL_GAP;
+  /*
+   * Across it, where steps that happen together sit beside each other.
+   *
+   * Both forms are a node plus a gap. Across the page siblings are stacked vertically, so the
+   * node in question is a tall one — using the bare gap there, as this did while `ROW_GAP` was a
+   * step, would overlap every pair of parallel steps in a horizontal plan.
+   */
+  const siblingStep = down ? NODE_W + COL_GAP : NODE_H + ROW_GAP;
 
-  const levelSpan =
-    PAD_Y * 2 +
-    rows.size * (down ? NODE_H : NODE_W) +
-    Math.max(0, rows.size - 1) * (levelStep - (down ? NODE_H : NODE_W));
-  const siblingSpan =
-    PAD_X * 2 +
-    widest * (down ? NODE_W : NODE_H) +
-    (widest - 1) * (siblingStep - (down ? NODE_W : NODE_H));
+  const ordered = [...rows.entries()].sort((a, b) => a[0] - b[0]);
+  /** A row is as tall as the tallest shape standing in it. */
+  const rowHeights = ordered.map(([, row]) => Math.max(...row.map((n) => nodeHeight(n.shape))));
+
+  /*
+   * Down the page, each row starts where the last one ended plus the gap — so the distance
+   * between two steps is the gap, not the gap plus whatever both boxes left empty.
+   *
+   * Across the page every node is the same width, so the old even step is still right there.
+   */
+  const rowOffsets: number[] = [];
+  let runningY = PAD_Y;
+  for (const rowHeight of rowHeights) {
+    rowOffsets.push(runningY);
+    runningY += rowHeight + ROW_GAP;
+  }
+
+  const levelSpan = down
+    ? runningY - ROW_GAP + PAD_Y
+    : PAD_X * 2 + rows.size * NODE_W + Math.max(0, rows.size - 1) * (levelStep - NODE_W);
+  const siblingSpan = down
+    ? PAD_X * 2 + widest * NODE_W + (widest - 1) * (siblingStep - NODE_W)
+    : PAD_Y * 2 + widest * NODE_H + (widest - 1) * (siblingStep - NODE_H);
 
   const width = down ? siblingSpan : levelSpan;
   const height = down ? levelSpan : siblingSpan;
 
   const placed = new Map<string, Placed>();
-  for (const [level, row] of [...rows.entries()].sort((a, b) => a[0] - b[0])) {
+  ordered.forEach(([level, row], rowIndex) => {
     // Centred across the axis work does not travel along, so a narrow row sits under the middle
     // of a wide one rather than hugging an edge.
     const rowExtent =
       row.length * (down ? NODE_W : NODE_H) +
       (row.length - 1) * (siblingStep - (down ? NODE_W : NODE_H));
     const start = ((down ? width : height) - rowExtent) / 2;
+    const rowHeight = rowHeights[rowIndex] ?? NODE_H;
 
     row.forEach((node, index) => {
+      const h = nodeHeight(node.shape);
       placed.set(node.id, {
         node,
+        h,
         x: down ? start + index * siblingStep : PAD_X + level * levelStep,
-        y: down ? PAD_Y + level * levelStep : start + index * siblingStep,
+        /*
+          Shorter nodes sit in the middle of the band a taller one defines, so a goal pill lines
+          up with the diamond after it instead of hanging off its top edge.
+
+          Both orientations need it, for the same reason and in the same place: across the page
+          every node shares one band `NODE_H` tall, and without the centring a 72px pill and a
+          240px diamond meet their connector at two different heights — which draws a chain of
+          steps as a staircase.
+        */
+        y: down
+          ? (rowOffsets[rowIndex] ?? PAD_Y) + (rowHeight - h) / 2
+          : start + index * siblingStep + (NODE_H - h) / 2,
       });
     });
+  });
+
+  /*
+   * A node somebody has moved sits where they put it.
+   *
+   * Applied after the layout rather than instead of it, so a node with no stored position still
+   * gets the computed one — the two live side by side and a plan can be part arranged and part
+   * automatic. That is the common state: somebody drags the two boxes that were in each other's
+   * way and leaves the rest alone.
+   *
+   * The canvas then has to grow to contain whatever was dragged. Without this a node moved right
+   * or down simply disappeared past the viewBox, which looks exactly like a node that was deleted.
+   */
+  let canvasWidth = width;
+  let canvasHeight = height;
+  for (const entry of placed.values()) {
+    const position = entry.node.position;
+    if (position === undefined || position === null) continue;
+    entry.x = position.x;
+    entry.y = position.y;
+    canvasWidth = Math.max(canvasWidth, position.x + NODE_W + PAD_X);
+    canvasHeight = Math.max(canvasHeight, position.y + entry.h + PAD_Y);
   }
 
-  return { placed, width, height };
+  return { placed, width: canvasWidth, height: canvasHeight };
 }
 
 /**
@@ -304,15 +392,15 @@ function layout(
 function connector(from: Placed, to: Placed, orientation: CanvasOrientation): string {
   if (orientation === 'horizontal') {
     const x1 = from.x + NODE_W;
-    const y1 = from.y + NODE_H / 2;
+    const y1 = from.y + from.h / 2;
     const x2 = to.x;
-    const y2 = to.y + NODE_H / 2;
+    const y2 = to.y + to.h / 2;
     const mid = (x1 + x2) / 2;
     return `M${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`;
   }
 
   const x1 = from.x + NODE_W / 2;
-  const y1 = from.y + NODE_H;
+  const y1 = from.y + from.h;
   const x2 = to.x + NODE_W / 2;
   const y2 = to.y;
   const mid = (y1 + y2) / 2;
@@ -335,17 +423,17 @@ function returnPath(
 ): string {
   if (orientation === 'horizontal') {
     const x1 = from.x + NODE_W / 2;
-    const y1 = from.y + NODE_H;
+    const y1 = from.y + from.h;
     const x2 = to.x + NODE_W / 2;
-    const y2 = to.y + NODE_H;
+    const y2 = to.y + to.h;
     const out = Math.min(height - 8, Math.max(y1, y2) + 40);
     return `M${x1} ${y1} V${out} H${x2} V${y2}`;
   }
 
   const x1 = from.x + NODE_W;
-  const y1 = from.y + NODE_H / 2;
+  const y1 = from.y + from.h / 2;
   const x2 = to.x + NODE_W;
-  const y2 = to.y + NODE_H / 2;
+  const y2 = to.y + to.h / 2;
   const out = Math.min(width - 8, Math.max(x1, x2) + 40);
   return `M${x1} ${y1} H${out} V${y2} H${x2}`;
 }
@@ -380,11 +468,38 @@ export function WorkflowCanvas({
   onOpenNode,
   onAddAfter,
   orientation = 'vertical',
+  onMoveNode,
 }: WorkflowCanvasProps) {
   const { placed, width, height } = useMemo(
     () => layout(nodes, edges, orientation),
     [nodes, edges, orientation],
   );
+
+  /*
+   * The node being dragged, and where it currently is.
+   *
+   * Held here rather than written through on every pointer move. A move is a request to the
+   * server with a revision in it, and sending one per frame would both flood the audit trail and
+   * lose races with itself — the last reply to arrive would win, which is not necessarily the
+   * last place the person let go of. So the canvas draws the drag locally and reports once, on
+   * drop.
+   *
+   * `null` means nothing is being dragged, which is almost always.
+   */
+  const [dragging, setDragging] = useState<{
+    nodeId: string;
+    /** Where the pointer was when it went down, in client pixels. */
+    fromClientX: number;
+    fromClientY: number;
+    /** Where the node was then, in canvas units. */
+    originX: number;
+    originY: number;
+    /** How far it has travelled since, in canvas units. */
+    dx: number;
+    dy: number;
+    /** True once it has moved far enough to be a drag rather than a click. */
+    moved: boolean;
+  } | null>(null);
 
   /*
    * How large the plan is drawn.
@@ -531,7 +646,7 @@ export function WorkflowCanvas({
                 <text
                   className="wfc__edge-label"
                   x={(drawn[index]?.from.x ?? 0) + NODE_W + 6}
-                  y={(drawn[index]?.from.y ?? 0) + NODE_H + 16}
+                  y={(drawn[index]?.from.y ?? 0) + (drawn[index]?.from.h ?? NODE_H) + 16}
                 >
                   {edge.kind === 'Parallel' ? 'at the same time' : (edge.condition ?? 'if')}
                 </text>
@@ -541,16 +656,110 @@ export function WorkflowCanvas({
         </g>
 
         <g className="wfc__nodes">
-          {[...placed.values()].map(({ node, x, y }) => {
+          {[...placed.values()].map(({ node, x, y, h }) => {
             const state = activity?.get(node.id) ?? { state: 'idle' as const };
-            const text = textMetricsFor(node.shape);
+            const held = dragging?.nodeId === node.id ? dragging : null;
+            // Drawn where the pointer has taken it, while the pointer still has it.
+            const drawX = x + (held?.dx ?? 0);
+            const drawY = y + (held?.dy ?? 0);
+
             return (
               <g
                 key={node.id}
-                className={`wfc__node wfc__node--${node.kind.toLowerCase()} wfc__node--${state.state}`}
-                transform={`translate(${x} ${y})`}
-                onClick={onOpenNode === undefined ? undefined : () => onOpenNode(node.id)}
-                style={onOpenNode === undefined ? undefined : { cursor: 'pointer' }}
+                className={`wfc__node wfc__node--${node.kind.toLowerCase()} wfc__node--${state.state}${
+                  held !== null && held.moved ? ' wfc__node--dragging' : ''
+                }`}
+                transform={`translate(${drawX} ${drawY})`}
+                /*
+                  Click opens, drag moves, and the difference is three pixels.
+
+                  Both start with the same pointer going down on the same box, so the only honest
+                  way to tell them apart is to wait and see whether it travels. Below the threshold
+                  it was a click and the node opens; past it the click is swallowed, because
+                  somebody who has just dragged a box across the canvas did not also ask to open it.
+                */
+                onClick={
+                  onOpenNode === undefined
+                    ? undefined
+                    : (event) => {
+                        if (held !== null && held.moved) {
+                          event.stopPropagation();
+                          return;
+                        }
+                        onOpenNode(node.id);
+                      }
+                }
+                onPointerDown={
+                  onMoveNode === undefined
+                    ? undefined
+                    : (event) => {
+                        // Only a plain left press. A right-click is the context menu and a
+                        // middle-click is not a gesture this canvas claims.
+                        if (event.button !== 0) return;
+                        event.currentTarget.setPointerCapture(event.pointerId);
+                        setDragging({
+                          nodeId: node.id,
+                          fromClientX: event.clientX,
+                          fromClientY: event.clientY,
+                          originX: x,
+                          originY: y,
+                          dx: 0,
+                          dy: 0,
+                          moved: false,
+                        });
+                      }
+                }
+                onPointerMove={
+                  onMoveNode === undefined
+                    ? undefined
+                    : (event) => {
+                        setDragging((current) => {
+                          if (current === null || current.nodeId !== node.id) return current;
+                          /*
+                           * Client pixels divided by the zoom, because the canvas units are what
+                           * the position is stored in. At 50% a 10px hand movement is 20 units,
+                           * and reading the pointer straight would make a zoomed-out plan feel
+                           * like the node was stuck in treacle.
+                           */
+                          const dx = (event.clientX - current.fromClientX) / zoom;
+                          const dy = (event.clientY - current.fromClientY) / zoom;
+                          /*
+                           * Six pixels, not three.
+                           *
+                           * Three was enough to tell a click from a drag, and not enough to tell
+                           * a drag from a hand. Testing this produced two stored positions from
+                           * one deliberate drag: a press that shifted a few pixels on the way to
+                           * being a click had been saved, audited and reloaded. A gesture that
+                           * writes to the server should need to look like one.
+                           */
+                          const moved = current.moved || Math.abs(dx) + Math.abs(dy) > 6;
+                          return { ...current, dx, dy, moved };
+                        });
+                      }
+                }
+                onPointerUp={
+                  onMoveNode === undefined
+                    ? undefined
+                    : () => {
+                        const held = dragging;
+                        setDragging(null);
+                        if (held === null || held.nodeId !== node.id || !held.moved) return;
+                        onMoveNode(node.id, {
+                          x: held.originX + held.dx,
+                          y: held.originY + held.dy,
+                        });
+                      }
+                }
+                // A capture lost to the browser — a dialog opening, the tab losing focus — must
+                // not leave a node following a pointer that is no longer pressed.
+                onPointerCancel={onMoveNode === undefined ? undefined : () => setDragging(null)}
+                style={
+                  onMoveNode !== undefined
+                    ? { cursor: held !== null && held.moved ? 'grabbing' : 'grab' }
+                    : onOpenNode === undefined
+                      ? undefined
+                      : { cursor: 'pointer' }
+                }
               >
                 {/*
                   The shape comes from `node.shape`, never from the kind.
@@ -560,65 +769,50 @@ export function WorkflowCanvas({
                   against the kind. Deciding it again here would be two places deciding one thing,
                   which is how a renderer ends up disagreeing with the schema it draws.
                 */}
-                {node.shape === 'diamond' ? (
-                  <polygon
-                    className="wfc__box"
-                    points={`${NODE_W / 2},0 ${NODE_W},${NODE_H / 2} ${NODE_W / 2},${NODE_H} 0,${NODE_H / 2}`}
-                  />
-                ) : node.shape === 'gate' ? (
-                  <polygon
-                    className="wfc__box"
-                    points={`14,0 ${NODE_W - 14},0 ${NODE_W},${NODE_H / 2} ${NODE_W - 14},${NODE_H} 14,${NODE_H} 0,${NODE_H / 2}`}
-                  />
-                ) : (
-                  <rect
-                    className="wfc__box"
-                    width={NODE_W}
-                    height={NODE_H}
-                    rx={node.shape === 'goal' ? NODE_H / 2 : 10}
-                  />
-                )}
+                {/*
+                  The node itself, drawn as HTML rather than as SVG text.
 
-                <text className={text.className} x={text.x} y="20" textAnchor={text.anchor}>
-                  {node.kind === 'Ai' ? 'AI' : node.kind}
-                </text>
+                  `foreignObject` because the layout, the edges and the zoom are all SVG and work
+                  well — only the *contents* of a node were the problem. Three clipped lines of
+                  `<text>` could never carry what the analysis screen shows, and every attempt to
+                  make them fit was a character count tuned against a font.
 
-                <text
-                  className={`wfc__label${text.centred ? ' wfc__label--centred' : ''}`}
-                  x={text.x}
-                  y="40"
-                  textAnchor={text.anchor}
-                >
-                  {clip(node.label, text.chars.label)}
-                </text>
-
-                <text className={text.whoClassName} x={text.x} y="56" textAnchor={text.anchor}>
-                  {clip(
-                    state.state === 'working'
-                      ? /*
-                         * The fraction only where there is one.
-                         *
-                         * Null means the work cannot report a fraction honestly, so the node says it
-                         * is working and nothing more. Rendering "0%" or a crawling bar there would
-                         * be inventing the one number the type exists to withhold.
-                         */
-                        state.percent === null
-                        ? 'working…'
-                        : `working — ${state.percent}%`
-                      : state.state === 'waiting'
-                        ? (state.message ?? 'waiting')
-                        : state.state === 'failed'
-                          ? (state.message ?? 'failed')
-                          : state.state === 'done'
-                            ? 'done'
-                            : (node.subtitle ?? ''),
-                    text.chars.who,
-                  )}
-                </text>
+                  `WorkflowCanvasNode` draws the shapes in CSS, so the polygons and the rounded
+                  rect that used to be here are gone with the text: one component decides what a
+                  node looks like, for both screens.
+                */}
+                <foreignObject width={NODE_W} height={h} className="wfc__html">
+                  <WorkflowCanvasNode
+                    node={node}
+                    activityLabel={
+                      state.state === 'working'
+                        ? /*
+                           * The fraction only where there is one.
+                           *
+                           * Null means the work cannot report a fraction honestly, so the node says
+                           * it is working and nothing more. Rendering "0%" or a crawling bar there
+                           * would be inventing the one number the type exists to withhold.
+                           */
+                          state.percent === null
+                          ? 'working…'
+                          : `working — ${state.percent}%`
+                        : state.state === 'waiting'
+                          ? (state.message ?? 'waiting')
+                          : state.state === 'failed'
+                            ? (state.message ?? 'failed')
+                            : state.state === 'done'
+                              ? 'done'
+                              : null
+                    }
+                    {...(onOpenNode === undefined
+                      ? { onOpen: () => undefined }
+                      : { onOpen: () => onOpenNode(node.id) })}
+                  />
+                </foreignObject>
 
                 {/* A quiet pulse on the edge of whatever is working. Bound to state, not to a clock. */}
                 {state.state === 'working' ? (
-                  <rect className="wfc__pulse" width={NODE_W} height={NODE_H} rx="10" />
+                  <rect className="wfc__pulse" width={NODE_W} height={h} rx="10" />
                 ) : null}
 
                 {/*
@@ -634,7 +828,7 @@ export function WorkflowCanvas({
                 {onAddAfter === undefined ? null : (
                   <g
                     className="wfc__add"
-                    transform={`translate(${NODE_W / 2} ${NODE_H})`}
+                    transform={`translate(${NODE_W / 2} ${h})`}
                     onClick={(event) => {
                       event.stopPropagation();
                       onAddAfter(node.id);

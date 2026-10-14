@@ -23,6 +23,9 @@ export type { IconName, IconProps } from './primitives/Icon';
 export { Button } from './primitives/Button';
 export type { ButtonProps, ButtonVariant } from './primitives/Button';
 
+export { JourneyRail } from './primitives/JourneyRail';
+export type { JourneyRailProps, JourneyState, JourneyStop } from './primitives/JourneyRail';
+
 export { Card, CardBody, CardHeader } from './primitives/Card';
 export type { CardBodyProps, CardHeaderProps, CardProps } from './primitives/Card';
 

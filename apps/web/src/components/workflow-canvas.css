@@ -19,6 +19,19 @@
   display: block;
 
   /*
+   * Centred when the plan is narrower than the space it has.
+   *
+   * A vertical workflow is about 244px wide and the panel it sits in is 645px, so the drawing
+   * hugged the left edge with 401px of empty canvas beside it — measured, not guessed. A diagram
+   * pinned to one side of its own frame reads as something that failed to load rather than as a
+   * plan that happens to be narrow.
+   *
+   * `auto` only has an effect while the drawing is the smaller of the two; a wide horizontal plan
+   * still starts at the left and scrolls, which is where reading it begins.
+   */
+  margin-inline: auto;
+
+  /*
    * Sized by its own width and height attributes, which the zoom control sets.
    *
    * This was `width: 100%`, and a stylesheet beats a presentation attribute — so the element
@@ -370,4 +383,55 @@
 .wfc__zoom-value:hover {
   background: var(--uboss-bg-2);
   color: var(--uboss-text);
+}
+
+/*
+ * The node a pointer is carrying.
+ *
+ * Lifted above the rest so it never slides *under* a node it is being dragged past, and its
+ * pointer events are off so the drop lands on the canvas rather than on whatever the cursor
+ * happens to be over. Without that, dragging one node across another could hand the pointerup to
+ * the wrong element and the move would be lost at the last moment.
+ *
+ * No transition: a transition on a dragged element lags behind the pointer, which reads as the
+ * canvas being slow rather than as the node being smooth.
+ */
+.wfc__node--dragging {
+  pointer-events: none;
+}
+
+.wfc__node--dragging .uboss-wf-node,
+.wfc__node--dragging .uboss-wf-goal,
+.wfc__node--dragging .uboss-wf-approve,
+.wfc__node--dragging .uboss-wf-ai-diamond {
+  box-shadow: 0 12px 28px rgb(15 23 42 / 22%);
+}
+
+/*
+ * A node fills the width of its box, so every shape sits on the same centre line.
+ *
+ * `WorkflowCanvasNode` wraps its body in a button, and a button is only as wide as what is inside
+ * it. The human rectangle and the goal pill stretch, so they filled the 300px box; the AI diamond
+ * is a fixed 240px square, so it sat hard against the left with 60px empty beside it — measured,
+ * on all three diamonds. Every connector is drawn to the middle of the *box*, so none of them
+ * reached the point of a diamond.
+ *
+ * Making the button the full width and centring its contents puts the shape where the edges
+ * already expect it to be, which is the arrangement that needs no second number to keep in step.
+ */
+.wfc__html > button {
+  display: flex;
+  justify-content: center;
+  /*
+   * Centred both ways, and the vertical half is not cosmetic.
+   *
+   * Every connector is drawn to the middle of a node's *box*. A goal pill is 56px in a 64px box
+   * and a human rectangle 115px in a 124px one, and without this they sat at the top of their
+   * boxes — so the line arrived 4 to 5px above the middle of the shape it was pointing at, on
+   * every pair in the plan. Small enough to miss and exactly the kind of thing that makes a
+   * diagram look hand-assembled.
+   */
+  align-items: center;
+  width: 100%;
+  height: 100%;
 }

@@ -6,7 +6,9 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 
 import {
   ANALYSIS_NODE_KINDS,
+  objectiveJourney,
   STEP_ENGINE_LABELS,
+  type ObjectiveJourneyStage,
   WORKFLOW_EDGE_KIND_LABELS,
   WORKFLOW_EDGE_KINDS,
   type AnalysisNode,
@@ -20,6 +22,7 @@ import {
   Drawer,
   FormField,
   Icon,
+  JourneyRail,
   Modal,
   PageHeader,
   SegmentedControl,
@@ -33,6 +36,7 @@ import {
 } from '../../../components/WorkflowCanvas';
 import { useRunStream } from '../../../lib/use-run-stream';
 
+import { objectiveStageLink } from '../../../lib/objective-stage-route';
 import { useAccountMenu } from '../../../lib/use-account-menu';
 import { useSignedInUser } from '../../../lib/use-signed-in-user';
 import { RoutedAppShell } from '../../../components/RoutedAppShell';
@@ -189,6 +193,16 @@ function WorkflowEditorInner() {
         label: node.label,
         shape: node.shape,
         subtitle: node.ownerDesignation,
+        // Passed through rather than flattened: the canvas draws the real node now, and it needs
+        // the facts to draw — an unassigned owner and a missing Skill are both things it says.
+        skillName: node.skillName,
+        ownerUserId: node.ownerUserId,
+        ownerDesignation: node.ownerDesignation,
+        // Absent until somebody drags it, and then the canvas draws it there instead of where
+        // the layout would have put it.
+        ...(node.position === undefined || node.position === null
+          ? {}
+          : { position: node.position }),
       })),
     [draft],
   );
@@ -255,6 +269,19 @@ function WorkflowEditorInner() {
   const node = draft?.graph.nodes.find((candidate) => candidate.id === selected) ?? null;
   const shownVersion = objective?.openDraft ?? objective?.versions[0] ?? null;
 
+  /*
+    The journey rail's links, as a spread rather than a value.
+
+    `exactOptionalPropertyTypes` is on, so `href: undefined` is not the same as leaving `href` out
+    — and leaving it out is what tells the rail this stage is not somewhere to go. See
+    `lib/objective-stage-route.ts` for which stages get one.
+  */
+  const stageLink = (stage: ObjectiveJourneyStage): { href?: string } => {
+    const href =
+      objectiveId === null ? undefined : objectiveStageLink(objectiveId, stage.status, stage.state);
+    return href === undefined ? {} : { href };
+  };
+
   const patchDod = (patch: Partial<AnalysisNode['dod']>) =>
     edit((tenant, objectiveKey, revision) =>
       workflowEditorApi.editNode(tenant, objectiveKey, selected ?? '', { revision, dod: patch }),
@@ -318,6 +345,31 @@ function WorkflowEditorInner() {
           </>
         }
       />
+
+      {/*
+        Where this objective has got to, on every screen of the journey rather than one.
+
+        The lifecycle has eleven stages and the screens only ever showed the current one, as a
+        badge. A badge says `Workflow Draft`; it does not say that three stages are behind it, that
+        approval is next, or that the analysis it is sitting in was optional. A person on this
+        screen could not tell whether they were near the beginning or near the end.
+
+        Driven by `objectiveJourney`, which derives the line from the same transition table the
+        server enforces — see `packages/types/src/objectives.ts`. Nothing here decides the order.
+      */}
+      {shownVersion === null ? null : (
+        <JourneyRail
+          label="Objective journey"
+          stops={objectiveJourney(shownVersion.status).map((stage) => ({
+            key: stage.status,
+            label: stage.shortLabel,
+            fullLabel: stage.label,
+            state: stage.state,
+            detour: stage.detour,
+            ...stageLink(stage),
+          }))}
+        />
+      )}
 
       {error === null ? null : <Banner tone="danger">{error}</Banner>}
       {draft !== null && !draft.editable ? (
@@ -483,6 +535,23 @@ function WorkflowEditorInner() {
                         onAddAfter: (nodeId: string) => {
                           setNewNode({ kind: 'Human', label: '', afterNodeId: nodeId });
                           setAdding(true);
+                        },
+                        /*
+                         * Where a node was dropped, stored so it stays there.
+                         *
+                         * Through the same `edit` wrapper as every other change, which is what
+                         * carries the revision and reports a refusal. A move loses a race exactly
+                         * like a rename does — somebody else edited the plan first — and it
+                         * should say so rather than silently snap back.
+                         */
+                        onMoveNode: (nodeId: string, position: { x: number; y: number }) => {
+                          void edit((tenant, objectiveKey, revision) =>
+                            workflowEditorApi.moveNode(tenant, objectiveKey, nodeId, {
+                              revision,
+                              x: position.x,
+                              y: position.y,
+                            }),
+                          )();
                         },
                       }
                     : {})}

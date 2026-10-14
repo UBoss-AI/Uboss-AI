@@ -3,12 +3,38 @@
 import type { AnalysisNode } from '@uboss/types';
 import { Icon } from '@uboss/ui';
 
+/**
+ * What drawing a node actually needs.
+ *
+ * Narrower than `AnalysisNode` on purpose. The canvas carries its own `CanvasNode` — the five
+ * fields a diagram needs and nothing else — and asking for the full analysis node here would make
+ * every caller supply a definition of done, a dependency list and a Skill version to draw a box.
+ * Structural, so an `AnalysisNode` still satisfies it and nothing at the call sites changes.
+ */
+export interface DrawableNode {
+  kind: AnalysisNode['kind'];
+  label: string;
+  shape: AnalysisNode['shape'];
+  skillName?: string | null;
+  ownerUserId?: string | null;
+  ownerDesignation?: string | null;
+}
+
 export interface WorkflowCanvasNodeProps {
-  node: AnalysisNode;
+  node: DrawableNode;
   /** Opens the node's editor drawer. */
   onOpen: () => void;
   /** An assigned plan is read-only, so its nodes are not editable. */
   editable?: boolean;
+  /**
+   * What this step is doing right now, in words, or null when it is idle.
+   *
+   * A string rather than the activity object, because the sentence — "working — 40%", "waiting",
+   * the failure's own message — is already decided by the canvas, which knows when a percentage
+   * can honestly be shown and when it cannot. Passing the object would move that judgement here
+   * and give the product two places that decide what a running step may claim.
+   */
+  activityLabel?: string | null;
 }
 
 /**
@@ -24,7 +50,21 @@ export interface WorkflowCanvasNodeProps {
  * This component deliberately does **not** decide the shape from the kind itself: two places
  * deciding one thing is how a renderer ends up disagreeing with the schema.
  */
-export function WorkflowCanvasNode({ node, onOpen, editable = true }: WorkflowCanvasNodeProps) {
+export function WorkflowCanvasNode({
+  node,
+  onOpen,
+  editable = true,
+  activityLabel = null,
+}: WorkflowCanvasNodeProps) {
+  /*
+   * What is happening now takes the place of what the step is for.
+   *
+   * A node has one quiet line under its title, and while the step is running that line is the
+   * only thing on the canvas saying so. The Skill name is still true then, and still less useful
+   * than "working — 40%" to somebody watching a plan execute.
+   */
+  const subtitle = (fallback: string) => activityLabel ?? fallback;
+
   const body =
     node.shape === 'goal' ? (
       <div className="uboss-wf-goal" data-shape="goal">
@@ -37,7 +77,7 @@ export function WorkflowCanvasNode({ node, onOpen, editable = true }: WorkflowCa
           <b>{node.label}</b>
           {/* Named honestly: an AI step with no approved Skill cannot run, and the Pre-Publish
               Summary reports it as a blocker. Hiding that here would make the canvas look ready. */}
-          <small>{node.skillName ?? 'No approved Skill'}</small>
+          <small>{subtitle(node.skillName ?? 'No approved Skill')}</small>
         </div>
       </div>
     ) : node.shape === 'gate' ? (
@@ -55,7 +95,7 @@ export function WorkflowCanvasNode({ node, onOpen, editable = true }: WorkflowCa
           {node.ownerUserId === null ? (
             <span className="uboss-muted-3">No owner assigned</span>
           ) : (
-            <>Owner: {node.ownerDesignation ?? 'assigned'}</>
+            <>{subtitle(`Owner: ${node.ownerDesignation ?? 'assigned'}`)}</>
           )}
         </div>
       </div>

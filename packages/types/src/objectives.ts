@@ -202,6 +202,132 @@ export function isObjectiveDraftEditable(status: ObjectiveStatus): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// The journey, for showing a person where an objective has got to
+// ---------------------------------------------------------------------------
+
+/**
+ * The stages an objective passes through, in the order a person reads them.
+ *
+ * ## Why this list exists when `OBJECTIVE_STATUSES` already does
+ *
+ * `OBJECTIVE_STATUSES` is every state the record may hold. That is not a journey: `Paused` sits in
+ * the middle of it and is not a step towards anything, and `AiAnalysis` / `WorkflowDraft` are a
+ * detour that an objective may never take. Drawing the enum as a line would tell a person that
+ * pausing is progress and that every objective is analysed, and both are false.
+ *
+ * So this is the spine the client's own document states — `Draft -> Review -> Approved ->
+ * Published -> LIVE`, then §27.1's `Completed -> Outcome Review -> Closed -> Archived` — with the
+ * AI path marked as the optional detour the transition table says it is.
+ *
+ * ## Why it is declared rather than derived
+ *
+ * It cannot be derived. `ALLOWED_OBJECTIVE_TRANSITIONS` is a graph with branches and return
+ * edges; there is no single path through it to read off. What stops the two drifting apart is a
+ * test: every consecutive pair below must be a legal transition, directly or through the detour.
+ * That is the same protection the transition table's own docblock asks for, applied here.
+ */
+export const OBJECTIVE_JOURNEY = [
+  { status: 'Draft', detour: false },
+  { status: 'UnderReview', detour: false },
+  { status: 'AiAnalysis', detour: true },
+  { status: 'WorkflowDraft', detour: true },
+  { status: 'ReadyForApproval', detour: false },
+  { status: 'Active', detour: false },
+  { status: 'Completed', detour: false },
+  { status: 'OutcomeReview', detour: false },
+  { status: 'Closed', detour: false },
+  { status: 'Archived', detour: false },
+] as const satisfies readonly { status: ObjectiveStatus; detour: boolean }[];
+
+/**
+ * How one stage stands in relation to where the objective actually is.
+ *
+ * `halted` is the whole reason this is not a boolean. An objective that is `Paused` is *at* the
+ * Active stage and is not progressing, and the two readings a simpler model offers — "Active, so
+ * fine" or "not Active, so not started" — are both lies. It is live work that has stopped, which
+ * is the one state a company most needs to see.
+ *
+ * `optional` marks a detour stage the objective is not on. Not `upcoming`, because that would
+ * promise an analysis step that may never happen.
+ */
+export type ObjectiveJourneyState = 'done' | 'current' | 'halted' | 'upcoming' | 'optional';
+
+/**
+ * One or two words per stage, for drawing the journey as a line.
+ *
+ * `OBJECTIVE_STATUS_LABELS` carries the client's approved wording and is what a badge shows, but
+ * that wording is written to stand alone — "Submitted / Under Review", "Published / Active" — and
+ * ten of those on one line do not fit. Measured at 1280px: the rail needed 1,508px of a 997px
+ * column, so a third of the journey was off-screen, which is precisely the part a rail exists to
+ * show.
+ *
+ * So the line gets short names and the full ones stay underneath for assistive technology. The
+ * approved wording is not changed anywhere it is read as a status.
+ */
+export const OBJECTIVE_JOURNEY_SHORT_LABELS: Record<ObjectiveStatus, string> = {
+  Draft: 'Draft',
+  UnderReview: 'Review',
+  AiAnalysis: 'AI analysis',
+  WorkflowDraft: 'Workflow',
+  ReadyForApproval: 'Approval',
+  Active: 'Live',
+  Paused: 'Paused',
+  Completed: 'Completed',
+  OutcomeReview: 'Outcome',
+  Closed: 'Closed',
+  Archived: 'Archived',
+};
+
+export interface ObjectiveJourneyStage {
+  status: ObjectiveStatus;
+  /** The client's approved wording, for a screen reader and for anything that is not the rail. */
+  label: string;
+  /** One or two words, for the line itself. */
+  shortLabel: string;
+  state: ObjectiveJourneyState;
+  /** True for the AI analysis path, which an objective may legitimately skip. */
+  detour: boolean;
+}
+
+/**
+ * The journey as it stands for one objective.
+ *
+ * `Paused` has no stage of its own: it resolves to `Active`, marked `halted`. Putting a Paused box
+ * on the line would say an objective moves Active -> Paused -> Completed, and the transition table
+ * is explicit that it does not — `Paused` reaches `Completed` only by resuming first.
+ *
+ * A detour stage behind the objective reads `optional` rather than `done`, because the status
+ * alone cannot say whether the analysis was run: an objective at `Active` looks identical whether
+ * it was analysed or reviewed straight through. Claiming `done` there would be inventing history.
+ * Only an objective standing on the detour shows it as travelled.
+ */
+export function objectiveJourney(current: ObjectiveStatus): ObjectiveJourneyStage[] {
+  const standingAt: ObjectiveStatus = current === 'Paused' ? 'Active' : current;
+  const position = OBJECTIVE_JOURNEY.findIndex((stage) => stage.status === standingAt);
+
+  return OBJECTIVE_JOURNEY.map((stage, index) => {
+    const state: ObjectiveJourneyState =
+      index === position
+        ? current === 'Paused'
+          ? 'halted'
+          : 'current'
+        : stage.detour
+          ? 'optional'
+          : index < position
+            ? 'done'
+            : 'upcoming';
+
+    return {
+      status: stage.status,
+      label: OBJECTIVE_STATUS_LABELS[stage.status],
+      shortLabel: OBJECTIVE_JOURNEY_SHORT_LABELS[stage.status],
+      state,
+      detour: stage.detour,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Form 2 — objective-level fields
 // ---------------------------------------------------------------------------
 

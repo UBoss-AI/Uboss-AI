@@ -299,6 +299,70 @@ export class WorkflowEditorService {
   }
 
   /**
+   * Where a node sits on the canvas, after somebody dragged it.
+   *
+   * ## Why this is not part of `editNode`
+   *
+   * Everything `editNode` changes is what the work *is* — its title, its owner, what done means.
+   * A position is what the diagram *looks like*, and the two deserve to be told apart in the
+   * record: "moved a box" and "changed who is accountable" should not read the same in an audit
+   * trail somebody is scanning during an incident. Its own action is what makes that possible.
+   *
+   * ## It is still audited
+   *
+   * Through `mutate` like every other change, so it gets the same revision check, the same
+   * authorization and the same entry. A quiet write to a governed artefact would be the odd one
+   * out here — and if the trail turns out noisy, the answer is to filter on
+   * `objective.workflow_node_moved`, not to stop recording that somebody changed the plan.
+   *
+   * ## Null clears it
+   *
+   * Passing null returns the node to the computed layout, which is the only way back once a node
+   * has been placed by hand. Absent and null mean the same thing to a reader; the difference is
+   * that null is somebody asking for it.
+   */
+  async moveNode(input: {
+    scope: TenantScope;
+    actorUserId: string;
+    objectiveId: string;
+    versionId?: string | undefined;
+    revision: number;
+    nodeId: string;
+    position: { x: number; y: number } | null;
+  }): Promise<WorkflowDraftView> {
+    return this.mutate(input, (graph) => {
+      const node = this.nodeOrThrow(graph, input.nodeId);
+
+      if (input.position === null) {
+        delete node.position;
+        return {
+          summary: `Returned node ${input.nodeId} to the computed layout.`,
+          action: 'objective.workflow_node_moved',
+          nodeId: input.nodeId,
+        };
+      }
+
+      /*
+       * Rounded, and bounded away from nonsense.
+       *
+       * The canvas sends pixels from a pointer, so they arrive fractional and can be negative if
+       * somebody drags past the top-left corner. A negative coordinate is not wrong in itself —
+       * the viewBox is recomputed from the nodes — but an unbounded one from a hand-written
+       * request could push every other node out of sight, so it is clamped to a canvas far larger
+       * than any real plan.
+       */
+      const clamp = (value: number) => Math.max(-20_000, Math.min(20_000, Math.round(value)));
+      node.position = { x: clamp(input.position.x), y: clamp(input.position.y) };
+
+      return {
+        summary: `Moved node ${input.nodeId} on the canvas.`,
+        action: 'objective.workflow_node_moved',
+        nodeId: input.nodeId,
+      };
+    });
+  }
+
+  /**
    * Convert a node between Human and AI.
    *
    * The allowance is `mayConvertNode` in the shared package, so the editor and any later caller

@@ -12,6 +12,9 @@ import {
   FROZEN_OBJECTIVE_STATUSES,
   isObjectiveContentFrozen,
   isObjectiveDraftEditable,
+  objectiveJourney,
+  OBJECTIVE_JOURNEY,
+  OBJECTIVE_JOURNEY_SHORT_LABELS,
   mayTransitionObjective,
   OBJECTIVE_STATUS_LABELS,
   OBJECTIVE_STATUSES,
@@ -686,5 +689,116 @@ describe('the reward panel stays outside Form 2', () => {
       rewardKeys.filter((key) => gridKeys.includes(key)),
       [],
     );
+  });
+});
+
+describe('the objective journey', () => {
+  /*
+   * The guard the journey's docblock promises.
+   *
+   * The spine is declared by hand because a branching graph has no single path to read off, and a
+   * hand-written path beside a transition table is exactly the arrangement this codebase has
+   * already had go wrong twice. So every neighbouring pair has to be a move the table permits —
+   * either directly, or through the detour, which is the one place the line and the graph are
+   * allowed to disagree about distance.
+   */
+  it('never draws a step the transition table forbids', () => {
+    const spine = OBJECTIVE_JOURNEY.map((stage) => stage.status);
+
+    for (let index = 0; index < spine.length - 1; index += 1) {
+      const from = spine[index]!;
+      const to = spine[index + 1]!;
+      const direct = ALLOWED_OBJECTIVE_TRANSITIONS[from].includes(to);
+
+      // `UnderReview -> AiAnalysis -> WorkflowDraft -> ReadyForApproval` is the detour, and
+      // `UnderReview -> ReadyForApproval` skips it. Both are legal, so a pair that straddles the
+      // detour is allowed to be indirect as long as the straight-through edge exists.
+      const viaDetour = ALLOWED_OBJECTIVE_TRANSITIONS[from].some((next) =>
+        ALLOWED_OBJECTIVE_TRANSITIONS[next].includes(to),
+      );
+
+      assert.ok(direct || viaDetour, `${from} cannot reach ${to}, so the journey must not draw it`);
+    }
+  });
+
+  it('places every stage exactly once and leaves Paused off the line', () => {
+    // Widened deliberately. Narrow, `includes('Paused')` is a type error — which is the compiler
+    // proving the point — but then nothing checks it at runtime, and the constant is the kind of
+    // list somebody extends in a hurry. Both guards, so neither has to be the only one.
+    const spine: readonly ObjectiveStatus[] = OBJECTIVE_JOURNEY.map((stage) => stage.status);
+    assert.equal(new Set(spine).size, spine.length);
+    assert.ok(!spine.includes('Paused'));
+  });
+
+  it('marks where the objective stands, and what is behind it', () => {
+    const stages = objectiveJourney('ReadyForApproval');
+    const byStatus = Object.fromEntries(stages.map((stage) => [stage.status, stage.state]));
+
+    assert.equal(byStatus['Draft'], 'done');
+    assert.equal(byStatus['UnderReview'], 'done');
+    assert.equal(byStatus['ReadyForApproval'], 'current');
+    assert.equal(byStatus['Active'], 'upcoming');
+    assert.equal(byStatus['Closed'], 'upcoming');
+  });
+
+  it('shows a paused objective as stopped at Active, not as a step of its own', () => {
+    const stages = objectiveJourney('Paused');
+    const active = stages.find((stage) => stage.status === 'Active');
+
+    assert.equal(active?.state, 'halted');
+    // Nothing claims to be current, because the objective is not moving.
+    assert.equal(stages.filter((stage) => stage.state === 'current').length, 0);
+    assert.equal(stages.find((stage) => stage.status === 'Completed')?.state, 'upcoming');
+  });
+
+  it('never claims an analysis that may not have happened', () => {
+    // Live, and the status cannot say whether the AI path was taken. Saying "done" would invent
+    // history; saying "upcoming" would promise a step that is already behind it.
+    const live = objectiveJourney('Active');
+    assert.equal(live.find((stage) => stage.status === 'AiAnalysis')?.state, 'optional');
+    assert.equal(live.find((stage) => stage.status === 'WorkflowDraft')?.state, 'optional');
+
+    // Standing on the detour is the one case where it is known.
+    const analysing = objectiveJourney('AiAnalysis');
+    assert.equal(analysing.find((stage) => stage.status === 'AiAnalysis')?.state, 'current');
+  });
+
+  it('answers for every status the enum allows', () => {
+    for (const status of OBJECTIVE_STATUSES) {
+      const stages = objectiveJourney(status);
+      assert.equal(stages.length, OBJECTIVE_JOURNEY.length);
+      assert.ok(stages.every((stage) => stage.label.length > 0));
+    }
+  });
+});
+
+describe('the journey line fits on a screen', () => {
+  /*
+   * Measured, not guessed. At 1280px the rail had 997px of column and wanted 1,508 — a third of
+   * the journey off-screen, on the component whose entire job is showing the whole journey. The
+   * cause was the approved status wording, which is written to stand alone.
+   *
+   * So the line carries short names. This holds them to a length that fits ten stages, and holds
+   * the full wording unchanged for everything that is not the line.
+   */
+  it('keeps every stage name short enough for ten of them to sit in a row', () => {
+    for (const status of OBJECTIVE_STATUSES) {
+      const short = OBJECTIVE_JOURNEY_SHORT_LABELS[status];
+      assert.ok(short.length > 0, `${status} has no short label`);
+      assert.ok(short.length <= 12, `${status} short label "${short}" is too long for the rail`);
+    }
+  });
+
+  it('leaves the approved wording alone', () => {
+    // The badge, the filter and every sentence about an objective keep the client's words.
+    assert.equal(OBJECTIVE_STATUS_LABELS['UnderReview'], 'Submitted / Under Review');
+    assert.equal(OBJECTIVE_STATUS_LABELS['Active'], 'Published / Active');
+  });
+
+  it('gives every stage both names', () => {
+    for (const stage of objectiveJourney('Active')) {
+      assert.ok(stage.label.length > 0);
+      assert.ok(stage.shortLabel.length > 0);
+    }
   });
 });

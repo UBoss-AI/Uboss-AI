@@ -29,6 +29,7 @@ import {
   type MeResponse,
   type ObjectiveListRow,
 } from '../../lib/api-client';
+import { objectiveStageHref } from '../../lib/objective-stage-route';
 import { useAccountMenu } from '../../lib/use-account-menu';
 import { useSignedInUser } from '../../lib/use-signed-in-user';
 import { AccessRefused, isRefusal } from '../../components/AccessRefused';
@@ -262,8 +263,14 @@ export default function ObjectivesPage() {
                   // The name sits over its code, so this cell is two lines and cannot live inside a
                   // fixed row height without looking crushed.
                   stacked: true,
+                  // Opens where the objective actually is.
+                  //
+                  // This went to Form 2 for every row, so an objective the badge beside it called
+                  // "Workflow Draft" opened on a form with its buttons greyed out. See
+                  // `lib/objective-stage-route.ts` — including why the published stages still land
+                  // on the form.
                   render: (row: ObjectiveListRow) => (
-                    <Link href={`/objective/form?objectiveId=${encodeURIComponent(row.id)}`}>
+                    <Link href={objectiveStageHref(row.id, row.status)}>
                       <b>{row.objectiveName}</b>
                       <br />
                       <small className="uboss-muted-3 uboss-mono">{row.code}</small>

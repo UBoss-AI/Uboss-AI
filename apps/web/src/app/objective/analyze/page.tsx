@@ -9,7 +9,9 @@ import {
   EXECUTION_STAGE_LABELS,
   executionDepths,
   executionStages,
+  objectiveJourney,
   TIME_UNIT_LABELS,
+  type ObjectiveJourneyStage,
   type AnalysisNode,
   type ExecutionStage,
 } from '@uboss/types';
@@ -19,6 +21,7 @@ import {
   Card,
   CardBody,
   Icon,
+  JourneyRail,
   PageHeader,
   ProgressRing,
   ProgressStep,
@@ -35,6 +38,7 @@ import {
   type MeResponse,
   type ObjectiveView,
 } from '../../../lib/api-client';
+import { objectiveStageLink } from '../../../lib/objective-stage-route';
 import { useAccountMenu } from '../../../lib/use-account-menu';
 import { useSignedInUser } from '../../../lib/use-signed-in-user';
 import { RoutedAppShell } from '../../../components/RoutedAppShell';
@@ -427,6 +431,14 @@ function ObjectiveAnalyzeInner() {
   }, [run, tenantId]);
 
   const shown = objective?.openDraft ?? objective?.versions[0] ?? null;
+
+  /* Spread, not a value: `exactOptionalPropertyTypes` makes `href: undefined` different from
+     omitting it, and omitting it is what marks a stage as not somewhere to go. */
+  const stageLink = (stage: ObjectiveJourneyStage): { href?: string } => {
+    const href =
+      objectiveId === null ? undefined : objectiveStageLink(objectiveId, stage.status, stage.state);
+    return href === undefined ? {} : { href };
+  };
   const inFlight = run !== null && (run.status === 'Queued' || run.status === 'Running');
 
   /*
@@ -549,6 +561,22 @@ function ObjectiveAnalyzeInner() {
         }
       />
 
+      {/* The journey, carried across every Objective screen. See the workflow screen for why a
+          status badge alone was not enough. */}
+      {shown === null ? null : (
+        <JourneyRail
+          label="Objective journey"
+          stops={objectiveJourney(shown.status).map((stage) => ({
+            key: stage.status,
+            label: stage.shortLabel,
+            fullLabel: stage.label,
+            state: stage.state,
+            detour: stage.detour,
+            ...stageLink(stage),
+          }))}
+        />
+      )}
+
       {error === null ? null : <Banner tone="danger">{error}</Banner>}
 
       {usesRealModel === false ? (
@@ -560,9 +588,23 @@ function ObjectiveAnalyzeInner() {
         </Banner>
       ) : null}
 
+      {/*
+        One column once there is a workflow, two while there is not.
+
+        The client's 2026-09-25 rule is "do not squeeze the important workflow into a tiny side
+        panel; keep this visual in the CENTER of the workspace". The columns already swapped on
+        that instruction — the workflow went from a 380px rail to `1fr` — and measuring it showed
+        the swap had not actually delivered the rule: the workflow's column was 623px of a 1,045px
+        workspace, and the drawing inside it was **326px**, leaving 297px of that column empty. A
+        third of the screen, for the thing the screen is about.
+
+        So once there is something to draw, the objective stops being a column beside it and
+        becomes a band above it, and the workflow gets the whole width. Before the run there is no
+        workflow and the objective is the point, so that shape is unchanged.
+      */}
       <div
         className="uboss-grid"
-        style={{ gridTemplateColumns: hasWorkflow ? '360px 1fr' : '1fr 380px' }}
+        style={{ gridTemplateColumns: hasWorkflow ? '1fr' : '1fr 380px' }}
       >
         {/* ---- Left: the objective stays visible, as the prompt requires ---- */}
         <Card>
@@ -748,14 +790,19 @@ function ObjectiveAnalyzeInner() {
                       </div>
                     </div>
 
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: 0,
-                      }}
-                    >
+                    {/*
+                      Left to right, because the width is now there to use.
+
+                      This was a centred flex column: a 326px ribbon of stacked nodes with the rest
+                      of the workspace empty either side. A plan is a sequence, and a sequence laid
+                      across the page can be read in one movement of the eye — which is the whole
+                      argument for drawing it rather than listing it.
+
+                      It scrolls sideways past the edge rather than wrapping. A wrapped flow makes
+                      the eye jump back to the left between step 4 and step 5, and at that point
+                      the picture stops being a line.
+                    */}
+                    <div className="uboss-wf-flow">
                       {(drawn ?? []).map((node, index) => (
                         <div
                           key={node.id}

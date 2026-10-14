@@ -4098,6 +4098,26 @@ export const workflowEditorApi = {
       { method: 'PUT', body: JSON.stringify(body) },
     ),
 
+  /**
+   * Where a node sits on the canvas, after a drag.
+   *
+   * Its own call rather than a field on `editNode`, because moving a box is not changing the plan
+   * and the audit trail should be able to tell them apart. Omitting the coordinates returns the
+   * node to the computed layout.
+   */
+  moveNode: (
+    tenantId: string,
+    objectiveId: string,
+    nodeId: string,
+    body: { revision: number; x?: number; y?: number },
+  ) =>
+    call<WorkflowDraftView>(
+      `/tenants/${encodeURIComponent(tenantId)}/objectives/${encodeURIComponent(
+        objectiveId,
+      )}/workflow/nodes/${encodeURIComponent(nodeId)}/position`,
+      { method: 'PUT', body: JSON.stringify(body) },
+    ),
+
   /** Human ↔ AI, where allowed. Human → AI needs an approved published Skill. */
   convertNode: (
     tenantId: string,

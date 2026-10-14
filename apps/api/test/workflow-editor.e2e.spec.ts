@@ -1735,4 +1735,99 @@ describe('workflow graph editor and pre-publish readiness (e2e)', () => {
       );
     });
   });
+
+  describe('moving a node on the canvas', () => {
+    /*
+     * A position is an edit like any other — same revision check, same authorization — and it is
+     * deliberately *not* part of the node editor. Moving a box does not change what the work is,
+     * and an audit trail somebody reads during an incident should be able to tell the two apart.
+     */
+    it('stores where a node was dropped, and gives it back', async () => {
+      const { objective } = await analysedObjective();
+      const draft = await open(objective.id);
+      const node = humanNodeOf(draft.graph);
+
+      const moved = await as(
+        agent()
+          .put(`/tenants/${tenantId}/objectives/${objective.id}/workflow/nodes/${node.id}/position`)
+          .send({ revision: draft.revision, x: 412.6, y: 98.2 }),
+        ownerUboss,
+      ).expect(200);
+
+      const placed = moved.body.graph.nodes.find(
+        (candidate: { id: string }) => candidate.id === node.id,
+      );
+      // Rounded on the way in: a pointer produces fractions and a stored half-pixel helps nobody.
+      assert.deepEqual(placed.position, { x: 413, y: 98 });
+    });
+
+    it('returns a node to the computed layout when the position is omitted', async () => {
+      const { objective } = await analysedObjective();
+      const draft = await open(objective.id);
+      const node = humanNodeOf(draft.graph);
+
+      const after = await as(
+        agent()
+          .put(`/tenants/${tenantId}/objectives/${objective.id}/workflow/nodes/${node.id}/position`)
+          .send({ revision: draft.revision, x: 300, y: 300 }),
+        ownerUboss,
+      ).expect(200);
+
+      const cleared = await as(
+        agent()
+          .put(`/tenants/${tenantId}/objectives/${objective.id}/workflow/nodes/${node.id}/position`)
+          .send({ revision: after.body.revision }),
+        ownerUboss,
+      ).expect(200);
+
+      const placed = cleared.body.graph.nodes.find(
+        (candidate: { id: string }) => candidate.id === node.id,
+      );
+      // Absent, not null-with-zeroes: absent is what tells the canvas to lay it out itself.
+      assert.equal(placed.position, undefined);
+    });
+
+    it('refuses a stale revision, so one person’s move cannot overwrite another’s edit', async () => {
+      const { objective } = await analysedObjective();
+      const draft = await open(objective.id);
+      const node = humanNodeOf(draft.graph);
+
+      await as(
+        agent()
+          .put(`/tenants/${tenantId}/objectives/${objective.id}/workflow/nodes/${node.id}`)
+          .send({ revision: draft.revision, label: 'Renamed while somebody was dragging' }),
+        ownerUboss,
+      ).expect(200);
+
+      // The dragger still holds the revision from before the rename.
+      await as(
+        agent()
+          .put(`/tenants/${tenantId}/objectives/${objective.id}/workflow/nodes/${node.id}/position`)
+          .send({ revision: draft.revision, x: 10, y: 10 }),
+        ownerUboss,
+      ).expect(409);
+    });
+
+    it('leaves every other node without a position, so the layout still decides for them', async () => {
+      const { objective } = await analysedObjective();
+      const draft = await open(objective.id);
+      const node = humanNodeOf(draft.graph);
+
+      const moved = await as(
+        agent()
+          .put(`/tenants/${tenantId}/objectives/${objective.id}/workflow/nodes/${node.id}/position`)
+          .send({ revision: draft.revision, x: 120, y: 240 }),
+        ownerUboss,
+      ).expect(200);
+
+      const others = moved.body.graph.nodes.filter(
+        (candidate: { id: string }) => candidate.id !== node.id,
+      );
+      assert.ok(others.length > 0);
+      assert.ok(
+        others.every((candidate: { position?: unknown }) => candidate.position === undefined),
+        'moving one node froze the others where the layout happened to put them',
+      );
+    });
+  });
 });

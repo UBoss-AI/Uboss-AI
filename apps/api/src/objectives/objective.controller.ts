@@ -23,6 +23,7 @@ import {
   IsIn,
   IsInt,
   IsISO8601,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
@@ -262,6 +263,21 @@ export class EditNodeDto {
   @IsOptional() @IsString() @MaxLength(160) ownerDesignation?: string | null;
   @IsOptional() @IsString() @MaxLength(300) triggerEvent?: string | null;
   @IsOptional() @ValidateNested() @Type(() => DefinitionOfDoneDto) dod?: DefinitionOfDoneDto;
+}
+
+/**
+ * Where a node was dropped, or null to send it back to the computed layout.
+ *
+ * `x` and `y` are numbers rather than integers because a pointer produces fractions; the service
+ * rounds and clamps them. Validating them as integers here would make a legitimate drag fail on a
+ * half-pixel, which is not a thing a person can do anything about.
+ */
+export class MoveNodeDto {
+  @IsOptional() @IsUUID() versionId?: string;
+  @IsInt() @Min(1) revision!: number;
+
+  @IsOptional() @IsNumber() x?: number;
+  @IsOptional() @IsNumber() y?: number;
 }
 
 export class ConvertNodeDto {
@@ -1081,6 +1097,33 @@ export class ObjectiveController {
         ...(body.triggerEvent === undefined ? {} : { triggerEvent: body.triggerEvent }),
         ...(body.dod === undefined ? {} : { dod: body.dod }),
       },
+    });
+  }
+
+  /**
+   * Where a node sits on the canvas.
+   *
+   * Separate from the node editor because moving a box is not changing the plan — see
+   * `WorkflowEditorService.moveNode`. Omitting `x` and `y` clears the position and returns the
+   * node to the computed layout.
+   */
+  @Put(':objectiveId/workflow/nodes/:nodeId/position')
+  @RequirePermission({ module: 'objective', action: 'EditDraft' })
+  async moveWorkflowNode(
+    @Param('objectiveId', ParseUUIDPipe) objectiveId: string,
+    @Param('nodeId') nodeId: string,
+    @Body() body: MoveNodeDto,
+  ): Promise<unknown> {
+    return this.workflow.moveNode({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
+      objectiveId,
+      ...(body.versionId === undefined ? {} : { versionId: body.versionId }),
+      revision: body.revision,
+      nodeId,
+      // Both or neither. One coordinate without the other is a half-answer, and placing a node at
+      // an x it was given and a y it was not is worse than leaving it where the layout put it.
+      position: body.x === undefined || body.y === undefined ? null : { x: body.x, y: body.y },
     });
   }
 

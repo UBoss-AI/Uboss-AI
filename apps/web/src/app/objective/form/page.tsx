@@ -8,6 +8,8 @@ import {
   FORM2_SECTION_LABELS,
   FORM2_WORKFLOW_COLUMN_COUNT,
   mayTransitionObjective,
+  objectiveJourney,
+  type ObjectiveJourneyStage,
   REWARD_TYPE_LABELS,
   REWARD_TYPES,
   TIME_UNIT_LABELS,
@@ -28,11 +30,13 @@ import {
   DataTable,
   Drawer,
   Icon,
+  JourneyRail,
   Modal,
   PageHeader,
   StatusBadge,
 } from '@uboss/ui';
 
+import { objectiveStageLink } from '../../../lib/objective-stage-route';
 import { useAccountMenu } from '../../../lib/use-account-menu';
 import { useSignedInUser } from '../../../lib/use-signed-in-user';
 import { RoutedAppShell } from '../../../components/RoutedAppShell';
@@ -261,6 +265,14 @@ function ObjectiveFormInner() {
   const bell = useNotificationBell(tenantId);
 
   const draft = objective?.openDraft ?? null;
+
+  /* Spread, not a value: `exactOptionalPropertyTypes` makes `href: undefined` different from
+     omitting it, and omitting it is what marks a stage as not somewhere to go. */
+  const stageLink = (stage: ObjectiveJourneyStage): { href?: string } => {
+    const href =
+      objectiveId === null ? undefined : objectiveStageLink(objectiveId, stage.status, stage.state);
+    return href === undefined ? {} : { href };
+  };
   const readOnly = objective !== null && draft === null;
 
   /*
@@ -1010,6 +1022,29 @@ function ObjectiveFormInner() {
           </>
         }
       />
+
+      {/*
+        The journey, carried across every Objective screen.
+
+        Shown for a saved objective only. A form with nothing saved in it has not entered the
+        lifecycle, and drawing a rail with "Draft" lit would claim a record exists before anybody
+        has made one.
+      */}
+      {objective === null ? null : (
+        <JourneyRail
+          label="Objective journey"
+          stops={objectiveJourney(
+            (draft ?? objective.activeVersion ?? objective.versions[0])?.status ?? 'Draft',
+          ).map((stage) => ({
+            key: stage.status,
+            label: stage.shortLabel,
+            fullLabel: stage.label,
+            state: stage.state,
+            detour: stage.detour,
+            ...stageLink(stage),
+          }))}
+        />
+      )}
 
       {/*
         What the background save is doing, in one line.

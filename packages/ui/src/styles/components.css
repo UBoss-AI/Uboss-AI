@@ -12888,3 +12888,342 @@ tr[data-drop-target='true'] td {
   font-size: 13px;
   color: var(--uboss-text-3);
 }
+
+/* ============================================================
+   Journey rail — where a long-lived record has got to
+   ============================================================ */
+/*
+ * Horizontal, and horizontal is the point.
+ *
+ * `.uboss-stepper` already draws a vertical list for work that is running now. This draws a
+ * journey across the top of a screen, where it has to be read in one glance and must not take
+ * vertical room from the thing the screen is actually about.
+ *
+ * Scrolls sideways rather than wrapping. A journey that wraps to a second line stops reading as a
+ * line — the eye returns to the left and the sequence breaks — and the stages a person needs are
+ * the ones near where they are, which stay in view.
+ */
+.uboss-journey {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 0 var(--uboss-space-4);
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.uboss-journey-stop {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  /*
+   * Holds the screen-reader text inside this stop.
+   *
+   * `.uboss-sr-only` is `position: absolute`, so without a positioned ancestor it resolves against
+   * whatever is positioned further up the tree — and landed at the right edge of the *document*,
+   * widening the page by 144px and putting a horizontal scrollbar under every Objective screen.
+   * Nothing looked wrong on the rail itself; the damage was a scrollbar two sections away.
+   * `.uboss-step` has had this line for the same reason.
+   */
+  position: relative;
+  padding: 6px 10px 6px 6px;
+  border-radius: 999px;
+  flex: none;
+  color: var(--uboss-text-3);
+  font-size: 12.5px;
+  white-space: nowrap;
+  transition:
+    background var(--uboss-motion-small) var(--uboss-ease-standard),
+    color var(--uboss-motion-small) var(--uboss-ease-standard);
+}
+
+/* The connector. An ::after on every stop but the last, so the line belongs to the gap rather
+   than to a wrapper element that would have to be kept in step with the list. */
+.uboss-journey-stop:not(:last-child)::after {
+  content: '';
+  width: 14px;
+  height: 1px;
+  margin-left: 7px;
+  background: var(--uboss-border-2);
+  flex: none;
+}
+
+.uboss-journey-marker {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  flex: none;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1.5px solid var(--uboss-border);
+  background: var(--uboss-surface);
+  color: var(--uboss-text-3);
+}
+
+.uboss-journey-stop--done {
+  color: var(--uboss-text-2);
+}
+
+.uboss-journey-stop--done .uboss-journey-marker {
+  border-color: var(--uboss-success);
+  color: var(--uboss-success);
+}
+
+.uboss-journey-stop--done:not(:last-child)::after {
+  background: var(--uboss-success);
+}
+
+/*
+ * Where the person is. The one stop that is not plain, marked the way the rest of the product
+ * marks "here" — a tinted pill and the accent, the same pairing `.uboss-step--running` uses.
+ */
+.uboss-journey-stop--current {
+  background: var(--uboss-blue-050);
+  color: var(--uboss-blue);
+  font-weight: 600;
+}
+
+.uboss-journey-stop--current .uboss-journey-marker {
+  border-color: var(--uboss-blue);
+  background: var(--uboss-blue);
+  color: #fff;
+}
+
+/*
+ * Still here, and not moving.
+ *
+ * Warning rather than the accent, because a paused objective is live work that has stopped and a
+ * company should see that rather than read it as a quiet kind of progress. It keeps the pill, so
+ * it is still obviously the place the person is.
+ */
+.uboss-journey-stop--halted {
+  background: var(--uboss-warning-050);
+  color: var(--uboss-warning);
+  font-weight: 600;
+}
+
+.uboss-journey-stop--halted .uboss-journey-marker {
+  border-color: var(--uboss-warning-border);
+  background: var(--uboss-warning);
+  color: #fff;
+}
+
+/* Not reached. The default already reads as unvisited; this only softens the marker further. */
+.uboss-journey-stop--upcoming .uboss-journey-marker {
+  border-style: solid;
+}
+
+/*
+ * A stage on the optional branch.
+ *
+ * Dashed and smaller, so it reads as a place the journey *may* go rather than a step that was
+ * missed. Nothing here is dimmed below the contrast floor: it is quieter than the line, not
+ * unreadable.
+ */
+.uboss-journey-stop--detour {
+  font-size: 11.5px;
+}
+
+.uboss-journey-stop--detour .uboss-journey-marker {
+  width: 18px;
+  height: 18px;
+  border-style: dashed;
+}
+
+.uboss-journey-stop--detour:not(:last-child)::after {
+  width: 10px;
+}
+
+/*
+ * A stage you can go to.
+ *
+ * The whole pill is the target, so the link fills it rather than wrapping just the words — a
+ * 12px text hit area on a control somebody uses to navigate is the kind of thing that works on
+ * the machine it was built on and nowhere else.
+ */
+.uboss-journey-open {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: inherit;
+  text-decoration: none;
+  border-radius: 999px;
+}
+
+.uboss-journey-stop--open {
+  cursor: pointer;
+}
+
+.uboss-journey-stop--open:hover {
+  background: var(--uboss-surface-raised);
+}
+
+/* Hover must not erase the "you are here" pill, which is the one thing on the rail that has to
+   stay recognisable while somebody moves the mouse across it looking for somewhere to go. */
+.uboss-journey-stop--open.uboss-journey-stop--current:hover {
+  background: var(--uboss-blue-050);
+}
+
+.uboss-journey-stop--open.uboss-journey-stop--halted:hover {
+  background: var(--uboss-warning-050);
+}
+
+.uboss-journey-open:focus-visible {
+  outline: var(--uboss-focus-outline);
+  outline-offset: var(--uboss-focus-offset);
+}
+
+/* ============================================================
+   AI node — keeping the words inside the diamond
+   ============================================================ */
+/*
+ * A diamond has far less room than the square it is drawn in, and the text did not know it.
+ *
+ * ## The geometry, because the numbers are not obvious
+ *
+ * `.uboss-wf-ai-diamond` is a 212px square inset 14px in a 240px box and rotated 45°, which makes
+ * a diamond 300px across. A point sits inside it only while `|x| + |y| <= 150` from the centre, so
+ * the largest upright rectangle that fits is **150 x 150** — not 240. The `padding: 46px` on the
+ * label was chosen for exactly that: 240 - 92 = 148, just inside.
+ *
+ * What the padding could not do is stop the content being taller than 148. Measured on this
+ * screen, the three AI steps ran to **195px, 204px and 207px** — so every one of them pushed its
+ * first and last lines out through the top and bottom points of the diamond, by 21 to 28px. The
+ * text then reads as floating over the shape rather than written in it, which is how it was
+ * reported.
+ *
+ * ## Why clamping and not a bigger diamond
+ *
+ * Fitting 207px of text would need a diamond 420px across — nearly double — and every node on the
+ * canvas would grow with it. These lines are a step's title, who does it and what comes before:
+ * identification, not the content. The whole of it is one click away in the editor, which is where
+ * somebody who needs the full sentence is going anyway.
+ *
+ * Each part is clamped separately rather than the block as a whole, so a long title can never eat
+ * the line that says who owns the step.
+ */
+.uboss-wf-ai-label b,
+.uboss-wf-ai-label small,
+.uboss-wf-ai-label .uboss-wf-node-meta .uboss-muted-3 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  /*
+   * Never compressed to make room.
+   *
+   * The label is a centred flex column, and a flex item's default is to shrink when the container
+   * runs short. With the clamps alone the three blocks were still a few pixels over and the title
+   * was squeezed into the line under it — "reconciled ledgers" sliced through the middle with
+   * "Agent work" printed on top of it. Worse than the overflow it replaced, and it only appeared
+   * on the longest step.
+   *
+   * `flex: none` makes each block keep the height its clamp gives it. If the total is ever still
+   * too tall, the label's own `overflow: hidden` cuts the last block cleanly instead of smearing
+   * two of them together.
+   */
+  flex: none;
+}
+
+/* The title gets the most room: it is what the step is. */
+.uboss-wf-ai-label b {
+  -webkit-line-clamp: 3;
+}
+
+.uboss-wf-ai-label small {
+  -webkit-line-clamp: 2;
+}
+
+/*
+ * "After: …" joins whole step titles, so it is the line most likely to run away.
+ *
+ * `min-width: 0` is what makes the clamp work at all here. The meta row is a flex container, and
+ * a flex item will not shrink below its content width by default — so the sentence laid itself
+ * out on one very long line and was cut mid-word at the diamond's edge instead of wrapping to the
+ * two lines it was allowed. The clamp was correct and never got the chance to apply.
+ */
+.uboss-wf-ai-label .uboss-wf-node-meta .uboss-muted-3 {
+  -webkit-line-clamp: 2;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Last resort. If a future label still outgrows the clamps, it is cut at the label box rather
+   than drawn over the canvas — a clipped word is a smaller fault than text crossing a shape. */
+.uboss-wf-ai-label {
+  overflow: hidden;
+}
+
+/*
+ * The rule above the "After:" line is tighter inside a diamond than inside a rectangle.
+ *
+ * The shared `.uboss-wf-node-meta` spends 14px on a margin and a padding either side of its dashed
+ * rule, which is right in a node that has straight edges to spend it against. In the diamond those
+ * 14px are the difference between the longest step's last line sitting inside the shape and
+ * sitting 3px over its edge. Scoped here so the rectangles keep their spacing.
+ */
+.uboss-wf-ai-label .uboss-wf-node-meta {
+  margin-top: 5px;
+  padding-top: 5px;
+}
+
+/* ============================================================
+   The analysed workflow, read across the page
+   ============================================================ */
+/*
+ * A plan is a sequence, so it is drawn as one.
+ *
+ * It used to be a centred column of nodes — 326px of drawing in a 623px panel inside a 1,045px
+ * workspace, with the rest empty. Measured, that is 31% of the screen given to the thing the
+ * screen exists for, which is the opposite of the client's rule that this visual belongs in the
+ * centre of the workspace.
+ *
+ * Laid across instead. Four nodes are visible at a typical width and the rest scroll in, which
+ * reads as a flow with more beyond it rather than a list that ran out of room.
+ */
+.uboss-wf-flow {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  overflow-x: auto;
+  /*
+   * The horizontal scrollbar is drawn inside the box and takes its height out of the content area.
+   * At 10px of padding the tallest node then no longer fitted, so the browser added a *vertical*
+   * scrollbar as well — a second bar, on a strip of nodes 240px tall, for 20px it had taken itself.
+   * The padding is the scrollbar's own room now, so the content keeps all of its.
+   */
+  padding-bottom: 26px;
+  /* Nothing should ever scroll up and down here: this is one row. */
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+/*
+ * The items keep their own width.
+ *
+ * A flex row shrinks its children to fit by default, which on six nodes would squeeze every
+ * diamond until its text broke out again — the exact failure the clamps above exist to prevent.
+ */
+.uboss-wf-flow > .uboss-wf-reveal-item {
+  flex: none;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+/*
+ * The connector turns with the flow.
+ *
+ * `.uboss-wf-connector` is a 2px-wide, 26px-tall rule — correct for a column and invisible in a
+ * row. Rotated rather than redefined, so the vertical form stays the one definition and the
+ * horizontal one cannot drift from it.
+ */
+.uboss-wf-flow .uboss-wf-connector {
+  width: 26px;
+  height: 2px;
+  margin: 0 2px;
+  flex: none;
+}
