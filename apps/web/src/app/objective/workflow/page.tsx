@@ -59,6 +59,23 @@ import { useNotificationBell } from '../../../lib/use-notification-bell';
 import { useCompanyNavigation } from '../../../lib/use-company-navigation';
 
 /**
+ * What the drawer calls itself, one heading per node kind.
+ *
+ * A `Record` rather than a conditional, so a seventh kind added to `ANALYSIS_NODE_KINDS` fails
+ * the build here instead of quietly producing a heading written by a template. Four of the six
+ * are not steps at all — a goal is an outcome, a gate is a decision, a trigger is an event — and
+ * "Edit Condition step" is the sentence a template would have written for all of them.
+ */
+const DRAWER_TITLE_BY_KIND: Record<AnalysisNodeKind, string> = {
+  Goal: 'Edit the goal',
+  Human: 'Edit Human step',
+  Ai: 'Edit AI step',
+  Approval: 'Edit approval gate',
+  Condition: 'Edit condition',
+  Trigger: 'Edit trigger',
+};
+
+/**
  * The workflow graph editor — the reference's `objWorkflow()`.
  *
  * Its layout: Form 2 read-only on the left, the generated flow on the right, the node legend, and
@@ -713,7 +730,15 @@ function WorkflowEditorInner() {
       <Drawer
         open={node !== null}
         onClose={() => setSelected(null)}
-        title={node === null ? '' : `Edit ${node.label}`}
+        /*
+          Named by what it is, not by everything it contains.
+
+          This was `Edit ${node.label}`, and a label here is a whole sentence — so the drawer's
+          heading ran to three lines, repeated word for word in the Title field directly beneath
+          it, and pushed the thing somebody opened the drawer to change below the fold. A heading
+          is for knowing where you are.
+        */
+        title={node === null ? '' : DRAWER_TITLE_BY_KIND[node.kind]}
         footer={<Button onClick={() => setSelected(null)}>Close</Button>}
       >
         {node === null ? null : (
@@ -725,10 +750,22 @@ function WorkflowEditorInner() {
               </span>
             </div>
 
+            {/*
+              A textarea, because a step's title is a sentence.
+
+              It was a single-line `<input>`, and the titles this analysis produces run to 138
+              characters — "Pull each branch ledger from the core system and reconcile it line by
+              line against the bank statement, flagging every mismatch over 50,000". About ninety
+              of those fitted in the field, so editing one meant scrolling a line of text sideways
+              through a letterbox to find the word you wanted.
+
+              Three rows holds the longest title this plan contains without scrolling at all.
+            */}
             <div className="uboss-field">
               <label htmlFor="nodeLabel">Title</label>
-              <input
+              <textarea
                 id="nodeLabel"
+                rows={3}
                 defaultValue={node.label}
                 readOnly={!draft?.editable}
                 onBlur={(event) => {
@@ -741,7 +778,7 @@ function WorkflowEditorInner() {
                     )();
                   }
                 }}
-              />
+              ></textarea>
             </div>
 
             {node.kind === 'Human' || node.kind === 'Ai' ? (
