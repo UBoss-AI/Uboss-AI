@@ -2,7 +2,12 @@
 
 import { useMemo, useState } from 'react';
 
-import type { AnalysisNodeKind, NodeShape, WorkflowEdgeKind } from '@uboss/types';
+import {
+  NODE_SHAPES,
+  type AnalysisNodeKind,
+  type NodeShape,
+  type WorkflowEdgeKind,
+} from '@uboss/types';
 
 import { WorkflowCanvasNode } from './WorkflowCanvasNode';
 
@@ -157,18 +162,31 @@ export type CanvasOrientation = 'vertical' | 'horizontal';
  *
  * `WorkflowCanvasNode` already existed, already matched the analysis screen, and was used by
  * nothing but its own test — it has been in the repository since the baseline commit. So the
- * canvas renders it now, in a `foreignObject`, and the box is the size that component needs: the
- * diamond is 240 across and the human rectangle 300, so 300x240 holds either.
+ * canvas renders it now, in a `foreignObject`, and the box is the size that component needs.
  *
  * Everything downstream — the layout, the row heights, the edge endpoints — is written in terms of
- * these two numbers, which is why changing them is a change in one place.
+ * these numbers, which is why changing them is a change in one place.
  */
 const NODE_W = 300;
-const NODE_H = 240;
+
+/**
+ * A diamond, measured rather than assumed.
+ *
+ * `.uboss-wf-ai-diamond` is a square `inset: 14px` inside a 240px wrapper — 212px — turned 45°.
+ * A square turned 45° stands on its point, so the space it occupies is its **diagonal**:
+ * 212 × √2 ≈ 300, the same both ways. The CSS has always said 300 across; this file said 240 tall,
+ * and a `foreignObject` clips, so the top and bottom points of every AI node were sliced off flat
+ * — 30px at each end, on all four diamonds of the plan this was found on.
+ *
+ * It read as the shape being drawn wrong. Nothing was wrong with the shape: its box was 60px too
+ * short to contain it. Width escaped only because `NODE_W` is 300 by coincidence of the rectangle
+ * needing that much.
+ */
+const DIAMOND = 300;
 /*
  * The space between two nodes, not the distance between their origins.
  *
- * It used to be a step — `NODE_H + 116` — which was the only thing it could be while every node
+ * It used to be a step — a node's height plus 116 — the only thing it could be while every node
  * was the same height. Rows are measured now, so this is the gap itself and it reads as what it
  * is. Keeping it as a step was what made the first version of the taller nodes look like the plan
  * had been pulled apart: the step said 296 and the gap a person saw was that plus the empty half
@@ -192,22 +210,32 @@ interface Placed {
  *
  * ## Why not one number for all of them
  *
- * It was one number, and the number had to be the tallest: a diamond needs 240px because its
- * text sits in a shape with corners. Every other node then got a 240px box with its content
- * centred in it — a goal pill is 70px tall, so 170px of its box was empty, and the gap a person
- * saw between two nodes was the real gap *plus* the empty halves of both boxes either side of it.
- * Reported as the steps being miles apart, which they were: about 300px between a goal and the
- * step after it, for a 56px gap.
+ * It was one number, and the number had to be the tallest: a diamond needs its own diagonal
+ * because its text sits in a shape with corners. Every other node then got a box that tall with
+ * its content centred in it — a goal pill is 70px tall, so most of its box was empty, and the gap
+ * a person saw between two nodes was the real gap *plus* the empty halves of both boxes either
+ * side of it. Reported as the steps being miles apart, which they were: about 300px between a goal
+ * and the step after it, for a 56px gap.
  *
  * So each shape is its own height and a row is as tall as the tallest thing in it. The horizontal
  * orientation still uses one width for every node, which is true — they are all 300 wide.
  */
 function nodeHeight(shape: NodeShape): number {
-  if (shape === 'diamond') return NODE_H;
+  if (shape === 'diamond') return DIAMOND;
   if (shape === 'goal') return 64;
   if (shape === 'gate') return 92;
   return 124;
 }
+
+/**
+ * The band one node stands in when the plan runs across the page.
+ *
+ * Sideways there are no rows to measure — siblings stack in a column of equal slots — so the slot
+ * has to be the tallest shape there is or the tallest shape hangs out of it. Derived from
+ * `nodeHeight` over every shape rather than written down beside it: the two drifted apart once
+ * already, and a hard-coded band is exactly how a shape grows without its slot noticing.
+ */
+const BAND_H = Math.max(...NODE_SHAPES.map(nodeHeight));
 
 /**
  * Where each node sits.
@@ -297,7 +325,7 @@ function layout(
    * node in question is a tall one — using the bare gap there, as this did while `ROW_GAP` was a
    * step, would overlap every pair of parallel steps in a horizontal plan.
    */
-  const siblingStep = down ? NODE_W + COL_GAP : NODE_H + ROW_GAP;
+  const siblingStep = down ? NODE_W + COL_GAP : BAND_H + ROW_GAP;
 
   const ordered = [...rows.entries()].sort((a, b) => a[0] - b[0]);
   /** A row is as tall as the tallest shape standing in it. */
@@ -321,7 +349,7 @@ function layout(
     : PAD_X * 2 + rows.size * NODE_W + Math.max(0, rows.size - 1) * (levelStep - NODE_W);
   const siblingSpan = down
     ? PAD_X * 2 + widest * NODE_W + (widest - 1) * (siblingStep - NODE_W)
-    : PAD_Y * 2 + widest * NODE_H + (widest - 1) * (siblingStep - NODE_H);
+    : PAD_Y * 2 + widest * BAND_H + (widest - 1) * (siblingStep - BAND_H);
 
   const width = down ? siblingSpan : levelSpan;
   const height = down ? levelSpan : siblingSpan;
@@ -331,10 +359,10 @@ function layout(
     // Centred across the axis work does not travel along, so a narrow row sits under the middle
     // of a wide one rather than hugging an edge.
     const rowExtent =
-      row.length * (down ? NODE_W : NODE_H) +
-      (row.length - 1) * (siblingStep - (down ? NODE_W : NODE_H));
+      row.length * (down ? NODE_W : BAND_H) +
+      (row.length - 1) * (siblingStep - (down ? NODE_W : BAND_H));
     const start = ((down ? width : height) - rowExtent) / 2;
-    const rowHeight = rowHeights[rowIndex] ?? NODE_H;
+    const rowHeight = rowHeights[rowIndex] ?? BAND_H;
 
     row.forEach((node, index) => {
       const h = nodeHeight(node.shape);
@@ -347,13 +375,13 @@ function layout(
           up with the diamond after it instead of hanging off its top edge.
 
           Both orientations need it, for the same reason and in the same place: across the page
-          every node shares one band `NODE_H` tall, and without the centring a 72px pill and a
-          240px diamond meet their connector at two different heights — which draws a chain of
+          every node shares one band `BAND_H` tall, and without the centring a 72px pill and a
+          300px diamond meet their connector at two different heights — which draws a chain of
           steps as a staircase.
         */
         y: down
           ? (rowOffsets[rowIndex] ?? PAD_Y) + (rowHeight - h) / 2
-          : start + index * siblingStep + (NODE_H - h) / 2,
+          : start + index * siblingStep + (BAND_H - h) / 2,
       });
     });
   });
@@ -646,7 +674,7 @@ export function WorkflowCanvas({
                 <text
                   className="wfc__edge-label"
                   x={(drawn[index]?.from.x ?? 0) + NODE_W + 6}
-                  y={(drawn[index]?.from.y ?? 0) + (drawn[index]?.from.h ?? NODE_H) + 16}
+                  y={(drawn[index]?.from.y ?? 0) + (drawn[index]?.from.h ?? BAND_H) + 16}
                 >
                   {edge.kind === 'Parallel' ? 'at the same time' : (edge.condition ?? 'if')}
                 </text>
@@ -696,6 +724,24 @@ export function WorkflowCanvas({
                         // Only a plain left press. A right-click is the context menu and a
                         // middle-click is not a gesture this canvas claims.
                         if (event.button !== 0) return;
+                        /*
+                         * A press that began on the plus is not the start of a drag.
+                         *
+                         * Capturing the pointer sends every later event for it to the element
+                         * that captured — and the browser then fires `click` on that element
+                         * rather than on whatever was under the finger. So the plus sits inside
+                         * the box it belongs to, the box captured the pointer, and the click
+                         * arrived at the box: pressing + opened the node for editing and the
+                         * "Add a step" dialog could not be reached from the canvas at all. The
+                         * plus has its own handler and its own `stopPropagation`; both work as
+                         * soon as the click is allowed to land on it.
+                         *
+                         * Nothing is lost by not capturing here. The plus is 22px across and a
+                         * press on it is a press, not a gesture — and a drag that genuinely
+                         * starts on the box is unaffected, because this only returns for the one
+                         * control.
+                         */
+                        if ((event.target as Element).closest('.wfc__add') !== null) return;
                         event.currentTarget.setPointerCapture(event.pointerId);
                         setDragging({
                           nodeId: node.id,
