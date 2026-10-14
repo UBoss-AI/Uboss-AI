@@ -3,9 +3,18 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { ANALYSIS_NODE_KINDS, nodeShapeFor, type AnalysisNode } from '@uboss/types';
 
-import { WorkflowCanvasNode } from './WorkflowCanvasNode';
+import { WorkflowCanvasNode, type DrawableNode } from './WorkflowCanvasNode';
 
-function node(overrides: Partial<AnalysisNode> = {}): AnalysisNode {
+/*
+ * An `AnalysisNode`, plus the one field the drawing adds to it.
+ *
+ * `ownerName` is not stored on a node — the node holds an id and the screen resolves the name
+ * from the hierarchy it already loads — so it lives on `DrawableNode` and not on the analysis
+ * type. The helper has to be able to set it, or the tests for it cannot be written.
+ */
+type TestNode = AnalysisNode & Pick<DrawableNode, 'ownerName'>;
+
+function node(overrides: Partial<TestNode> = {}): TestNode {
   const kind = overrides.kind ?? 'Human';
   return {
     id: 'step-1',
