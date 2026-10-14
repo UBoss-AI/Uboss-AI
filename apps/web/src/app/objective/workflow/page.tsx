@@ -224,6 +224,21 @@ function WorkflowEditorInner() {
     [draft],
   );
 
+  /**
+   * How many nodes somebody has placed by hand.
+   *
+   * Counted from the draft rather than tracked as the canvas reports moves: the count has to be
+   * right when the page is opened by somebody who did none of them, which is the common case for
+   * a plan two people are working on.
+   */
+  const movedNodeCount = useMemo(
+    () =>
+      (draft?.graph.nodes ?? []).filter(
+        (node) => node.position !== undefined && node.position !== null,
+      ).length,
+    [draft],
+  );
+
   /** The server's own answer, in the shape the canvas draws. */
   const activity = useMemo(() => {
     const map = new Map<string, NodeActivity>();
@@ -524,15 +539,44 @@ function WorkflowEditorInner() {
                   <span className="uboss-muted-3">
                     {orientation === 'vertical' ? 'Top to bottom' : 'Left to right'}
                   </span>
-                  <SegmentedControl
-                    label="Workflow direction"
-                    value={orientation}
-                    onChange={(next) => setOrientation(next as CanvasOrientation)}
-                    options={[
-                      { value: 'vertical', label: 'Vertical' },
-                      { value: 'horizontal', label: 'Horizontal' },
-                    ]}
-                  />
+                  <div className="uboss-row" style={{ gap: 8 }}>
+                    {/*
+                      The way back from a canvas somebody has rearranged.
+
+                      Dragging a node is a one-way door without it: the stored position wins over
+                      the layout for ever, and a plan pulled about while somebody was reading it
+                      has no undo. One button puts the whole plan back on the line the algorithm
+                      draws.
+
+                      Shown only when there is something to undo — it says how many, because
+                      "reset" on a plan nobody has touched is a button that asks a question and
+                      then does nothing.
+                    */}
+                    {draft.editable && movedNodeCount > 0 ? (
+                      <Button
+                        variant="ghost"
+                        disabled={busy}
+                        onClick={() =>
+                          void edit((tenant, objectiveKey, revision) =>
+                            workflowEditorApi.resetLayout(tenant, objectiveKey, { revision }),
+                          )()
+                        }
+                      >
+                        {movedNodeCount === 1
+                          ? 'Line up 1 moved node'
+                          : `Line up ${movedNodeCount} moved nodes`}
+                      </Button>
+                    ) : null}
+                    <SegmentedControl
+                      label="Workflow direction"
+                      value={orientation}
+                      onChange={(next) => setOrientation(next as CanvasOrientation)}
+                      options={[
+                        { value: 'vertical', label: 'Vertical' },
+                        { value: 'horizontal', label: 'Horizontal' },
+                      ]}
+                    />
+                  </div>
                 </div>
                 <WorkflowCanvas
                   nodes={canvasNodes}

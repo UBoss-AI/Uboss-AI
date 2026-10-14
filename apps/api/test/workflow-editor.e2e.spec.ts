@@ -1829,5 +1829,76 @@ describe('workflow graph editor and pre-publish readiness (e2e)', () => {
         'moving one node froze the others where the layout happened to put them',
       );
     });
+
+    /*
+     * The way back from a rearranged canvas.
+     *
+     * Dragging is otherwise a one-way door: a stored position wins over the layout for ever, and
+     * a plan somebody pulled about has no undo. Asserted as one request clearing several nodes,
+     * because that is the guarantee — a loop over the single-node route would write an entry per
+     * node and could stop halfway.
+     */
+    it('puts every hand-placed node back on the computed layout in one change', async () => {
+      const { objective } = await analysedObjective();
+      let draft = await open(objective.id);
+
+      const movable = draft.graph.nodes.slice(0, 3);
+      assert.ok(movable.length >= 2, 'this plan needs at least two nodes to be worth resetting');
+
+      for (const [index, node] of movable.entries()) {
+        const moved = await as(
+          agent()
+            .put(
+              `/tenants/${tenantId}/objectives/${objective.id}/workflow/nodes/${node.id}/position`,
+            )
+            .send({ revision: draft.revision, x: 100 * (index + 1), y: 50 * (index + 1) }),
+          ownerUboss,
+        ).expect(200);
+        draft = moved.body;
+      }
+
+      assert.equal(
+        draft.graph.nodes.filter((node: { position?: unknown }) => node.position !== undefined)
+          .length,
+        movable.length,
+      );
+
+      const reset = await as(
+        agent()
+          .put(`/tenants/${tenantId}/objectives/${objective.id}/workflow/layout`)
+          .send({ revision: draft.revision }),
+        ownerUboss,
+      ).expect(200);
+
+      assert.deepEqual(
+        reset.body.graph.nodes
+          .filter((node: { position?: unknown }) => node.position !== undefined)
+          .map((node: { id: string }) => node.id),
+        [],
+        'a reset left somebody’s hand-placed node behind',
+      );
+      // One change, so one revision — not one per node.
+      assert.equal(reset.body.revision, draft.revision + 1);
+    });
+
+    it('refuses a stale revision for a reset, like every other change to the plan', async () => {
+      const { objective } = await analysedObjective();
+      const draft = await open(objective.id);
+      const node = humanNodeOf(draft.graph);
+
+      await as(
+        agent()
+          .put(`/tenants/${tenantId}/objectives/${objective.id}/workflow/nodes/${node.id}`)
+          .send({ revision: draft.revision, label: 'Renamed while somebody was tidying' }),
+        ownerUboss,
+      ).expect(200);
+
+      await as(
+        agent()
+          .put(`/tenants/${tenantId}/objectives/${objective.id}/workflow/layout`)
+          .send({ revision: draft.revision }),
+        ownerUboss,
+      ).expect(409);
+    });
   });
 });

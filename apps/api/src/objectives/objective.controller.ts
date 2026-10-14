@@ -280,6 +280,12 @@ export class MoveNodeDto {
   @IsOptional() @IsNumber() y?: number;
 }
 
+/** Put the whole plan back on the computed layout. Nothing to say but which draft. */
+export class ResetLayoutDto {
+  @IsOptional() @IsUUID() versionId?: string;
+  @IsInt() @Min(1) revision!: number;
+}
+
 export class ConvertNodeDto {
   @IsOptional() @IsUUID() versionId?: string;
   @IsInt() @Min(1) revision!: number;
@@ -1124,6 +1130,28 @@ export class ObjectiveController {
       // Both or neither. One coordinate without the other is a half-answer, and placing a node at
       // an x it was given and a y it was not is worse than leaving it where the layout put it.
       position: body.x === undefined || body.y === undefined ? null : { x: body.x, y: body.y },
+    });
+  }
+
+  /**
+   * Put every hand-placed node back on the computed layout.
+   *
+   * One request rather than one per node: a manager who tidies a plan did one thing, and doing it
+   * node by node would write an audit entry for each, bump the revision each time, and leave the
+   * plan half tidied if one of them lost a race. See `WorkflowEditorService.resetLayout`.
+   */
+  @Put(':objectiveId/workflow/layout')
+  @RequirePermission({ module: 'objective', action: 'EditDraft' })
+  async resetWorkflowLayout(
+    @Param('objectiveId', ParseUUIDPipe) objectiveId: string,
+    @Body() body: ResetLayoutDto,
+  ): Promise<unknown> {
+    return this.workflow.resetLayout({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
+      objectiveId,
+      ...(body.versionId === undefined ? {} : { versionId: body.versionId }),
+      revision: body.revision,
     });
   }
 

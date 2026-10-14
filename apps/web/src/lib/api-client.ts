@@ -4118,6 +4118,20 @@ export const workflowEditorApi = {
       { method: 'PUT', body: JSON.stringify(body) },
     ),
 
+  /**
+   * Put every hand-placed node back on the computed layout.
+   *
+   * One call, not one per moved node — the server clears them in a single audited change, so a
+   * tidy-up is one entry in the record and cannot half-apply.
+   */
+  resetLayout: (tenantId: string, objectiveId: string, body: { revision: number }) =>
+    call<WorkflowDraftView>(
+      `/tenants/${encodeURIComponent(tenantId)}/objectives/${encodeURIComponent(
+        objectiveId,
+      )}/workflow/layout`,
+      { method: 'PUT', body: JSON.stringify(body) },
+    ),
+
   /** Human ↔ AI, where allowed. Human → AI needs an approved published Skill. */
   convertNode: (
     tenantId: string,

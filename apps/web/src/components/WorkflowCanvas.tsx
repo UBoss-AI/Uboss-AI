@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 import {
   NODE_SHAPES,
@@ -77,11 +77,24 @@ export interface CanvasEdge {
 /*
  * The zoom range.
  *
- * Half size shows roughly a twenty-five step plan end to end, which is the point of zooming out
- * at all; double is where a label stops being small rather than where it stops being readable.
- * Tenths, because a finer step is a button somebody presses eight times.
+ * The floor was 0.5, with a note saying half size showed a twenty-five step plan end to end. It
+ * did when a node was 196x68. A node is up to 300x300 now, so a step costs 356px down the page
+ * and a thirty-six node plan is about 12,900 — 6,500 even at half, which is twelve screens. The
+ * floor existed to stop somebody zooming into nothing; it was stopping them seeing the plan.
+ *
+ * A fifth is as far out as is worth going. Labels are gone well before it, and that is what
+ * zooming out is for: somebody at this end is reading the shape — how long it runs, where it
+ * branches — and reads the words by zooming back in or by opening the node.
+ *
+ * Further than that was tried and rejected rather than reasoned away. A floor of 4% does make
+ * that plan fit a 420px frame end to end, and what it draws is a thread of grey dots 14px wide in
+ * a 645px frame. It is a picture of the length of the plan and nothing else, and it costs the one
+ * thing zooming out is for. Reading it whole is the frame's job, not the zoom's.
+ *
+ * Double is where a label stops being small rather than where it stops being readable. Tenths,
+ * because a finer step is a button somebody presses eight times.
  */
-const MIN_ZOOM = 0.5;
+const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 2;
 const ZOOM_STEP = 0.1;
 
@@ -194,6 +207,18 @@ const DIAMOND = 300;
  */
 const ROW_GAP = 56;
 const COL_GAP = 40;
+
+/**
+ * How far below its node the "add a step" plus sits.
+ *
+ * Its circle has a radius of 11, so 13 clears the node's box by two pixels and the whole control
+ * is 24px into the 56px gap — comfortably inside it, and clear of the row below. The two pixels
+ * are the point: on the edge, half the control lay over the node and lost every hit test to it.
+ */
+const PLUS_DROP = 13;
+
+/** The plus's invisible target, which is what decides how much room it needs below a node. */
+const ADD_HIT_RADIUS = 16;
 const PAD_X = 24;
 const PAD_Y = 28;
 
@@ -394,21 +419,42 @@ function layout(
    * automatic. That is the common state: somebody drags the two boxes that were in each other's
    * way and leaves the rest alone.
    *
-   * The canvas then has to grow to contain whatever was dragged. Without this a node moved right
-   * or down simply disappeared past the viewBox, which looks exactly like a node that was deleted.
+   * The canvas then has to grow to contain whatever was dragged — in all four directions.
+   *
+   * It grew in two. A node moved right or down extended the drawing, and a node moved left or up
+   * went past the viewBox and was sliced off against the edge of the frame: reported as the goal
+   * node being cut in half down its left side, and it was, because its stored x was negative and
+   * the drawing still began at zero.
+   *
+   * The window moves rather than the nodes. Shifting every node to make room would change what a
+   * stored position means — a drag at one end of the plan would silently renumber a box at the
+   * other — so the coordinates stay exactly as they were put and the `viewBox` starts wherever
+   * the left-most, top-most thing actually is.
    */
-  let canvasWidth = width;
-  let canvasHeight = height;
+  let minX = 0;
+  let minY = 0;
+  let maxX = width;
+  let maxY = height;
+
   for (const entry of placed.values()) {
     const position = entry.node.position;
-    if (position === undefined || position === null) continue;
-    entry.x = position.x;
-    entry.y = position.y;
-    canvasWidth = Math.max(canvasWidth, position.x + NODE_W + PAD_X);
-    canvasHeight = Math.max(canvasHeight, position.y + entry.h + PAD_Y);
+    if (position !== undefined && position !== null) {
+      entry.x = position.x;
+      entry.y = position.y;
+    }
+
+    minX = Math.min(minX, entry.x - PAD_X);
+    minY = Math.min(minY, entry.y - PAD_Y);
+    maxX = Math.max(maxX, entry.x + NODE_W + PAD_X);
+    /*
+     * The plus hangs below the node, so the room under the last row is its reach and not the
+     * page padding. They are 29 and 28, which is the kind of one-pixel difference that shows up
+     * as a control with a flat bottom and no reason for it.
+     */
+    maxY = Math.max(maxY, entry.y + entry.h + Math.max(PAD_Y, PLUS_DROP + ADD_HIT_RADIUS));
   }
 
-  return { placed, width: canvasWidth, height: canvasHeight };
+  return { placed, width: maxX - minX, height: maxY - minY, originX: minX, originY: minY };
 }
 
 /**
@@ -445,8 +491,15 @@ function connector(from: Placed, to: Placed, orientation: CanvasOrientation): st
 function returnPath(
   from: Placed,
   to: Placed,
-  width: number,
-  height: number,
+  /*
+   * The far edges of the drawing, not its size.
+   *
+   * These were the width and the height, which is the same thing only while the drawing starts at
+   * zero — and it does not once a node has been dragged left or up. A failure edge would then have
+   * turned back short of the plan and crossed the nodes it was routed around.
+   */
+  rightEdge: number,
+  bottomEdge: number,
   orientation: CanvasOrientation,
 ): string {
   if (orientation === 'horizontal') {
@@ -454,7 +507,7 @@ function returnPath(
     const y1 = from.y + from.h;
     const x2 = to.x + NODE_W / 2;
     const y2 = to.y + to.h;
-    const out = Math.min(height - 8, Math.max(y1, y2) + 40);
+    const out = Math.min(bottomEdge - 8, Math.max(y1, y2) + 40);
     return `M${x1} ${y1} V${out} H${x2} V${y2}`;
   }
 
@@ -462,7 +515,7 @@ function returnPath(
   const y1 = from.y + from.h / 2;
   const x2 = to.x + NODE_W;
   const y2 = to.y + to.h / 2;
-  const out = Math.min(width - 8, Math.max(x1, x2) + 40);
+  const out = Math.min(rightEdge - 8, Math.max(x1, x2) + 40);
   return `M${x1} ${y1} H${out} V${y2} H${x2}`;
 }
 
@@ -498,7 +551,7 @@ export function WorkflowCanvas({
   orientation = 'vertical',
   onMoveNode,
 }: WorkflowCanvasProps) {
-  const { placed, width, height } = useMemo(
+  const { placed, width, height, originX, originY } = useMemo(
     () => layout(nodes, edges, orientation),
     [nodes, edges, orientation],
   );
@@ -529,6 +582,23 @@ export function WorkflowCanvas({
     moved: boolean;
   } | null>(null);
 
+  /**
+   * That the last gesture was a drag, kept somewhere the click can still read it.
+   *
+   * The state above cannot answer this. `onPointerUp` clears it, React re-renders before the
+   * browser gets round to dispatching `click`, and the click handler then reads a fresh render
+   * where nothing is being dragged — so the branch meant to swallow the click after a drag was
+   * looking at `null` every single time. Dragging a node moved it **and** opened its editor, on
+   * every drag, which is how it was reported.
+   *
+   * A ref survives that re-render. Set when a drag ends, cleared when the next press begins, so
+   * it describes the gesture that just happened rather than a lingering mode.
+   */
+  const justDragged = useRef(false);
+
+  /** The frame the drawing scrolls inside, measured when somebody asks for a fit. */
+  const viewport = useRef<HTMLDivElement | null>(null);
+
   /*
    * How large the plan is drawn.
    *
@@ -550,7 +620,7 @@ export function WorkflowCanvas({
             to,
             d:
               edge.kind === 'Failure'
-                ? returnPath(from, to, width, height, orientation)
+                ? returnPath(from, to, originX + width, originY + height, orientation)
                 : connector(from, to, orientation),
             // An edge is carrying work when the step it leaves is working: that is what makes the
             // light on it true rather than decorative.
@@ -560,8 +630,9 @@ export function WorkflowCanvas({
         .filter((item): item is NonNullable<typeof item> => item !== null),
     // `height` and `orientation` as well as the rest: both decide the path a failure edge takes
     // round the outside, and leaving them out left every edge drawn for the previous direction
-    // after the toggle had already moved the nodes.
-    [edges, placed, width, height, orientation, activity],
+    // after the toggle had already moved the nodes. The origin is in for the same reason — it
+    // moves the far edge a failure edge turns back at.
+    [edges, placed, width, height, originX, originY, orientation, activity],
   );
 
   if (nodes.length === 0) return null;
@@ -604,6 +675,54 @@ export function WorkflowCanvas({
           >
             {Math.round(zoom * 100)}%
           </button>
+          {/*
+            Fill the frame across the way the work does not travel.
+
+            Not "fit the whole plan". That was the first version and it is the wrong promise for
+            the shape these plans are: thirty-six steps is 348 wide and 10,372 tall, so fitting
+            both ways means 4% — a thread of dots 14px wide in a 645px frame, which says how long
+            the plan is and nothing else. Fitting the long way is what the frame is for.
+
+            So it fits the short way, and the result is a plan that fills the width it has instead
+            of leaving 300px of frame empty beside it. Sideways it is the same idea turned over:
+            the plan fills the height and runs off to the right.
+
+            It reads the frame at the moment it is pressed rather than tracking it, because the
+            answer is only wanted when somebody asks for it — and a zoom that re-fitted itself
+            whenever the window changed would move the plan under a person who was reading it.
+          */}
+          <button
+            type="button"
+            className="wfc__zoom-btn wfc__zoom-fit"
+            onClick={() => {
+              const frame = viewport.current;
+              if (frame === null) return;
+              /*
+                Not put through `round`, which snaps to the tenths the buttons step in.
+
+                A fit is a measurement, not a step. Rounding one to a tenth is how an earlier
+                version of this turned a zoom of 0.0405 into 0.0 — a drawing of 0x0 and an empty
+                frame where the plan had been. The buttons stay on their grid; this does not.
+              */
+              const fit =
+                orientation === 'vertical'
+                  ? frame.clientWidth / width
+                  : frame.clientHeight / height;
+              setZoom(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, fit)));
+            }}
+            aria-label={
+              orientation === 'vertical'
+                ? 'Fit the plan to the width of the frame'
+                : 'Fit the plan to the height of the frame'
+            }
+            title={
+              orientation === 'vertical'
+                ? 'Fit the plan to the width of the frame'
+                : 'Fit the plan to the height of the frame'
+            }
+          >
+            Fit
+          </button>
           <button
             type="button"
             className="wfc__zoom-btn"
@@ -616,198 +735,228 @@ export function WorkflowCanvas({
         </div>
       </div>
 
-      <svg
-        className="wfc__svg"
-        viewBox={`0 0 ${width} ${height}`}
-        /*
-         * Drawn size, not the viewBox.
-         *
-         * The viewBox is the plan's own coordinates and never changes; giving the element a width
-         * in pixels is what makes the same drawing bigger or smaller, and the wrapper scrolls to
-         * whatever that comes to.
-         */
-        width={Math.round(width * zoom)}
-        height={Math.round(height * zoom)}
-        role="img"
-        aria-label="The workflow for this objective, and what each step is doing"
-      >
-        <defs>
-          <marker
-            id="wfc-arrow"
-            viewBox="0 0 10 10"
-            refX="9"
-            refY="5"
-            markerWidth="6"
-            markerHeight="6"
-            orient="auto-start-reverse"
-          >
-            <path d="M0 0L10 5L0 10z" className="wfc__arrowhead" />
-          </marker>
-        </defs>
+      {/*
+        The plan scrolls inside this, not inside the page.
 
-        <g className="wfc__edges">
-          {drawn.map(({ edge, d, carrying }, index) => (
-            <g key={`${edge.fromNodeId}-${edge.toNodeId}-${index}`}>
-              <path
-                className={`wfc__edge wfc__edge--${edge.kind.toLowerCase()}`}
-                d={d}
-                markerEnd="url(#wfc-arrow)"
-              />
-              {/*
+        It used to be as tall as the drawing, so the page was: a thirty-six step plan came to
+        about 12,900px and the screen's own toolbar — direction, zoom, the way back from a
+        rearranged canvas — was off the top of the window by the time the second node was in
+        view. Measured: scrolled to node two, the toolbar sat at y = -137.
+
+        A frame of its own keeps the controls where they were put and leaves the page the length
+        of a page. The frame scrolls both ways, because a horizontal plan is wide for exactly the
+        reason a vertical one is long.
+      */}
+      <div className="wfc__viewport" ref={viewport}>
+        <svg
+          className="wfc__svg"
+          /*
+            Starts where the drawing starts, which is not always zero.
+
+            A node dragged left or up has a negative coordinate, and a window that always began at
+            zero cut it off against the edge of the frame. Moving the window instead of the nodes
+            keeps every stored position meaning exactly what it meant when somebody put it there.
+          */
+          viewBox={`${originX} ${originY} ${width} ${height}`}
+          /*
+           * Drawn size, not the viewBox.
+           *
+           * The viewBox is the plan's own coordinates and never changes; giving the element a
+           * width in pixels is what makes the same drawing bigger or smaller, and the frame
+           * scrolls to whatever that comes to.
+           */
+          width={Math.round(width * zoom)}
+          height={Math.round(height * zoom)}
+          role="img"
+          aria-label="The workflow for this objective, and what each step is doing"
+        >
+          <defs>
+            <marker
+              id="wfc-arrow"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="6"
+              markerHeight="6"
+              orient="auto-start-reverse"
+            >
+              <path d="M0 0L10 5L0 10z" className="wfc__arrowhead" />
+            </marker>
+          </defs>
+
+          <g className="wfc__edges">
+            {drawn.map(({ edge, d, carrying }, index) => (
+              <g key={`${edge.fromNodeId}-${edge.toNodeId}-${index}`}>
+                <path
+                  className={`wfc__edge wfc__edge--${edge.kind.toLowerCase()}`}
+                  d={d}
+                  markerEnd="url(#wfc-arrow)"
+                />
+                {/*
                 The light, and only while the step above it is actually working.
 
                 Three sparks a beat apart so the connector is never empty — one dot crawling reads
                 as a loading bar. They exist only while `carrying` is true, so a still picture is a
                 picture of nothing happening, which is what it should be.
               */}
-              {carrying
-                ? [0, 1, 2].map((spark) => (
-                    <circle
-                      key={spark}
-                      className="wfc__spark"
-                      r="3.2"
-                      style={{ offsetPath: `path("${d}")`, animationDelay: `${spark * 0.6}s` }}
-                    />
-                  ))
-                : null}
-              {edge.kind === 'Parallel' || edge.kind === 'Condition' ? (
-                <text
-                  className="wfc__edge-label"
-                  x={(drawn[index]?.from.x ?? 0) + NODE_W + 6}
-                  y={(drawn[index]?.from.y ?? 0) + (drawn[index]?.from.h ?? BAND_H) + 16}
-                >
-                  {edge.kind === 'Parallel' ? 'at the same time' : (edge.condition ?? 'if')}
-                </text>
-              ) : null}
-            </g>
-          ))}
-        </g>
+                {carrying
+                  ? [0, 1, 2].map((spark) => (
+                      <circle
+                        key={spark}
+                        className="wfc__spark"
+                        r="3.2"
+                        style={{ offsetPath: `path("${d}")`, animationDelay: `${spark * 0.6}s` }}
+                      />
+                    ))
+                  : null}
+                {edge.kind === 'Parallel' || edge.kind === 'Condition' ? (
+                  <text
+                    className="wfc__edge-label"
+                    x={(drawn[index]?.from.x ?? 0) + NODE_W + 6}
+                    y={(drawn[index]?.from.y ?? 0) + (drawn[index]?.from.h ?? BAND_H) + 16}
+                  >
+                    {edge.kind === 'Parallel' ? 'at the same time' : (edge.condition ?? 'if')}
+                  </text>
+                ) : null}
+              </g>
+            ))}
+          </g>
 
-        <g className="wfc__nodes">
-          {[...placed.values()].map(({ node, x, y, h }) => {
-            const state = activity?.get(node.id) ?? { state: 'idle' as const };
-            const held = dragging?.nodeId === node.id ? dragging : null;
-            // Drawn where the pointer has taken it, while the pointer still has it.
-            const drawX = x + (held?.dx ?? 0);
-            const drawY = y + (held?.dy ?? 0);
+          <g className="wfc__nodes">
+            {[...placed.values()].map(({ node, x, y, h }) => {
+              const state = activity?.get(node.id) ?? { state: 'idle' as const };
+              const held = dragging?.nodeId === node.id ? dragging : null;
+              // Drawn where the pointer has taken it, while the pointer still has it.
+              const drawX = x + (held?.dx ?? 0);
+              const drawY = y + (held?.dy ?? 0);
 
-            return (
-              <g
-                key={node.id}
-                className={`wfc__node wfc__node--${node.kind.toLowerCase()} wfc__node--${state.state}${
-                  held !== null && held.moved ? ' wfc__node--dragging' : ''
-                }`}
-                transform={`translate(${drawX} ${drawY})`}
-                /*
-                  Click opens, drag moves, and the difference is three pixels.
+              return (
+                <g
+                  key={node.id}
+                  className={`wfc__node wfc__node--${node.kind.toLowerCase()} wfc__node--${state.state}${
+                    held !== null && held.moved ? ' wfc__node--dragging' : ''
+                  }`}
+                  transform={`translate(${drawX} ${drawY})`}
+                  /*
+                  Click opens, drag moves, and the difference is six pixels.
 
                   Both start with the same pointer going down on the same box, so the only honest
                   way to tell them apart is to wait and see whether it travels. Below the threshold
                   it was a click and the node opens; past it the click is swallowed, because
                   somebody who has just dragged a box across the canvas did not also ask to open it.
+
+                  Read from `justDragged` rather than from the drag state, which by now says
+                  nothing is being dragged — see the ref's own note. The flag is cleared here as
+                  well as on the next press so one swallowed click cannot eat the one after it.
                 */
-                onClick={
-                  onOpenNode === undefined
-                    ? undefined
-                    : (event) => {
-                        if (held !== null && held.moved) {
-                          event.stopPropagation();
-                          return;
-                        }
-                        onOpenNode(node.id);
-                      }
-                }
-                onPointerDown={
-                  onMoveNode === undefined
-                    ? undefined
-                    : (event) => {
-                        // Only a plain left press. A right-click is the context menu and a
-                        // middle-click is not a gesture this canvas claims.
-                        if (event.button !== 0) return;
-                        /*
-                         * A press that began on the plus is not the start of a drag.
-                         *
-                         * Capturing the pointer sends every later event for it to the element
-                         * that captured — and the browser then fires `click` on that element
-                         * rather than on whatever was under the finger. So the plus sits inside
-                         * the box it belongs to, the box captured the pointer, and the click
-                         * arrived at the box: pressing + opened the node for editing and the
-                         * "Add a step" dialog could not be reached from the canvas at all. The
-                         * plus has its own handler and its own `stopPropagation`; both work as
-                         * soon as the click is allowed to land on it.
-                         *
-                         * Nothing is lost by not capturing here. The plus is 22px across and a
-                         * press on it is a press, not a gesture — and a drag that genuinely
-                         * starts on the box is unaffected, because this only returns for the one
-                         * control.
-                         */
-                        if ((event.target as Element).closest('.wfc__add') !== null) return;
-                        event.currentTarget.setPointerCapture(event.pointerId);
-                        setDragging({
-                          nodeId: node.id,
-                          fromClientX: event.clientX,
-                          fromClientY: event.clientY,
-                          originX: x,
-                          originY: y,
-                          dx: 0,
-                          dy: 0,
-                          moved: false,
-                        });
-                      }
-                }
-                onPointerMove={
-                  onMoveNode === undefined
-                    ? undefined
-                    : (event) => {
-                        setDragging((current) => {
-                          if (current === null || current.nodeId !== node.id) return current;
-                          /*
-                           * Client pixels divided by the zoom, because the canvas units are what
-                           * the position is stored in. At 50% a 10px hand movement is 20 units,
-                           * and reading the pointer straight would make a zoomed-out plan feel
-                           * like the node was stuck in treacle.
-                           */
-                          const dx = (event.clientX - current.fromClientX) / zoom;
-                          const dy = (event.clientY - current.fromClientY) / zoom;
-                          /*
-                           * Six pixels, not three.
-                           *
-                           * Three was enough to tell a click from a drag, and not enough to tell
-                           * a drag from a hand. Testing this produced two stored positions from
-                           * one deliberate drag: a press that shifted a few pixels on the way to
-                           * being a click had been saved, audited and reloaded. A gesture that
-                           * writes to the server should need to look like one.
-                           */
-                          const moved = current.moved || Math.abs(dx) + Math.abs(dy) > 6;
-                          return { ...current, dx, dy, moved };
-                        });
-                      }
-                }
-                onPointerUp={
-                  onMoveNode === undefined
-                    ? undefined
-                    : () => {
-                        const held = dragging;
-                        setDragging(null);
-                        if (held === null || held.nodeId !== node.id || !held.moved) return;
-                        onMoveNode(node.id, {
-                          x: held.originX + held.dx,
-                          y: held.originY + held.dy,
-                        });
-                      }
-                }
-                // A capture lost to the browser — a dialog opening, the tab losing focus — must
-                // not leave a node following a pointer that is no longer pressed.
-                onPointerCancel={onMoveNode === undefined ? undefined : () => setDragging(null)}
-                style={
-                  onMoveNode !== undefined
-                    ? { cursor: held !== null && held.moved ? 'grabbing' : 'grab' }
-                    : onOpenNode === undefined
+                  onClick={
+                    onOpenNode === undefined
                       ? undefined
-                      : { cursor: 'pointer' }
-                }
-              >
-                {/*
+                      : (event) => {
+                          if (justDragged.current) {
+                            justDragged.current = false;
+                            event.stopPropagation();
+                            return;
+                          }
+                          onOpenNode(node.id);
+                        }
+                  }
+                  onPointerDown={
+                    onMoveNode === undefined
+                      ? undefined
+                      : (event) => {
+                          // Only a plain left press. A right-click is the context menu and a
+                          // middle-click is not a gesture this canvas claims.
+                          if (event.button !== 0) return;
+                          /*
+                           * A press that began on the plus is not the start of a drag.
+                           *
+                           * Capturing the pointer sends every later event for it to the element
+                           * that captured — and the browser then fires `click` on that element
+                           * rather than on whatever was under the finger. So the plus sits inside
+                           * the box it belongs to, the box captured the pointer, and the click
+                           * arrived at the box: pressing + opened the node for editing and the
+                           * "Add a step" dialog could not be reached from the canvas at all. The
+                           * plus has its own handler and its own `stopPropagation`; both work as
+                           * soon as the click is allowed to land on it.
+                           *
+                           * Nothing is lost by not capturing here. The plus is 22px across and a
+                           * press on it is a press, not a gesture — and a drag that genuinely
+                           * starts on the box is unaffected, because this only returns for the one
+                           * control.
+                           */
+                          if ((event.target as Element).closest('.wfc__add') !== null) return;
+                          // A new press, so whatever the last gesture was is over.
+                          justDragged.current = false;
+                          event.currentTarget.setPointerCapture(event.pointerId);
+                          setDragging({
+                            nodeId: node.id,
+                            fromClientX: event.clientX,
+                            fromClientY: event.clientY,
+                            originX: x,
+                            originY: y,
+                            dx: 0,
+                            dy: 0,
+                            moved: false,
+                          });
+                        }
+                  }
+                  onPointerMove={
+                    onMoveNode === undefined
+                      ? undefined
+                      : (event) => {
+                          setDragging((current) => {
+                            if (current === null || current.nodeId !== node.id) return current;
+                            /*
+                             * Client pixels divided by the zoom, because the canvas units are what
+                             * the position is stored in. At 50% a 10px hand movement is 20 units,
+                             * and reading the pointer straight would make a zoomed-out plan feel
+                             * like the node was stuck in treacle.
+                             */
+                            const dx = (event.clientX - current.fromClientX) / zoom;
+                            const dy = (event.clientY - current.fromClientY) / zoom;
+                            /*
+                             * Six pixels, not three.
+                             *
+                             * Three was enough to tell a click from a drag, and not enough to tell
+                             * a drag from a hand. Testing this produced two stored positions from
+                             * one deliberate drag: a press that shifted a few pixels on the way to
+                             * being a click had been saved, audited and reloaded. A gesture that
+                             * writes to the server should need to look like one.
+                             */
+                            const moved = current.moved || Math.abs(dx) + Math.abs(dy) > 6;
+                            return { ...current, dx, dy, moved };
+                          });
+                        }
+                  }
+                  onPointerUp={
+                    onMoveNode === undefined
+                      ? undefined
+                      : () => {
+                          const held = dragging;
+                          setDragging(null);
+                          if (held === null || held.nodeId !== node.id || !held.moved) return;
+                          // Remembered for the `click` the browser is about to send, which arrives
+                          // after this render has already forgotten the drag.
+                          justDragged.current = true;
+                          onMoveNode(node.id, {
+                            x: held.originX + held.dx,
+                            y: held.originY + held.dy,
+                          });
+                        }
+                  }
+                  // A capture lost to the browser — a dialog opening, the tab losing focus — must
+                  // not leave a node following a pointer that is no longer pressed.
+                  onPointerCancel={onMoveNode === undefined ? undefined : () => setDragging(null)}
+                  style={
+                    onMoveNode !== undefined
+                      ? { cursor: held !== null && held.moved ? 'grabbing' : 'grab' }
+                      : onOpenNode === undefined
+                        ? undefined
+                        : { cursor: 'pointer' }
+                  }
+                >
+                  {/*
                   The shape comes from `node.shape`, never from the kind.
 
                   The client's locked rule is that a Human node is a rectangle, an AI node is a
@@ -815,7 +964,7 @@ export function WorkflowCanvas({
                   against the kind. Deciding it again here would be two places deciding one thing,
                   which is how a renderer ends up disagreeing with the schema it draws.
                 */}
-                {/*
+                  {/*
                   The node itself, drawn as HTML rather than as SVG text.
 
                   `foreignObject` because the layout, the edges and the zoom are all SVG and work
@@ -827,70 +976,94 @@ export function WorkflowCanvas({
                   rect that used to be here are gone with the text: one component decides what a
                   node looks like, for both screens.
                 */}
-                <foreignObject width={NODE_W} height={h} className="wfc__html">
-                  <WorkflowCanvasNode
-                    node={node}
-                    activityLabel={
-                      state.state === 'working'
-                        ? /*
-                           * The fraction only where there is one.
-                           *
-                           * Null means the work cannot report a fraction honestly, so the node says
-                           * it is working and nothing more. Rendering "0%" or a crawling bar there
-                           * would be inventing the one number the type exists to withhold.
-                           */
-                          state.percent === null
-                          ? 'working…'
-                          : `working — ${state.percent}%`
-                        : state.state === 'waiting'
-                          ? (state.message ?? 'waiting')
-                          : state.state === 'failed'
-                            ? (state.message ?? 'failed')
-                            : state.state === 'done'
-                              ? 'done'
-                              : null
-                    }
-                    {...(onOpenNode === undefined
-                      ? { onOpen: () => undefined }
-                      : { onOpen: () => onOpenNode(node.id) })}
-                  />
-                </foreignObject>
+                  <foreignObject width={NODE_W} height={h} className="wfc__html">
+                    <WorkflowCanvasNode
+                      node={node}
+                      activityLabel={
+                        state.state === 'working'
+                          ? /*
+                             * The fraction only where there is one.
+                             *
+                             * Null means the work cannot report a fraction honestly, so the node says
+                             * it is working and nothing more. Rendering "0%" or a crawling bar there
+                             * would be inventing the one number the type exists to withhold.
+                             */
+                            state.percent === null
+                            ? 'working…'
+                            : `working — ${state.percent}%`
+                          : state.state === 'waiting'
+                            ? (state.message ?? 'waiting')
+                            : state.state === 'failed'
+                              ? (state.message ?? 'failed')
+                              : state.state === 'done'
+                                ? 'done'
+                                : null
+                      }
+                      {...(onOpenNode === undefined
+                        ? { onOpen: () => undefined }
+                        : { onOpen: () => onOpenNode(node.id) })}
+                    />
+                  </foreignObject>
 
-                {/* A quiet pulse on the edge of whatever is working. Bound to state, not to a clock. */}
-                {state.state === 'working' ? (
-                  <rect className="wfc__pulse" width={NODE_W} height={h} rx="10" />
-                ) : null}
+                  {/* A quiet pulse on the edge of whatever is working. Bound to state, not to a clock. */}
+                  {state.state === 'working' ? (
+                    <rect className="wfc__pulse" width={NODE_W} height={h} rx="10" />
+                  ) : null}
 
-                {/*
+                  {/*
                   Add a step here, said by pointing rather than by choosing from a list.
 
-                  On the lower edge, where the next step will go, so the control sits at the place
-                  it acts on. It stops the click reaching the node underneath — the two mean
-                  different things and the plus is the smaller target of the two.
+                  Just below the lower edge, where the next step will go, so the control sits at
+                  the place it acts on. It stops the click reaching the node underneath — the two
+                  mean different things and the plus is the smaller target of the two.
 
                   Drawn for every node including the Goal, because a plan may legitimately start a
                   new branch straight off it.
+
+                  ## Why `h + PLUS_DROP` and not `h`
+
+                  It was on the edge itself, and half of it therefore lay over the `foreignObject`
+                  above — and HTML inside a `foreignObject` paints above the SVG drawn after it,
+                  whatever the document order says. So on a node whose box reaches that far the
+                  plus was *behind* the node's own button: `elementFromPoint` at the centre of the
+                  plus returned the button, a press there opened the editor, and "add a step" could
+                  not be reached. It looked intermittent because it depended on how far each shape
+                  filled its box — the goal pill left the plus exposed and the diamond did not.
+
+                  Clear of the box entirely, there is nothing to lose a hit test to. It sits in the
+                  56px gap on the connector itself, which is where the step it makes will appear.
                 */}
-                {onAddAfter === undefined ? null : (
-                  <g
-                    className="wfc__add"
-                    transform={`translate(${NODE_W / 2} ${h})`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onAddAfter(node.id);
-                    }}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <title>Add a step after “{node.label}”</title>
-                    <circle className="wfc__add-dot" r="11" />
-                    <path className="wfc__add-mark" d="M -5 0 H 5 M 0 -5 V 5" />
-                  </g>
-                )}
-              </g>
-            );
-          })}
-        </g>
-      </svg>
+                  {onAddAfter === undefined ? null : (
+                    <g
+                      className="wfc__add"
+                      transform={`translate(${NODE_W / 2} ${h + PLUS_DROP})`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onAddAfter(node.id);
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <title>Add a step after “{node.label}”</title>
+                      {/*
+                      A target larger than the mark, and a bridge back to the node.
+
+                      Two jobs. A 22px control is a small thing to hit, and this makes it 32
+                      without drawing anything bigger. And the plus only appears while the node is
+                      hovered — with the visible circle held clear of the box there would be a
+                      two-pixel band on the way to it where neither is under the pointer and the
+                      control blinks out just as somebody reaches for it. This spans that band.
+                    */}
+                      <circle className="wfc__add-hit" r={ADD_HIT_RADIUS} />
+                      <circle className="wfc__add-dot" r="11" />
+                      <path className="wfc__add-mark" d="M -5 0 H 5 M 0 -5 V 5" />
+                    </g>
+                  )}
+                </g>
+              );
+            })}
+          </g>
+        </svg>
+      </div>
     </div>
   );
 }

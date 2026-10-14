@@ -363,6 +363,47 @@ export class WorkflowEditorService {
   }
 
   /**
+   * Put every node back where the layout would have put it.
+   *
+   * ## Why it is one action and not a loop over `moveNode`
+   *
+   * A manager who tidies a plan did one thing. Clearing six positions one request at a time would
+   * write six audit entries for it, bump the revision six times, and leave a plan half tidied if
+   * the fourth call lost a race to somebody else's edit. This is the same guarantee every other
+   * change here has: it applies completely or not at all.
+   *
+   * ## Why it does not touch a node nobody moved
+   *
+   * It cannot — a node with no stored position is already on the computed layout. The count is
+   * carried into the summary so the record says what was actually undone rather than implying the
+   * whole plan was rearranged.
+   */
+  async resetLayout(input: {
+    scope: TenantScope;
+    actorUserId: string;
+    objectiveId: string;
+    versionId?: string | undefined;
+    revision: number;
+  }): Promise<WorkflowDraftView> {
+    return this.mutate(input, (graph) => {
+      let cleared = 0;
+      for (const node of graph.nodes) {
+        if (node.position === undefined || node.position === null) continue;
+        delete node.position;
+        cleared += 1;
+      }
+
+      return {
+        summary:
+          cleared === 1
+            ? 'Returned 1 node to the computed layout.'
+            : `Returned ${cleared} nodes to the computed layout.`,
+        action: 'objective.workflow_layout_reset',
+      };
+    });
+  }
+
+  /**
    * Convert a node between Human and AI.
    *
    * The allowance is `mayConvertNode` in the shared package, so the editor and any later caller

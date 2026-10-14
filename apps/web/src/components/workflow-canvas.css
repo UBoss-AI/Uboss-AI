@@ -12,7 +12,27 @@
 
 .wfc {
   width: 100%;
-  overflow-x: auto;
+}
+
+/*
+ * The frame the plan scrolls inside.
+ *
+ * Without it the drawing was the page: a thirty-six step plan is about 12,900px tall, so the
+ * screen's own controls — direction, zoom, the way back from a rearranged canvas — were above the
+ * window before the second node was in view.
+ *
+ * `clamp` rather than a flat `vh`: on a 529px-tall window 72vh is 381px, which is barely one
+ * diamond, and on a tall monitor an unbounded frame is a page again. The floor is deliberately
+ * larger than one node so a step is never the whole view.
+ *
+ * `overscroll-behavior` keeps the page still once the frame has reached its end, so scrolling the
+ * plan does not throw the reader down the screen the moment it runs out.
+ */
+.wfc__viewport {
+  height: clamp(420px, 72vh, 860px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-radius: var(--uboss-radius-control);
 }
 
 .wfc__svg {
@@ -434,4 +454,28 @@
   align-items: center;
   width: 100%;
   height: 100%;
+}
+
+/*
+ * The plus's hit area, which is bigger than the plus.
+ *
+ * Transparent rather than `opacity: 0`: the group's own opacity is what shows and hides the
+ * control, and a child that fades with it would stop being hoverable at exactly the moment the
+ * control is invisible — which is the state somebody is reaching through.
+ */
+.wfc__add-hit {
+  fill: transparent;
+}
+
+/*
+ * "Fit" sits with the zoom steps but is a word, not a sign.
+ *
+ * The minus and plus are square so the row does not jitter as the figure between them changes
+ * width; this one has to be wide enough for three letters, so it states its own width instead of
+ * inheriting theirs.
+ */
+.wfc__zoom-fit {
+  width: auto;
+  padding: 0 8px;
+  font-size: var(--uboss-font-size-xs);
 }
