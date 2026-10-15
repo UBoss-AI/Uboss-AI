@@ -4140,6 +4140,21 @@ export const workflowEditorApi = {
       { method: 'PUT', body: JSON.stringify(body) },
     ),
 
+  /**
+   * Take the analysis that has run since this workflow was opened, discarding this draft.
+   *
+   * Offered only when `supersededByRunId` is set, and it replaces the whole plan — the screen
+   * asks before calling it, and the server refuses a stale revision so a replacement cannot
+   * throw away an edit the person has not seen.
+   */
+  applyLatestAnalysis: (tenantId: string, objectiveId: string, body: { revision: number }) =>
+    call<WorkflowDraftView>(
+      `/tenants/${encodeURIComponent(tenantId)}/objectives/${encodeURIComponent(
+        objectiveId,
+      )}/workflow/apply-latest-analysis`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+
   /** Human ↔ AI, where allowed. Human → AI needs an approved published Skill. */
   convertNode: (
     tenantId: string,

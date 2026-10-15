@@ -19,6 +19,7 @@ import {
   Button,
   Card,
   CardBody,
+  ConfirmDialog,
   Drawer,
   FormField,
   Icon,
@@ -117,6 +118,7 @@ function WorkflowEditorInner() {
   const [people, setPeople] = useState<{ userId: string; label: string; name: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirmingReseed, setConfirmingReseed] = useState(false);
 
   /**
    * What a new node is, what it is called, and where it goes.
@@ -454,11 +456,57 @@ function WorkflowEditorInner() {
       */}
       {draft !== null && draft.editable && draft.supersededByRunId !== null ? (
         <Banner tone="info">
-          A newer analysis of this version has finished since this workflow was opened, and it has
-          not been applied — your edits here are kept instead. Change what you need on this canvas,
-          or start a new version if you want the newer analysis to be the basis.
+          <span className="uboss-banner__fill">
+            A newer analysis of this version has finished since this workflow was opened, and it has
+            not been applied — your edits here are kept instead. Take the newer one if this canvas
+            is the one that is wrong.
+          </span>
+          {/*
+            The answer this banner used to lack.
+
+            It said a newer analysis existed and left the reader with two options that were both
+            wrong for the common case: edit every step by hand, or abandon the version. A workflow
+            seeded before owner matching was fixed came back with nine empty steps, and
+            re-analysing — which matched every name correctly — changed nothing on screen, because
+            seeding happens once. Saying so without offering this is how a plan becomes
+            unrepairable.
+          */}
+          <Button
+            variant="default"
+            size="sm"
+            disabled={busy}
+            onClick={() => setConfirmingReseed(true)}
+          >
+            Use the newer analysis
+          </Button>
         </Banner>
       ) : null}
+
+      {/*
+        Asked about, because it replaces the plan rather than adding to it.
+
+        A merge would have to decide per step whether the analysis or the person is right, across
+        steps a re-analysis may have split or renamed — there is no honest answer, so this takes
+        the whole result and says plainly what that costs.
+      */}
+      <ConfirmDialog
+        open={confirmingReseed}
+        onCancel={() => setConfirmingReseed(false)}
+        onConfirm={() => {
+          setConfirmingReseed(false);
+          edit((tenant, objectiveKey, revision) =>
+            workflowEditorApi.applyLatestAnalysis(tenant, objectiveKey, { revision }),
+          )();
+        }}
+        title="Replace this workflow with the newer analysis?"
+        description={
+          'Every step on this canvas is replaced by what the latest analysis produced, including ' +
+          'anything edited here by hand. Both analysis runs stay in the record. Nothing is ' +
+          'published or assigned by this.'
+        }
+        confirmLabel="Replace it"
+        cancelLabel="Keep this one"
+      />
 
       <div className="uboss-legend-nodes" style={{ marginBottom: 14 }}>
         <div className="uboss-legend-item">

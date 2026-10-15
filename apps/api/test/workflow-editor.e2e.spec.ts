@@ -678,6 +678,102 @@ describe('workflow graph editor and pre-publish readiness (e2e)', () => {
       assert.equal(reopened.supersededByRunId, second.id, 'and it names the run it is behind');
     });
 
+    /*
+     * …and saying so has to come with a way to act on it.
+     *
+     * Reporting `supersededByRunId` and offering nothing is how a workflow becomes unrepairable.
+     * One objective in the client's own company was seeded hours before owner matching was fixed,
+     * so nine human steps came back with nobody on them; re-analysing matched every name and
+     * changed nothing on the screen, because seeding had already happened. From the outside the
+     * analysis looks broken.
+     */
+    it('replaces the draft with the newer analysis when asked', async () => {
+      const { objective } = await analysedObjective();
+      const first = await open(objective.id);
+      assert.equal(first.revision, 1);
+
+      // An edit, so there is something of the manager's to be discarded — and so the test can
+      // tell a replacement from a no-op.
+      const node = humanNodeOf(first.graph);
+      await as(
+        agent()
+          .put(`/tenants/${tenantId}/objectives/${objective.id}/workflow/nodes/${node.id}`)
+          .send({ revision: first.revision, label: 'Edited by hand' }),
+        ownerUboss,
+      ).expect(200);
+
+      const second = await analysis().start({
+        scope: scope(),
+        actorUserId: ownerUserId,
+        objectiveId: objective.id,
+      });
+      assert.equal(second.status, 'Completed', second.failureReason ?? '');
+
+      const behind = await open(objective.id);
+      assert.equal(behind.supersededByRunId, second.id);
+
+      const applied = await as(
+        agent()
+          .post(`/tenants/${tenantId}/objectives/${objective.id}/workflow/apply-latest-analysis`)
+          .send({ revision: behind.revision }),
+        ownerUboss,
+      ).expect(201);
+
+      const after = applied.body as DraftView;
+      assert.equal(after.seededFromRunId, second.id, 'it is the later run now');
+      assert.equal(after.supersededByRunId, null, 'and nothing is newer than it');
+      assert.equal(after.revision, behind.revision + 1, 'a replacement is an edit like any other');
+      assert.deepEqual(validateWorkflowDraft(after.graph), []);
+      assert.ok(
+        !after.graph.nodes.some((entry) => entry.label === 'Edited by hand'),
+        'the hand edit survived a replacement that is documented as discarding it',
+      );
+    });
+
+    it('refuses to replace a draft that is already the latest analysis', async () => {
+      // Otherwise the button would quietly rebuild a plan somebody is editing for no reason.
+      const { objective } = await analysedObjective();
+      const draft = await open(objective.id);
+      assert.equal(draft.supersededByRunId, null);
+
+      const refusal = await as(
+        agent()
+          .post(`/tenants/${tenantId}/objectives/${objective.id}/workflow/apply-latest-analysis`)
+          .send({ revision: draft.revision }),
+        ownerUboss,
+      ).expect(409);
+      assert.match(refusal.body.message as string, /already the latest analysis/i);
+    });
+
+    it('refuses a stale revision, because replacing discards what it has not seen', async () => {
+      const { objective } = await analysedObjective();
+      const first = await open(objective.id);
+
+      const second = await analysis().start({
+        scope: scope(),
+        actorUserId: ownerUserId,
+        objectiveId: objective.id,
+      });
+      assert.equal(second.status, 'Completed', second.failureReason ?? '');
+
+      // Somebody else edits while this person is reading.
+      const node = humanNodeOf(first.graph);
+      await as(
+        agent()
+          .put(`/tenants/${tenantId}/objectives/${objective.id}/workflow/nodes/${node.id}`)
+          .send({ revision: first.revision, label: 'Their change' }),
+        ownerUboss,
+      ).expect(200);
+
+      const refusal = await as(
+        agent()
+          .post(`/tenants/${tenantId}/objectives/${objective.id}/workflow/apply-latest-analysis`)
+          .send({ revision: first.revision }),
+        ownerUboss,
+      ).expect(409);
+      assert.match(refusal.body.message as string, /Reload before replacing/i);
+    });
+
     it('serves an editor vocabulary the server itself validates against', async () => {
       const response = await as(
         agent().get(`/tenants/${tenantId}/objectives/workflow/meta`),

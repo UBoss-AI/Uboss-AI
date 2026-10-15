@@ -286,6 +286,18 @@ export class ResetLayoutDto {
   @IsInt() @Min(1) revision!: number;
 }
 
+/**
+ * Take the later analysis, discarding the draft that is behind it.
+ *
+ * Carries a revision like every other edit, and for a stronger reason than most: this one
+ * replaces the whole plan, so being a revision behind means discarding somebody's work without
+ * having seen it.
+ */
+export class ApplyLatestAnalysisDto {
+  @IsOptional() @IsUUID() versionId?: string;
+  @IsInt() @Min(1) revision!: number;
+}
+
 export class ConvertNodeDto {
   @IsOptional() @IsUUID() versionId?: string;
   @IsInt() @Min(1) revision!: number;
@@ -1078,6 +1090,27 @@ export class ObjectiveController {
       actorUserId: this.currentUserId(),
       objectiveId,
       ...(query.versionId === undefined ? {} : { versionId: query.versionId }),
+    });
+  }
+
+  /**
+   * Replace the workflow with the analysis that has run since it was opened.
+   *
+   * `objective:EditDraft`, the same as every other change to this draft — it is an edit to the
+   * plan, made by the people who edit the plan, not a publishing act.
+   */
+  @Post(':objectiveId/workflow/apply-latest-analysis')
+  @RequirePermission({ module: 'objective', action: 'EditDraft' })
+  async applyLatestAnalysis(
+    @Param('objectiveId', ParseUUIDPipe) objectiveId: string,
+    @Body() body: ApplyLatestAnalysisDto,
+  ): Promise<unknown> {
+    return this.workflow.applyLatestAnalysis({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
+      objectiveId,
+      revision: body.revision,
+      ...(body.versionId === undefined ? {} : { versionId: body.versionId }),
     });
   }
 

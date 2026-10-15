@@ -26,7 +26,11 @@ import {
 
 import { AuditEventService } from '../audit/audit-event.service.js';
 import { AuthorizationService } from '../authorization/authorization.service.js';
-import type { Objective, ObjectiveWorkflowDraft } from '../generated/prisma/client.js';
+import type {
+  Objective,
+  ObjectiveAnalysisRun,
+  ObjectiveWorkflowDraft,
+} from '../generated/prisma/client.js';
 import { PrismaService } from '../persistence/prisma.service.js';
 import type { TenantScope } from '../persistence/tenant-context.js';
 
@@ -235,6 +239,154 @@ export class WorkflowEditorService {
       });
 
       return await this.viewOf(created);
+    });
+  }
+
+  /**
+   * Take the newer analysis, replacing the draft that is behind it.
+   *
+   * ## Why this had to exist
+   *
+   * `viewOf` has always reported `supersededByRunId` — "a newer analysis has finished and this
+   * draft is not it" — and there was nothing anybody could do about it. A draft is seeded once,
+   * on first open, and every later run went into the record and nowhere else.
+   *
+   * That is how a company ends up with a workflow nobody can repair. One objective here was
+   * seeded the morning of 14 October, hours before owner matching was fixed, so all nine of its
+   * human steps came back with nobody on them. The client re-ran the analysis — the run
+   * completed, the names were matched correctly, and the screen showed the same nine empty steps,
+   * because the only thing that reads a run is the seeding that had already happened. From the
+   * outside it looks like the analysis does nothing.
+   *
+   * ## Why it replaces rather than merges
+   *
+   * A merge would have to decide, per node, whether the analysis or the person is right — and it
+   * would have to do that against nodes a re-analysis may have split, joined or renamed. There is
+   * no honest answer to that, and a wrong one silently rewrites somebody's judgement.
+   *
+   * So this replaces the graph outright and says so, in the refusal when it is not wanted and in
+   * the audit entry when it is. The person asking has the old draft in front of them, and the
+   * action is deliberate: it takes the revision they are looking at, so it cannot be applied to
+   * a draft that has moved under them.
+   *
+   * An assigned workflow is refused, as every other edit is. People are already working to it.
+   */
+  async applyLatestAnalysis(input: {
+    scope: TenantScope;
+    actorUserId: string;
+    objectiveId: string;
+    versionId?: string | undefined;
+    revision: number;
+  }): Promise<WorkflowDraftView> {
+    const context = await this.authorization.contextFor(input.scope, input.actorUserId);
+    await this.authorization.assertCan(context, { module: 'objective', action: 'EditDraft' });
+
+    return this.prisma.runInTenantTransaction(input.scope, async () => {
+      const loaded = await this.load(input.scope, input.objectiveId, input.versionId, {
+        alreadyInTransaction: true,
+      });
+      await this.assertOnObjective(context, loaded.objective, 'EditDraft');
+
+      if (loaded.draft.assignedAt !== null) {
+        throw new ConflictException(
+          'This workflow has already been assigned, so it cannot be replaced by a later ' +
+            'analysis. People are working to it — open a new objective version instead.',
+        );
+      }
+
+      if (loaded.draft.revision !== input.revision) {
+        throw new ConflictException(
+          `Somebody else edited this workflow: you have revision ${input.revision} and it is now ` +
+            `at ${loaded.draft.revision}. Reload before replacing it, or their change goes with ` +
+            'the one you are discarding.',
+        );
+      }
+
+      const newer = await this.newerRunThan(loaded.draft);
+      if (newer === null) {
+        throw new ConflictException(
+          'This workflow is already the latest analysis. Run Analyze & Generate Workflow first ' +
+            'if you want it rebuilt.',
+        );
+      }
+
+      const seeded = upgradeWorkflowDraft(newer.draft);
+      if (seeded === null) {
+        throw new ConflictException(
+          `That analysis was written with schema version ${newer.schemaVersion}, which this ` +
+            'build does not read. Re-analyse the objective.',
+        );
+      }
+
+      const problems = validateWorkflowDraft(seeded);
+      if (problems.length > 0) {
+        throw new ConflictException(
+          `That analysis draft does not satisfy the current schema: ${problems.join(' ')}`,
+        );
+      }
+
+      const replaced = this.graphOf(loaded.draft);
+
+      const saved = await this.prisma.client.objectiveWorkflowDraft.update({
+        where: { id: loaded.draft.id },
+        data: {
+          graph: seeded as unknown as object,
+          schemaVersion: ANALYSIS_SCHEMA_VERSION,
+          seededFromRunId: newer.id,
+          revision: { increment: 1 },
+          updatedByUserId: input.actorUserId,
+          version: { increment: 1 },
+        },
+      });
+
+      await this.auditEvents.appendWithinCurrentScope(input.scope.tenantId, {
+        action: 'objective.workflow_draft_reseeded',
+        resourceType: 'objective',
+        resourceId: loaded.objective.id,
+        actorUserId: input.actorUserId,
+        resourceRef: loaded.objective.code,
+        resourceVersion: saved.version,
+        summary:
+          `Replaced the workflow with the later analysis. The ${replaced.nodes.length} steps that ` +
+          `were being edited were discarded for the ${seeded.nodes.length} the analysis produced; ` +
+          'both runs stay in the record as what the AI proposed each time.',
+        metadata: {
+          draftId: saved.id,
+          revision: saved.revision,
+          previousRunId: loaded.draft.seededFromRunId,
+          seededFromRunId: newer.id,
+          discardedNodeCount: replaced.nodes.length,
+          nodeCount: seeded.nodes.length,
+        },
+      });
+
+      return await this.viewOf(saved);
+    });
+  }
+
+  /**
+   * The completed analysis this draft is behind, or null when it is the latest.
+   *
+   * By completion time rather than by id, for the reason `viewOf` gives: an id does not order
+   * runs by when they finished. Shared with `viewOf` so the button and the signal that offers it
+   * can never disagree about whether there is anything newer.
+   */
+  private async newerRunThan(draft: ObjectiveWorkflowDraft): Promise<ObjectiveAnalysisRun | null> {
+    if (draft.seededFromRunId === null) return null;
+
+    const seed = await this.prisma.client.objectiveAnalysisRun.findUnique({
+      where: { id: draft.seededFromRunId },
+      select: { completedAt: true },
+    });
+    if (seed?.completedAt == null) return null;
+
+    return this.prisma.client.objectiveAnalysisRun.findFirst({
+      where: {
+        objectiveVersionId: draft.objectiveVersionId,
+        status: 'Completed',
+        completedAt: { gt: seed.completedAt },
+      },
+      orderBy: { completedAt: 'desc' },
     });
   }
 
@@ -1312,29 +1464,9 @@ export class WorkflowEditorService {
   }
 
   private async viewOf(draft: ObjectiveWorkflowDraft): Promise<WorkflowDraftView> {
-    /*
-     * Newer than the run this draft came from. Compared by completion time rather than by id,
-     * because ids are not ordered by when a run finished.
-     */
-    let supersededByRunId: string | null = null;
-    if (draft.seededFromRunId !== null) {
-      const seed = await this.prisma.client.objectiveAnalysisRun.findUnique({
-        where: { id: draft.seededFromRunId },
-        select: { completedAt: true },
-      });
-      if (seed?.completedAt != null) {
-        const newer = await this.prisma.client.objectiveAnalysisRun.findFirst({
-          where: {
-            objectiveVersionId: draft.objectiveVersionId,
-            status: 'Completed',
-            completedAt: { gt: seed.completedAt },
-          },
-          orderBy: { completedAt: 'desc' },
-          select: { id: true },
-        });
-        supersededByRunId = newer?.id ?? null;
-      }
-    }
+    // Newer than the run this draft came from. The same lookup `applyLatestAnalysis` uses, so
+    // the screen never offers a button the action then says there is nothing for.
+    const supersededByRunId = (await this.newerRunThan(draft))?.id ?? null;
 
     return {
       id: draft.id,

@@ -3203,6 +3203,17 @@ textarea.uboss-input,
   border: 1px solid transparent;
 }
 
+/*
+  The sentence, when a banner also carries a control.
+
+  The banner is already a flex row, so an action placed beside the text sits where it should the
+  moment the text stops claiming only its own width. Without this the button crowds the last
+  word on a narrow screen instead of holding the end of the row.
+*/
+.uboss-banner__fill {
+  flex: 1;
+}
+
 .uboss-banner--warn {
   background: var(--uboss-warning-050);
   color: var(--uboss-warning);
