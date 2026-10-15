@@ -5,6 +5,7 @@ import { type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 
 import {
+  COMPANY_MODULES,
   JOB_METHOD_CELL_MAX,
   JOB_METHOD_COLUMNS,
   JOB_METHOD_FORM_VERSION,
@@ -12,6 +13,7 @@ import {
   STANDARD_EMPLOYEE_CAPABILITIES,
 } from '@uboss/types';
 
+import { AccessLevelService } from '../src/access/access-level.service.js';
 import { CapabilityService } from '../src/access/capability.service.js';
 import { AgentOperatorController } from '../src/agents/agent-operator.controller.js';
 import { AgentOperatorService } from '../src/agents/agent-operator.service.js';
@@ -122,6 +124,7 @@ describe('CR-03 access, Job Method and photo (e2e)', () => {
         AuthorizationService,
         RoleAdministrationService,
         TcsionMappingService,
+        AccessLevelService,
         CapabilityService,
         AgentOperatorService,
         JobMethodService,
@@ -1853,6 +1856,156 @@ describe('CR-03 access, Job Method and photo (e2e)', () => {
           scope: otherScope(),
           actorUserId: employeeId,
           aiWorkAssignmentId: assignmentId,
+        }),
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // CR-04 — access chosen a section at a time
+  // -------------------------------------------------------------------------
+
+  /*
+   * The screen the client asked for: pick a section, then pick a level.
+   *
+   * The eight capabilities above are not deleted — a company that granted them keeps them — and
+   * both expand to grants in the same engine. What these hold is that a level is a *level*: it
+   * carries everything below it, it is read back off the real assignments rather than from a
+   * column somebody has to keep in step, and the delegation rule is the same one.
+   */
+  describe('access levels', () => {
+    const levels = () => app.get(AccessLevelService);
+
+    it('offers every section, and only the levels that section means', async () => {
+      const view = await levels().view({
+        scope: scope(),
+        actorUserId: adminId,
+        subjectUserId: employeeId,
+      });
+
+      assert.equal(view.sections.length, COMPANY_MODULES.length);
+
+      const objective = view.sections.find((section) => section.module === 'objective');
+      assert.deepEqual(
+        objective?.levels.map((level) => level.level),
+        ['Viewer', 'Creator', 'Approver', 'Admin'],
+      );
+
+      // The Dashboard is a screen you can see or cannot. An Approver on it would be a control
+      // that changes nothing, and somebody ticking it would believe they had granted something.
+      const dashboard = view.sections.find((section) => section.module === 'dashboard');
+      assert.deepEqual(
+        dashboard?.levels.map((level) => level.level),
+        ['Viewer'],
+      );
+    });
+
+    it('marks every level below the one granted as held', async () => {
+      await levels().setLevel({
+        scope: scope(),
+        actorUserId: adminId,
+        subjectUserId: employeeId,
+        module: 'objective',
+        level: 'Creator',
+      });
+
+      const view = await levels().view({
+        scope: scope(),
+        actorUserId: adminId,
+        subjectUserId: employeeId,
+      });
+      const objective = view.sections.find((section) => section.module === 'objective');
+
+      assert.deepEqual(
+        objective?.levels.map((level) => [level.level, level.held]),
+        [
+          ['Viewer', true],
+          ['Creator', true],
+          ['Approver', false],
+          ['Admin', false],
+        ],
+      );
+    });
+
+    /*
+     * The level is read back off the assignments, so it survives anything that does not change
+     * them — and a person's access cannot drift from what the roles actually say.
+     */
+    it('grants real permissions, not a label', async () => {
+      await levels().setLevel({
+        scope: scope(),
+        actorUserId: adminId,
+        subjectUserId: employeeId,
+        module: 'objective',
+        level: 'Creator',
+      });
+
+      const context = await app.get(AuthorizationService).contextFor(scope(), employeeId);
+
+      // The thing the grant is for: writing an objective.
+      await app
+        .get(AuthorizationService)
+        .assertCan(context, { module: 'objective', action: 'EditDraft' });
+
+      // And not the thing a level above it carries.
+      await assert.rejects(() =>
+        app
+          .get(AuthorizationService)
+          .assertCan(context, { module: 'objective', action: 'Approve' }),
+      );
+    });
+
+    it('clears a section when the level is removed', async () => {
+      await levels().setLevel({
+        scope: scope(),
+        actorUserId: adminId,
+        subjectUserId: employeeId,
+        module: 'objective',
+        level: 'Creator',
+      });
+      await levels().setLevel({
+        scope: scope(),
+        actorUserId: adminId,
+        subjectUserId: employeeId,
+        module: 'objective',
+        level: null,
+      });
+
+      const view = await levels().view({
+        scope: scope(),
+        actorUserId: adminId,
+        subjectUserId: employeeId,
+      });
+      const objective = view.sections.find((section) => section.module === 'objective');
+
+      assert.ok(
+        objective?.levels.every((level) => !level.held),
+        'the section was not cleared',
+      );
+    });
+
+    it('refuses a level a section does not offer', async () => {
+      await assert.rejects(
+        () =>
+          levels().setLevel({
+            scope: scope(),
+            actorUserId: adminId,
+            subjectUserId: employeeId,
+            module: 'dashboard',
+            level: 'Approver',
+          }),
+        /does not offer Approver/i,
+      );
+    });
+
+    it('refuses somebody who may not manage access at all', async () => {
+      await assert.rejects(() =>
+        levels().setLevel({
+          scope: scope(),
+          actorUserId: employeeId,
+          subjectUserId: employeeId,
+          module: 'objective',
+          level: 'Admin',
         }),
       );
     });
