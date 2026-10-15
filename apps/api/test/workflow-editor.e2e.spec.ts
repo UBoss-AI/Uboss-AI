@@ -1,3 +1,7 @@
+import { ObjectiveReviewService } from '../src/objectives/objective-review.service.js';
+import { ApprovalService } from '../src/approvals/approval.service.js';
+import { PerformanceService } from '../src/performance/performance.service.js';
+import { HumanTaskService } from '../src/tasks/human-task.service.js';
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 
@@ -147,6 +151,10 @@ describe('workflow graph editor and pre-publish readiness (e2e)', () => {
         SkillService,
         SkillRouterService,
         ObjectiveService,
+        ObjectiveReviewService,
+        ApprovalService,
+        PerformanceService,
+        HumanTaskService,
         ObjectiveAnalysisService,
         WorkflowEditorService,
         AssignmentService,

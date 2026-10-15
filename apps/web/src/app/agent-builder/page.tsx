@@ -834,10 +834,20 @@ function AgentBuilderInner() {
                      * setup, test, activate.
                      */
                     setSelected(created);
+                    /*
+                      Says what to do next, and claims nothing about the Skill.
+
+                      A first draft of this said "its Skill was matched from what you said it is
+                      for", which is a promise the router cannot keep at this moment: most
+                      published Skills declare every input as required, and an agent that has not
+                      run yet can supply none of them. The banner was telling somebody a match had
+                      happened while the section below it said no match had. One of them had to
+                      go, and it is the one that was guessing.
+                    */
                     setNotice(
-                      `"${newAgent.name.trim()}" is ready to build. It has no objective behind ` +
-                        'it, so nothing has been decided for it — choose its Skills and answer ' +
-                        'the setup below, then test and activate it as you would any other.',
+                      `"${newAgent.name.trim()}" is ready to build. Answer the setup below, then ` +
+                        'test and activate it as you would any other — there are no Skills to ' +
+                        'choose.',
                     );
                     /*
                      * Named in the URL, which is how this screen opens anything.
@@ -902,10 +912,17 @@ function AgentBuilderInner() {
           )}
         </FormField>
 
+        {/*
+          What happens next, now that it is the same for both kinds of agent.
+
+          This used to end "this one has none of that yet", which was true while a custom agent
+          started with no Skills and a hundred checkboxes to pick from. It does not start that way
+          any more — the same router the analysis uses reads the sentence above and matches one.
+        */}
         <p className="uboss-muted-3">
-          It is created in <b>Draft setup</b>. An agent built from an objective below arrives
-          configured, because the analysis decided its skills and approvals; this one has none of
-          that yet. Who may run it is decided afterwards, the same way as for any other agent.
+          It is created in <b>Draft setup</b>. UBoss matches its Skill from what you write above,
+          the same way an objective&rsquo;s analysis does — so there is no list to choose from. Who
+          may run it is decided afterwards, the same way as for any other agent.
         </p>
       </Modal>
 
@@ -1090,58 +1107,47 @@ function AgentBuilderInner() {
               {selected.engineAgent !== null ? null : (
                 <>
                   {/*
-                    The Skills this agent performs.
+                    What this agent will perform, matched rather than asked.
 
-                    An agent is a way of running a Skill; without one there is nothing for it to
-                    do, and readiness says so as a blocker. Work that came from an objective has
-                    these chosen by the analysis and normally needs nothing here — which is why
-                    the control never existed. An agent created without an objective has no
-                    analysis, so it starts with none and this is where they are chosen.
+                    This was a checkbox for every published Skill in the company — over a hundred
+                    of them, alphabetical, each with a category and a "needs approval" chip — and
+                    the agent could not go further until somebody ticked one. The person being
+                    asked is an employee who was told to set an agent up. They have no way to
+                    answer it well, and the client reported it as exactly that.
 
-                    The whole set is sent, not a delta: two people editing at once is how a delta
-                    loses one of the changes. The server re-applies every control the automatic
-                    matching goes through — published only, and entitled to this company.
+                    An objective's agent never asked, because the analysis routes its Skills. A
+                    custom agent has no analysis, so `createStandalone` calls the same router on
+                    the sentence that says what the agent is for. One rule for both, and nobody
+                    scrolls a list.
+
+                    What is left here is the answer, shown — not a control. If the router found
+                    nothing, readiness says so below in words, with what to do about it.
                   */}
-                  <div className="uboss-section-label">Skills this agent performs</div>
-                  {skillOptions === null ? (
-                    <p className="uboss-muted">Reading the Skills this company may use…</p>
-                  ) : skillOptions.length === 0 ? (
+                  <div className="uboss-section-label">What this agent performs</div>
+                  {selected.prefill.skillVersionIds.length === 0 ? (
                     <p className="uboss-muted">
-                      This company has no published Skill to attach yet. A Skill has to be authored,
-                      approved and published before an agent can perform it.
+                      Matched from the work when this agent runs. Most Skills ask for inputs that
+                      only exist once there is something to work on, so there is nothing to choose
+                      here and nothing to wait for.
                     </p>
                   ) : (
                     <div>
-                      {skillOptions.map((skill) => {
-                        const chosen = selected.prefill.skillVersionIds.includes(skill.versionId);
+                      {selected.prefill.skillVersionIds.map((versionId) => {
+                        const skill = skillOptions?.find((entry) => entry.versionId === versionId);
                         return (
-                          <label className="uboss-checkbox" key={skill.versionId}>
-                            <input
-                              type="checkbox"
-                              checked={chosen}
-                              disabled={busy || !can(myAccess, 'agent-builder', 'EditDraft')}
-                              onChange={() => {
-                                const next = chosen
-                                  ? selected.prefill.skillVersionIds.filter(
-                                      (id) => id !== skill.versionId,
-                                    )
-                                  : [...selected.prefill.skillVersionIds, skill.versionId];
-                                run((tenant, assignment) =>
-                                  agentBuilderApi.setSkills(tenant, assignment, next),
-                                )();
-                              }}
-                            />
-                            <span>
-                              <b>{skill.name}</b>
+                          <p className="uboss-muted" key={versionId}>
+                            <b>{skill?.name ?? 'A published Skill'}</b>
+                            {skill === undefined ? null : (
                               <span className="uboss-muted-3">
                                 {' '}
                                 — {skill.category} · v{skill.versionNumber}
-                                {skill.requiresApproval ? ' · needs approval' : ''}
                               </span>
-                              <br />
-                              <span className="uboss-field-hint">{skill.purpose}</span>
+                            )}
+                            <br />
+                            <span className="uboss-field-hint">
+                              {skill?.purpose ?? 'Matched to what this agent is for.'}
                             </span>
-                          </label>
+                          </p>
                         );
                       })}
                     </div>

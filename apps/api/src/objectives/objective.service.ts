@@ -39,6 +39,7 @@ import type {
   ObjectiveVersion,
   ObjectiveWorkflowStep,
 } from '../generated/prisma/client.js';
+import { ApprovalService } from '../approvals/approval.service.js';
 import { OrganizationRepository } from '../persistence/organization.repository.js';
 import { PrismaService } from '../persistence/prisma.service.js';
 import type { TenantScope } from '../persistence/tenant-context.js';
@@ -217,6 +218,13 @@ export class ObjectiveService {
     private readonly auditEvents: AuditEventService,
     /// Prompt 20: the Responsible Owner / Send To check is hierarchy-aware.
     private readonly organization: OrganizationRepository,
+    /**
+     * CR-04: submitting for review raises a real request, addressed to the department's Head.
+     *
+     * One-way. `ApprovalService` knows nothing about this service; the decision travels back
+     * through `ObjectiveReviewService`, which is why that one exists.
+     */
+    private readonly approvals: ApprovalService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -707,13 +715,28 @@ export class ObjectiveService {
     const context = await this.authorization.contextFor(input.scope, input.actorUserId);
     await this.authorization.assertCan(context, { module: 'objective', action: 'EditDraft' });
 
-    return this.prisma.runInTenantTransaction(input.scope, async () => {
+    /*
+     * The submitted version, carried out of the transaction so the request can name it.
+     *
+     * Read from `target` rather than from the view afterwards: by then the version is
+     * `UnderReview`, which is not an editable draft, so `view.openDraft` is null and the request
+     * would be raised against nothing.
+     */
+    let submitted: { id: string; versionNumber: number; objectiveName: string; code: string };
+
+    const view = await this.prisma.runInTenantTransaction(input.scope, async () => {
       const loaded = await this.load(input.scope, input.objectiveId, {
         alreadyInTransaction: true,
       });
       await this.assertOnResource(context, loaded.objective, 'EditDraft');
 
       const target = this.editableVersion(loaded.versions, input.versionId);
+      submitted = {
+        id: target.id,
+        versionNumber: target.versionNumber,
+        objectiveName: target.objectiveName,
+        code: loaded.objective.code,
+      };
 
       if (!mayTransitionObjective(target.status as ObjectiveStatus, 'UnderReview')) {
         throw new ConflictException(
@@ -760,6 +783,43 @@ export class ObjectiveService {
       });
       return this.viewOf(after.objective, after.versions, after.reward);
     });
+
+    /*
+     * CR-04: and it goes to somebody.
+     *
+     * This used to set a status and stop. The objective became `UnderReview` and nothing else
+     * happened anywhere — no queue entry, no notification, nobody told. The person who filled the
+     * form had submitted it to a column in a table, and the only way a Head could find it was to
+     * open the objective and already know it was there.
+     *
+     * Raised **outside** the transaction, deliberately. `ApprovalService.raise` opens its own
+     * tenant transaction and sends a notification, and nesting one inside the write above would
+     * make the submission depend on the notifier — so a mail failure would roll back a submitted
+     * form. The order is the honest one: the submission is a fact first, and then it is
+     * announced.
+     *
+     * Addressed by role rather than to a named person. The client asked for "the department's
+     * L1/Head", and which human that is depends on the department and on who holds the role
+     * today — a user id captured here would still be pointing at whoever held it the day the
+     * form was filled in.
+     */
+    await this.approvals.raise({
+      scope: input.scope,
+      type: 'ObjectiveReview',
+      title: `Review "${submitted!.objectiveName}"`,
+      detail:
+        `${submitted!.code} V${submitted!.versionNumber} has been submitted for review. ` +
+        'Approve it to let an administrator run the analysis, or send it back with what needs ' +
+        'to change.',
+      subjectType: 'ObjectiveVersion',
+      subjectId: submitted!.id,
+      objectiveId: input.objectiveId,
+      objectiveVersionId: submitted!.id,
+      requestedByUserId: input.actorUserId,
+      approverRoleKind: 'Head',
+    });
+
+    return view;
   }
 
   // -------------------------------------------------------------------------

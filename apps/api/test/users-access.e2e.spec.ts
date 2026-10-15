@@ -2767,14 +2767,16 @@ describe('users & access (e2e)', () => {
 
     it('refuses a role a company no longer hands out, at the route and not only in the list', async () => {
       /*
-       * The list had already narrowed to two roles; this route had not, so `roleKind: "Manager"`
-       * posted straight at it still created an assignment. Nothing escalated — every retired role
-       * is narrower than `CompanyAdmin`, which the caller already holds — but a company could end
-       * up holding roles its own administrator was never shown, and no screen would explain them.
+       * The list had already narrowed; this route had not, so `roleKind: "Manager"` posted
+       * straight at it still created an assignment. Nothing escalated — every retired role is
+       * narrower than `CompanyAdmin`, which the caller already holds — but a company could end up
+       * holding roles its own administrator was never shown, and no screen would explain them.
        *
-       * All four retired roles, because it would be easy to fix one and leave the rest.
+       * `Head` is not in this list any more: CR-04 brought it back as a grantable role, and the
+       * test above asserts the catalogue and this route agree about that. The three that stay
+       * retired are still here, because it would be easy to fix one and leave the rest.
        */
-      for (const roleKind of ['Manager', 'Head', 'Approver', 'Auditor'] as const) {
+      for (const roleKind of ['Manager', 'Approver', 'Auditor'] as const) {
         const response = await grant(employeeId, {
           roleKind,
           scopeKind: 'TeamSubtree',
@@ -2839,19 +2841,22 @@ describe('users & access (e2e)', () => {
       );
     });
 
-    it('offers a company the two roles it hands out, and no others', async () => {
+    it('offers a company the three roles it hands out, and no others', async () => {
       /*
-       * This asserted six or more, back when a company could grant `Manager`, `Head`,
-       * `Approver` and `Auditor` as well.
+       * This asserted six or more, and then two, and now three.
        *
-       * Those four existed to carry approvals between the administrator who defines work and the
-       * employee who does it, and by the client's decision nothing sits between those two any
-       * more. Offering a role whose whole purpose has gone would be offering somewhere for work
-       * to stop for ever.
+       * `Manager`, `Head`, `Approver` and `Auditor` existed to carry approvals between the
+       * administrator who defines work and the employee who does it, and CR-03 removed all four
+       * on the grounds that nothing sat between those two any more.
+       *
+       * **CR-04 (client, 15 Oct 2026) puts an approval back there**, and `Head` with it: an
+       * employee fills an Objective in, their department's Head approves it or sends it back,
+       * and only then does an administrator run the analysis. `Manager`, `Approver` and
+       * `Auditor` stay retired — CR-04 asked for one role, not four.
        *
        * The templates are not deleted — people already hold them, and their permissions still
        * have to be read — and the platform console still sees the whole catalogue for companies
-       * provisioned before this. Only what a company may newly grant has narrowed.
+       * provisioned before this. Only what a company may newly grant has changed.
        */
       const response = await as(
         agent().get(`/tenants/${tenantId}/access/roles`),
@@ -2861,7 +2866,7 @@ describe('users & access (e2e)', () => {
       const body = response.body as { roles: { kind: string; youMayGrant: boolean }[] };
       const kinds = body.roles.map((role) => role.kind).sort();
 
-      assert.deepEqual(kinds, ['CompanyAdmin', 'Employee']);
+      assert.deepEqual(kinds, ['CompanyAdmin', 'Employee', 'Head']);
       assert.ok(
         body.roles.every((role) => role.youMayGrant),
         'a company administrator was told they may not grant something in their own company',

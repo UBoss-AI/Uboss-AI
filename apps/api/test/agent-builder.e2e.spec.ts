@@ -1,3 +1,7 @@
+import { ObjectiveReviewService } from '../src/objectives/objective-review.service.js';
+import { ApprovalService } from '../src/approvals/approval.service.js';
+import { PerformanceService } from '../src/performance/performance.service.js';
+import { HumanTaskService } from '../src/tasks/human-task.service.js';
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 
@@ -64,6 +68,7 @@ import { TenantGuard, WORKSPACE_HEADER } from '../src/tenancy/tenant.guard.js';
 import {
   activateMembership,
   activateTenant,
+  approveObjectiveReview,
   closeTestContext,
   createTestContext,
   grantBuilderAccess,
@@ -117,6 +122,7 @@ describe('agent builder and engine agent activation (e2e)', () => {
   const analysis = () => app.get(ObjectiveAnalysisService);
   const workflow = () => app.get(WorkflowEditorService);
   const assignment = () => app.get(AssignmentService);
+  const approvals = () => app.get(ApprovalService);
   const builder = () => app.get(AgentBuilderService);
   const skills = () => app.get(SkillService);
 
@@ -164,6 +170,10 @@ describe('agent builder and engine agent activation (e2e)', () => {
         SkillService,
         SkillRouterService,
         ObjectiveService,
+        ObjectiveReviewService,
+        ApprovalService,
+        PerformanceService,
+        HumanTaskService,
         ObjectiveAnalysisService,
         WorkflowEditorService,
         AssignmentService,
@@ -553,6 +563,21 @@ describe('agent builder and engine agent activation (e2e)', () => {
       scope: scope(),
       actorUserId: managerUserId,
       objectiveId: created.id,
+    });
+    // CR-04: the review this submission raised has to be decided before the
+    // analysis will run. See `approveObjectiveReview`.
+    await approveObjectiveReview({
+      context: ctx,
+      tenantId,
+      objectiveId: created.id,
+      decide: (approverUserId, approvalId) =>
+        approvals().decide({
+          scope: scope(),
+          actorUserId: approverUserId,
+          approvalId,
+          decision: 'Approve',
+          note: 'Reviewed and approved for analysis.',
+        }),
     });
     await objectives().confirmExecutionTeam({
       scope: scope(),
@@ -1723,6 +1748,21 @@ describe('agent builder and engine agent activation (e2e)', () => {
         actorUserId: managerUserId,
         objectiveId,
       });
+      // CR-04: the review this submission raised has to be decided before the analysis
+      // will run. See `approveObjectiveReview`.
+      await approveObjectiveReview({
+        context: ctx,
+        tenantId,
+        objectiveId,
+        decide: (approverUserId, approvalId) =>
+          approvals().decide({
+            scope: scope(),
+            actorUserId: approverUserId,
+            approvalId,
+            decision: 'Approve',
+            note: 'Reviewed and approved for analysis.',
+          }),
+      });
       await objectives().confirmExecutionTeam({
         scope: scope(),
         actorUserId: managerUserId,
@@ -1821,6 +1861,21 @@ describe('agent builder and engine agent activation (e2e)', () => {
         scope: scope(),
         actorUserId: managerUserId,
         objectiveId,
+      });
+      // CR-04: the review this submission raised has to be decided before the analysis
+      // will run. See `approveObjectiveReview`.
+      await approveObjectiveReview({
+        context: ctx,
+        tenantId,
+        objectiveId,
+        decide: (approverUserId, approvalId) =>
+          approvals().decide({
+            scope: scope(),
+            actorUserId: approverUserId,
+            approvalId,
+            decision: 'Approve',
+            note: 'Reviewed and approved for analysis.',
+          }),
       });
       await objectives().confirmExecutionTeam({
         scope: scope(),

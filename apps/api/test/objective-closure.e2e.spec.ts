@@ -1,3 +1,7 @@
+import { ObjectiveReviewService } from '../src/objectives/objective-review.service.js';
+import { ApprovalService } from '../src/approvals/approval.service.js';
+import { PerformanceService } from '../src/performance/performance.service.js';
+import { HumanTaskService } from '../src/tasks/human-task.service.js';
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 
@@ -133,6 +137,10 @@ describe('objective closure, outcome review and archive (e2e)', () => {
         SecurityEventPublisher,
         AuthorizationService,
         ObjectiveService,
+        ObjectiveReviewService,
+        ApprovalService,
+        PerformanceService,
+        HumanTaskService,
         ObjectiveClosureService,
         CompanySettingsService,
         // Prompt 21 gave `ObjectiveController` an analysis service and a Model Gateway.

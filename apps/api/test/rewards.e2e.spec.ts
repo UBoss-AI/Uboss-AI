@@ -1,3 +1,7 @@
+import { ObjectiveReviewService } from '../src/objectives/objective-review.service.js';
+import { ApprovalService } from '../src/approvals/approval.service.js';
+import { HumanTaskService } from '../src/tasks/human-task.service.js';
+import { WorkReleaseService } from '../src/tasks/work-release.service.js';
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 
@@ -168,6 +172,10 @@ describe('reward rules and awards (e2e)', () => {
         OutboxRepository,
         PerformanceService,
         ObjectiveService,
+        ObjectiveReviewService,
+        ApprovalService,
+        HumanTaskService,
+        WorkReleaseService,
         RewardService,
         TenantContextService,
         Reflector,

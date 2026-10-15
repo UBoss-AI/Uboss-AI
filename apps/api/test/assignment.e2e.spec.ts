@@ -1,3 +1,5 @@
+import { ObjectiveReviewService } from '../src/objectives/objective-review.service.js';
+import { ApprovalService } from '../src/approvals/approval.service.js';
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 
@@ -119,6 +121,37 @@ describe('approve & assign and the human to-do list (e2e)', () => {
   const analysis = () => app.get(ObjectiveAnalysisService);
   const workflow = () => app.get(WorkflowEditorService);
   const assignment = () => app.get(AssignmentService);
+  const approvals = () => app.get(ApprovalService);
+
+  /**
+   * Approve the review a submission raises, as the department Head.
+   *
+   * CR-04 put a human gate at `UnderReview`: submitting raises an `ObjectiveReview` request and
+   * the analysis refuses to run until somebody decides it. These fixtures submit and then
+   * analyse, so without this they stop at the gate — which is the gate working, not a fault in
+   * them.
+   *
+   * Decided by `ownerUserId`, who holds `Head`, and never by the submitter: `NoSelfApproval` is
+   * a platform control and would refuse that, exactly as it would in the product.
+   */
+  const approveTheReview = async (objectiveId: string) => {
+    const pending = await ctx.prisma.runAsPlatformOperation(() =>
+      ctx.prisma.client.approvalRequest.findFirst({
+        where: { tenantId, type: 'ObjectiveReview', objectiveId, status: 'Pending' },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      }),
+    );
+    assert.ok(pending, 'submitting for review should have raised an ObjectiveReview request');
+
+    await approvals().decide({
+      scope: scope(),
+      actorUserId: ownerUserId,
+      approvalId: pending.id,
+      decision: 'Approve',
+      note: 'Reviewed and approved for analysis.',
+    });
+  };
   const tasks = () => app.get(HumanTaskService);
   const sweeper = () => app.get(OverdueTaskSweeper);
   const skills = () => app.get(SkillService);
@@ -158,6 +191,8 @@ describe('approve & assign and the human to-do list (e2e)', () => {
         SkillService,
         SkillRouterService,
         ObjectiveService,
+        ObjectiveReviewService,
+        ApprovalService,
         ObjectiveAnalysisService,
         WorkflowEditorService,
         AssignmentService,
@@ -593,6 +628,7 @@ describe('approve & assign and the human to-do list (e2e)', () => {
       actorUserId: managerUserId,
       objectiveId: created.id,
     });
+    await approveTheReview(created.id);
     await objectives().confirmExecutionTeam({
       scope: scope(),
       actorUserId: managerUserId,
@@ -917,9 +953,21 @@ describe('approve & assign and the human to-do list (e2e)', () => {
       assert.equal(result.approvalRequestIds.length, approvalNodes.length);
       assert.ok(approvalNodes.length > 0, 'the fixture produced no approval gate');
 
+      /*
+       * The rows this assignment made, not every row the objective has ever had.
+       *
+       * It read all of them, which was the same set until CR-04 gave the objective a review of
+       * its own: getting this far now means an `ObjectiveReview` was raised and approved, and
+       * that row is for the same objective and is deliberately a different type. Asserting over
+       * everything made the test fail on the thing it is about — one table holding several kinds
+       * of decision — rather than on the gates it is checking.
+       */
       const rows = await ctx.prisma.runAsPlatformOperation(() =>
-        ctx.prisma.client.approvalRequest.findMany({ where: { objectiveId } }),
+        ctx.prisma.client.approvalRequest.findMany({
+          where: { objectiveId, id: { in: result.approvalRequestIds } },
+        }),
       );
+      assert.equal(rows.length, approvalNodes.length);
       for (const row of rows) {
         assert.equal(row.type, 'WorkflowStepApproval');
         assert.equal(row.status, 'Pending');
@@ -927,6 +975,15 @@ describe('approve & assign and the human to-do list (e2e)', () => {
         assert.equal(row.objectiveVersionId, result.objectiveVersionId);
         assert.ok(row.workflowNodeId, 'the approval does not say which step it gates');
       }
+
+      // And the review is in the same table, settled, under its own type — which is the point of
+      // there being one queue rather than one per module.
+      const review = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.approvalRequest.findFirst({
+          where: { objectiveId, type: 'ObjectiveReview' },
+        }),
+      );
+      assert.equal(review?.status, 'Approved');
     });
 
     it('registers what the Executor Agent should watch', async () => {
@@ -956,8 +1013,22 @@ describe('approve & assign and the human to-do list (e2e)', () => {
 
       assert.ok(result.notificationsRaised > 0, 'no approver was told');
 
+      /*
+       * The notifications these gates raised, not every one in the company.
+       *
+       * The objective's own review raises an `ApprovalWaiting` too, addressed to the Head — so
+       * "every ApprovalWaiting row went to the gate's approver" stopped being true, and stopped
+       * being the thing this test is about. `resourceId` is the approval request each one is
+       * for, which is exactly the distinction.
+       */
       const rows = await ctx.prisma.runAsPlatformOperation(() =>
-        ctx.prisma.client.notification.findMany({ where: { tenantId, kind: 'ApprovalWaiting' } }),
+        ctx.prisma.client.notification.findMany({
+          where: {
+            tenantId,
+            kind: 'ApprovalWaiting',
+            resourceId: { in: result.approvalRequestIds },
+          },
+        }),
       );
       assert.ok(rows.length > 0);
       assert.ok(rows.every((row) => row.recipientUserId === objectiveApproverId));
@@ -1027,18 +1098,33 @@ describe('approve & assign and the human to-do list (e2e)', () => {
       );
     });
 
+    /*
+     * The other branch, and the honest one at this prompt: the analysis knows an approval is
+     * required and which role must give it, not who holds that role. Resolving a role to people
+     * belongs to the Approval Engine prompt, and guessing here would notify the wrong person
+     * with real authority to act.
+     *
+     * ## Why CR-04 did not change this, although it widened the fan-out
+     *
+     * `ApprovalService.raise` now tells every holder of whatever role a request is addressed to,
+     * not only a Company Admin — which is what gets an objective's review to its department
+     * Head. A gate is not raised that way: this service writes the row with Prisma directly, so
+     * the engine's fan-out never sees it and nobody is told.
+     *
+     * That is worth knowing rather than worth asserting around. Routing a gate through `raise`
+     * is a change to who gets interrupted by a mid-plan approval, and it belongs to whoever
+     * decides that, not to a review-routing change that happened to pass nearby.
+     */
     it('records the required role when the gate names no person, and notifies nobody', async () => {
-      // The other branch, and the honest one at this prompt: the analysis knows an approval is
-      // required and which role must give it, not who holds that role. Resolving a role to people
-      // belongs to the Approval Engine prompt, and guessing here would notify the wrong person
-      // with real authority to act.
       const { objectiveId } = await readyToAssign({ nameApprover: false });
       const result = await assign(objectiveId);
 
-      assert.equal(result.notificationsRaised, 0, 'somebody was notified from a role alone');
+      assert.equal(result.notificationsRaised, 0, 'assignment named somebody from a role alone');
 
       const rows = await ctx.prisma.runAsPlatformOperation(() =>
-        ctx.prisma.client.approvalRequest.findMany({ where: { objectiveId } }),
+        ctx.prisma.client.approvalRequest.findMany({
+          where: { objectiveId, type: 'WorkflowStepApproval' },
+        }),
       );
       assert.ok(rows.length > 0, 'the gate produced no approval request');
       for (const row of rows) {
@@ -1046,6 +1132,19 @@ describe('approve & assign and the human to-do list (e2e)', () => {
         assert.ok(row.approverRoleKind, 'the request records neither a person nor a role');
         assert.equal(row.status, 'Pending');
       }
+
+      // Nobody was told about the gates themselves — see the note above for why that is still
+      // true after CR-04 widened the engine's own fan-out.
+      const told = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.notification.count({
+          where: {
+            tenantId,
+            kind: 'ApprovalWaiting',
+            resourceId: { in: rows.map((row) => row.id) },
+          },
+        }),
+      );
+      assert.equal(told, 0);
     });
 
     it('freezes the plan', async () => {
@@ -1130,7 +1229,19 @@ describe('approve & assign and the human to-do list (e2e)', () => {
         }),
         tasks: await ctx.prisma.client.humanTask.count({ where: { objectiveId } }),
         assignments: await ctx.prisma.client.aiWorkAssignment.count({ where: { objectiveId } }),
-        approvals: await ctx.prisma.client.approvalRequest.count({ where: { objectiveId } }),
+        /*
+         * The gates this assignment would have made, not every approval the objective has.
+         *
+         * Since CR-04 the objective also carries the `ObjectiveReview` its Head decided before
+         * any of this, and that row is not the assignment's to undo — see the assertion below.
+         */
+        approvals: await ctx.prisma.client.approvalRequest.count({
+          where: { objectiveId, type: 'WorkflowStepApproval' },
+        }),
+        review: await ctx.prisma.client.approvalRequest.findFirst({
+          where: { objectiveId, type: 'ObjectiveReview' },
+          select: { status: true },
+        }),
         expectations: await ctx.prisma.client.executorExpectation.count({ where: { objectiveId } }),
         draft: await ctx.prisma.client.objectiveWorkflowDraft.findUniqueOrThrow({
           where: { id: draft.id },
@@ -1144,6 +1255,10 @@ describe('approve & assign and the human to-do list (e2e)', () => {
       assert.equal(after.approvals, 0);
       assert.equal(after.expectations, 0);
       assert.equal(after.draft.assignedAt, null, 'the plan was frozen by a failed assign');
+      // A decision somebody already made is not this transaction's to undo. Rolling the Head's
+      // approval back would send the objective round the review loop because a later, unrelated
+      // step failed.
+      assert.equal(after.review?.status, 'Approved');
     });
   });
 

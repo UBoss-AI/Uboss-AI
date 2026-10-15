@@ -495,11 +495,17 @@ export interface AgentTestRunView {
  * clothes of a check, and an admin would trust it. The expectation is recorded and shown beside
  * the output so the person who wrote it does the comparing. `Passed` means only what it can
  * honestly mean: the agent produced something.
+ *
+ * ## The reasoning belongs here, not under the field
+ *
+ * This note used to carry all three sentences of it — thirty-eight words of explanation under an
+ * optional box, on a form an employee is trying to fill in. It was reported as the screen talking
+ * instead of asking. What a person needs at that moment is what the box is for and what will
+ * happen to it; *why* a machine verdict would be dishonest is the argument for the design, and it
+ * is written above where the next person changing this will read it.
  */
 export const AGENT_TEST_EXPECTATION_NOTE =
-  'What you expected is shown beside what came back so you can compare them. UBoss does not ' +
-  'judge one against the other — a machine verdict on free text would be a guess, and passing ' +
-  'here only means the agent produced an answer.';
+  'Shown beside the answer so you can compare them. UBoss does not mark it right or wrong.';
 
 // ---------------------------------------------------------------------------
 // Form 3 — the canonical job method

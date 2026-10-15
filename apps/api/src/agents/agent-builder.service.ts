@@ -13,6 +13,7 @@ import {
   ALLOWED_ENGINE_AGENT_TRANSITIONS,
   emptyAgentExecutionSetup,
   FORM3_JOB_LEVEL_FIELDS,
+  TOOL_ACTION_CATEGORIES,
   MISSING_DATA_BEHAVIOURS,
   missingSetupFields,
   runTypeNeedsSchedule,
@@ -32,6 +33,7 @@ import {
 
 import { AuditEventService } from '../audit/audit-event.service.js';
 import { AuthorizationService } from '../authorization/authorization.service.js';
+import { SkillRouterService } from '../skills/skill-router.service.js';
 import { ConnectionService } from '../connections/connection.service.js';
 import { ModelGateway } from '../model-gateway/model-gateway.js';
 import { PrismaService } from '../persistence/prisma.service.js';
@@ -149,6 +151,8 @@ export class AgentBuilderService {
     private readonly connections: ConnectionService,
     /// The provider seam. A test runs through this, so a mock is visibly a mock.
     private readonly modelGateway: ModelGateway,
+    /// The same matcher the objective analysis uses, so a custom agent is routed by one rule.
+    private readonly skillRouter: SkillRouterService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -244,8 +248,29 @@ export class AgentBuilderService {
         objectiveName: 'Custom agent',
         assignedWork: purpose,
         ownerUserId: input.actorUserId,
-        // Chosen on the form. See the note above about why this is empty and not guessed.
-        skillVersionIds: [],
+        /*
+         * Matched by the router, not chosen from a list.
+         *
+         * This was `[]`, and the builder then showed every published Skill in the company as a
+         * checkbox — a hundred and more of them, alphabetical, each with its category and
+         * "needs approval" — and refused to go further until somebody ticked one. The person
+         * being asked is an employee who was told to set an agent up, and the question is one
+         * they have no way to answer well.
+         *
+         * An objective's agent never had this problem: the analysis routes its Skills, which is
+         * the same router called with the same kind of context. The only reason a custom agent
+         * asked is that it has no analysis to route for it — so it routes here instead, on the
+         * one sentence that says what the agent is for.
+         *
+         * `raiseCandidateIfMissing` is left off deliberately. Nothing has been built yet; if no
+         * Skill fits, readiness says so in words and a Candidate is a decision for whoever
+         * authors Skills, not a side effect of somebody naming an agent.
+         */
+        skillVersionIds: await this.routeSkillsFor({
+          scope: input.scope,
+          actorUserId: input.actorUserId,
+          aiTask: purpose,
+        }),
         /*
          * No tool categories, so the builder does not ask for a connection.
          *
@@ -288,6 +313,65 @@ export class AgentBuilderService {
 
       return this.viewOf(input.scope, assignment);
     });
+  }
+
+  /**
+   * Which published Skill this work should run, decided by the router.
+   *
+   * The same `skillRouter.route` the objective analysis uses, given the same shape of context —
+   * so a custom agent and an objective's agent are matched by one rule rather than by a form in
+   * one case and an algorithm in the other.
+   *
+   * Returns the best match only, and an empty list when nothing qualifies. An empty list is not
+   * a failure to be papered over: readiness reports it, in words, with what to do about it. The
+   * one thing it will not do is pick something that does not fit, which is exactly what a person
+   * scrolling a hundred checkboxes does.
+   *
+   * Never throws. Routing is a convenience at this moment — the agent exists either way, and
+   * failing to create it because a match could not be computed would be the tail wagging the dog.
+   */
+  private async routeSkillsFor(input: {
+    scope: TenantScope;
+    actorUserId: string;
+    aiTask: string;
+  }): Promise<string[]> {
+    try {
+      const outcome = await this.skillRouter.route({
+        scope: input.scope,
+        actorUserId: input.actorUserId,
+        context: {
+          aiTask: input.aiTask,
+          /*
+           * Nothing is ruled out yet, which is not the same as nothing being allowed.
+           *
+           * `allowedToolCategories` means "categories the caller may permit", and a Skill needing
+           * one that is absent is disqualified outright. Passing `[]` therefore reads as "this
+           * agent may use no tools at all" and throws away every Skill that touches a system —
+           * measured on a real company: "Reconcile the bank statement against the ledger" matched
+           * nothing, with a Bank Reconciliation Skill published and sitting right there.
+           *
+           * At creation the agent has permitted nothing because it has been *asked* nothing. What
+           * it may really reach is decided later by its connections, and the readiness check
+           * enforces that against the Skill it ended up with. So the honest context here is the
+           * full set: route on what the work is, and let the setup narrow it.
+           */
+          availableInputs: [],
+          allowedToolCategories: [...TOOL_ACTION_CATEGORIES],
+          /*
+           * False means "this work does not *have* to pass an approval", which disqualifies
+           * nothing — the rule only bites the other way round, where the work needs a decision
+           * and the Skill makes none. Whether this agent's output needs approving is a question
+           * its setup asks.
+           */
+          requiresApproval: false,
+        },
+      });
+
+      const best = outcome.matches[0];
+      return best === undefined ? [] : [best.skillVersionId];
+    } catch {
+      return [];
+    }
   }
 
   /** Everything awaiting agent setup that this person may act on. */
@@ -1291,13 +1375,53 @@ export class AgentBuilderService {
       findings.push({ severity: 'Blocker', summary: `${entry.label} is not set. ${entry.why}` });
     }
 
+    /*
+     * A missing Skill blocks work an objective asked for, and does not block a custom agent.
+     *
+     * ## Why they are not the same case
+     *
+     * An objective's analysis routes its Skills against a real step: it knows the work, the
+     * inputs that step receives and the tools it may touch. If nothing matched there, something
+     * genuinely is missing and publishing would release a step nothing can perform.
+     *
+     * A custom agent has none of that yet. Measured against this company's own library: every
+     * published Skill declares all of its inputs as required — "Bank statements", "cash
+     * positions", "payment proposals" — and the router rejects a candidate whose every required
+     * input is unmet. An agent that has been named and described, and has not yet been given a
+     * connection or a single run, can supply none of them. So no match is possible *at this
+     * moment*, for any agent, however well it is described.
+     *
+     * Blocking on it made the builder unfinishable: the only way past was for an employee to
+     * tick something from a list of two hundred Skills — the control the client asked to be
+     * removed, and the reason it existed.
+     *
+     * ## What takes its place
+     *
+     * The match happens when there is something to match on. `createStandalone` tries at
+     * creation, which succeeds where a Skill asks for little; otherwise the agent runs and the
+     * work itself supplies the inputs the router needed. Readiness says which of those two
+     * happened rather than refusing to continue.
+     */
     if (prefill.skillVersionIds.length === 0) {
-      findings.push({
-        severity: 'Blocker',
-        summary:
-          'No approved, published Skill stands behind this work, so the agent would have nothing ' +
-          'to perform. Author and approve a Skill first.',
-      });
+      // `objectiveVersionId` rather than `objectiveId`: the readiness read selects the version
+      // and not the objective, and `createStandalone` sets both to null together — so this is
+      // the same question asked of the column that is actually here.
+      const fromObjective = assignment.objectiveVersionId !== null;
+      findings.push(
+        fromObjective
+          ? {
+              severity: 'Blocker',
+              summary:
+                'No approved, published Skill stands behind this work, so the agent would have ' +
+                'nothing to perform. Author and approve a Skill first.',
+            }
+          : {
+              severity: 'Warning',
+              summary:
+                'No published Skill matched what this agent is for yet. UBoss matches one from ' +
+                'the work itself when the agent runs — nothing has to be chosen here.',
+            },
+      );
     }
 
     let connection: AgentBuilderView['readiness']['connection'] = null;

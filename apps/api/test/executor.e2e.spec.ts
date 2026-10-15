@@ -1,3 +1,4 @@
+import { ObjectiveReviewService } from '../src/objectives/objective-review.service.js';
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 
@@ -76,6 +77,7 @@ import { TenantGuard, WORKSPACE_HEADER } from '../src/tenancy/tenant.guard.js';
 import {
   activateMembership,
   activateTenant,
+  approveObjectiveReview,
   closeTestContext,
   createTestContext,
   grantBuilderAccess,
@@ -130,6 +132,7 @@ describe('executor agent and exception center (e2e)', () => {
   const agent = () => request(app.getHttpServer());
   const scope = () => tenantScopeForPlatformOperation(tenantId);
   const objectives = () => app.get(ObjectiveService);
+  const approvals = () => app.get(ApprovalService);
   const analysis = () => app.get(ObjectiveAnalysisService);
   const workflow = () => app.get(WorkflowEditorService);
   const assignment = () => app.get(AssignmentService);
@@ -188,6 +191,7 @@ describe('executor agent and exception center (e2e)', () => {
         SkillService,
         SkillRouterService,
         ObjectiveService,
+        ObjectiveReviewService,
         ObjectiveAnalysisService,
         WorkflowEditorService,
         AssignmentService,
@@ -561,6 +565,21 @@ describe('executor agent and exception center (e2e)', () => {
       scope: scope(),
       actorUserId: managerUserId,
       objectiveId: created.id,
+    });
+    // CR-04: the review this submission raised has to be decided before the
+    // analysis will run. See `approveObjectiveReview`.
+    await approveObjectiveReview({
+      context: ctx,
+      tenantId,
+      objectiveId: created.id,
+      decide: (approverUserId, approvalId) =>
+        approvals().decide({
+          scope: scope(),
+          actorUserId: approverUserId,
+          approvalId,
+          decision: 'Approve',
+          note: 'Reviewed and approved for analysis.',
+        }),
     });
     await objectives().confirmExecutionTeam({
       scope: scope(),

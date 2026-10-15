@@ -804,3 +804,68 @@ export async function grantBuilderAccess(
     return role.id;
   });
 }
+
+/**
+ * Approve the review that submitting an objective now raises.
+ *
+ * CR-04 put a human gate at `UnderReview`: `submitForReview` raises an `ObjectiveReview` request
+ * addressed to the `Head` role, and the analysis refuses to run until somebody decides it. Any
+ * fixture that submits and then analyses has to pass through that gate, and most of them do
+ * exactly that — so the step lives here rather than being written out five times.
+ *
+ * ## Why it finds its own approver
+ *
+ * Each spec names its people differently, and several have no variable for a Head at all. Asking
+ * the database who holds the role is both shorter and truer: it approves as somebody who really
+ * could, and it fails loudly if the fixture has nobody who can.
+ *
+ * It refuses to use the submitter even when they hold the role. `NoSelfApproval` is a platform
+ * control and would refuse it anyway — this way the failure says which fixture is short of an
+ * approver, rather than surfacing as a policy refusal four frames deep.
+ */
+export async function approveObjectiveReview(input: {
+  context: TestContext;
+  tenantId: string;
+  objectiveId: string;
+  /** Called with the chosen approver's id; the caller decides the request through its own service. */
+  decide: (approverUserId: string, approvalId: string) => Promise<unknown>;
+  notSubmittedBy?: string | undefined;
+}): Promise<void> {
+  const { request, approver } = await input.context.prisma.runAsPlatformOperation(async () => {
+    const pending = await input.context.prisma.client.approvalRequest.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        type: 'ObjectiveReview',
+        objectiveId: input.objectiveId,
+        status: 'Pending',
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, requestedByUserId: true },
+    });
+
+    if (pending === null) {
+      throw new Error(
+        'Submitting for review should have raised an ObjectiveReview request, and did not.',
+      );
+    }
+
+    const holders = await input.context.prisma.client.roleAssignment.findMany({
+      where: { tenantId: input.tenantId, roleKind: 'Head' },
+      select: { userId: true },
+    });
+
+    const excluded = input.notSubmittedBy ?? pending.requestedByUserId;
+    const chosen = holders.map((row) => row.userId).find((userId) => userId !== excluded);
+
+    if (chosen === undefined) {
+      throw new Error(
+        'This fixture has nobody holding Head who did not submit the objective, so its review ' +
+          'can never be approved. Give it a Head, or do not submit for review.',
+      );
+    }
+
+    return { request: pending, approver: chosen };
+  });
+
+  await input.decide(approver, request.id);
+}

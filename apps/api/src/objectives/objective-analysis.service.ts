@@ -31,6 +31,7 @@ import { AuditEventService } from '../audit/audit-event.service.js';
 import { AuthorizationService } from '../authorization/authorization.service.js';
 import type { ObjectiveAnalysisRun, ObjectiveWorkflowStep } from '../generated/prisma/client.js';
 import { ModelGateway } from '../model-gateway/model-gateway.js';
+import { ObjectiveReviewService } from './objective-review.service.js';
 import { OrganizationRepository } from '../persistence/organization.repository.js';
 import { PrismaService } from '../persistence/prisma.service.js';
 import type { TenantScope } from '../persistence/tenant-context.js';
@@ -254,6 +255,8 @@ export class ObjectiveAnalysisService {
     private readonly organization: OrganizationRepository,
     private readonly skillRouter: SkillRouterService,
     private readonly modelGateway: ModelGateway,
+    /// CR-04: whether a submitted version's Head has approved it yet.
+    private readonly reviews: ObjectiveReviewService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -341,6 +344,35 @@ export class ObjectiveAnalysisService {
           'This version has no workflow steps. The analysis decomposes the objective’s own ' +
             'Form 2 grid, so there is nothing to read.',
         );
+      }
+
+      /*
+       * CR-04: a version somebody submitted for review cannot be analysed until it is approved.
+       *
+       * The client's journey is that an employee fills the Objective in, their department's Head
+       * approves it, and only then does an administrator run this. Without the check the gate is
+       * decorative: `UnderReview -> AiAnalysis` is a permitted move, so whoever submitted the
+       * form could press Analyse the moment after submitting it and walk straight past the Head.
+       *
+       * Two things it deliberately does not do:
+       *
+       *   * **It does not gate a `Draft`.** An administrator writing their own objective has
+       *     submitted it to nobody, and there is no review to wait for. Asking them to raise a
+       *     request so that they can approve it themselves would be a ceremony, and
+       *     `NoSelfApproval` would refuse it anyway.
+       *   * **It does not exempt the administrator here.** Once a version *has* been submitted,
+       *     the decision belongs to whoever the request was addressed to. An administrator who
+       *     wants to bypass a Head can send the version back and work on the draft, which leaves
+       *     a record; quietly overriding a pending review would not.
+       */
+      if (target.status === 'UnderReview') {
+        const approved = await this.reviews.reviewApprovalOf(input.scope, target.id);
+        if (approved === null) {
+          throw new ConflictException(
+            'This objective is still waiting for its review. The department Head has to approve ' +
+              'it before the analysis can run — or send it back, which returns it to a draft.',
+          );
+        }
       }
 
       const alreadyRunning = await this.prisma.client.objectiveAnalysisRun.findFirst({

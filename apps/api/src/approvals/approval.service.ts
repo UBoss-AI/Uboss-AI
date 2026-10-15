@@ -14,6 +14,9 @@ import {
   APPROVAL_DECISION_LABELS,
   APPROVAL_DECISIONS,
   APPROVAL_REQUEST_TYPE_LABELS,
+  FOUR_EYES_APPROVAL_KIND,
+  ROLE_TEMPLATES,
+  type RoleKind,
   APPROVAL_REQUEST_TYPES,
   APPROVAL_TYPE_MODULE,
   approvalEscalationDue,
@@ -45,6 +48,7 @@ import {
 } from '../authorization/authorization.service.js';
 import { NotificationService } from '../notifications/notification.service.js';
 import { HumanTaskService } from '../tasks/human-task.service.js';
+import { ObjectiveReviewService } from '../objectives/objective-review.service.js';
 import { WorkReleaseService, type ReleasedTask } from '../tasks/work-release.service.js';
 import { OrganizationRepository } from '../persistence/organization.repository.js';
 import { PrismaService } from '../persistence/prisma.service.js';
@@ -196,6 +200,12 @@ export class ApprovalService {
     private readonly humanTasks: HumanTaskService,
     /** Turning a finished step into a startable one. Also one-way, for the same reason. */
     private readonly workRelease: WorkReleaseService,
+    /**
+     * CR-04: sending an Objective back when its Head refuses the review. One-way as well —
+     * `ObjectiveService` raises the request through this service, and the decision returns
+     * through a class that knows nothing about approvals, so the two never meet.
+     */
+    private readonly objectiveReview: ObjectiveReviewService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -682,6 +692,33 @@ export class ApprovalService {
           objectiveVersionId: request.objectiveVersionId,
           actorUserId: input.actorUserId,
           finishedNodeId: request.workflowNodeId,
+        });
+      }
+
+      /*
+       * CR-04: a Head refusing an objective's review sends it back to whoever wrote it.
+       *
+       * Only the refusals. An approval writes nothing, because the approved request **is** the
+       * fact that the review passed — the administrator's Run reads it back rather than trusting
+       * a column, the same way activating an agent version reads its `AgentActivation` request.
+       * Two records of one decision are two records free to disagree.
+       *
+       * `Reject` and `SendBack` both land here and both mean the author has it again. They are
+       * not the same thing to a reader — a rejection says no, a send-back says not yet — and the
+       * difference is kept where it belongs, in the decision record and in the note the Head had
+       * to write. What happens to the objective is the same either way: it cannot sit in a review
+       * queue nobody will act on.
+       */
+      if (
+        request.type === 'ObjectiveReview' &&
+        request.objectiveVersionId !== null &&
+        (input.decision === 'Reject' || input.decision === 'SendBack')
+      ) {
+        await this.objectiveReview.sendBackWithinTransaction({
+          tenantId: input.scope.tenantId,
+          objectiveVersionId: request.objectiveVersionId,
+          actorUserId: input.actorUserId,
+          reason: input.note,
         });
       }
 
@@ -1703,8 +1740,22 @@ export class ApprovalService {
        *
        * So every holder of the role is told, and the wording says it is addressed to the role
        * rather than to them — which is the distinction the original note was protecting.
+       *
+       * ## And then it said that, and only did it for one role
+       *
+       * `if (row.approverRoleKind !== 'CompanyAdmin') return;` — the paragraph above argues for
+       * every role and the line under it served one. Every other role-addressed request went on
+       * telling nobody, which CR-04 walked straight into: an objective submitted for review is
+       * addressed to `Head`, and the department Head would have been told nothing at all. The
+       * same defect the note describes, in the same place, for a different role.
+       *
+       * A four-eyes gate still tells nobody, and that is correct rather than an oversight: it is
+       * addressed to "somebody other than the people already involved", which is not a role and
+       * has no holders to look up.
        */
-      if (row.approverRoleKind !== 'CompanyAdmin') return;
+      if (row.approverRoleKind === null || row.approverRoleKind === FOUR_EYES_APPROVAL_KIND) {
+        return;
+      }
 
       /*
        * Read inside the tenant scope, not through `companyAdminUserIds`.
@@ -1720,37 +1771,56 @@ export class ApprovalService {
        * forgotten.
        */
       const assignments = await this.prisma.client.roleAssignment.findMany({
-        where: { tenantId: scope.tenantId, roleKind: 'CompanyAdmin' },
+        where: { tenantId: scope.tenantId, roleKind: row.approverRoleKind as RoleKind },
         select: { userId: true },
       });
-      const admins = [...new Set(assignments.map((entry) => entry.userId))];
+      const holders = [...new Set(assignments.map((entry) => entry.userId))];
 
-      await Promise.all(
-        admins.map((recipientUserId) =>
-          this.notifications.raise({
-            tenantId: scope.tenantId,
-            recipientUserId,
-            kind: 'ApprovalWaiting',
-            title: `Waiting on an administrator: ${row.title}`,
-            body:
-              `A ${APPROVAL_REQUEST_TYPE_LABELS[row.type as ApprovalRequestType] ?? row.type} ` +
-              'request is addressed to the Company Admin role. Any administrator can decide it.',
-            deepLink: `/approvals/${row.id}`,
-            resourceType: 'approval-request',
-            resourceId: row.id,
-            /*
-             * False, deliberately. It is not assigned to this person — it is addressed to a role
-             * they happen to hold, and `assignedToMeUnread` is the count of work that is theirs
-             * alone. Marking it true would put a role's queue into every admin's personal one.
-             */
-            isAssignedToRecipient: false,
-            // Per recipient, so two administrators each get told once and neither suppresses the
-            // other. Re-raising for the same request and person is still deduplicated.
-            dedupeKey: `approval-waiting:${row.id}:${recipientUserId}`,
-            ...(row.dueAt === null ? {} : { escalatesAt: row.dueAt }),
-          }),
-        ),
-      );
+      /*
+       * The role as a person reads it, not as the code spells it.
+       *
+       * `CompanyAdmin` in a notification title is the enum leaking onto a screen, which this
+       * product has had to fix elsewhere. The label is the word the role is called by.
+       */
+      const roleLabel = ROLE_TEMPLATES[row.approverRoleKind as Exclude<RoleKind, 'Custom'>]?.label;
+      const roleName = roleLabel ?? 'assigned';
+
+      /*
+       * One at a time, not `Promise.all`.
+       *
+       * Raising a notification appends to the tenant's audit chain, and the chain is a hash of
+       * the row before it with a unique `(chain_key, sequence)`. Two of them in flight together
+       * read the same previous row and try to write the same sequence, and the second one fails
+       * the constraint — which took the whole submission down with it.
+       *
+       * It was `Promise.all` before this and only ever ran for Company Admins, so a company with
+       * one administrator never reached it. Widening the fan-out to every role is what made two
+       * recipients ordinary, and the concurrency a latent bug rather than a theoretical one.
+       */
+      for (const recipientUserId of holders) {
+        await this.notifications.raise({
+          tenantId: scope.tenantId,
+          recipientUserId,
+          kind: 'ApprovalWaiting',
+          title: `Waiting on the ${roleName}: ${row.title}`,
+          body:
+            `A ${APPROVAL_REQUEST_TYPE_LABELS[row.type as ApprovalRequestType] ?? row.type} ` +
+            `request is addressed to the ${roleName} role. Anybody holding it can decide it.`,
+          deepLink: `/approvals/${row.id}`,
+          resourceType: 'approval-request',
+          resourceId: row.id,
+          /*
+           * False, deliberately. It is not assigned to this person — it is addressed to a role
+           * they happen to hold, and `assignedToMeUnread` is the count of work that is theirs
+           * alone. Marking it true would put a role's queue into every admin's personal one.
+           */
+          isAssignedToRecipient: false,
+          // Per recipient, so two holders each get told once and neither suppresses the other.
+          // Re-raising for the same request and person is still deduplicated.
+          dedupeKey: `approval-waiting:${row.id}:${recipientUserId}`,
+          ...(row.dueAt === null ? {} : { escalatesAt: row.dueAt }),
+        });
+      }
       return;
     }
 

@@ -1,3 +1,4 @@
+import { ObjectiveReviewService } from '../src/objectives/objective-review.service.js';
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 
@@ -198,6 +199,7 @@ describe('approval engine, delegation and four-eyes (e2e)', () => {
         SkillService,
         SkillRouterService,
         ObjectiveService,
+        ObjectiveReviewService,
         ObjectiveAnalysisService,
         WorkflowEditorService,
         AssignmentService,
@@ -583,6 +585,30 @@ describe('approval engine, delegation and four-eyes (e2e)', () => {
       actorUserId: managerUserId,
       objectiveId: created.id,
     });
+
+    /*
+     * CR-04 put a human gate at `UnderReview`, so the fixture has to pass through it.
+     *
+     * Submitting raises an `ObjectiveReview` request and the analysis refuses to run until it is
+     * decided. Decided by the Head, never by the submitter: `NoSelfApproval` is a platform
+     * control and would refuse that here exactly as it would in the product.
+     */
+    const review = await ctx.prisma.runAsPlatformOperation(() =>
+      ctx.prisma.client.approvalRequest.findFirst({
+        where: { tenantId, type: 'ObjectiveReview', objectiveId: created.id, status: 'Pending' },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      }),
+    );
+    assert.ok(review, 'submitting for review should have raised an ObjectiveReview request');
+    await approvals().decide({
+      scope: scope(),
+      actorUserId: headUserId,
+      approvalId: review.id,
+      decision: 'Approve',
+      note: 'Reviewed and approved for analysis.',
+    });
+
     await objectives().confirmExecutionTeam({
       scope: scope(),
       actorUserId: managerUserId,

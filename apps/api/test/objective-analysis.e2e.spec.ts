@@ -1,3 +1,7 @@
+import { ObjectiveReviewService } from '../src/objectives/objective-review.service.js';
+import { ApprovalService } from '../src/approvals/approval.service.js';
+import { PerformanceService } from '../src/performance/performance.service.js';
+import { HumanTaskService } from '../src/tasks/human-task.service.js';
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 
@@ -239,6 +243,10 @@ describe('objective AI analysis (e2e)', () => {
         SkillService,
         SkillRouterService,
         ObjectiveService,
+        ObjectiveReviewService,
+        ApprovalService,
+        PerformanceService,
+        HumanTaskService,
         ObjectiveAnalysisService,
         WorkflowEditorService,
         AssignmentService,
@@ -1486,6 +1494,96 @@ describe('objective AI analysis (e2e)', () => {
         }),
         /no such analysis run/i,
       );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // CR-04 — the administrator runs it *after* the Head has approved
+  // -------------------------------------------------------------------------
+
+  /*
+   * The client's journey: an employee fills the Objective in, their department's Head approves
+   * it, and only then does an administrator run this.
+   *
+   * Without a check here the gate is decorative. `UnderReview -> AiAnalysis` is a permitted
+   * move, so whoever submitted the form could press Analyse the moment afterwards and walk
+   * straight past the Head — which is what the product did until this.
+   */
+  describe('the review gate', () => {
+    const approvals = () => app.get(ApprovalService);
+
+    const submitForReview = async () => {
+      const objective = await draftObjective();
+      await objectives().submitForReview({
+        scope: scope(),
+        actorUserId: ownerUserId,
+        objectiveId: objective.id,
+      });
+      return objective;
+    };
+
+    const reviewOf = async (objectiveId: string) =>
+      ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.approvalRequest.findFirstOrThrow({
+          where: { tenantId, type: 'ObjectiveReview', objectiveId },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true },
+        }),
+      );
+
+    it('refuses to analyse a submitted objective nobody has decided yet', async () => {
+      const objective = await submitForReview();
+
+      await assert.rejects(
+        analysis().start({
+          scope: scope(),
+          actorUserId: ownerUserId,
+          objectiveId: objective.id,
+        }),
+        /waiting for its review/i,
+      );
+    });
+
+    it('runs once the Head has approved it', async () => {
+      const objective = await submitForReview();
+      const review = await reviewOf(objective.id);
+
+      // Decided by `workerId`, who also holds `Head` here: the submitter cannot decide their
+      // own, which is `NoSelfApproval` and not something this gate restates.
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: workerId,
+        approvalId: review.id,
+        decision: 'Approve',
+        note: 'Reviewed and approved for analysis.',
+      });
+
+      const run = await analysis().start({
+        scope: scope(),
+        actorUserId: ownerUserId,
+        objectiveId: objective.id,
+      });
+
+      assert.equal(run.status, 'Completed', run.failureReason ?? 'no failure reason recorded');
+    });
+
+    /*
+     * A draft nobody submitted is not waiting for anybody.
+     *
+     * An administrator writing their own objective has submitted it to nobody, and there is no
+     * review to wait for. Asking them to raise a request so that they can approve it themselves
+     * would be a ceremony, and `NoSelfApproval` would refuse it anyway.
+     */
+    it('still analyses a draft that was never submitted', async () => {
+      const objective = await draftObjective();
+
+      const run = await analysis().start({
+        scope: scope(),
+        actorUserId: ownerUserId,
+        objectiveId: objective.id,
+      });
+
+      assert.equal(run.status, 'Completed', run.failureReason ?? 'no failure reason recorded');
     });
   });
 });

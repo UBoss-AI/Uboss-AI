@@ -64,19 +64,37 @@ function acrossPlatform(actions: readonly Action[]): PermissionSet {
 /**
  * The roles a company may hand out.
  *
- * Two, by the client's decision: an administrator who defines the work and an employee who does
- * it. `Manager`, `Head`, `Approver` and `Auditor` are not offered any more — they existed to
- * carry approvals between those two, and approvals no longer sit between them.
+ * ## It was two, and it is three again
  *
- * The templates themselves stay. People already hold those roles, their permissions still have to
- * be read to answer "what may this person do", and their history has to keep meaning what it
- * said. What changes is that a new one cannot be granted. The platform console still sees the
- * whole catalogue, because it administers companies provisioned before this.
+ * CR-03 cut this to an administrator who defines the work and an employee who does it, retiring
+ * `Manager`, `Head`, `Approver` and `Auditor` on the reasoning that they *"existed to carry
+ * approvals between those two, and approvals no longer sit between them"*.
  *
- * A company needing something in between writes a custom role, which is the mechanism that
- * already exists and leaves an audit row behind it.
+ * **CR-04 (client, 15 Oct 2026) puts an approval back between them**, and `Head` with it. The
+ * journey the client described is: an employee fills an Objective in, their department's Head
+ * approves it or sends it back, and only then does an administrator run the analysis. That needs
+ * somebody between the two who is neither — so the role returns rather than every company
+ * writing the same custom one.
+ *
+ * `Head` and not a new role: its template already grants `objective:Approve` and
+ * `approvals:Approve` and already defaults to `Department` scope, which is exactly "the
+ * department's L1/Head" the client asked for. Inventing a second role meaning the same thing is
+ * how two roles end up disagreeing.
+ *
+ * `Manager`, `Approver` and `Auditor` stay retired. Nothing in CR-04 asks for them, and the
+ * narrower reversal is the one that can be justified.
+ *
+ * ## The templates of the retired three still stay
+ *
+ * People already hold those roles, their permissions still have to be read to answer "what may
+ * this person do", and their history has to keep meaning what it said. What a retirement changes
+ * is that a new one cannot be granted. The platform console still sees the whole catalogue,
+ * because it administers companies provisioned before this.
+ *
+ * A company needing something else writes a custom role, which is the mechanism that already
+ * exists and leaves an audit row behind it.
  */
-export const COMPANY_GRANTABLE_ROLES = ['CompanyAdmin', 'Employee'] as const;
+export const COMPANY_GRANTABLE_ROLES = ['CompanyAdmin', 'Head', 'Employee'] as const;
 
 /**
  * What a company's grant route accepts — the two roles above, plus `Custom`.

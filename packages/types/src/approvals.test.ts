@@ -653,19 +653,51 @@ describe('what a company may grant', () => {
    * `COMPANY_ASSIGNABLE_ROLE_KINDS` is what the grant route accepts, and it has to include
    * `Custom` or a company could write a role and never assign one.
    */
-  it('offers the administrator and the employee, and nothing that carried approvals', () => {
-    assert.deepEqual([...COMPANY_GRANTABLE_ROLES], ['CompanyAdmin', 'Employee']);
+  /*
+   * CR-04 (client, 15 Oct 2026) puts `Head` back, and only `Head`.
+   *
+   * CR-03 had cut this to two on the reasoning that the middle roles "existed to carry approvals
+   * between those two, and approvals no longer sit between them". The client has since described
+   * a journey where one does: an employee fills an Objective in, their department's Head approves
+   * it or sends it back, and only then does an administrator run the analysis.
+   *
+   * The other three stay retired — nothing in CR-04 asks for them — and the guard that matters is
+   * unchanged: whatever the catalogue offers, the grant route must accept exactly that and no
+   * more. A list that narrows while the route stays open is how a company ends up holding roles
+   * its own administrator was never shown.
+   */
+  it('offers the administrator, the department Head and the employee', () => {
+    assert.deepEqual([...COMPANY_GRANTABLE_ROLES], ['CompanyAdmin', 'Head', 'Employee']);
 
-    for (const retired of ['Manager', 'Head', 'Approver', 'Auditor'] as const) {
+    for (const retired of ['Manager', 'Approver', 'Auditor'] as const) {
       assert.ok(
         !(COMPANY_GRANTABLE_ROLES as readonly string[]).includes(retired),
-        `${retired} is still offered, and there is nothing between an admin and an employee`,
+        `${retired} is offered again, and CR-04 asked only for Head`,
       );
       assert.ok(
         !(COMPANY_ASSIGNABLE_ROLE_KINDS as readonly string[]).includes(retired),
         `${retired} can still be granted, so the list narrowed and the route did not`,
       );
     }
+
+    // And the one that came back has to be accepted by the route, or the catalogue offers a role
+    // that cannot be assigned — the same defect in the other direction.
+    assert.ok((COMPANY_ASSIGNABLE_ROLE_KINDS as readonly string[]).includes('Head'));
+  });
+
+  /*
+   * The Head is only worth bringing back if it can do the job it came back for.
+   *
+   * Asserted on the template rather than trusted: `objective:Approve` is what lets them decide
+   * the review, `approvals:Approve` is what lets them do it from the queue, and a `Department`
+   * default scope is what makes it *their* department's objectives and not the company's.
+   */
+  it('gives the Head what the objective review needs', () => {
+    const head = ROLE_TEMPLATES.Head;
+
+    assert.ok(head.permissions.objective?.includes('Approve'));
+    assert.ok(head.permissions.approvals?.includes('Approve'));
+    assert.equal(head.defaultScope, 'Department');
   });
 
   it('keeps Custom assignable, since a company writes its own roles', () => {

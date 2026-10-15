@@ -5,6 +5,7 @@ import { ObjectiveClosureController } from './objective-closure.controller.js';
 import { ObjectiveClosureService } from './objective-closure.service.js';
 import { ObjectiveController } from './objective.controller.js';
 import { ObjectiveAnalysisService } from './objective-analysis.service.js';
+import { ObjectiveReviewService } from './objective-review.service.js';
 import { ObjectiveService } from './objective.service.js';
 import { WorkflowEditorService } from './workflow-editor.service.js';
 
@@ -32,6 +33,7 @@ import { WorkflowEditorService } from './workflow-editor.service.js';
   providers: [
     ObjectiveService,
     ObjectiveAnalysisService,
+    ObjectiveReviewService,
     WorkflowEditorService,
     AssignmentService,
     ObjectiveClosureService,
@@ -39,6 +41,7 @@ import { WorkflowEditorService } from './workflow-editor.service.js';
   exports: [
     ObjectiveService,
     ObjectiveAnalysisService,
+    ObjectiveReviewService,
     WorkflowEditorService,
     AssignmentService,
     ObjectiveClosureService,

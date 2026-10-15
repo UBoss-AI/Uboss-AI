@@ -1,3 +1,7 @@
+import { ObjectiveReviewService } from '../src/objectives/objective-review.service.js';
+import { ApprovalService } from '../src/approvals/approval.service.js';
+import { PerformanceService } from '../src/performance/performance.service.js';
+import { HumanTaskService } from '../src/tasks/human-task.service.js';
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 
@@ -135,6 +139,10 @@ describe('objective builder — Form 2 (e2e)', () => {
         SecurityEventPublisher,
         AuthorizationService,
         ObjectiveService,
+        ObjectiveReviewService,
+        ApprovalService,
+        PerformanceService,
+        HumanTaskService,
         // Prompt 21 gave `ObjectiveController` an analysis service and a Model Gateway.
         // The real `MockModelGateway` is used rather than a stub — it is what ships.
         SkillService,
@@ -1728,6 +1736,157 @@ describe('objective builder — Form 2 (e2e)', () => {
       for (const event of events) {
         assert.equal(event.actorUserId, headId);
       }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // CR-04 — the review goes to somebody
+  // -------------------------------------------------------------------------
+
+  /*
+   * The defect this closes, in the client's own words: an employee fills an Objective in, submits
+   * it, and it goes to "the department L1/Head" for approval.
+   *
+   * It did not. `submitForReview` set a status and stopped — no queue entry, no notification,
+   * nobody told. The form had been submitted to a column in a table, and the only way a Head
+   * could find it was to open the objective already knowing it was there.
+   */
+  describe('submitting an objective for review', () => {
+    const approvals = () => app.get(ApprovalService);
+
+    /*
+     * Written by `headId` and approved by `managerId`, who are two different people.
+     *
+     * The gate only means anything when they are: `managerId` is the one holding the `Head` role
+     * in this tenant, and `headId` — despite the name, which is the *department's* head on the
+     * org chart rather than a role — is the author every other test here uses.
+     */
+    /*
+     * The submitter has to be employed somewhere, and that is not incidental.
+     *
+     * A Head's authority over a review is scoped by the **requester's** department —
+     * `departmentOfRequester` — not by the objective's. An author with no employment record has
+     * no department, so no department-scoped Head covers them and every review they submit is
+     * refused with "outside what your role covers". That is the product's rule and this suite
+     * had no employment records at all, so the fixture states one.
+     */
+    const employTheAuthor = async () => {
+      await ctx.prisma.runAsPlatformOperation(async () => {
+        const existing = await ctx.prisma.client.employmentRecord.findFirst({
+          where: { tenantId, userId: managerId },
+          select: { id: true },
+        });
+        if (existing !== null) return;
+        await ctx.prisma.client.employmentRecord.create({
+          data: {
+            tenantId,
+            userId: managerId,
+            departmentId: regulatoryId,
+            employeeId: 'EMP-REVIEW-1',
+            designation: 'Reg. Doc Specialist',
+            joinedOn: new Date('2026-01-01'),
+          },
+        });
+      });
+    };
+
+    const submitted = async () => {
+      await employTheAuthor();
+      const created = await createObjective({}, [step()], managerId);
+      await objectives().submitForReview({
+        scope: scope(),
+        actorUserId: managerId,
+        objectiveId: created.id,
+      });
+      return created;
+    };
+
+    const pendingReview = async (objectiveId: string) =>
+      ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.approvalRequest.findFirst({
+          where: { tenantId, type: 'ObjectiveReview', objectiveId },
+          orderBy: { createdAt: 'desc' },
+        }),
+      );
+
+    it('raises a review request addressed to the department Head', async () => {
+      const created = await submitted();
+      const review = await pendingReview(created.id);
+
+      assert.ok(review, 'submitting raised no approval request at all');
+      assert.equal(review.status, 'Pending');
+      assert.equal(review.requestedByUserId, managerId);
+      // A role and not a person: which human is the Head depends on who holds it today, and a
+      // user id captured at submission would still point at whoever held it that morning.
+      assert.equal(review.namedApproverUserId, null);
+      assert.equal(review.approverRoleKind, 'Head');
+      assert.equal(review.objectiveId, created.id);
+      assert.ok(review.objectiveVersionId, 'the request does not say which version it is about');
+    });
+
+    it('tells whoever holds Head that it is waiting on them', async () => {
+      const created = await submitted();
+      const review = await pendingReview(created.id);
+      assert.ok(review);
+
+      const told = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.notification.findMany({
+          where: { tenantId, kind: 'ApprovalWaiting', resourceId: review.id },
+          select: { recipientUserId: true, isAssignedToRecipient: true },
+        }),
+      );
+
+      assert.ok(
+        told.some((row) => row.recipientUserId === headId),
+        'a person holding Head was not told an objective is waiting for them',
+      );
+      // Addressed to the role, not assigned to them — so a role's queue does not land in one
+      // person's personal count.
+      assert.ok(told.every((row) => row.isAssignedToRecipient === false));
+    });
+
+    it('sends the objective back to its author when the Head refuses', async () => {
+      const created = await submitted();
+      const review = await pendingReview(created.id);
+      assert.ok(review);
+
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: headId,
+        approvalId: review.id,
+        decision: 'SendBack',
+        note: 'The expected final result does not say what "done" looks like.',
+      });
+
+      const after = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.objectiveVersion.findFirstOrThrow({
+          where: { tenantId, objectiveId: created.id },
+          orderBy: { versionNumber: 'desc' },
+        }),
+      );
+
+      assert.equal(after.status, 'Draft', 'a refused review left the objective in the queue');
+      assert.equal(after.sentBackByUserId, headId);
+      assert.match(after.sentBackReason ?? '', /what "done" looks like/);
+      assert.ok(after.sentBackAt);
+    });
+
+    it('refuses to let the author decide their own review', async () => {
+      const created = await submitted();
+      const review = await pendingReview(created.id);
+      assert.ok(review);
+
+      // `NoSelfApproval` is a platform control, and holding `objective:Approve` does not satisfy
+      // it. The point of routing the review to somebody is that it reaches somebody else.
+      await assert.rejects(() =>
+        approvals().decide({
+          scope: scope(),
+          actorUserId: managerId,
+          approvalId: review.id,
+          decision: 'Approve',
+          note: 'Looks fine to me.',
+        }),
+      );
     });
   });
 });

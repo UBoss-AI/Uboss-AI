@@ -134,7 +134,15 @@ export function AgentObjectiveList({
           <CardBody>
             <div className="uboss-spread" style={{ marginBottom: 10 }}>
               <div className="uboss-section-label" style={{ marginTop: 0 }}>
-                Objective context
+                {/*
+                  A custom agent has no objective, so it is not objective context.
+
+                  The heading stayed the same whatever was under it, and under a custom agent
+                  that was three dashes: an Objective of "— ·", a Department of "—" and an Owner
+                  of "—". A card headed "Objective context" showing nothing but dashes reads as
+                  data that failed to load rather than as a thing that has no objective.
+                */}
+                {open.items[0]?.context ? 'Objective context' : 'This agent'}
               </div>
               <Button size="sm" onClick={() => onOpenObjective(null)}>
                 <Icon name="back" size={16} />
@@ -147,21 +155,37 @@ export function AgentObjectiveList({
 
               These came from Objective Builder. Offering them here would mean the same fact has
               two screens that can change it, and the second one always wins by accident.
+
+              Drawn only when there is an objective behind them. A row whose only possible value
+              is a dash is not information, and three of them in a row is worse than none.
             */}
-            <div className="uboss-kv">
-              <span className="uboss-kv-key">Objective</span>
-              <span className="uboss-kv-value">
-                {open.code} · {open.name}
-              </span>
-            </div>
-            <div className="uboss-kv">
-              <span className="uboss-kv-key">Department</span>
-              <span className="uboss-kv-value">{open.department ?? '—'}</span>
-            </div>
-            <div className="uboss-kv">
-              <span className="uboss-kv-key">Owner</span>
-              <span className="uboss-kv-value">{open.owner ?? '—'}</span>
-            </div>
+            {open.items[0]?.context ? (
+              <>
+                <div className="uboss-kv">
+                  <span className="uboss-kv-key">Objective</span>
+                  <span className="uboss-kv-value">
+                    {open.code} · {open.name}
+                  </span>
+                </div>
+                {open.department === null ? null : (
+                  <div className="uboss-kv">
+                    <span className="uboss-kv-key">Department</span>
+                    <span className="uboss-kv-value">{open.department}</span>
+                  </div>
+                )}
+                {open.owner === null ? null : (
+                  <div className="uboss-kv">
+                    <span className="uboss-kv-key">Owner</span>
+                    <span className="uboss-kv-value">{open.owner}</span>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="uboss-kv">
+                <span className="uboss-kv-key">Name</span>
+                <span className="uboss-kv-value">{open.name}</span>
+              </div>
+            )}
             {open.items[0]?.context?.expectedOutcome === null ||
             open.items[0]?.context?.expectedOutcome === undefined ? null : (
               <div className="uboss-kv">

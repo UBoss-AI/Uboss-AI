@@ -1,3 +1,7 @@
+import { ObjectiveReviewService } from '../src/objectives/objective-review.service.js';
+import { ApprovalService } from '../src/approvals/approval.service.js';
+import { PerformanceService } from '../src/performance/performance.service.js';
+import { HumanTaskService } from '../src/tasks/human-task.service.js';
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 
@@ -128,6 +132,10 @@ describe('objective review routing and strict versioning (e2e)', () => {
         SecurityEventPublisher,
         AuthorizationService,
         ObjectiveService,
+        ObjectiveReviewService,
+        ApprovalService,
+        PerformanceService,
+        HumanTaskService,
         // Prompt 21 gave `ObjectiveController` an analysis service and a Model Gateway.
         // The real `MockModelGateway` is used rather than a stub — it is what ships.
         SkillService,
