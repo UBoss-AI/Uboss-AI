@@ -21,6 +21,7 @@ import {
   runIdempotencyKey,
   RUN_STATE_LABELS,
   TERMINAL_RUN_STATES,
+  TOOL_ACTION_CATEGORIES,
   type OverlapPolicy,
   type Retryability,
   type RunProgressEvent,
@@ -31,6 +32,7 @@ import {
 } from '@uboss/types';
 
 import { AuditEventService } from '../audit/audit-event.service.js';
+import { SkillRouterService } from '../skills/skill-router.service.js';
 import { BudgetRefusedError, ModelGateway } from '../model-gateway/model-gateway.js';
 import { PrismaService } from '../persistence/prisma.service.js';
 import { WorkReleaseService, type ReleasedTask } from '../tasks/work-release.service.js';
@@ -145,8 +147,120 @@ export class RunEngineService implements OnModuleInit {
      * has not wired fairness still runs work rather than refusing to start — an absent fairness
      * service means "no cap", which is the behaviour before this prompt.
      */
+    /**
+     * Which approved Skill stands behind a run that started without one.
+     *
+     * Optional for the same reason the fairness service is: a test may build the engine without
+     * it, and an engine that refuses to run work because it cannot *record* something would be
+     * the tail wagging the dog.
+     */
+    @Optional() private readonly skillRouter?: SkillRouterService | undefined,
     @Optional() private readonly fairness?: RunFairnessService | undefined,
   ) {}
+
+  /**
+   * Record which Skill this run turned out to be, for an agent that had none.
+   *
+   * ## Why this happens here and not in the builder
+   *
+   * The builder tries, and for a custom agent it almost always fails — every Skill in the library
+   * declares **all** of its inputs as required ("Bank statements", "cash positions"), and the
+   * router rejects a candidate whose every required input is unmet. An agent that has been named
+   * and described, and has not run, can supply none of them.
+   *
+   * A run can. `runtimeInputs` are the things this run was actually given, so this is the first
+   * moment the question "which approved capability is this" has an answer worth writing down.
+   * The client asked for exactly that: the employee chooses nothing, and the match happens when
+   * the work does.
+   *
+   * ## What it will not do
+   *
+   * **It does not change a Skill somebody already has.** An objective's analysis routed its
+   * agents against a real step, and a later run with a thinner context must not overwrite that.
+   *
+   * **It does not run unattended.** Routing is authorized as a person — `agents:Run` — and a
+   * scheduled run has nobody to be. Inventing an actor to satisfy a check is how an audit trail
+   * starts recording decisions nobody made, so a run nobody started records no match, and the
+   * next run a person starts records one.
+   *
+   * **It never fails the run.** This is bookkeeping about work that is already happening.
+   */
+  private async recordMatchedSkill(job: RunJob): Promise<void> {
+    if (this.skillRouter === undefined) return;
+
+    try {
+      const loaded = await this.prisma.runInTenantTransaction(
+        { tenantId: job.tenantId } as TenantScope,
+        async () => {
+          const run = await this.prisma.client.agentRun.findFirst({
+            where: { tenantId: job.tenantId, id: job.runId },
+            select: { startedByUserId: true, aiWorkAssignmentId: true, runtimeInputs: true },
+          });
+          if (run === null || run.startedByUserId === null || run.aiWorkAssignmentId === null) {
+            return null;
+          }
+
+          const assignment = await this.prisma.client.aiWorkAssignment.findFirst({
+            where: { tenantId: job.tenantId, id: run.aiWorkAssignmentId },
+            select: { id: true, title: true, setupPrefill: true },
+          });
+          if (assignment === null) return null;
+
+          const prefill = assignment.setupPrefill as { skillVersionIds?: string[] };
+          if ((prefill.skillVersionIds ?? []).length > 0) return null;
+
+          return { run, assignment, prefill };
+        },
+      );
+
+      if (loaded === null) return;
+
+      const answers = (loaded.run.runtimeInputs ?? {}) as Record<string, unknown>;
+      const outcome = await this.skillRouter.route({
+        scope: { tenantId: job.tenantId } as TenantScope,
+        actorUserId: loaded.run.startedByUserId as string,
+        context: {
+          aiTask: loaded.assignment.title,
+          // The names of what this run was handed. A Skill asking for "Bank statements" is met
+          // by a run that was given one, which is the whole reason this waits for a run.
+          availableInputs: Object.keys(answers),
+          allowedToolCategories: [...TOOL_ACTION_CATEGORIES],
+          requiresApproval: false,
+        },
+      });
+
+      const best = outcome.matches[0];
+      if (best === undefined) return;
+
+      await this.prisma.runInTenantTransaction(
+        { tenantId: job.tenantId } as TenantScope,
+        async () => {
+          await this.prisma.client.aiWorkAssignment.update({
+            where: { id: loaded.assignment.id },
+            data: {
+              setupPrefill: {
+                ...loaded.prefill,
+                skillVersionIds: [best.skillVersionId],
+              } as unknown as object,
+            },
+          });
+
+          await this.auditEvents.appendWithinCurrentScope(job.tenantId, {
+            action: 'agent.skill_matched_at_run',
+            resourceType: 'objective-assignment',
+            resourceId: loaded.assignment.id,
+            actorUserId: loaded.run.startedByUserId as string,
+            summary:
+              `"${best.skillName}" was matched to "${loaded.assignment.title}" from the work ` +
+              'this run was given. Nobody chose it from a list.',
+            metadata: { runId: job.runId, skillVersionId: best.skillVersionId },
+          });
+        },
+      );
+    } catch {
+      // Bookkeeping about a run that is already under way. It does not get to stop it.
+    }
+  }
 
   onModuleInit(): void {
     // **The correlation context is re-established around the job** — Prompt 39.
@@ -598,6 +712,10 @@ export class RunEngineService implements OnModuleInit {
     // old messages in the queue lacked it. One query at the moment of use is the honest cost.
     const attribution = await this.spendAttribution(job);
     const brief = await this.workBrief(job);
+
+    // Which approved Skill this turned out to be, for an agent nobody chose one for. Before the
+    // call rather than after, so a run that fails still records what it was trying to be.
+    await this.recordMatchedSkill(job);
 
     const response = await this.modelGateway.complete({
       // Section 18: "normal AI work".

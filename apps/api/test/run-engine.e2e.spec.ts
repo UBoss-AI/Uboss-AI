@@ -841,6 +841,98 @@ describe('run engine, queue and scheduler (e2e)', () => {
       });
     });
 
+    /*
+     * CR-04: an agent nobody chose a Skill for gets one from the work it is given.
+     *
+     * The builder tries at creation and usually cannot: every Skill in the library declares all
+     * of its inputs as required, and the router rejects a candidate whose every required input
+     * is unmet — which an agent that has never run can only be. A run supplies them, so the run
+     * is the first moment the question has an answer.
+     *
+     * Asserted on the assignment rather than on a log line: the match is a record of which
+     * approved capability this work turned out to be, and that record is what later screens and
+     * the readiness report read.
+     */
+    it('records which Skill the work turned out to be, for an agent that had none', async () => {
+      const { agentId, assignmentId } = await liveAgent();
+
+      await ctx.prisma.runAsPlatformOperation(async () => {
+        const row = await ctx.prisma.client.aiWorkAssignment.findFirstOrThrow({
+          where: { tenantId, id: assignmentId },
+          select: { setupPrefill: true },
+        });
+        // The state this exists for: a custom agent arrives with none.
+        await ctx.prisma.client.aiWorkAssignment.update({
+          where: { id: assignmentId },
+          data: {
+            setupPrefill: {
+              ...(row.setupPrefill as object),
+              skillVersionIds: [],
+            } as unknown as object,
+          },
+        });
+      });
+
+      await as(
+        agent()
+          .post(`/tenants/${tenantId}/agents/${agentId}/runs`)
+          .send({ runtimeInputs: { subject: 'March distributor records' } }),
+        workerUboss,
+      ).expect(201);
+
+      const after = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.aiWorkAssignment.findFirstOrThrow({
+          where: { tenantId, id: assignmentId },
+          select: { setupPrefill: true },
+        }),
+      );
+
+      const matched = (after.setupPrefill as { skillVersionIds?: string[] }).skillVersionIds ?? [];
+      assert.equal(matched.length, 1, 'the run recorded no Skill for an agent that had none');
+
+      // And it says so in the trail, naming the Skill rather than an id.
+      const events = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.auditEvent.findMany({
+          where: { tenantId, action: 'agent.skill_matched_at_run' },
+        }),
+      );
+      assert.ok(events.length > 0, 'the match was made and never recorded');
+      assert.match(String(events[0]?.summary), /Nobody chose it from a list/);
+    });
+
+    it('does not replace a Skill the analysis already chose', async () => {
+      // An objective's analysis routed against a real step. A later run with a thinner context
+      // must not overwrite that — it knows less, not more.
+      const { agentId, assignmentId } = await liveAgent();
+
+      const before = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.aiWorkAssignment.findFirstOrThrow({
+          where: { tenantId, id: assignmentId },
+          select: { setupPrefill: true },
+        }),
+      );
+      const chosen = (before.setupPrefill as { skillVersionIds?: string[] }).skillVersionIds ?? [];
+      assert.ok(chosen.length > 0, 'this fixture was expected to arrive with a Skill');
+
+      await as(
+        agent()
+          .post(`/tenants/${tenantId}/agents/${agentId}/runs`)
+          .send({ runtimeInputs: { subject: 'March distributor records' } }),
+        workerUboss,
+      ).expect(201);
+
+      const after = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.aiWorkAssignment.findFirstOrThrow({
+          where: { tenantId, id: assignmentId },
+          select: { setupPrefill: true },
+        }),
+      );
+      assert.deepEqual(
+        (after.setupPrefill as { skillVersionIds?: string[] }).skillVersionIds,
+        chosen,
+      );
+    });
+
     it('refuses an answer to a question nobody asked', async () => {
       /*
        * A key the server does not know means the screen and the server disagree about the

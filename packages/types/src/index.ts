@@ -1530,6 +1530,27 @@ export {
   type RunPreconditionKey,
 } from './operating-model.js';
 
+/**
+ * Access as a section and a level — CR-04's answer to "this screen is too much to read".
+ *
+ * Sits beside `operating-model.js` rather than replacing it: the capabilities there are still
+ * what the eight-way screen granted, and a company that already granted them keeps them. Both
+ * expand to the same grants in the same engine.
+ */
+export {
+  ACCESS_LEVELS,
+  ACCESS_LEVEL_LABELS,
+  SECTION_LEVELS,
+  accessLevelRank,
+  accessSections,
+  actionsForLevel,
+  levelFromActions,
+  levelGrantProblem,
+  sectionLevelLine,
+  sectionOffers,
+  type AccessLevel,
+} from './access-levels.js';
+
 export { EXCEPTION_KINDS_ADDED_SINCE, SOURCE_DOCUMENT_EXCEPTION_KINDS } from './executor.js';
 
 export {

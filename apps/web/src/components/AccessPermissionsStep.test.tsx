@@ -2,21 +2,21 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { CapabilityStep } from '../lib/api-client';
+import type { AccessLevelView } from '../lib/api-client';
 
 /**
- * The Access & Permissions step — Prompt 40A (CR-03) §1.
+ * Access & Permissions — a section, then a level. CR-04.
  *
  * What these tests hold is the *shape of the authority*, not the widget:
  *
- *   * a capability the administrator cannot grant is **shown, disabled and explained**, never
- *     hidden — a form that quietly omits an option looks complete and teaches nobody why;
- *   * every toggle is a request the **server** evaluates, and the screen renders the verdict;
- *   * the friendly words and the real grants come from the same response, so they cannot drift.
+ *   * a level the administrator cannot grant is **shown, disabled and explained**, never hidden —
+ *     a form that quietly omits an option looks complete and teaches nobody why;
+ *   * every box is a request the **server** evaluates, and the screen renders the verdict;
+ *   * a level includes the ones below it, so the boxes below a held level are held too, and
+ *     unticking the lowest is how "no access" is said.
  */
-const step = vi.fn();
-const grant = vi.fn();
-const revoke = vi.fn();
+const view = vi.fn();
+const set = vi.fn();
 
 vi.mock('../lib/api-client', () => ({
   ApiError: class ApiError extends Error {
@@ -29,178 +29,182 @@ vi.mock('../lib/api-client', () => ({
       super(message);
     }
   },
-  capabilitiesApi: {
-    step: (...args: unknown[]) => step(...args),
-    grant: (...args: unknown[]) => grant(...args),
-    revoke: (...args: unknown[]) => revoke(...args),
+  accessLevelsApi: {
+    view: (...args: unknown[]) => view(...args),
+    set: (...args: unknown[]) => set(...args),
   },
 }));
 
 const { AccessPermissionsStep } = await import('./AccessPermissionsStep');
+const { ApiError } = await import('../lib/api-client');
 
-const STEP: CapabilityStep = {
-  defaultForNewEmployee: ['OperateAssignedAgents', 'UseWorkspaceChat'],
-  delegationStance: 'You can grant only what you hold yourself, and never to yourself.',
-  tiers: [
-    { key: 'Build', label: 'Build', description: 'Designing the work.' },
-    { key: 'Operate', label: 'Operate', description: 'Doing the work.' },
-  ],
-  capabilities: [
-    {
-      key: 'BuildAgents',
-      label: 'Can build agents',
-      tier: 'Build',
-      help: 'Opens Agent Builder and lets them design an agent.',
-      held: false,
-      canGrant: true,
-      grants: { 'agent-builder': ['View', 'Create', 'EditDraft'] },
-    },
-    {
-      key: 'DefineObjectives',
-      label: 'Can define objectives',
-      tier: 'Build',
-      help: 'Opens Objective Optimization.',
-      held: false,
-      canGrant: false,
-      whyNot: 'You do not hold this yourself, so you cannot grant it.',
-      grants: { objective: ['View', 'Create'] },
-    },
-    {
-      key: 'OperateAssignedAgents',
-      label: 'Can operate assigned agents',
-      tier: 'Operate',
-      help: 'Runs the agents shared with them.',
-      held: true,
-      canGrant: true,
-      grants: { agents: ['View', 'Run'] },
-    },
-  ],
-};
+function response(overrides: Partial<AccessLevelView> = {}): AccessLevelView {
+  return {
+    sections: [
+      {
+        module: 'objective',
+        label: 'Objective Optimization',
+        levels: [
+          {
+            level: 'Viewer',
+            label: 'Viewer',
+            line: 'Can read objectives and their plans.',
+            held: true,
+            canGrant: true,
+            whyNot: null,
+          },
+          {
+            level: 'Creator',
+            label: 'Creator',
+            line: 'Can write and change objectives.',
+            held: true,
+            canGrant: true,
+            whyNot: null,
+          },
+          {
+            level: 'Approver',
+            label: 'Approver',
+            line: 'Can approve an objective or send it back.',
+            held: false,
+            canGrant: false,
+            whyNot:
+              'Approver on Objective Optimization is above the Creator access you hold there.',
+          },
+          {
+            level: 'Admin',
+            label: 'Admin',
+            line: 'Can run the analysis, publish and assign the work.',
+            held: false,
+            canGrant: false,
+            whyNot: 'Admin on Objective Optimization is above the Creator access you hold there.',
+          },
+        ],
+      },
+      {
+        module: 'dashboard',
+        label: 'Dashboard',
+        levels: [
+          {
+            level: 'Viewer',
+            label: 'Viewer',
+            line: 'Can open the dashboard.',
+            held: false,
+            canGrant: true,
+            whyNot: null,
+          },
+        ],
+      },
+    ],
+    ...overrides,
+  };
+}
 
-beforeEach(() => {
-  vi.clearAllMocks();
-  step.mockResolvedValue(STEP);
-  grant.mockResolvedValue({ granted: true });
-  revoke.mockResolvedValue({ revoked: true });
-});
+describe('Access & Permissions', () => {
+  beforeEach(() => {
+    view.mockReset();
+    set.mockReset();
+    view.mockResolvedValue(response());
+    set.mockResolvedValue(response());
+  });
 
-describe('AccessPermissionsStep', () => {
+  const open = async () => {
+    render(<AccessPermissionsStep tenantId="t-1" userId="u-1" subjectLabel="Aman Singh" />);
+    await screen.findByText('Objective Optimization');
+  };
+
   it('names who is being edited', async () => {
-    render(
-      <AccessPermissionsStep tenantId="tenant-1" userId="user-1" subjectLabel="Anita Prasad" />,
-    );
-
-    expect(await screen.findByText('For Anita Prasad')).toBeInTheDocument();
+    await open();
+    expect(screen.getByText('For Aman Singh')).toBeTruthy();
   });
 
-  it('states what a new employee starts with, from the server rather than a local guess', async () => {
-    render(
-      <AccessPermissionsStep tenantId="tenant-1" userId="user-1" subjectLabel="Anita Prasad" />,
-    );
+  /*
+   * The sections are the sidebar's, and the four names never change.
+   *
+   * An administrator comparing two colleagues should be comparing one vocabulary; a section that
+   * renamed its levels would make "Creator" mean something different two rows down.
+   */
+  it('lists sections, each with the levels that section offers', async () => {
+    await open();
 
-    expect(await screen.findByTestId('access-default')).toHaveTextContent(
-      '2 operations capabilities',
+    expect(screen.getByTestId('section-objective')).toBeTruthy();
+    expect(screen.getByTestId('section-dashboard')).toBeTruthy();
+
+    // Objective Optimization governs a decision, so it offers all four.
+    for (const level of ['Viewer', 'Creator', 'Approver', 'Admin']) {
+      expect(screen.getByTestId(`level-objective-${level}`)).toBeTruthy();
+    }
+
+    // The Dashboard is a screen you can see or cannot. Offering it an Approver would be a control
+    // that changes nothing, and somebody ticking it would believe they had granted something.
+    expect(screen.getByTestId('level-dashboard-Viewer')).toBeTruthy();
+    expect(screen.queryByTestId('level-dashboard-Approver')).toBeNull();
+  });
+
+  it('shows every level below the one held as held too', async () => {
+    await open();
+
+    // Creator, so Viewer as well — because a Creator who could not read would be nonsense.
+    expect((screen.getByTestId('level-objective-Viewer') as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByTestId('level-objective-Creator') as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByTestId('level-objective-Approver') as HTMLInputElement).checked).toBe(
+      false,
     );
   });
 
-  it('groups capabilities under the tiers the server declares', async () => {
-    render(
-      <AccessPermissionsStep tenantId="tenant-1" userId="user-1" subjectLabel="Anita Prasad" />,
-    );
+  it('shows a level it cannot grant, disabled, with the reason visible', async () => {
+    await open();
 
-    expect(await screen.findByTestId('access-tier-Build')).toBeInTheDocument();
-    expect(screen.getByTestId('access-tier-Operate')).toBeInTheDocument();
-  });
-
-  it('shows a capability it cannot grant, disabled, with the reason visible', async () => {
-    render(
-      <AccessPermissionsStep tenantId="tenant-1" userId="user-1" subjectLabel="Anita Prasad" />,
-    );
-
-    const box = await screen.findByTestId('capability-DefineObjectives');
-    expect(box).toBeDisabled();
-    // Hidden would be worse: the form would look complete while withholding an option.
-    expect(box).toBeVisible();
-    expect(screen.getByTestId('why-not-DefineObjectives')).toHaveTextContent(
-      'You do not hold this yourself',
+    const approver = screen.getByTestId('level-objective-Approver') as HTMLInputElement;
+    expect(approver.disabled).toBe(true);
+    // Shown, not hidden: the administrator learns why rather than wondering where it went.
+    expect(screen.getAllByText(/above the Creator access you hold there/).length).toBeGreaterThan(
+      0,
     );
   });
 
-  it('grants a capability through the server', async () => {
-    render(
-      <AccessPermissionsStep tenantId="tenant-1" userId="user-1" subjectLabel="Anita Prasad" />,
-    );
+  it('sets a section to the level that was ticked', async () => {
+    await open();
+    await userEvent.click(screen.getByTestId('level-dashboard-Viewer'));
 
-    await userEvent.click(await screen.findByTestId('capability-BuildAgents'));
-
-    await waitFor(() => expect(grant).toHaveBeenCalledWith('tenant-1', 'user-1', ['BuildAgents']));
+    await waitFor(() => expect(set).toHaveBeenCalledTimes(1));
+    expect(set).toHaveBeenCalledWith('t-1', 'u-1', 'dashboard', 'Viewer');
   });
 
-  it('revokes one that is already held', async () => {
-    render(
-      <AccessPermissionsStep tenantId="tenant-1" userId="user-1" subjectLabel="Anita Prasad" />,
-    );
+  /*
+   * Unticking the lowest held box is how "no access" is said.
+   *
+   * There is no other control for it, and a section somebody can only ever be added to is a
+   * screen that cannot undo its own mistake.
+   */
+  it('clears the section when the lowest held level is unticked', async () => {
+    await open();
+    await userEvent.click(screen.getByTestId('level-objective-Viewer'));
 
-    await userEvent.click(await screen.findByTestId('capability-OperateAssignedAgents'));
+    await waitFor(() => expect(set).toHaveBeenCalledTimes(1));
+    expect(set).toHaveBeenCalledWith('t-1', 'u-1', 'objective', null);
+  });
 
-    await waitFor(() =>
-      expect(revoke).toHaveBeenCalledWith('tenant-1', 'user-1', 'OperateAssignedAgents'),
-    );
+  /* Ticking a held level that is not the lowest steps them down to it, rather than clearing. */
+  it('steps a level down rather than clearing when a higher box is unticked', async () => {
+    await open();
+    await userEvent.click(screen.getByTestId('level-objective-Creator'));
+
+    await waitFor(() => expect(set).toHaveBeenCalledTimes(1));
+    expect(set).toHaveBeenCalledWith('t-1', 'u-1', 'objective', 'Creator');
   });
 
   it("renders the server's refusal verbatim rather than paraphrasing it", async () => {
-    const { ApiError } = await import('../lib/api-client');
-    grant.mockRejectedValue(
-      new ApiError('You cannot grant Can build agents above your own level.', 403),
+    set.mockRejectedValue(
+      new ApiError('Admin on Settings is above the Viewer access you hold there.', 409),
     );
+    await open();
 
-    render(
-      <AccessPermissionsStep tenantId="tenant-1" userId="user-1" subjectLabel="Anita Prasad" />,
+    await userEvent.click(screen.getByTestId('level-dashboard-Viewer'));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('Admin on Settings is above the Viewer access you hold there.'),
+      ).toBeTruthy(),
     );
-    await userEvent.click(await screen.findByTestId('capability-BuildAgents'));
-
-    expect(
-      await screen.findByText('You cannot grant Can build agents above your own level.'),
-    ).toBeInTheDocument();
-  });
-
-  it('discloses the real grants behind the friendly words', async () => {
-    render(
-      <AccessPermissionsStep tenantId="tenant-1" userId="user-1" subjectLabel="Anita Prasad" />,
-    );
-    await screen.findByTestId('capability-BuildAgents');
-
-    await userEvent.click(
-      screen.getAllByRole('button', { name: 'What this allows' })[0] as HTMLElement,
-    );
-
-    const grants = await screen.findByTestId('grants-BuildAgents');
-    expect(grants).toHaveTextContent('agent-builder');
-    expect(grants).toHaveTextContent('View, Create, EditDraft');
-  });
-
-  it('prints the delegation rule in the server’s own words', async () => {
-    render(
-      <AccessPermissionsStep tenantId="tenant-1" userId="user-1" subjectLabel="Anita Prasad" />,
-    );
-
-    expect(await screen.findByTestId('delegation-stance')).toHaveTextContent(
-      'You can grant only what you hold yourself',
-    );
-  });
-
-  it('says nothing at all when the step cannot be read', async () => {
-    const { ApiError } = await import('../lib/api-client');
-    step.mockRejectedValue(new ApiError('You may not manage access in this workspace.', 403));
-
-    render(
-      <AccessPermissionsStep tenantId="tenant-1" userId="user-1" subjectLabel="Anita Prasad" />,
-    );
-
-    // No half-rendered grid of unchecked boxes that would imply nothing is granted.
-    expect(
-      await screen.findByText('You may not manage access in this workspace.'),
-    ).toBeInTheDocument();
-    expect(screen.queryByTestId('capability-BuildAgents')).not.toBeInTheDocument();
   });
 });

@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import { Banner, Card, CardBody, StatusBadge } from '@uboss/ui';
+import { Banner, Card, CardBody } from '@uboss/ui';
 
 import {
   ApiError,
-  capabilitiesApi,
-  type CapabilityRow,
-  type CapabilityStep,
+  accessLevelsApi,
+  type AccessLevelSection,
+  type AccessLevelView,
 } from '../lib/api-client';
 
 export interface AccessPermissionsStepProps {
@@ -21,32 +21,40 @@ export interface AccessPermissionsStepProps {
 }
 
 /**
- * The Access & Permissions step — Prompt 40A (CR-03) §1.
+ * Access & Permissions — a section, then a level.
  *
- * ## A step, not a permission grid
+ * ## What this replaced, and why
  *
- * An administrator adding a colleague chooses *"can build agents"*, not `agent-builder:EditDraft`
- * on a grid of fourteen modules by fourteen actions. The capabilities, their grouping and their
- * help text all come from the server, so the friendly words and the real grants cannot drift apart.
+ * It showed eight capabilities under three headings — "Run work assigned to them", "Manage people
+ * and assigned work", "Design objectives and build agents" — each with a paragraph beneath it, and
+ * a further paragraph above the lot saying what a new employee starts with. The client's objection
+ * was that those are sentences rather than names, and that four lines of prose stood between an
+ * administrator and the first control. Somebody deciding whether a colleague may open Agent
+ * Builder should be able to find that out by reading two words.
  *
- * ## Three things this screen has to get right
+ * So the question is asked the way the client asked for it: the fourteen sections of the sidebar,
+ * and under each the levels it offers. The four level names never change — Viewer, Creator,
+ * Approver, Admin — because an administrator comparing two colleagues should be comparing one
+ * vocabulary. What changes is the single line underneath, which says what that level means *here*:
+ * a Creator writes objectives, and on Engine Agents a Creator runs them.
  *
- * **A new employee starts with the two Operate capabilities and nothing else.** That is CR-03's
- * central change made visible, and `defaultForNewEmployee` says so — the client does not re-derive
- * it.
+ * ## Why boxes and not a radio
  *
- * **A capability the administrator cannot grant is disabled with its reason shown, not hidden.**
- * Hiding it would make the form look complete while quietly withholding an option, and the
- * administrator would never learn why. `whyNot` is the server's own sentence.
+ * A level includes every level below it, so somebody with Approver also has Viewer and Creator —
+ * and a row of boxes showing all three ticked is the truth. A radio would show one and hide the
+ * rest. Ticking a box therefore sets the level *to* that box, and the server answers with what the
+ * person now holds; unticking the only remaining box is how "no access" is said.
  *
- * **The real grants are visible behind a disclosure.** Somebody who wants to know what "can build
- * agents" actually does should not have to ask an engineer.
+ * That also makes the incoherent grant unreachable. Four independent ticks would let a company
+ * grant Approve to somebody who may not open the thing they are approving, which is not a
+ * permission anybody means to hand out.
  *
  * ## It decides nothing
  *
- * Every checkbox is a request the server evaluates against the delegation rule — an administrator
- * cannot grant what they do not hold, or grant above their own level, and cannot change their own
- * access at all. This screen renders that verdict; it does not compute it.
+ * Every box is a request the server evaluates against the same delegation rule the capabilities
+ * screen used: an administrator cannot grant a section they hold nothing on, nor a level above
+ * their own. A level they may not hand out arrives disabled **and** carrying `whyNot`, because a
+ * greyed control with no reason is the thing that generates support tickets.
  */
 export function AccessPermissionsStep({
   tenantId,
@@ -54,15 +62,14 @@ export function AccessPermissionsStep({
   subjectLabel,
   onChanged,
 }: AccessPermissionsStepProps) {
-  const [step, setStep] = useState<CapabilityStep | null>(null);
+  const [view, setView] = useState<AccessLevelView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [showGrants, setShowGrants] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      setStep(await capabilitiesApi.step(tenantId, userId));
+      setView(await accessLevelsApi.view(tenantId, userId));
     } catch (caught) {
       setError(
         caught instanceof ApiError ? caught.message : 'Access and permissions could not be loaded.',
@@ -74,38 +81,38 @@ export function AccessPermissionsStep({
     void load();
   }, [load]);
 
-  const toggle = async (capability: CapabilityRow) => {
-    setBusy(capability.key);
+  /**
+   * Set a section to a level, or clear it.
+   *
+   * Ticking a box that is already held means "come down to this level" — which is how somebody
+   * steps an Approver back to Creator without first removing everything. Unticking the lowest
+   * held box clears the section.
+   */
+  const choose = async (section: AccessLevelSection, level: string, held: boolean) => {
+    const lowest = section.levels.find((entry) => entry.held)?.level;
+    const next = held && level === lowest ? null : level;
+
+    setBusy(`${section.module}:${level}`);
     setError(null);
     setNotice(null);
+
     try {
-      if (capability.held) {
-        await capabilitiesApi.revoke(tenantId, userId, capability.key);
-        setNotice(`Removed "${capability.label}".`);
-      } else {
-        await capabilitiesApi.grant(tenantId, userId, [capability.key]);
-        setNotice(`Granted "${capability.label}".`);
-      }
-      await load();
+      setView(await accessLevelsApi.set(tenantId, userId, section.module, next));
+      setNotice(
+        next === null ? `Removed access to ${section.label}.` : `${section.label} is now ${level}.`,
+      );
       onChanged?.();
     } catch (caught) {
-      // The server's refusal, verbatim. It names the capability and says why — paraphrasing it
-      // into "not allowed" would send an administrator to support.
+      // The server's refusal, word for word. It names the section and the level and says why;
+      // paraphrasing it would lose the only sentence that helps.
       setError(caught instanceof ApiError ? caught.message : 'That change could not be saved.');
-      /*
-       * Re-read, so the box goes back to what the server actually holds.
-       *
-       * The tick is a controlled input, but the click already set the DOM property and React does
-       * not overwrite it when the prop it renders from has not changed — which is exactly the case
-       * after a refusal. Without this the row keeps showing a capability that was never granted.
-       */
       await load();
     } finally {
       setBusy(null);
     }
   };
 
-  if (step === null) {
+  if (view === null) {
     return (
       <Card>
         <CardBody>{error ?? 'Loading access and permissions…'}</CardBody>
@@ -122,85 +129,40 @@ export function AccessPermissionsStep({
         {error !== null ? <Banner tone="danger">{error}</Banner> : null}
         {notice !== null ? <Banner tone="ok">{notice}</Banner> : null}
 
-        <p className="access-step-default" data-testid="access-default">
-          A new employee starts with{' '}
-          <strong>{step.defaultForNewEmployee.length} operations capabilities</strong> and nothing
-          else. Objective Optimization and Agent Builder are added deliberately, by somebody who
-          holds them.
-        </p>
+        <ul className="access-sections">
+          {view.sections.map((section) => (
+            <li
+              key={section.module}
+              className="access-section"
+              data-testid={`section-${section.module}`}
+            >
+              <h3 className="access-section-title">{section.label}</h3>
 
-        {step.tiers.map((tier) => {
-          const inTier = step.capabilities.filter((capability) => capability.tier === tier.key);
-          if (inTier.length === 0) return null;
-
-          return (
-            <section key={tier.key} className="access-tier" data-testid={`access-tier-${tier.key}`}>
-              <h3 className="access-tier-title">{tier.label}</h3>
-              <p className="access-tier-description">{tier.description}</p>
-
-              <ul className="access-capabilities">
-                {inTier.map((capability) => (
-                  <li key={capability.key} className="access-capability">
-                    <label className="access-capability-label">
-                      <input
-                        type="checkbox"
-                        checked={capability.held}
-                        // Disabled *and* explained. A greyed box with no reason is the thing that
-                        // generates support tickets.
-                        disabled={!capability.canGrant || busy !== null}
-                        onChange={() => void toggle(capability)}
-                        data-testid={`capability-${capability.key}`}
-                      />
-                      <span className="access-capability-name">{capability.label}</span>
-                      {capability.held ? <StatusBadge status="Granted" tone="success" /> : null}
-                    </label>
-
-                    <p className="access-capability-help">{capability.help}</p>
-
-                    {capability.canGrant ? null : (
-                      <p
-                        className="access-capability-why"
-                        data-testid={`why-not-${capability.key}`}
-                      >
-                        {capability.whyNot}
-                      </p>
+              <div className="access-section-levels">
+                {section.levels.map((option) => (
+                  <label
+                    key={option.level}
+                    className={`access-level${option.canGrant ? '' : ' access-level--refused'}`}
+                    title={option.whyNot ?? option.line}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={option.held}
+                      disabled={!option.canGrant || busy !== null}
+                      onChange={() => void choose(section, option.level, option.held)}
+                      data-testid={`level-${section.module}-${option.level}`}
+                    />
+                    <span className="access-level-name">{option.label}</span>
+                    <span className="access-level-line">{option.line}</span>
+                    {option.canGrant ? null : (
+                      <span className="access-level-why">{option.whyNot}</span>
                     )}
-
-                    <button
-                      type="button"
-                      className="access-capability-disclose"
-                      onClick={() =>
-                        setShowGrants(showGrants === capability.key ? null : capability.key)
-                      }
-                    >
-                      {showGrants === capability.key ? 'Hide' : 'What this allows'}
-                    </button>
-
-                    {showGrants === capability.key ? (
-                      <dl
-                        className="access-capability-grants"
-                        data-testid={`grants-${capability.key}`}
-                      >
-                        {Object.entries(capability.grants).map(([module, actions]) => (
-                          <div key={module}>
-                            <dt>{module}</dt>
-                            <dd>{actions.join(', ')}</dd>
-                          </div>
-                        ))}
-                      </dl>
-                    ) : null}
-                  </li>
+                  </label>
                 ))}
-              </ul>
-            </section>
-          );
-        })}
-
-        {/* The delegation rule in the server's own words, so an administrator who cannot grant
-            something understands the shape of the limit rather than only hitting it. */}
-        <p className="access-step-stance" data-testid="delegation-stance">
-          {step.delegationStance}
-        </p>
+              </div>
+            </li>
+          ))}
+        </ul>
       </CardBody>
     </Card>
   );

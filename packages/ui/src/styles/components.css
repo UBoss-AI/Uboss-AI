@@ -13296,3 +13296,91 @@ tr[data-drop-target='true'] td {
   margin: 0 2px;
   flex: none;
 }
+
+/* ---------- Access & Permissions: a section, then a level ---------- */
+
+/*
+ * Fourteen sections, each a short row rather than a card.
+ *
+ * The screen this replaced gave every option a bordered panel with a paragraph in it, which is
+ * why fourteen of them would not have fitted anywhere. A section here is a heading and a row of
+ * levels, so the whole company's access fits in a drawer somebody can scroll once.
+ */
+.access-sections {
+  display: grid;
+  gap: var(--uboss-space-3);
+  margin: var(--uboss-space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.access-section {
+  padding-bottom: var(--uboss-space-3);
+  border-bottom: 1px solid var(--uboss-border);
+}
+
+.access-section:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.access-section-title {
+  margin: 0 0 var(--uboss-space-2);
+  font-size: var(--uboss-font-size-sm);
+  font-weight: 700;
+  color: var(--uboss-text);
+}
+
+/*
+ * The levels side by side where there is room, and stacked where there is not.
+ *
+ * `auto-fit` with a floor rather than a fixed four columns: a section offering two levels should
+ * not draw two empty cells, and a narrow drawer should not cut the fourth off.
+ */
+.access-section-levels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--uboss-space-2);
+}
+
+.access-level {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px var(--uboss-space-2);
+  align-items: start;
+  padding: var(--uboss-space-2);
+  border: 1px solid var(--uboss-border);
+  border-radius: var(--uboss-radius-input);
+  background: var(--uboss-bg-2);
+  cursor: pointer;
+}
+
+.access-level input {
+  grid-row: 1 / span 2;
+  margin-top: 2px;
+}
+
+.access-level-name {
+  font-size: var(--uboss-font-size-sm);
+  font-weight: 600;
+}
+
+.access-level-line {
+  grid-column: 2;
+  font-size: var(--uboss-font-size-xs);
+  color: var(--uboss-text-3);
+  line-height: 1.4;
+}
+
+/* Shown and explained, never hidden — so it has to read as unavailable rather than as missing. */
+.access-level--refused {
+  opacity: 0.72;
+  cursor: not-allowed;
+}
+
+.access-level-why {
+  grid-column: 2;
+  margin-top: 2px;
+  font-size: var(--uboss-font-size-xs);
+  color: var(--uboss-warning);
+}

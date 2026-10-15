@@ -2,6 +2,7 @@ import { Global, Module } from '@nestjs/common';
 
 import { AccessRepository } from '../persistence/access.repository.js';
 import { AccessController } from './access.controller.js';
+import { AccessLevelService } from './access-level.service.js';
 import { CapabilityService } from './capability.service.js';
 import { BulkOperationService } from './bulk-operation.service.js';
 import { InvitationAccessService } from './invitation-access.service.js';
@@ -44,6 +45,7 @@ import { UserAccessService } from './user-access.service.js';
   controllers: [AccessController],
   providers: [
     AccessRepository,
+    AccessLevelService,
     CapabilityService,
     UserAccessService,
     InvitationAccessService,
@@ -52,6 +54,7 @@ import { UserAccessService } from './user-access.service.js';
   ],
   exports: [
     AccessRepository,
+    AccessLevelService,
     CapabilityService,
     UserAccessService,
     InvitationAccessService,

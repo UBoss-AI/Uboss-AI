@@ -9,6 +9,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
   Res,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -32,7 +33,11 @@ import {
 } from 'class-validator';
 
 import {
+  ACCESS_LEVELS,
   CAPABILITY_KEYS,
+  COMPANY_MODULES,
+  type AccessLevel,
+  type CompanyModuleKey,
   COMPANY_ASSIGNABLE_ROLE_KINDS,
   COMPANY_GRANTABLE_ROLES,
   SCOPE_KINDS,
@@ -49,6 +54,7 @@ import { TenantContextService } from '../tenancy/tenant-context.service.js';
 import { AuthorizationService } from '../authorization/authorization.service.js';
 import { CreateCustomRoleDto } from '../authorization/authorization.dto.js';
 import { RoleAdministrationService } from '../authorization/role-administration.service.js';
+import { AccessLevelService } from './access-level.service.js';
 import { CapabilityService } from './capability.service.js';
 import { HIERARCHY_COLUMNS, HierarchyWorkbook } from '../organization/hierarchy-workbook.js';
 import { BulkOperationService, MAX_BULK_ROWS } from './bulk-operation.service.js';
@@ -212,6 +218,19 @@ export class ValidateBulkDto {
  * validation pipe rather than a silent no-op inside the service. A capability that expanded to
  * nothing would look to an administrator exactly like one that worked.
  */
+/**
+ * Which level a section is being set to, or nothing at all.
+ *
+ * `level` is optional and its absence means "no access to this section" — the way somebody says
+ * it is by unticking the last box, and a route that could not express that would leave a person
+ * stuck at Viewer for ever.
+ */
+class SetAccessLevelDto {
+  @IsOptional()
+  @IsIn(ACCESS_LEVELS as readonly string[])
+  level?: AccessLevel;
+}
+
 class GrantCapabilitiesDto {
   @IsArray()
   @ArrayMinSize(1)
@@ -303,6 +322,8 @@ export class AccessController {
     private readonly offboardings: OffboardingService,
     private readonly bulk: BulkOperationService,
     private readonly capabilities: CapabilityService,
+    /// CR-04: access chosen a section at a time.
+    private readonly accessLevelService: AccessLevelService,
     private readonly roles: RoleAdministrationService,
     private readonly authorization: AuthorizationService,
     private readonly tenantContext: TenantContextService,
@@ -646,6 +667,49 @@ export class AccessController {
       actorUserId: this.currentUserId(),
       subjectUserId: userId,
       capabilities: body.capabilities,
+    });
+  }
+
+  /**
+   * Access a section at a time — CR-04.
+   *
+   * Beside the capability routes rather than replacing them: a company that already granted
+   * capabilities keeps them, and both expand to grants in the same engine. Which screen a company
+   * uses is a presentation question; what either one writes is the same kind of row.
+   */
+  @Get('levels/:userId')
+  @RequirePermission({ module: 'users', action: 'ManageAccess' })
+  async accessLevels(@Param('userId', new ParseUUIDPipe()) userId: string): Promise<unknown> {
+    return this.accessLevelService.view({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
+      subjectUserId: userId,
+    });
+  }
+
+  @Put('levels/:userId/:module')
+  @RequirePermission({ module: 'users', action: 'ManageAccess' })
+  async setAccessLevel(
+    @Param('userId', new ParseUUIDPipe()) userId: string,
+    @Param('module') module: string,
+    @Body() body: SetAccessLevelDto,
+  ): Promise<unknown> {
+    if (!(COMPANY_MODULES as readonly string[]).includes(module)) {
+      throw new BadRequestException(`There is no section called "${module}".`);
+    }
+
+    await this.accessLevelService.setLevel({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
+      subjectUserId: userId,
+      module: module as CompanyModuleKey,
+      level: body.level ?? null,
+    });
+
+    return this.accessLevelService.view({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
+      subjectUserId: userId,
     });
   }
 

@@ -6483,6 +6483,49 @@ export const capabilitiesApi = {
     ),
 };
 
+/** One section, and what this person may be given on it. */
+export interface AccessLevelOption {
+  level: string;
+  label: string;
+  line: string;
+  held: boolean;
+  canGrant: boolean;
+  whyNot: string | null;
+}
+
+export interface AccessLevelSection {
+  module: string;
+  label: string;
+  levels: AccessLevelOption[];
+}
+
+export interface AccessLevelView {
+  sections: AccessLevelSection[];
+}
+
+/**
+ * Access a section at a time — CR-04.
+ *
+ * `set` sends the level the person should end up at, not a tick. A level includes the ones below
+ * it, so what somebody has on a section is one answer; sending the answer rather than a stream
+ * of individual ticks is what stops two administrators leaving one person with Approver and no
+ * Viewer. `null` is "no access", which is how the last box is unticked.
+ */
+export const accessLevelsApi = {
+  view: (tenantId: string, userId: string) =>
+    call<AccessLevelView>(
+      `/tenants/${encodeURIComponent(tenantId)}/access/levels/${encodeURIComponent(userId)}`,
+    ),
+
+  set: (tenantId: string, userId: string, module: string, level: string | null) =>
+    call<AccessLevelView>(
+      `/tenants/${encodeURIComponent(tenantId)}/access/levels/${encodeURIComponent(
+        userId,
+      )}/${encodeURIComponent(module)}`,
+      { method: 'PUT', body: JSON.stringify(level === null ? {} : { level }) },
+    ),
+};
+
 export interface PhotoView {
   userId: string;
   storedFileId: string | null;
