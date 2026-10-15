@@ -575,6 +575,20 @@ export {
 } from './agents.js';
 export type { AgentTestRunView, AgentTestStatus } from './agents.js';
 
+// ---- Bringing in an agent built somewhere else (CR-05) ----
+//
+// One envelope every export format is read into, and the reader for the one format that needs no
+// model call. See the note at the top of `agent-sync.ts` for why there is no format to support.
+export {
+  AGENT_SYNC_FIELD_LABELS,
+  AGENT_SYNC_FIELDS,
+  agentSyncIsCreatable,
+  emptyAgentSyncEnvelope,
+  missingAgentSyncFields,
+  parseAgentMarkdown,
+} from './agent-sync.js';
+export type { AgentSyncEnvelope, AgentSyncField, AgentSyncStep } from './agent-sync.js';
+
 // ---- Engine Agent registry, memory mode and versioning (Prompt 25) ----
 //
 // The four memory modes are the Technical Architecture's, with its technical rule for each. Prompt

@@ -33,6 +33,9 @@ import {
   MAX_AGENT_TEST_INPUT,
   MIN_AGENT_TEST_INPUT,
   AGENT_RUN_TYPE_LABELS,
+  AGENT_SYNC_FIELDS,
+  JOB_METHOD_CELL_MAX,
+  JOB_METHOD_MAX_ROWS,
   type AgentRunType,
   type MissingDataBehaviour,
 } from '@uboss/types';
@@ -43,6 +46,7 @@ import { getActor } from '../request-context/request-context.js';
 import { TenantScoped } from '../tenancy/tenancy.decorators.js';
 import { TenantContextService } from '../tenancy/tenant-context.service.js';
 import { AgentBuilderService } from './agent-builder.service.js';
+import { AGENT_SYNC_MAX_BYTES, AgentSyncService } from './agent-sync.service.js';
 
 /**
  * The execution setup patch.
@@ -111,6 +115,86 @@ export class CreateStandaloneWorkDto {
   @IsString() @MinLength(10) @MaxLength(2000) purpose!: string;
 }
 
+/**
+ * A dropped agent file — CR-05.
+ *
+ * The file arrives as text rather than base64: every format an agent is exported in is text
+ * (Markdown, JSON, YAML, source), and base64 would double the body for nothing and hide from the
+ * validator what is actually being sent.
+ */
+export class ReadAgentFileDto {
+  /** Only for the message a person reads, and for the model's context. Never trusted as a type. */
+  @IsString() @MinLength(1) @MaxLength(260) filename!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(AGENT_SYNC_MAX_BYTES, {
+    // The validator answers first, so this is the sentence a person actually meets. The service
+    // keeps its own check for callers that are not this route.
+    message:
+      `That file is larger than ${Math.round(AGENT_SYNC_MAX_BYTES / 1024)} KB. An agent ` +
+      'definition is a page or two — this looks like something else.',
+  })
+  content!: string;
+}
+
+/** One step of a confirmed import. Mirrors `AgentSyncStep`, validated field by field. */
+export class AgentSyncStepDto {
+  @IsString() @MinLength(1) @MaxLength(JOB_METHOD_CELL_MAX) what!: string;
+  @IsOptional() @IsString() @MaxLength(JOB_METHOD_CELL_MAX) how?: string | null;
+  @IsOptional() @IsString() @MaxLength(JOB_METHOD_CELL_MAX) rule?: string | null;
+  @IsOptional() @IsString() @MaxLength(JOB_METHOD_CELL_MAX) output?: string | null;
+}
+
+/**
+ * The envelope a person confirmed on screen.
+ *
+ * What is created is this, not the file: a reading that was wrong and corrected by hand produces
+ * the right agent, and nothing is created from a reading nobody looked at. Every field is
+ * validated here as if it had been typed, because as far as the server is concerned it was.
+ */
+export class CreateSyncedAgentDto {
+  @IsString() @MinLength(3) @MaxLength(200) name!: string;
+  @IsString() @MinLength(10) @MaxLength(2000) purpose!: string;
+
+  @IsOptional() @IsIn([...AGENT_RUN_TYPES]) runType?: AgentRunType | null;
+  @IsOptional() @IsString() @MaxLength(300) triggerOrFrequency?: string | null;
+  @IsOptional() @IsString() @MaxLength(300) whereWorkHappens?: string | null;
+  @IsOptional() @IsString() @MaxLength(300) outputDestination?: string | null;
+  @IsOptional()
+  @IsIn([...MISSING_DATA_BEHAVIOURS])
+  missingDataBehaviour?: MissingDataBehaviour | null;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(JOB_METHOD_MAX_ROWS)
+  @ValidateNested({ each: true })
+  @Type(() => AgentSyncStepDto)
+  steps?: AgentSyncStepDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @MaxLength(200, { each: true })
+  tools?: string[];
+
+  /**
+   * Accepted and ignored.
+   *
+   * The screen sends back the envelope it was given, and the reader puts this on it — so
+   * rejecting it would mean the natural round-trip fails with "property notFound should not
+   * exist", which is a trap rather than a validation. It is ignored rather than trusted because
+   * what a file was missing is a property of what arrived, not a claim a caller gets to make:
+   * the service recomputes it.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(AGENT_SYNC_FIELDS.length)
+  @IsIn([...AGENT_SYNC_FIELDS], { each: true })
+  notFound?: string[];
+}
+
 export class ActivateAgentDto {
   /** Rename at activation where policy permits. Omit to take the suggested name. */
   @IsOptional() @IsString() @MinLength(1) @MaxLength(200) agentName?: string;
@@ -142,6 +226,8 @@ export class ActivateAgentDto {
 export class AgentBuilderController {
   constructor(
     private readonly builder: AgentBuilderService,
+    /// CR-05: bringing in an agent that was built somewhere else.
+    private readonly sync: AgentSyncService,
     private readonly tenantContext: TenantContextService,
   ) {}
 
@@ -210,6 +296,57 @@ export class AgentBuilderController {
       actorUserId: this.currentUserId(),
       name: body.name,
       purpose: body.purpose,
+    });
+  }
+
+  /**
+   * Read a dropped agent file. **Creates nothing** — CR-05.
+   *
+   * `agent-builder:Create`, not `View`: the only reason to read an agent file is to make an
+   * agent from it, and that is the grant the create below checks. Reading with a weaker grant
+   * would let somebody who may not build agents spend the company's tokens finding out what is
+   * in a file.
+   *
+   * **Declared above `:assignmentId`**, or the router reads "sync" as an assignment id and
+   * refuses it as a malformed UUID.
+   */
+  @Post('sync/read')
+  @RequirePermission({ module: 'agent-builder', action: 'Create' })
+  async readAgentFile(@Body() body: ReadAgentFileDto): Promise<unknown> {
+    return this.sync.read({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
+      filename: body.filename,
+      content: body.content,
+    });
+  }
+
+  /** Create the agent from the envelope a person confirmed on screen — CR-05. */
+  @Post('sync')
+  @RequirePermission({ module: 'agent-builder', action: 'Create' })
+  async createSyncedAgent(@Body() body: CreateSyncedAgentDto): Promise<unknown> {
+    return this.sync.create({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
+      envelope: {
+        name: body.name,
+        purpose: body.purpose,
+        runType: body.runType ?? null,
+        triggerOrFrequency: body.triggerOrFrequency ?? null,
+        whereWorkHappens: body.whereWorkHappens ?? null,
+        outputDestination: body.outputDestination ?? null,
+        missingDataBehaviour: body.missingDataBehaviour ?? null,
+        steps: (body.steps ?? []).map((step) => ({
+          what: step.what,
+          how: step.how ?? null,
+          rule: step.rule ?? null,
+          output: step.output ?? null,
+        })),
+        tools: body.tools ?? [],
+        // Computed from the envelope rather than carried from the browser: what is missing is a
+        // property of what arrived, not a claim the caller gets to make about it.
+        notFound: [],
+      },
     });
   }
 

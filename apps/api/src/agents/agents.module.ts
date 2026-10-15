@@ -6,6 +6,7 @@ import { AgentOperatorService } from './agent-operator.service.js';
 import { JobMethodController } from './job-method.controller.js';
 import { JobMethodService } from './job-method.service.js';
 import { AgentBuilderService } from './agent-builder.service.js';
+import { AgentSyncService } from './agent-sync.service.js';
 import { EngineAgentController } from './engine-agent.controller.js';
 import { EngineAgentService } from './engine-agent.service.js';
 import { FeedbackController } from './feedback.controller.js';
@@ -49,6 +50,7 @@ import { MemoryService } from './memory.service.js';
   ],
   providers: [
     AgentBuilderService,
+    AgentSyncService,
     AgentOperatorService,
     JobMethodService,
     EngineAgentService,

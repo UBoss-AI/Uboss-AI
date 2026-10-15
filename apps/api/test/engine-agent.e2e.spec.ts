@@ -20,6 +20,8 @@ import {
 
 import { AgentBuilderController } from '../src/agents/agent-builder.controller.js';
 import { AgentBuilderService } from '../src/agents/agent-builder.service.js';
+import { AgentSyncService } from '../src/agents/agent-sync.service.js';
+import { JobMethodService } from '../src/agents/job-method.service.js';
 import { EngineAgentController } from '../src/agents/engine-agent.controller.js';
 import { EngineAgentService } from '../src/agents/engine-agent.service.js';
 import { ApprovalService } from '../src/approvals/approval.service.js';
@@ -181,6 +183,8 @@ describe('engine agent registry and versioning (e2e)', () => {
         WorkflowEditorService,
         AssignmentService,
         AgentBuilderService,
+        JobMethodService,
+        AgentSyncService,
         EngineAgentService,
         // Prompt 28: activation approval is now a real record this service creates and
         // `activateVersion` verifies, so the registry cannot be tested without it.

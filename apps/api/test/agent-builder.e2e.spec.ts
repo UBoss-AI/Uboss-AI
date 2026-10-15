@@ -24,6 +24,8 @@ import {
 
 import { AgentBuilderController } from '../src/agents/agent-builder.controller.js';
 import { AgentBuilderService } from '../src/agents/agent-builder.service.js';
+import { AgentSyncService } from '../src/agents/agent-sync.service.js';
+import { JobMethodService } from '../src/agents/job-method.service.js';
 import { AuditEventService } from '../src/audit/audit-event.service.js';
 import { SecurityEventService } from '../src/audit/security-event.service.js';
 import { AUTH_CONFIG, loadAuthConfig } from '../src/auth/auth.config.js';
@@ -111,6 +113,7 @@ describe('agent builder and engine agent activation (e2e)', () => {
   let headUboss: string;
   let skillAdminId: string;
   let skillApproverId: string;
+  let skillApproverUboss: string;
   let platformOwnerId: string;
   let outsiderUboss: string;
   let otherTenantId: string;
@@ -179,6 +182,8 @@ describe('agent builder and engine agent activation (e2e)', () => {
         AssignmentService,
         WorkReleaseService,
         AgentBuilderService,
+        JobMethodService,
+        AgentSyncService,
         TenantContextService,
         Reflector,
         ReportingHierarchyResolver,
@@ -278,6 +283,7 @@ describe('agent builder and engine agent activation (e2e)', () => {
     headUboss = people.head.ubossUniqueId;
     skillAdminId = people.skillAdmin.id;
     skillApproverId = people.skillApprover.id;
+    skillApproverUboss = people.skillApprover.ubossUniqueId;
     outsiderUboss = people.outsider.ubossUniqueId;
     platformOwnerId = people.platform.id;
 
@@ -2153,6 +2159,241 @@ describe('agent builder and engine agent activation (e2e)', () => {
 
       assert.equal(again.reusedAgents.length, 0, 'rewritten work inherited an old agent');
       assert.equal(again.nodesAwaitingAgentSetup.length, 1, 'the rewritten step asks for setup');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 6. Bringing in an agent built somewhere else — CR-05
+  // -------------------------------------------------------------------------
+
+  /**
+   * Drag a file in, confirm what it says, and the agent exists.
+   *
+   * The client's words: *"kahin cloud me unke agent chal rahe hain… jo file milega agent ke liye,
+   * bas yahan drag and drop kare, uske baad agent ban ke taiyar ho jaye."*
+   *
+   * What is worth testing is not the parser — that has its own tests in `@uboss/types` — but the
+   * two promises this feature makes to a company: **reading a file creates nothing**, and an
+   * imported agent is subject to every rule an agent typed in by hand is subject to. An import
+   * that could skip the name clash, the Skill routing or the Head's approval would be a way of
+   * putting an unreviewed agent into a company by uploading a file.
+   */
+  describe('syncing an agent from a file', () => {
+    const ubossFile = [
+      '---',
+      'name: Imported invoice checker',
+      'purpose: Check vendor invoices against the purchase order and flag mismatches',
+      'trigger: Daily at 9am',
+      'runs_in: SAP',
+      'output_to: Finance shared drive',
+      'if_data_missing: Stop',
+      'tools: SAP, Email',
+      '---',
+      '',
+      '## Steps',
+      "1. Pull yesterday's invoices — read them from the SAP inbox",
+      '2. Match each against its purchase order',
+      '3. Flag every mismatch over 50,000',
+      '',
+    ].join('\n');
+
+    const read = (content: string, filename = 'agent.md', uboss = workerUboss) =>
+      as(
+        agent().post(`/tenants/${tenantId}/agent-builder/sync/read`).send({ filename, content }),
+        uboss,
+      );
+
+    it('reads UBoss’s own format with no model call, and creates nothing', async () => {
+      const before = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.aiWorkAssignment.count({ where: { tenantId } }),
+      );
+
+      const response = await read(ubossFile).expect(201);
+
+      assert.equal(response.body.usedModel, false, 'a file in our own format cost a model call');
+      assert.equal(response.body.envelope.name, 'Imported invoice checker');
+      assert.equal(response.body.envelope.runType, 'Scheduled');
+      assert.equal(response.body.envelope.whereWorkHappens, 'SAP');
+      assert.equal(response.body.envelope.steps.length, 3);
+
+      // The promise that matters: reading is reading. Not a draft, not a placeholder, nothing.
+      const after = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.aiWorkAssignment.count({ where: { tenantId } }),
+      );
+      assert.equal(after, before, 'reading a file created something');
+    });
+
+    it('creates the agent, its setup and its steps from what was confirmed', async () => {
+      const envelope = (await read(ubossFile).expect(201)).body.envelope;
+
+      const created = await as(
+        agent().post(`/tenants/${tenantId}/agent-builder/sync`).send(envelope),
+        workerUboss,
+      ).expect(201);
+
+      assert.equal(created.body.stepsSaved, 3);
+      const assignmentId = created.body.assignmentId as string;
+
+      const view = await builder().view({
+        scope: scope(),
+        actorUserId: workerUserId,
+        assignmentId,
+      });
+
+      assert.equal(view.prefill.suggestedAgentName, 'Imported invoice checker');
+      assert.equal(view.setup.runType, 'Scheduled');
+      assert.equal(view.setup.triggerOrFrequency, 'Daily at 9am');
+      assert.equal(view.setup.whereWorkHappens, 'SAP');
+      assert.equal(view.setup.outputDestination, 'Finance shared drive');
+      assert.equal(view.setup.missingDataBehaviour, 'Stop');
+
+      /*
+       * Nothing left to ask, so the agent is ready the moment it is dropped.
+       *
+       * This is the client's "agent ban ke taiyar ho jaye", and it holds only because the file
+       * answered the five setup questions. A missing Skill does not block a custom agent — the
+       * router matches one from the work when it runs — so with the setup complete there is no
+       * blocker left.
+       */
+      assert.deepEqual(view.missing, [], 'the file answered everything and it still asks');
+      assert.equal(view.readiness.readyToActivate, true);
+    });
+
+    it('puts the instruction in HOW, not inside the step', async () => {
+      // A reviewer reading a list of actions should not have to read a paragraph in the action
+      // column to find the action. This is where an imported prompt lands.
+      const envelope = (await read(ubossFile).expect(201)).body.envelope;
+      const created = await as(
+        agent().post(`/tenants/${tenantId}/agent-builder/sync`).send(envelope),
+        workerUboss,
+      ).expect(201);
+
+      const rows = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.jobMethodRow.findMany({
+          where: {
+            tenantId,
+            jobMethod: { aiWorkAssignmentId: created.body.assignmentId as string },
+          },
+          orderBy: { step: 'asc' },
+        }),
+      );
+
+      assert.equal(rows[0]?.whatExactWork, "Pull yesterday's invoices");
+      assert.equal(rows[0]?.howExactMethod, 'read them from the SAP inbox');
+      assert.equal(rows[0]?.toolSystemWorkplace, 'SAP');
+    });
+
+    it('obeys the Head’s approval like any other agent — CR-04', async () => {
+      /*
+       * The rule an import must never be a way around. The employee drops a file and finishes
+       * the setup; the agent still stops at `Ready` and still goes to a Head.
+       */
+      const envelope = (await read(ubossFile).expect(201)).body.envelope;
+      const created = await as(
+        agent().post(`/tenants/${tenantId}/agent-builder/sync`).send(envelope),
+        workerUboss,
+      ).expect(201);
+
+      const submitted = await builder().activate({
+        scope: scope(),
+        actorUserId: workerUserId,
+        assignmentId: created.body.assignmentId as string,
+      });
+
+      assert.equal(submitted.engineAgent?.status, 'Ready', 'an imported agent went live by itself');
+
+      const raised = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.approvalRequest.findMany({
+          where: { tenantId, type: 'AgentActivation' },
+        }),
+      );
+      assert.equal(raised.length, 1);
+      assert.equal(raised[0]?.approverRoleKind, 'Head');
+    });
+
+    it('refuses the same file dropped twice', async () => {
+      // The easy accident this feature introduces, and the same refusal `createStandalone` gives
+      // — an import does not get its own copy of the rules.
+      const envelope = (await read(ubossFile).expect(201)).body.envelope;
+      await as(
+        agent().post(`/tenants/${tenantId}/agent-builder/sync`).send(envelope),
+        workerUboss,
+      ).expect(201);
+
+      const again = await as(
+        agent().post(`/tenants/${tenantId}/agent-builder/sync`).send(envelope),
+        workerUboss,
+      ).expect(409);
+      assert.match(again.body.message as string, /already building an agent called/);
+    });
+
+    it('says which fields a thin file did not contain, and still creates on a name and a purpose', async () => {
+      /*
+       * A file that says almost nothing must not be refused: the fields it is missing are the
+       * ones the builder screen already knows how to ask for. What it must do is *say* what was
+       * missing, so a person can tell "the file was silent" from "it was read wrong".
+       */
+      const thin = ['---', 'name: Thin agent', 'purpose: Does one unspecified thing', '---'].join(
+        '\n',
+      );
+      const response = await read(thin, 'thin.md').expect(201);
+
+      assert.deepEqual(response.body.envelope.notFound, [
+        'runType',
+        'triggerOrFrequency',
+        'whereWorkHappens',
+        'outputDestination',
+        'missingDataBehaviour',
+        'steps',
+        'tools',
+      ]);
+
+      const created = await as(
+        agent().post(`/tenants/${tenantId}/agent-builder/sync`).send(response.body.envelope),
+        workerUboss,
+      ).expect(201);
+      assert.equal(created.body.stepsSaved, 0);
+
+      // And the builder goes on asking for exactly what the file did not say.
+      const view = await builder().view({
+        scope: scope(),
+        actorUserId: workerUserId,
+        assignmentId: created.body.assignmentId as string,
+      });
+      assert.ok(
+        view.missing.length > 0,
+        'a file that said nothing produced an agent asking nothing',
+      );
+    });
+
+    it('refuses an empty file, and one too large to be an agent', async () => {
+      await read('   ', 'empty.md').expect(400);
+
+      // Comfortably over the 64 KB ceiling and comfortably under the parser's, so what answers
+      // is the sentence this feature wrote rather than a bare 413 from the body parser.
+      const huge = 'x'.repeat(80 * 1024);
+      const refusal = await read(huge, 'dump.json').expect(400);
+      assert.match(refusal.body.message[0] ?? refusal.body.message, /larger than 64 KB/);
+    });
+
+    it('needs agent-builder:Create to read a file at all', async () => {
+      /*
+       * `Create` rather than `View`, because reading spends the company's tokens on a file that
+       * is not ours to read — and the only reason to read one is to make an agent, which needs
+       * this grant anyway.
+       */
+      await read(ubossFile, 'agent.md', skillApproverUboss).expect(403);
+    });
+
+    it('never creates an agent from a file nobody confirmed', async () => {
+      // There is no route that takes a file and makes an agent. The two steps are separate so a
+      // person is always between the reading and the record.
+      await as(
+        agent()
+          .post(`/tenants/${tenantId}/agent-builder/sync`)
+          .send({ filename: 'agent.md', content: ubossFile }),
+        workerUboss,
+      ).expect(400);
     });
   });
 });

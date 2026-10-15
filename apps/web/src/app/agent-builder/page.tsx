@@ -60,6 +60,7 @@ import {
   JobMethodGrid,
 } from '../../components/JobMethodGrid';
 import { JobMethodImportExport } from '../../components/JobMethodImportExport';
+import { SyncAgentDialog } from '../../components/SyncAgentDialog';
 import { WorkflowCanvas, type NodeActivity } from '../../components/WorkflowCanvas';
 import { useCompanyNavigation } from '../../lib/use-company-navigation';
 import { can, useMyAccess } from '../../lib/use-my-access';
@@ -292,6 +293,8 @@ function AgentBuilderInner() {
    * this has changed by moving where it is done. The server checks it again regardless.
    */
   const [creating, setCreating] = useState(false);
+  // CR-05: bringing in an agent that was built somewhere else.
+  const [syncing, setSyncing] = useState(false);
   const [newAgent, setNewAgent] = useState({ name: '', purpose: '' });
 
   /**
@@ -658,10 +661,23 @@ function AgentBuilderInner() {
               Drawn only for somebody who may build. Checked again by the server.
             */
             can(myAccess, 'agent-builder', 'Create') ? (
-              <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
-                <Icon name="plus" size={16} />
-                Create Custom Agent
-              </Button>
+              <>
+                {/*
+                  Beside Create, because it is the same act by another route — CR-05.
+
+                  A company arriving with agents already running somewhere else should not have
+                  to retype them. The file carries the definition; everything after the
+                  confirmation is the ordinary custom-agent path, approval included.
+                */}
+                <Button size="sm" onClick={() => setSyncing(true)}>
+                  <Icon name="file" size={16} />
+                  Sync an agent
+                </Button>
+                <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
+                  <Icon name="plus" size={16} />
+                  Create Custom Agent
+                </Button>
+              </>
             ) : null
           ) : selected.engineAgent !== null ? (
             <Button size="sm" onClick={() => setSelected(null)}>
@@ -803,6 +819,23 @@ function AgentBuilderInner() {
         confirmLabel={mayPutAgentsLive ? 'Publish' : 'Send'}
         cancelLabel="Not yet"
       />
+
+      {/*
+        An agent that already exists somewhere else — CR-05.
+
+        It lands on the same builder screen a hand-made agent lands on, by the same route, so
+        there is nothing afterwards that an imported agent does differently.
+      */}
+      {syncing && tenantId !== null ? (
+        <SyncAgentDialog
+          tenantId={tenantId}
+          onClose={() => setSyncing(false)}
+          onCreated={(assignmentId) => {
+            setSyncing(false);
+            router.replace(`/agent-builder?assignmentId=${encodeURIComponent(assignmentId)}`);
+          }}
+        />
+      ) : null}
 
       {/*
         An agent with nothing decided for it yet.

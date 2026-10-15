@@ -22,6 +22,8 @@ import {
 
 import { AgentBuilderController } from '../src/agents/agent-builder.controller.js';
 import { AgentBuilderService } from '../src/agents/agent-builder.service.js';
+import { AgentSyncService } from '../src/agents/agent-sync.service.js';
+import { JobMethodService } from '../src/agents/job-method.service.js';
 import { EngineAgentController } from '../src/agents/engine-agent.controller.js';
 import { AgentOperatorService } from '../src/agents/agent-operator.service.js';
 import { EngineAgentService } from '../src/agents/engine-agent.service.js';
@@ -204,6 +206,8 @@ describe('approval engine, delegation and four-eyes (e2e)', () => {
         WorkflowEditorService,
         AssignmentService,
         AgentBuilderService,
+        JobMethodService,
+        AgentSyncService,
         // Prompt 40A (CR-03): the run route consults an operator share before deciding a
         // person cannot reach an agent, so this is now part of its graph.
         AgentOperatorService,

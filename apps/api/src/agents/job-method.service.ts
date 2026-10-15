@@ -222,15 +222,32 @@ export class JobMethodService {
     // Renumbered on the way in, so a step number is always the row's place in the method. Saving a
     // grid somebody reordered must not leave the numbers describing the order it used to be in.
     const renumbered = input.rows.map((row, index) => ({ ...row, step: index + 1 }));
-    await this.mergeRows(input.scope, jobMethod.id, renumbered);
 
-    await this.audit.appendWithinCurrentScope(input.scope.tenantId, {
-      action: 'agent.job_method_edited',
-      resourceType: 'ai-work-assignment',
-      resourceId: input.aiWorkAssignmentId,
-      actorUserId: input.actorUserId,
-      summary: `Saved ${renumbered.length} step${renumbered.length === 1 ? '' : 's'} of the job method.`,
-      metadata: { steps: renumbered.length },
+    /*
+     * The rows and the entry that records them, in one transaction.
+     *
+     * `appendWithinCurrentScope` writes `audit_events`, which carries a row-level security policy
+     * keyed on `app.current_tenant_id` — a setting that exists only inside a tenant transaction.
+     * This call sat outside one, after `mergeRows` had opened and closed its own, so every save
+     * of a job method failed with *"new row violates row-level security policy"* and answered
+     * 500. The grid is saved by a route the builder screen uses, and nothing exercised it.
+     *
+     * Nesting is what makes this safe: `runInTenantTransaction` joins the open transaction when
+     * the tenant matches, so `mergeRows` runs in this one rather than starting a second. The
+     * steps and their audit entry now commit together, which is also the honest behaviour — a
+     * trail that records a save the database rolled back is worse than no trail.
+     */
+    await this.prisma.runInTenantTransaction(input.scope, async () => {
+      await this.mergeRows(input.scope, jobMethod.id, renumbered);
+
+      await this.audit.appendWithinCurrentScope(input.scope.tenantId, {
+        action: 'agent.job_method_edited',
+        resourceType: 'ai-work-assignment',
+        resourceId: input.aiWorkAssignmentId,
+        actorUserId: input.actorUserId,
+        summary: `Saved ${renumbered.length} step${renumbered.length === 1 ? '' : 's'} of the job method.`,
+        metadata: { steps: renumbered.length },
+      });
     });
 
     return {

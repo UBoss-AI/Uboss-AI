@@ -7,6 +7,7 @@
  */
 
 import type {
+  AgentSyncEnvelope,
   ReportChart,
   Form2FieldDefinition,
   Form2Objective,
@@ -4483,6 +4484,26 @@ export const agentBuilderApi = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+
+  /**
+   * Read a dropped agent file — CR-05. **Creates nothing.**
+   *
+   * Sent as text, not base64: every format an agent is exported in is text, and base64 would
+   * double the body to carry it. `usedModel` comes back because it changes what the reader
+   * should trust — a file in UBoss's own format was parsed exactly, anything else was read.
+   */
+  readAgentFile: (tenantId: string, body: { filename: string; content: string }) =>
+    call<{ envelope: AgentSyncEnvelope; usedModel: boolean; note: string }>(
+      `/tenants/${encodeURIComponent(tenantId)}/agent-builder/sync/read`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+
+  /** Create the agent from the envelope a person confirmed on screen — CR-05. */
+  createSyncedAgent: (tenantId: string, envelope: AgentSyncEnvelope) =>
+    call<{ assignmentId: string; stepsSaved: number }>(
+      `/tenants/${encodeURIComponent(tenantId)}/agent-builder/sync`,
+      { method: 'POST', body: JSON.stringify(envelope) },
+    ),
 
   /**
    * Add or replace the Skills attached to this work.

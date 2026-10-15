@@ -3204,6 +3204,57 @@ textarea.uboss-input,
 }
 
 /*
+  Where a file is dropped — CR-05.
+
+  A button rather than a bare div: drag and drop is what most people will do, but a target that
+  only accepts a drag cannot be reached from a keyboard and loses whoever clicks it expecting a
+  file chooser. Both open the same one.
+
+  The dashed border is the whole affordance. It is the one place in this product where a dashed
+  edge means something — "put a thing here" — so it is not reused for emphasis anywhere else.
+*/
+.uboss-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--uboss-space-2);
+  width: 100%;
+  padding: var(--uboss-space-6) var(--uboss-space-4);
+  border: 2px dashed var(--uboss-border);
+  border-radius: var(--uboss-radius-card);
+  background: var(--uboss-bg-2);
+  color: var(--uboss-text);
+  font-size: var(--uboss-font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color var(--uboss-motion-small) var(--uboss-ease-standard),
+    background var(--uboss-motion-small) var(--uboss-ease-standard);
+}
+
+.uboss-dropzone:hover:not(:disabled),
+.uboss-dropzone.is-over {
+  border-color: var(--uboss-info);
+  background: var(--uboss-info-050);
+}
+
+.uboss-dropzone:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+/* The procedure a file was read as — a list to check, not a grid to edit. */
+.uboss-sync-steps {
+  margin: 0;
+  padding-inline-start: var(--uboss-space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--uboss-space-1);
+  font-size: var(--uboss-font-size-sm);
+}
+
+/*
   The sentence, when a banner also carries a control.
 
   The banner is already a flex row, so an action placed beside the text sits where it should the

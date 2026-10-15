@@ -246,6 +246,26 @@ export class AgentBuilderService {
         );
       }
 
+      /*
+       * And against the ones still being built, which the check above cannot see.
+       *
+       * An agent exists as a row only once it is activated, so two people — or one person
+       * dropping the same file twice, which is the easy accident CR-05 introduces — could both
+       * set up "Invoice checker" and find out only when the second tried to go live, with the
+       * whole setup already done. The comment above says why that is the wrong moment to learn
+       * it; this is the other half of the same argument.
+       */
+      const beingBuilt = await this.prisma.client.aiWorkAssignment.findFirst({
+        where: { tenantId: input.scope.tenantId, title: name, engineAgentId: null },
+      });
+      if (beingBuilt) {
+        throw new ConflictException(
+          `Somebody is already building an agent called "${name}". Open that one and finish it, ` +
+            'or choose another name — two half-built agents with one name become two agents ' +
+            'with one name.',
+        );
+      }
+
       const prefill: AgentSetupPrefill = {
         suggestedAgentName: name,
         // No objective, and the view says so rather than inventing a code. The list falls back to
