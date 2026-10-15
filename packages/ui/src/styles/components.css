@@ -437,6 +437,62 @@
   font-weight: 600;
 }
 
+/*
+ * The heading as a control, once it could fold its own section away.
+ *
+ * It was a `div`, so it inherits none of a button's chrome and has to give it back: a button
+ * brings its own background, border and alignment, and left alone the heading would shift a few
+ * pixels and change colour the moment it became pressable. Everything here is the `div` it was,
+ * stated again.
+ *
+ * Full width so the whole line is the target — a 60px word and a 14px chevron are two small
+ * targets where the row is one obvious one.
+ */
+.uboss-nav-group--toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: calc(100% - 20px);
+  padding: 0;
+  font: inherit;
+  font-size: var(--uboss-font-size-xs);
+  letter-spacing: var(--uboss-tracking-caps);
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--uboss-navy-ink-2);
+  background: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.uboss-nav-group--toggle:hover {
+  color: var(--uboss-sidebar-text);
+}
+
+/*
+ * The chevron points right when shut and down when open.
+ *
+ * One icon turned rather than two drawn: the set carries a single disclosure chevron and says in
+ * its own note that callers rotate it. `--uboss-motion-small` is the token for a selection or a
+ * row changing, which is the size of this.
+ */
+.uboss-nav-group-chevron {
+  display: inline-flex;
+  transition: transform var(--uboss-motion-small) ease;
+}
+
+.uboss-nav-group-chevron--open {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .uboss-nav-group-chevron {
+    transition: none;
+  }
+}
+
 .uboss-nav-item {
   position: relative;
   display: flex;

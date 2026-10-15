@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'motion/react';
-import type { MouseEvent } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 
 import { cn } from '../lib/class-names';
 import { transition } from '../motion/motion';
@@ -74,6 +74,28 @@ export interface SidebarProps {
  * permitted modules, and every route is separately guarded. Hiding an item is never the
  * access control.
  */
+/**
+ * Which groups the reader has folded away.
+ *
+ * Remembered per browser, because it is a preference about this person's own sidebar and nothing
+ * else reads it. Wrapped in try/catch and defaulted to open: storage can be blocked or cleared,
+ * and a sidebar that throws on load is a worse outcome than one that forgets.
+ */
+const FOLDED_KEY = 'uboss.sidebar.folded';
+
+function readFolded(): string[] {
+  try {
+    const raw = globalThis.localStorage?.getItem(FOLDED_KEY);
+    if (raw === null || raw === undefined) return [];
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((entry): entry is string => typeof entry === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 export function Sidebar({
   brand,
   brandSub,
@@ -89,6 +111,33 @@ export function Sidebar({
   open = false,
   className,
 }: SidebarProps) {
+  /*
+   * Starts empty rather than reading storage, and fills in after mount.
+   *
+   * The server renders this too, and it has no localStorage — so reading it in the initial state
+   * would make the server's markup and the browser's first render disagree, which React reports
+   * as a hydration error and resolves by throwing the server's work away.
+   */
+  const [folded, setFolded] = useState<readonly string[]>([]);
+
+  useEffect(() => {
+    setFolded(readFolded());
+  }, []);
+
+  const toggleGroup = (group: string) => {
+    setFolded((current) => {
+      const next = current.includes(group)
+        ? current.filter((entry) => entry !== group)
+        : [...current, group];
+      try {
+        globalThis.localStorage?.setItem(FOLDED_KEY, JSON.stringify(next));
+      } catch {
+        // A preference that cannot be saved is still a preference for this session.
+      }
+      return next;
+    });
+  };
+
   return (
     // A <nav> landmark, not <aside>: this is the primary navigation, so it must expose the
     // navigation role to assistive technology rather than "complementary".
@@ -118,28 +167,71 @@ export function Sidebar({
       </div>
 
       <div className="uboss-side-scroll">
-        {groups.map((group) => (
-          <div key={group.group}>
-            {/*
-              A group of one is not a group.
+        {groups.map((group) => {
+          /*
+            A group of one is not a group.
 
-              The sidebar is built from what each person may actually see, so a group often
-              collapses to a single item — and an Employee, who may see one thing under
-              Operations, was shown the heading "OPERATIONS" with "To-do List" underneath it: two
-              names, one on top of the other, for one place. It reads as a category that failed to
-              load the rest of itself.
+            The sidebar is built from what each person may actually see, so a group often
+            collapses to a single item — and an Employee, who may see one thing under
+            Operations, was shown the heading "OPERATIONS" with "To-do List" underneath it: two
+            names, one on top of the other, for one place. It reads as a category that failed to
+            load the rest of itself.
 
-              Hidden by count rather than by naming the groups, because which groups collapse
-              depends entirely on the reader's grants. The heading comes back by itself the moment
-              a second item does.
-            */}
-            {group.items.length > 1 ? <div className="uboss-nav-group">{group.group}</div> : null}
-            {group.items.map((item) => {
-              const active = item.key === activeKey;
+            Hidden by count rather than by naming the groups, because which groups collapse
+            depends entirely on the reader's grants. The heading comes back by itself the moment
+            a second item does.
+          */
+          const hasHeading = group.items.length > 1;
 
-              const inner = (
-                <>
+          /*
+            Folded away, unless the reader is standing in it.
+
+            A heading that can hide its own contents can hide the page somebody is looking at, and
+            the sidebar would then have no mark anywhere saying where they are. The group holding
+            the active item always draws, whatever the stored preference says — the preference is
+            not lost, it reapplies the moment they navigate away.
+
+            Only while the rail is open: collapsed to 56px there are no headings to press.
+          */
+          const holdsActive = group.items.some((item) => item.key === activeKey);
+          const shut = hasHeading && !collapsed && folded.includes(group.group) && !holdsActive;
+          const bodyId = `uboss-nav-group-${group.group.replace(/\s+/g, '-').toLowerCase()}`;
+
+          return (
+            <div key={group.group}>
+              {hasHeading ? (
+                <button
+                  type="button"
+                  className="uboss-nav-group uboss-nav-group--toggle"
+                  onClick={() => toggleGroup(group.group)}
+                  aria-expanded={!shut}
+                  aria-controls={bodyId}
+                >
+                  <span>{group.group}</span>
                   {/*
+                    One chevron, turned. The set carries it pointing right and says so: a section
+                    that opens and shuts needs a disclosure mark, not the four-corner arrows that
+                    mean "fill the window", and two icons for one rotation would be two things to
+                    keep in step.
+                  */}
+                  <span
+                    className={cn(
+                      'uboss-nav-group-chevron',
+                      !shut && 'uboss-nav-group-chevron--open',
+                    )}
+                    aria-hidden="true"
+                  >
+                    <Icon name="chevron" size={14} />
+                  </span>
+                </button>
+              ) : null}
+              <div id={bodyId} hidden={shut}>
+                {group.items.map((item) => {
+                  const active = item.key === activeKey;
+
+                  const inner = (
+                    <>
+                      {/*
                     The selected state, as one element that moves between items rather than one
                     that switches off here and on there. `layoutId` is what makes the highlight
                     travel: Motion measures where it was, where it is now, and animates between
@@ -149,64 +241,66 @@ export function Sidebar({
                     It sits behind the label and is `aria-hidden` — the fact that carries meaning
                     is `aria-current="page"` on the item, which is unaffected by any of this.
                   */}
-                  {active ? (
-                    <motion.span
-                      layoutId="uboss-nav-selected"
-                      className="uboss-nav-indicator"
-                      aria-hidden="true"
-                      transition={transition('panel', 'standard')}
-                    />
-                  ) : null}
-                  <span className="uboss-nav-icon">
-                    <Icon name={item.icon} size={18} />
-                  </span>
-                  <span className="uboss-nav-label">{item.label}</span>
-                  {item.badge !== undefined && item.badge > 0 ? (
-                    <span className="uboss-nav-badge">
-                      {item.badge}
-                      <span className="uboss-sr-only"> pending</span>
-                    </span>
-                  ) : null}
-                </>
-              );
+                      {active ? (
+                        <motion.span
+                          layoutId="uboss-nav-selected"
+                          className="uboss-nav-indicator"
+                          aria-hidden="true"
+                          transition={transition('panel', 'standard')}
+                        />
+                      ) : null}
+                      <span className="uboss-nav-icon">
+                        <Icon name={item.icon} size={18} />
+                      </span>
+                      <span className="uboss-nav-label">{item.label}</span>
+                      {item.badge !== undefined && item.badge > 0 ? (
+                        <span className="uboss-nav-badge">
+                          {item.badge}
+                          <span className="uboss-sr-only"> pending</span>
+                        </span>
+                      ) : null}
+                    </>
+                  );
 
-              const shared = {
-                className: cn('uboss-nav-item', active && 'uboss-nav-item--active'),
-                'aria-current': active ? ('page' as const) : undefined,
-                // The label is hidden when collapsed, so keep it as the accessible name.
-                title: item.label,
-                'aria-label': collapsed ? item.label : undefined,
-              };
+                  const shared = {
+                    className: cn('uboss-nav-item', active && 'uboss-nav-item--active'),
+                    'aria-current': active ? ('page' as const) : undefined,
+                    // The label is hidden when collapsed, so keep it as the accessible name.
+                    title: item.label,
+                    'aria-label': collapsed ? item.label : undefined,
+                  };
 
-              // An item that knows where it goes is a link, and has to be a real one. A <button>
-              // cannot be opened in a new tab, middle-clicked, copied, or reached by a screen
-              // reader's link list, and — as this product demonstrated — it silently does nothing
-              // at all if the host forgets to wire `onNavigate`. A missing href on an <a> is a
-              // visible defect; a no-op click handler is an invisible one.
-              return item.href !== undefined ? (
-                <a
-                  key={item.key}
-                  href={item.href}
-                  {...shared}
-                  // Still announced, so a host that needs to react — closing the mobile drawer —
-                  // can, without the navigation itself depending on it.
-                  onClick={(event) => onNavigate?.(item.key, item.href, event)}
-                >
-                  {inner}
-                </a>
-              ) : (
-                <button
-                  key={item.key}
-                  type="button"
-                  {...shared}
-                  onClick={(event) => onNavigate?.(item.key, item.href, event)}
-                >
-                  {inner}
-                </button>
-              );
-            })}
-          </div>
-        ))}
+                  // An item that knows where it goes is a link, and has to be a real one. A <button>
+                  // cannot be opened in a new tab, middle-clicked, copied, or reached by a screen
+                  // reader's link list, and — as this product demonstrated — it silently does nothing
+                  // at all if the host forgets to wire `onNavigate`. A missing href on an <a> is a
+                  // visible defect; a no-op click handler is an invisible one.
+                  return item.href !== undefined ? (
+                    <a
+                      key={item.key}
+                      href={item.href}
+                      {...shared}
+                      // Still announced, so a host that needs to react — closing the mobile drawer —
+                      // can, without the navigation itself depending on it.
+                      onClick={(event) => onNavigate?.(item.key, item.href, event)}
+                    >
+                      {inner}
+                    </a>
+                  ) : (
+                    <button
+                      key={item.key}
+                      type="button"
+                      {...shared}
+                      onClick={(event) => onNavigate?.(item.key, item.href, event)}
+                    >
+                      {inner}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/*

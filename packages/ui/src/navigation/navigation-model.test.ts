@@ -109,19 +109,31 @@ describe('filterNavigation', () => {
     /*
      * Source order, and chat sits where COMPANY_NAV puts it rather than being appended.
      *
-     * `tracker` appears from the `todo` grant: RIS is gated on that module, so one grant offers
-     * both entries. It is **last** here even though `todo` is the first grant named, which is the
-     * whole point of this test — the order is the source's, not the caller's.
-     *
-     * It used to come second, beside To-do List. The client asked for RIS lower in the group, so
-     * the expectation moved with the source; what is being asserted did not change.
+     * `agents` is named first by the caller and comes second here, which is the whole point of
+     * this test — the order is the source's, not the caller's.
      */
-    expect(operations?.items.map((item) => item.key)).toEqual([
-      'todo',
-      'agents',
-      'chat',
+    expect(operations?.items.map((item) => item.key)).toEqual(['todo', 'agents', 'chat']);
+  });
+
+  /*
+   * RIS stands on its own, below Operations.
+   *
+   * The client asked for it in terms — "RIS ko Operations dropdown ke andar mat rakho" — and it
+   * is gated on `todo`, the same grant that offers the To-do List, so the two arrive together
+   * and the only thing keeping them apart is where the source puts them. Asserted on the group,
+   * not the order, because a reader looking for a board should not have to open Operations.
+   */
+  it('puts RIS in a group of its own, after Operations', () => {
+    const groups = filterNavigation(COMPANY_NAV, ['todo']);
+
+    const operations = groups.find((group) => group.group === 'Operations');
+    expect(operations?.items.map((item) => item.key)).not.toContain('tracker');
+
+    expect(groups.find((group) => group.group === 'RIS')?.items.map((item) => item.key)).toEqual([
       'tracker',
     ]);
+    // Last, so it sits below the work that comes to you rather than above it.
+    expect(groups.at(-1)?.group).toBe('RIS');
   });
 
   it('returns nothing module-gated when nothing is granted', () => {

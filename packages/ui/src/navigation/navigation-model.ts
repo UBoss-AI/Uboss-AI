@@ -96,27 +96,35 @@ export const COMPANY_NAV: readonly NavGroup[] = [
       // role grants. See the design note at the top of apps/api/src/chat/chat.controller.ts.
       { key: 'chat', label: 'Workspace Chat', icon: 'chat', href: '/chat', module: null },
       { key: 'approvals', label: 'Approvals', icon: 'govern', href: '/approvals' },
-      /*
-       * RIS — spaces, folders and boards.
-       *
-       * `module: 'todo'`, which every plan entitles and every role template grants, so the entry
-       * is everybody's. What somebody sees once they are inside is decided per board: a Main
-       * board is the company's, a Private one is its members'. That is a rule about a row, so the
-       * server enforces it rather than this file hiding anything.
-       *
-       * It used to sit second, beside To-do List, on the reasoning that both are work somebody
-       * has been given. The client asked for it lower: a to-do and an approval arrive and wait
-       * for you, while a board is somewhere you go when you choose to organise work — so it reads
-       * better below the things that come to you, above the two that are only ever read.
-       *
-       * The icon moved with it. `panel` is a blank rectangle and said nothing about what is
-       * inside; `folder` is what the screen itself is — spaces holding folders holding boards —
-       * and nothing else in the navigation uses it.
-       */
-      { key: 'tracker', label: 'RIS', icon: 'folder', href: '/tracker', module: 'todo' },
       { key: 'performance', label: 'Performance', icon: 'medal', href: '/performance' },
       { key: 'reports', label: 'Reports', icon: 'chart', href: '/reports' },
     ],
+  },
+  /*
+   * RIS — spaces, folders and boards. Its own group, at the end.
+   *
+   * `module: 'todo'`, which every plan entitles and every role template grants, so the entry is
+   * everybody's. What somebody sees once they are inside is decided per board: a Main board is
+   * the company's, a Private one is its members'. That is a rule about a row, so the server
+   * enforces it rather than this file hiding anything.
+   *
+   * It has moved twice. First from second place, beside To-do List, to lower down Operations: a
+   * to-do and an approval arrive and wait for you, while a board is somewhere you go when you
+   * choose to organise work. Now out of Operations altogether, which the client asked for in
+   * terms — "RIS ko Operations dropdown ke andar mat rakho".
+   *
+   * One item, so the heading does not draw yet: a group of one is not a group, and a chevron over
+   * a single link would be a dropdown pretending to have something in it. The heading appears by
+   * itself when the department's own spaces are listed under it, which is the next piece of this
+   * change.
+   *
+   * The icon moved with it the first time. `panel` is a blank rectangle and said nothing about
+   * what is inside; `folder` is what the screen itself is — spaces holding folders holding
+   * boards — and nothing else in the navigation uses it.
+   */
+  {
+    group: 'RIS',
+    items: [{ key: 'tracker', label: 'RIS', icon: 'folder', href: '/tracker', module: 'todo' }],
   },
 ] as const;
 
