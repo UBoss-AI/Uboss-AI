@@ -113,10 +113,12 @@ export const COMPANY_NAV: readonly NavGroup[] = [
    * choose to organise work. Now out of Operations altogether, which the client asked for in
    * terms — "RIS ko Operations dropdown ke andar mat rakho".
    *
-   * One item, so the heading does not draw yet: a group of one is not a group, and a chevron over
-   * a single link would be a dropdown pretending to have something in it. The heading appears by
-   * itself when the department's own spaces are listed under it, which is the next piece of this
-   * change.
+   * One item is declared here, and the list does not end here. The spaces this person may open
+   * are appended underneath by `useCompanyNavigation` — they are fetched rather than declared, so
+   * they cannot live in this file. A reader with a space gets a real dropdown; a reader with none
+   * gets the single link with no heading over it, which is right both times: a group of one is
+   * not a group, and a chevron over a single link would be a dropdown pretending to have
+   * something in it.
    *
    * The icon moved with it the first time. `panel` is a blank rectangle and said nothing about
    * what is inside; `folder` is what the screen itself is — spaces holding folders holding

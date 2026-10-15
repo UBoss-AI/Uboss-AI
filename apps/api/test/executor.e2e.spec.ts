@@ -669,13 +669,24 @@ describe('executor agent and exception center (e2e)', () => {
     return view;
   };
 
-  /** An activated agent: the state the registry is about. */
+  /**
+   * An activated agent: the state the sweep is about.
+   *
+   * Activated by the administrator rather than by the employee who owns the work — CR-04.
+   * Finishing a setup stopped being the same act as putting it live: somebody without
+   * `agents:Publish` now submits it to their Head instead, which leaves the agent `Ready` with a
+   * draft version and nothing in force. That is right, and it is the wrong fixture for a file
+   * about what the Executor notices while an agent is *running* — every sweep below needs a run,
+   * and a run needs a live agent.
+   *
+   * The employee's own submission chain is tested where it belongs, in engine-agent.e2e.spec.ts.
+   */
   const liveAgent = async () => {
     const { assignmentId, objectiveId } = await assignedAiWork();
     await answerEverything(assignmentId);
     const activated = await builder().activate({
       scope: scope(),
-      actorUserId: workerUserId,
+      actorUserId: skillAdminId,
       assignmentId,
     });
     const agentId = activated.engineAgent?.id;

@@ -1075,13 +1075,27 @@ describe('agent builder and engine agent activation (e2e)', () => {
   // -------------------------------------------------------------------------
 
   describe('Activate Agent', () => {
-    it('creates the reusable Engine Agent with one published version', async () => {
+    /**
+     * Who may put an agent live, and who submits it instead — CR-04.
+     *
+     * Finishing a setup used to be the same act as publishing it, so whoever finished it
+     * published it. The client's chain is the other one: *"employee fill karke submit karega,
+     * uske baad uske head ko jayega, uske baad admin ke paas aayega."* So this call now ends in
+     * one of two places, decided on `agents:Publish` — which the `Head` template holds and the
+     * `Employee` template does not.
+     *
+     * `objectiveApproverId` is this file's Head, and is therefore the persona for every test
+     * below that is about a *live* agent. `workerUserId` is the employee, and is the persona for
+     * the submission tests. Neither was chosen for convenience: swapping them is exactly the bug
+     * this split exists to catch.
+     */
+    it('puts the agent live for somebody who may publish agents', async () => {
       const { assignmentId } = await assignedAiWork();
       await answerEverything(assignmentId);
 
       const activated = await builder().activate({
         scope: scope(),
-        actorUserId: workerUserId,
+        actorUserId: objectiveApproverId,
         assignmentId,
       });
 
@@ -1098,6 +1112,196 @@ describe('agent builder and engine agent activation (e2e)', () => {
       assert.equal(stored.length, 1);
       assert.equal(stored[0]?.status, 'Published');
       assert.notEqual(stored[0]?.publishedAt, null);
+    });
+
+    it('sends it to a Head instead, when the person finishing it may not publish', async () => {
+      const { assignmentId } = await assignedAiWork();
+      await answerEverything(assignmentId);
+
+      const submitted = await builder().activate({
+        scope: scope(),
+        actorUserId: workerUserId,
+        assignmentId,
+      });
+
+      // The agent exists and is configured. It is not running, and nothing points at a
+      // configuration nobody approved.
+      assert.ok(submitted.engineAgent, 'no Engine Agent was created');
+      assert.equal(submitted.engineAgent.status, 'Ready');
+
+      const agent = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.engineAgent.findFirstOrThrow({
+          where: { tenantId, id: submitted.engineAgent?.id ?? '' },
+        }),
+      );
+      assert.equal(agent.currentVersionId, null, 'an unapproved draft became the version in force');
+      assert.equal(agent.activatedAt, null);
+
+      const stored = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.engineAgentVersion.findMany({
+          where: { tenantId, engineAgentId: agent.id },
+        }),
+      );
+      assert.equal(stored.length, 1);
+      assert.equal(stored[0]?.status, 'Draft');
+      assert.equal(stored[0]?.publishedAt, null);
+      // The column, not the config field beside it: this is what `activateVersion` reads before
+      // it will accept an activation with no approval cited.
+      assert.equal(stored[0]?.approvalRequired, true);
+
+      const raised = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.approvalRequest.findMany({
+          where: { tenantId, type: 'AgentActivation' },
+        }),
+      );
+      assert.equal(raised.length, 1, 'no approval was raised');
+      assert.equal(raised[0]?.status, 'Pending');
+      assert.equal(raised[0]?.subjectId, stored[0]?.id);
+      assert.equal(raised[0]?.requestedByUserId, workerUserId);
+      // Addressed by role, so the person who built it does not choose who judges it.
+      assert.equal(raised[0]?.approverRoleKind, 'Head');
+    });
+
+    it('lets a Head’s refusal be fixed and sent again, on the same version', async () => {
+      /*
+       * The trap this closes.
+       *
+       * Submitting names the agent on the assignment, and until this existed that single fact
+       * refused both a second activation and any edit to the setup. So a Head saying "change the
+       * output destination" left the employee holding work with no move: they could not change
+       * it, and they could not send it again. The chain the client asked for only works if it
+       * runs in both directions.
+       */
+      const { assignmentId } = await assignedAiWork();
+      await answerEverything(assignmentId);
+      const submitted = await builder().activate({
+        scope: scope(),
+        actorUserId: workerUserId,
+        assignmentId,
+      });
+      const agentId = submitted.engineAgent?.id;
+      assert.ok(agentId);
+
+      const draft = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.engineAgentVersion.findFirstOrThrow({
+          where: { tenantId, engineAgentId: agentId },
+        }),
+      );
+      const first = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.approvalRequest.findFirstOrThrow({
+          where: { tenantId, type: 'AgentActivation', subjectId: draft.id },
+        }),
+      );
+
+      // While it is still with them, sending it again would ask the same person twice.
+      await assert.rejects(
+        () => builder().activate({ scope: scope(), actorUserId: workerUserId, assignmentId }),
+        /waiting on a decision/,
+      );
+
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: objectiveApproverId,
+        approvalId: first.id,
+        decision: 'SendBack',
+        note: 'Send the output somewhere the team can read it.',
+      });
+
+      // Now it is theirs again — the edit the Head asked for is possible.
+      await builder().saveSetup({
+        scope: scope(),
+        actorUserId: workerUserId,
+        assignmentId,
+        patch: { outputDestination: 'The shared drive' },
+      });
+
+      await builder().activate({ scope: scope(), actorUserId: workerUserId, assignmentId });
+
+      const versions = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.engineAgentVersion.findMany({
+          where: { tenantId, engineAgentId: agentId },
+        }),
+      );
+      // Still one version. It has never been in force, so correcting it is not a second one.
+      assert.equal(versions.length, 1);
+      assert.equal(versions[0]?.versionNumber, 1);
+      assert.equal(
+        (versions[0]?.config as { setup?: { outputDestination?: string } }).setup
+          ?.outputDestination,
+        'The shared drive',
+        'the Head would be re-reading what they already refused',
+      );
+
+      const requests = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.approvalRequest.findMany({
+          where: { tenantId, type: 'AgentActivation' },
+          orderBy: { createdAt: 'asc' },
+        }),
+      );
+      assert.equal(requests.length, 2, 'the second submission raised no request');
+      assert.equal(requests[0]?.status, 'SentBack');
+      assert.equal(requests[1]?.status, 'Pending');
+
+      // And it is still not running.
+      const agent = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.engineAgent.findFirstOrThrow({ where: { tenantId, id: agentId } }),
+      );
+      assert.equal(agent.currentVersionId, null);
+    });
+
+    it('refuses to send it again once somebody has approved it', async () => {
+      // The decision belongs to an administrator at that point, and resending would throw away a
+      // judgement a Head has already made.
+      const { assignmentId } = await assignedAiWork();
+      await answerEverything(assignmentId);
+      const submitted = await builder().activate({
+        scope: scope(),
+        actorUserId: workerUserId,
+        assignmentId,
+      });
+      const draft = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.engineAgentVersion.findFirstOrThrow({
+          where: { tenantId, engineAgentId: submitted.engineAgent?.id ?? '' },
+        }),
+      );
+      const request = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.approvalRequest.findFirstOrThrow({
+          where: { tenantId, type: 'AgentActivation', subjectId: draft.id },
+        }),
+      );
+
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: objectiveApproverId,
+        approvalId: request.id,
+        decision: 'Approve',
+        note: 'Looks right.',
+      });
+
+      await assert.rejects(
+        () => builder().activate({ scope: scope(), actorUserId: workerUserId, assignmentId }),
+        /waiting for an administrator/,
+      );
+    });
+
+    it('records the submission as a submission, and not as an activation', async () => {
+      // An audit trail that called both "activated" would say an agent went live on the day
+      // somebody asked for permission to put it live.
+      const { assignmentId } = await assignedAiWork();
+      await answerEverything(assignmentId);
+      await builder().activate({ scope: scope(), actorUserId: workerUserId, assignmentId });
+
+      const events = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.auditEvent.findMany({
+          where: { tenantId, resourceType: 'engine-agent' },
+          select: { action: true, summary: true },
+        }),
+      );
+      assert.deepEqual(
+        events.map((event) => event.action),
+        ['agent.submitted_for_approval'],
+      );
+      assert.match(String(events[0]?.summary), /configured and not running/);
     });
 
     it('refuses to activate while a blocker stands', async () => {
@@ -1134,7 +1338,7 @@ describe('agent builder and engine agent activation (e2e)', () => {
 
       const activated = await builder().activate({
         scope: scope(),
-        actorUserId: workerUserId,
+        actorUserId: objectiveApproverId,
         assignmentId,
       });
       assert.ok(activated.engineAgent);
@@ -1150,10 +1354,16 @@ describe('agent builder and engine agent activation (e2e)', () => {
     });
 
     it('never creates a second Engine Agent for the same work', async () => {
-      // The locked lifecycle rule: recurring work creates Runs on the agent it already has.
+      /*
+       * The locked lifecycle rule: recurring work creates Runs on the agent it already has.
+       *
+       * Put live by a Head, because that is the rule being tested. An agent still waiting on a
+       * decision is a different case with a different answer — it is sent again rather than
+       * duplicated, which the resubmission tests above cover.
+       */
       const { assignmentId } = await assignedAiWork();
       await answerEverything(assignmentId);
-      await builder().activate({ scope: scope(), actorUserId: workerUserId, assignmentId });
+      await builder().activate({ scope: scope(), actorUserId: objectiveApproverId, assignmentId });
 
       await assert.rejects(
         () => builder().activate({ scope: scope(), actorUserId: workerUserId, assignmentId }),
@@ -1194,9 +1404,11 @@ describe('agent builder and engine agent activation (e2e)', () => {
     it('freezes the published configuration, because Runs will cite it', async () => {
       const { assignmentId } = await assignedAiWork();
       await answerEverything(assignmentId);
+      // A Head, because the freeze is a property of a *published* version — a draft awaiting a
+      // decision is still editable, and must be.
       const activated = await builder().activate({
         scope: scope(),
-        actorUserId: workerUserId,
+        actorUserId: objectiveApproverId,
         assignmentId,
       });
 
@@ -1219,9 +1431,11 @@ describe('agent builder and engine agent activation (e2e)', () => {
     });
 
     it('refuses to change the setup once the agent is live', async () => {
+      // Live, which is what the refusal is about. A submitted agent that no decision has reached
+      // is still editable on purpose — a Head who sends it back is asking for an edit.
       const { assignmentId } = await assignedAiWork();
       await answerEverything(assignmentId);
-      await builder().activate({ scope: scope(), actorUserId: workerUserId, assignmentId });
+      await builder().activate({ scope: scope(), actorUserId: objectiveApproverId, assignmentId });
 
       await assert.rejects(
         () =>
@@ -1238,7 +1452,7 @@ describe('agent builder and engine agent activation (e2e)', () => {
     it('audits the activation, and says recurring work will create Runs', async () => {
       const { assignmentId } = await assignedAiWork();
       await answerEverything(assignmentId);
-      await builder().activate({ scope: scope(), actorUserId: workerUserId, assignmentId });
+      await builder().activate({ scope: scope(), actorUserId: objectiveApproverId, assignmentId });
 
       const events = await ctx.prisma.runAsPlatformOperation(() =>
         ctx.prisma.client.auditEvent.findMany({
@@ -1320,9 +1534,16 @@ describe('agent builder and engine agent activation (e2e)', () => {
         .expect(401);
     });
 
-    it('lets the employee who owns the work complete setup and activate it', async () => {
-      // The documented journey: "Employee completes Human work and only missing Agent setup ->
-      // Test -> Activate." Over HTTP, because that is the path the screen actually uses.
+    it('lets the employee who owns the work complete setup and submit it', async () => {
+      /*
+       * The documented journey: "Employee completes Human work and only missing Agent setup ->
+       * Test -> Activate." Over HTTP, because that is the path the screen actually uses.
+       *
+       * The last step ends at `Ready` rather than `Active` — CR-04. The employee does everything
+       * they did before and is refused nothing; what changed is that finishing it asks their Head
+       * instead of putting it in front of the company. That is the whole of the client's chain at
+       * this end of it.
+       */
       const { assignmentId } = await assignedAiWork();
       const view = await answerEverything(assignmentId);
       assert.deepEqual(view.missing, []);
@@ -1334,11 +1555,11 @@ describe('agent builder and engine agent activation (e2e)', () => {
         workerUboss,
       ).expect(201);
 
-      const activated = await as(
+      const submitted = await as(
         agent().post(`/tenants/${tenantId}/agent-builder/${assignmentId}/activate`).send({}),
         workerUboss,
       ).expect(201);
-      assert.equal(activated.body.engineAgent.status, 'Active');
+      assert.equal(submitted.body.engineAgent.status, 'Ready');
     });
 
     it('does not let one employee touch another employee’s assigned work', async () => {
@@ -1684,9 +1905,11 @@ describe('agent builder and engine agent activation (e2e)', () => {
     });
 
     it('refuses once the work is already running on an Engine Agent', async () => {
+      // Running, not merely submitted: changing the Skills of an agent nobody has approved yet is
+      // exactly what a Head's send-back asks for.
       const { assignmentId } = await assignedAiWork();
       await answerEverything(assignmentId);
-      await builder().activate({ scope: scope(), actorUserId: workerUserId, assignmentId });
+      await builder().activate({ scope: scope(), actorUserId: objectiveApproverId, assignmentId });
 
       const { versionId } = await secondSkill();
       await assert.rejects(
@@ -1816,9 +2039,11 @@ describe('agent builder and engine agent activation (e2e)', () => {
     it('maps the next run to the agent already built for that step', async () => {
       const { objectiveId, assignmentId } = await assignedAiWork();
       await answerEverything(assignmentId);
+      // Published, which this whole section is about: an agent still waiting on its Head is not
+      // yet the agent a step runs, and a republish is right to ask for setup again.
       const agent = await builder().activate({
         scope: scope(),
-        actorUserId: workerUserId,
+        actorUserId: objectiveApproverId,
         assignmentId,
       });
       assert.ok(agent.engineAgent, 'the fixture did not produce an agent');
@@ -1850,7 +2075,7 @@ describe('agent builder and engine agent activation (e2e)', () => {
        */
       const { objectiveId, assignmentId } = await assignedAiWork();
       await answerEverything(assignmentId);
-      await builder().activate({ scope: scope(), actorUserId: workerUserId, assignmentId });
+      await builder().activate({ scope: scope(), actorUserId: objectiveApproverId, assignmentId });
 
       await objectives().startNewDraft({
         scope: scope(),

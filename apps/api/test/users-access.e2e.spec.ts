@@ -13,6 +13,7 @@ import { activationReadiness } from '../src/access/activation-readiness.js';
 import { BulkOperationService } from '../src/access/bulk-operation.service.js';
 import { InvitationAccessService } from '../src/access/invitation-access.service.js';
 import { HANDOVER_DOMAINS, OffboardingService } from '../src/access/offboarding.service.js';
+import { AccessLevelService } from '../src/access/access-level.service.js';
 import { CapabilityService } from '../src/access/capability.service.js';
 import { ReportScopeService } from '../src/reports/report-scope.service.js';
 import { UserAccessService } from '../src/access/user-access.service.js';
@@ -192,6 +193,7 @@ describe('users & access (e2e)', () => {
         BulkOperationService,
         // Prompt 40A: the Access & Permissions step hangs off this controller.
         CapabilityService,
+        AccessLevelService,
         // Roles & Permissions on the company plane run the platform plane’s own service.
         RoleAdministrationService,
         TenantContextService,

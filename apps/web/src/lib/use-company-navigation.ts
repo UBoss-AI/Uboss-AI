@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-import { COMPANY_NAV, filterNavigation, type NavGroup } from '@uboss/ui';
+import { COMPANY_NAV, filterNavigation, type NavGroup, type NavItem } from '@uboss/ui';
 
 import { readRememberedWorkspace } from './active-workspace';
-import { dashboardApi } from './api-client';
+import { boardsApi, dashboardApi, type SpaceSummary } from './api-client';
 
 import { useMyAccess } from './use-my-access';
 
@@ -41,6 +41,7 @@ import { useMyAccess } from './use-my-access';
 export function useCompanyNavigation(): NavGroup[] {
   const access = useMyAccess();
   const badges = useNavBadges();
+  const spaces = useRisSpaces();
 
   /*
    * Filter first, then attach the numbers.
@@ -62,13 +63,93 @@ export function useCompanyNavigation(): NavGroup[] {
         access?.unavailableNavKeys ?? null,
       ).map((group) => ({
         ...group,
-        items: group.items.map((item) => {
+        items: withSpaces(group.group, group.items, spaces).map((item) => {
           const badge = badges.get(item.key);
           return badge === undefined || badge === 0 ? item : { ...item, badge };
         }),
       })),
-    [access, badges],
+    [access, badges, spaces],
   );
+}
+
+/**
+ * RIS, and the spaces this person may actually open underneath it — CR-04.
+ *
+ * ## Why the spaces belong in the sidebar at all
+ *
+ * The client asked for RIS to be a dropdown of its own, and for a person to meet their own
+ * department's work rather than the whole company's. Those are one requirement: a heading with a
+ * single link under it is not a dropdown, and the thing that makes it one is the list of places
+ * it leads. Until this existed the sidebar drew "RIS" with no heading (see the note beside the
+ * group in `navigation-model.ts` — a group of one is not a group) and the only way to reach a
+ * second space was to already be inside the screen.
+ *
+ * ## The filtering is the server's, not this list's
+ *
+ * `listSpaces` has already dropped every space belonging to somebody else's department before the
+ * answer leaves the API, so nothing here decides what may be seen. That matters: if this file
+ * filtered, somebody could type the URL and the sidebar's omission would have protected nothing.
+ * What arrives is what this person may open, and this turns it into links.
+ *
+ * ## Why the plain "RIS" entry stays at the top
+ *
+ * It is the whole of it — every space at once — and it is where a person lands when they have no
+ * particular space in mind. Replacing it with the space list would take away the one view that
+ * answers "where is that board again?".
+ */
+export function withSpaces(
+  group: string,
+  items: readonly NavItem[],
+  spaces: readonly SpaceSummary[],
+): NavItem[] {
+  if (group !== 'RIS' || items.length === 0 || spaces.length === 0) return [...items];
+
+  return [
+    ...items,
+    ...spaces.map<NavItem>((space) => ({
+      key: `tracker-space-${space.id}`,
+      label: space.name,
+      // The same icon the tracker's own tree draws beside a space, so the sidebar entry and the
+      // thing it opens are recognisably the same object.
+      icon: 'grid',
+      href: `/tracker?space=${encodeURIComponent(space.id)}`,
+      module: 'todo',
+    })),
+  ];
+}
+
+/**
+ * The spaces to list under RIS.
+ *
+ * Read once per screen rather than polled: a space is created by hand, perhaps a few times a
+ * year, and a sidebar that re-asks every minute would be spending a request a minute on an answer
+ * that almost never changes. The badges above are the opposite case and are polled for it.
+ *
+ * Failure is silent and leaves the list empty, which is the sidebar exactly as it was before this
+ * existed — RIS, with no spaces under it. A menu must never show an error.
+ */
+function useRisSpaces(): readonly SpaceSummary[] {
+  const [spaces, setSpaces] = useState<readonly SpaceSummary[]>([]);
+
+  useEffect(() => {
+    const tenantId = readRememberedWorkspace();
+    if (tenantId === null) return;
+
+    let live = true;
+    void boardsApi
+      .listSpaces(tenantId)
+      .then((view) => {
+        if (!live) return;
+        setSpaces(view.spaces.filter((space) => space.archivedAt === null));
+      })
+      .catch(() => undefined);
+
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  return spaces;
 }
 
 /**

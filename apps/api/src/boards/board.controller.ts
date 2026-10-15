@@ -36,6 +36,16 @@ class CreateSpaceDto {
   @MaxLength(200)
   name!: string;
 
+  /**
+   * Whose department this space is, or absent for one the whole company shares.
+   *
+   * CR-04: a person sees their own department's RIS. A space with no department is everybody's,
+   * which is what every space made before this is.
+   */
+  @IsOptional()
+  @IsUUID()
+  departmentId?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(2000)
@@ -252,6 +262,7 @@ export class BoardController {
       name: body.name,
       description: body.description,
       tone: body.tone,
+      departmentId: body.departmentId,
     });
   }
 

@@ -2579,6 +2579,14 @@ export interface SpaceSummary {
   description: string | null;
   tone: string;
   isDefault: boolean;
+  /**
+   * Whose department this space is, or `null` for one the whole company shares.
+   *
+   * The server has already dropped the spaces belonging to other departments before this reaches
+   * the browser, so nothing here is a filter — it is here so a screen can say *why* a space is
+   * listed, and so the sidebar can tell a shared space from the reader's own.
+   */
+  departmentId: string | null;
   archivedAt: string | null;
 }
 

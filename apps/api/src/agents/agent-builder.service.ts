@@ -31,8 +31,12 @@ import {
   type WorkflowDraft,
 } from '@uboss/types';
 
+import { ApprovalService } from '../approvals/approval.service.js';
 import { AuditEventService } from '../audit/audit-event.service.js';
-import { AuthorizationService } from '../authorization/authorization.service.js';
+import {
+  type AuthorizationContext,
+  AuthorizationService,
+} from '../authorization/authorization.service.js';
 import { SkillRouterService } from '../skills/skill-router.service.js';
 import { ConnectionService } from '../connections/connection.service.js';
 import { ModelGateway } from '../model-gateway/model-gateway.js';
@@ -147,6 +151,8 @@ export class AgentBuilderService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorization: AuthorizationService,
+    /// CR-04: an employee who may not put an agent live submits it for approval instead.
+    private readonly approvals: ApprovalService,
     private readonly auditEvents: AuditEventService,
     private readonly connections: ConnectionService,
     /// The provider seam. A test runs through this, so a mock is visibly a mock.
@@ -462,7 +468,7 @@ export class AgentBuilderService {
       const assignment = await this.loadAssignment(input.assignmentId);
       await this.assertMayTouch(context, assignment, 'EditDraft');
 
-      if (assignment.engineAgentId !== null) {
+      if (await this.isLive(input.scope, assignment.engineAgentId)) {
         throw new ConflictException(
           'This work is already running on an Engine Agent. Changing which Skills it uses is a ' +
             'new version of that agent, not an edit to the setup that created it.',
@@ -565,7 +571,7 @@ export class AgentBuilderService {
       const assignment = await this.loadAssignment(input.assignmentId);
       await this.assertMayTouch(context, assignment, 'EditDraft');
 
-      if (assignment.engineAgentId !== null) {
+      if (await this.isLive(input.scope, assignment.engineAgentId)) {
         throw new ConflictException(
           'This work is already running on an Engine Agent. Changing how a live agent runs is a ' +
             'new version of that agent, not an edit to the setup that created it.',
@@ -878,6 +884,49 @@ export class AgentBuilderService {
     const context = await this.authorization.contextFor(input.scope, input.actorUserId);
     await this.authorization.assertCan(context, { module: 'agent-builder', action: 'Run' });
 
+    /*
+     * Finishing the setup is not the same as putting it live — CR-04.
+     *
+     * The client's chain, in their words: *"employee ko agar hum sirf form fill karne denge to
+     * fill karke submit karega — chahe vo objective ho ya agent ho — uske baad uske head ko
+     * jayega, uske baad vo approve karega, uske baad admin ke paas aayega."* This method was the
+     * step where that chain was not true of agents: anybody who could finish a setup put the
+     * agent live by finishing it, because activation and completion were the same call.
+     *
+     * So the call now ends in one of two places, decided by whether this person may put agents
+     * live at all — `agents:Publish`, the same permission `activateVersion` requires, which an
+     * employee granted Builder access deliberately does not hold:
+     *
+     *   - **They may.** Unchanged: version 1 is published and the agent goes Active.
+     *   - **They may not.** The agent is created and stays `Ready`, version 1 stays a `Draft`
+     *     marked as needing an approval, and an `AgentActivation` request goes to their Head.
+     *     An administrator then activates it, citing that decision — which `activateVersion`
+     *     verifies rather than believes.
+     *
+     * Asked here, before the transaction, because an authorization decision inside one has its
+     * security events dropped.
+     */
+    const mayPutLive = (
+      await this.authorization.authorize(context, { module: 'agents', action: 'Publish' })
+    ).allowed;
+
+    /*
+     * Sending it again after a Head said no.
+     *
+     * Without this the chain above is a trap. Submitting names the agent on the assignment, and
+     * from that moment the old guard refused a second activation and `saveSetup` refused an edit
+     * — so a rejected agent could be neither fixed nor resent, by anybody, ever. The employee was
+     * left holding work with no move on the board.
+     *
+     * So the refusal is about a *live* agent, which is what it always meant: recurring work
+     * creates Runs on the agent it already has. An agent still waiting on a decision has no runs
+     * and is not that case. It is sent again on the same version rather than a new one, because
+     * version 1 has never been in force and a version history counting a company's rejections
+     * would number its versions by its arguments.
+     */
+    const resubmitted = await this.resubmitIfPending(input, context, mayPutLive);
+    if (resubmitted !== null) return resubmitted;
+
     const activated = await this.prisma.runInTenantTransaction(input.scope, async () => {
       const assignment = await this.loadAssignment(input.assignmentId);
       await this.assertMayTouch(context, assignment, 'Run');
@@ -934,7 +983,7 @@ export class AgentBuilderService {
           tenantId: input.scope.tenantId,
           engineAgentId: agent.id,
           versionNumber: 1,
-          status: 'Published',
+          status: mayPutLive ? 'Published' : 'Draft',
           config: {
             setup,
             skillVersionIds: prefill.skillVersionIds,
@@ -943,27 +992,47 @@ export class AgentBuilderService {
             completionEvidence: prefill.completionEvidence,
             assignedWork: prefill.assignedWork,
           } as unknown as object,
-          publishedAt: new Date(),
-          publishedByUserId: input.actorUserId,
+          /*
+           * The column, not the config field beside it.
+           *
+           * `config.approvalRequired` is the agent's own policy — whether its *runs* pause for a
+           * human. This is whether this *version* may be activated without a decision, and it is
+           * what `activateVersion` reads before accepting an activation with no approval cited.
+           * Two different questions that read alike, which is why they are both spelled out here.
+           */
+          approvalRequired: !mayPutLive,
+          ...(mayPutLive ? { publishedAt: new Date(), publishedByUserId: input.actorUserId } : {}),
           createdByUserId: input.actorUserId,
         },
       });
 
       // `Ready` then `Active`: the status vocabulary says activation passes through readiness, and
       // skipping it would skip the check that `Ready` represents.
-      if (!ALLOWED_ENGINE_AGENT_TRANSITIONS.Ready.includes('Active')) {
+      if (mayPutLive && !ALLOWED_ENGINE_AGENT_TRANSITIONS.Ready.includes('Active')) {
         throw new ConflictException('The Engine Agent lifecycle does not permit activation.');
       }
 
       const live = await this.prisma.client.engineAgent.update({
         where: { id: agent.id },
-        data: {
-          status: 'Active',
-          currentVersionId: firstVersion.id,
-          activatedAt: new Date(),
-          activatedByUserId: input.actorUserId,
-          version: { increment: 1 },
-        },
+        data: mayPutLive
+          ? {
+              status: 'Active',
+              currentVersionId: firstVersion.id,
+              activatedAt: new Date(),
+              activatedByUserId: input.actorUserId,
+              version: { increment: 1 },
+            }
+          : {
+              /*
+               * Left at `Ready`, and with no current version.
+               *
+               * `Ready` is the vocabulary's word for configured-and-not-running, which is exactly
+               * true of an agent waiting on its Head. Pointing `currentVersionId` at an unapproved
+               * draft would make the registry show a configuration in force that nobody put in
+               * force — the run engine reads that field.
+               */
+              version: { increment: 1 },
+            },
       });
 
       const saved = await this.prisma.client.aiWorkAssignment.update({
@@ -976,15 +1045,19 @@ export class AgentBuilderService {
       });
 
       await this.auditEvents.appendWithinCurrentScope(input.scope.tenantId, {
-        action: 'agent.activated',
+        // Two different acts, recorded as two different things. A trail that called both
+        // "activated" would say an agent went live on the day somebody asked for permission.
+        action: mayPutLive ? 'agent.activated' : 'agent.submitted_for_approval',
         resourceType: 'engine-agent',
         resourceId: live.id,
         actorUserId: input.actorUserId,
         resourceRef: live.name,
         resourceVersion: live.version,
-        summary:
-          `Activated the reusable Engine Agent "${live.name}" for "${assignment.title}". ` +
-          'Recurring work will create Runs on this agent, never another agent.',
+        summary: mayPutLive
+          ? `Activated the reusable Engine Agent "${live.name}" for "${assignment.title}". ` +
+            'Recurring work will create Runs on this agent, never another agent.'
+          : `Submitted the Engine Agent "${live.name}" for "${assignment.title}" for approval. ` +
+            'It is configured and not running; a Head decides, and an administrator activates it.',
         metadata: {
           assignmentId: assignment.id,
           versionNumber: firstVersion.versionNumber,
@@ -996,11 +1069,204 @@ export class AgentBuilderService {
         },
       });
 
-      return { assignment: saved, agent: live };
+      return { assignment: saved, agent: live, versionId: firstVersion.id };
     });
+
+    /*
+     * Raised outside the transaction that made the agent.
+     *
+     * An approval writes its own audit entries, and an audit chain is `(chain_key, sequence)` —
+     * writing one from inside another write's transaction is how two entries end up claiming the
+     * same sequence. The agent exists by this point either way; if raising fails, the agent is
+     * sitting at `Ready` with a draft, which is a state somebody can act on rather than a
+     * half-made record.
+     */
+    if (!mayPutLive) {
+      await this.approvals.raise({
+        scope: input.scope,
+        type: 'AgentActivation',
+        title: `Activate "${activated.agent.name}"`,
+        detail:
+          `${activated.agent.name} has been set up and is waiting to go live. ` +
+          'Approving it says the configuration is right; an administrator activates it afterwards.',
+        subjectType: 'EngineAgentVersion',
+        subjectId: activated.versionId,
+        requestedByUserId: input.actorUserId,
+        // To the Head, by role rather than by name: the person who built it does not choose who
+        // judges it, and nobody has to know a uuid to submit their own work.
+        approverRoleKind: 'Head',
+      });
+    }
 
     return this.prisma.runInTenantTransaction(input.scope, () =>
       this.viewOf(input.scope, activated.assignment),
+    );
+  }
+
+  /**
+   * Is the agent this work names actually running?
+   *
+   * The question the two edit guards above are really asking. They used to ask whether an agent
+   * *existed*, which was the same question until CR-04 — submitting for approval names an agent
+   * on the assignment without putting it in force, and treating that as "live" froze the setup of
+   * work that a Head had sent back to be changed.
+   *
+   * `currentVersionId` is the test rather than the status, because that column is what the run
+   * engine reads: an agent with nothing in force cannot run, whatever its status says.
+   *
+   * Called inside the caller's transaction, which is where the assignment was read.
+   */
+  private async isLive(scope: TenantScope, engineAgentId: string | null): Promise<boolean> {
+    if (engineAgentId === null) return false;
+    const agent = await this.prisma.client.engineAgent.findFirst({
+      where: { tenantId: scope.tenantId, id: engineAgentId },
+      select: { currentVersionId: true },
+    });
+    return agent !== null && agent.currentVersionId !== null;
+  }
+
+  /**
+   * Send an agent that is waiting on a decision back to its Head, with whatever has changed.
+   *
+   * Returns `null` when this is not that case — no agent yet, or one that is already live — and
+   * `activate` carries on as it would have.
+   *
+   * ## Why the states are told apart rather than lumped together
+   *
+   * Three different things can be true of an agent that is not live, and each deserves its own
+   * answer. It can be **waiting**, in which case sending it again would put a second request in
+   * front of the same Head for the same work. It can have been **turned down**, which is the case
+   * this exists for. Or it can be **approved and not yet activated**, where the move belongs to
+   * an administrator and resending would throw away a decision somebody already made.
+   *
+   * ## Why the same version
+   *
+   * A version is a configuration that was once in force. This one never was — it was proposed and
+   * refused — so correcting it is still the first version, not the second. Numbering a company's
+   * versions by its disagreements would make the history unreadable for the people it is for.
+   */
+  private async resubmitIfPending(
+    input: { scope: TenantScope; actorUserId: string; assignmentId: string },
+    context: AuthorizationContext,
+    mayPutLive: boolean,
+  ): Promise<AgentBuilderView | null> {
+    const prepared = await this.prisma.runInTenantTransaction(input.scope, async () => {
+      const assignment = await this.loadAssignment(input.assignmentId);
+      await this.assertMayTouch(context, assignment, 'Run');
+      if (assignment.engineAgentId === null) return null;
+
+      const agent = await this.prisma.client.engineAgent.findFirst({
+        where: { tenantId: input.scope.tenantId, id: assignment.engineAgentId },
+      });
+      // A live agent, or one whose row has gone: both are the old refusal's business, not this
+      // method's.
+      if (agent === null || agent.currentVersionId !== null) return null;
+
+      const draft = await this.prisma.client.engineAgentVersion.findFirst({
+        where: {
+          tenantId: input.scope.tenantId,
+          engineAgentId: agent.id,
+          status: 'Draft',
+        },
+        orderBy: { versionNumber: 'desc' },
+      });
+      if (draft === null) return null;
+
+      const decided = await this.prisma.client.approvalRequest.findFirst({
+        where: {
+          tenantId: input.scope.tenantId,
+          type: 'AgentActivation',
+          subjectId: draft.id,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (decided?.status === 'Pending') {
+        throw new ConflictException(
+          `"${agent.name}" is already with ${decided.approverRoleKind ?? 'an approver'} and ` +
+            'waiting on a decision. Sending it again would put the same work in front of them ' +
+            'twice.',
+        );
+      }
+      if (decided?.status === 'Approved') {
+        throw new ConflictException(
+          `"${agent.name}" has been approved and is waiting for an administrator to activate it. ` +
+            'Sending it again would discard a decision somebody has already made.',
+        );
+      }
+
+      /*
+       * Whatever the setup says now.
+       *
+       * Read fresh rather than kept from the first submission: the whole point of being sent back
+       * is that something changed, and a Head who asked for a different output destination must
+       * be looking at the one they asked for when it returns.
+       */
+      const prefill = this.prefillOf(assignment);
+      const setup = this.setupOf(assignment);
+      const readiness = await this.readinessOf(input.scope, assignment, setup, prefill);
+      const blockers = readiness.findings.filter((finding) => finding.severity === 'Blocker');
+      if (blockers.length > 0) {
+        throw new ConflictException(
+          `This agent is not ready to activate. ${blockers.map((finding) => finding.summary).join(' ')}`,
+        );
+      }
+
+      const updated = await this.prisma.client.engineAgentVersion.update({
+        where: { id: draft.id },
+        data: {
+          config: {
+            setup,
+            skillVersionIds: prefill.skillVersionIds,
+            toolCategories: prefill.toolCategories,
+            approvalRequired: prefill.approvalRequired,
+            completionEvidence: prefill.completionEvidence,
+            assignedWork: prefill.assignedWork,
+          } as unknown as object,
+          approvalRequired: !mayPutLive,
+          version: { increment: 1 },
+        },
+      });
+
+      await this.auditEvents.appendWithinCurrentScope(input.scope.tenantId, {
+        action: 'agent.submitted_for_approval',
+        resourceType: 'engine-agent',
+        resourceId: agent.id,
+        actorUserId: input.actorUserId,
+        resourceRef: agent.name,
+        resourceVersion: agent.version,
+        summary:
+          `Sent "${agent.name}" for approval again after changes. It is configured and not ` +
+          'running; a Head decides, and an administrator activates it.',
+        metadata: {
+          assignmentId: assignment.id,
+          versionNumber: updated.versionNumber,
+          ...(decided === null
+            ? {}
+            : { previousRequestId: decided.id, previousDecision: decided.status }),
+        },
+      });
+
+      return { assignment, agent, versionId: updated.id };
+    });
+
+    if (prepared === null) return null;
+
+    await this.approvals.raise({
+      scope: input.scope,
+      type: 'AgentActivation',
+      title: `Activate "${prepared.agent.name}"`,
+      detail:
+        `${prepared.agent.name} has been changed and is waiting to go live again. ` +
+        'Approving it says the configuration is right; an administrator activates it afterwards.',
+      subjectType: 'EngineAgentVersion',
+      subjectId: prepared.versionId,
+      requestedByUserId: input.actorUserId,
+      approverRoleKind: 'Head',
+    });
+
+    return this.prisma.runInTenantTransaction(input.scope, () =>
+      this.viewOf(input.scope, prepared.assignment),
     );
   }
 

@@ -108,7 +108,7 @@ describe('engine agent registry and versioning (e2e)', () => {
   let managerUserId: string;
   let managerUboss: string;
   let workerUserId: string;
-  let _workerUboss: string;
+  let workerUboss: string;
   let otherWorkerUserId: string;
   let objectiveApproverId: string;
   /// The same person, named for what they do in these tests.
@@ -284,7 +284,7 @@ describe('engine agent registry and versioning (e2e)', () => {
     managerUserId = people.manager.id;
     managerUboss = people.manager.ubossUniqueId;
     workerUserId = people.worker.id;
-    _workerUboss = people.worker.ubossUniqueId;
+    workerUboss = people.worker.ubossUniqueId;
     otherWorkerUserId = people.otherWorker.id;
     objectiveApproverId = people.head.id;
     headUserId = people.head.id;
@@ -416,10 +416,12 @@ describe('engine agent registry and versioning (e2e)', () => {
         });
       }
 
-      // Prompt 28: an agent activation approval is governed by `agents:Approve`, which only the
-      // Approver role holds — the Manager and Head templates deliberately omit it, because the
-      // client's locked Approve & Assign boundary keeps assigning work and approving a plan as
-      // separate decisions.
+      // Prompt 28: an agent activation approval is governed by `agents:Approve`. The Approver and
+      // CompanyAdmin templates hold it, and CR-04 added it to Head as well — the client's chain
+      // has an employee's agent approved by their own Head, and a request addressed to a Head
+      // that no Head could decide waited for the administrator every time. The Manager template
+      // still omits it, which is the Approve & Assign boundary: assigning work and approving a
+      // plan stay separate decisions.
       //
       // The WholeCompany assignment above is capped to MultipleDepartments by the Approver
       // template's own maxScope, and with no departments named that grant reaches nothing. So this
@@ -692,12 +694,24 @@ describe('engine agent registry and versioning (e2e)', () => {
   };
 
   /** An activated agent: the state the registry is about. */
+  /**
+   * An agent that is actually live, for the tests below that are about the registry.
+   *
+   * Activated by the Head rather than by the employee who owns the work — CR-04. Finishing a
+   * setup is no longer the same act as putting it live: somebody without `agents:Publish` now
+   * submits it to their Head instead, which leaves the agent `Ready` with a draft version and no
+   * configuration in force. That is the right behaviour and the wrong fixture for a section about
+   * pausing, versioning and running a live agent, so this helper uses somebody who may publish.
+   *
+   * The employee's half of the chain — submit, Head decides, administrator activates — has its
+   * own test, below.
+   */
   const liveAgent = async () => {
     const { assignmentId, objectiveId } = await assignedAiWork();
     await answerEverything(assignmentId);
     const activated = await builder().activate({
       scope: scope(),
-      actorUserId: workerUserId,
+      actorUserId: objectiveApproverId,
       assignmentId,
     });
     const agentId = activated.engineAgent?.id;
@@ -1065,12 +1079,16 @@ describe('engine agent registry and versioning (e2e)', () => {
         /cannot address the approval to yourself/,
       );
 
-      // Nor can the Head decide it. For this approval type the guarantee is structural rather
-      // than a runtime check: raising an activation approval needs `agents:Publish` and deciding
-      // one needs `agents:Approve`, and no built-in role template holds both — the Approve &
-      // Assign boundary again. So the Head is stopped at routing, before separation of duties is
-      // even consulted. (The NoSelfApproval control itself is exercised in approvals.e2e.spec.ts,
-      // on a type where one role legitimately holds both.)
+      // Nor can the Head decide it — stopped at routing, because the request above was addressed
+      // to somebody by name and a role does not override a name.
+      //
+      // This used to be guaranteed a second way as well: the Head template held `agents:Publish`
+      // and not `agents:Approve`, so raising and deciding could not meet in one person. CR-04
+      // closed that gap deliberately — the client's chain has a Head approving an employee's
+      // agent, and a request addressed to a Head that no Head could decide was waiting for the
+      // administrator every time. So the control that stops this is now the runtime one, which is
+      // where it belongs: `NoSelfApproval`, exercised in approvals.e2e.spec.ts, plus the refusal
+      // below that an undecided request authorises nothing.
       await assert.rejects(
         () =>
           approvals().decide({
@@ -1293,6 +1311,160 @@ describe('engine agent registry and versioning (e2e)', () => {
           }),
         /Unknown memory mode/,
       );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 3b. The employee's chain — CR-04
+  // -------------------------------------------------------------------------
+
+  /**
+   * Employee submits, Head approves, administrator activates.
+   *
+   * The client's words: *"employee ko agar hum sirf form fill karne denge to fill karke submit
+   * karega — chahe vo objective ho ya agent ho — uske baad uske head ko jayega, uske baad vo
+   * approve karega, uske baad admin ke paas aayega."* Three people, three acts, and the point of
+   * it is that none of them can do another's.
+   *
+   * One test, end to end, rather than three that each stop at a boundary: the failure worth
+   * catching is the chain coming apart in the middle — an approval nobody can decide, a draft
+   * nobody can activate — and no single-step test sees that.
+   */
+  describe("the employee's chain", () => {
+    it('goes employee → Head → administrator, and refuses every shortcut on the way', async () => {
+      const { assignmentId } = await assignedAiWork();
+      await answerEverything(assignmentId);
+
+      // ---- 1. The employee submits. Nothing is live. ----
+      const submitted = await builder().activate({
+        scope: scope(),
+        actorUserId: workerUserId,
+        assignmentId,
+      });
+      const agentId = submitted.engineAgent?.id;
+      assert.ok(agentId, 'no agent was created');
+      assert.equal(submitted.engineAgent?.status, 'Ready');
+
+      const draft = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.engineAgentVersion.findFirstOrThrow({
+          where: { tenantId, engineAgentId: agentId },
+        }),
+      );
+      assert.equal(draft.status, 'Draft');
+
+      const request = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.approvalRequest.findFirstOrThrow({
+          where: { tenantId, type: 'AgentActivation', subjectId: draft.id },
+        }),
+      );
+      assert.equal(request.approverRoleKind, 'Head');
+
+      // The administrator cannot skip the Head: an undecided request authorises nothing.
+      await assert.rejects(
+        () =>
+          registry().activateVersion({
+            scope: scope(),
+            actorUserId: skillAdminId,
+            agentId,
+            versionId: draft.id,
+            approvalRequestId: request.id,
+          }),
+        /is Pending, not Approved/,
+      );
+
+      // Nor can they activate it by not mentioning the approval at all.
+      await assert.rejects(
+        () =>
+          registry().activateVersion({
+            scope: scope(),
+            actorUserId: skillAdminId,
+            agentId,
+            versionId: draft.id,
+          }),
+        /needs an approval/,
+      );
+
+      // ---- 2. The Head approves. Still nothing is live. ----
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: objectiveApproverId,
+        approvalId: request.id,
+        decision: 'Approve',
+        note: 'The setup matches the step.',
+      });
+
+      const stillReady = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.engineAgent.findFirstOrThrow({ where: { tenantId, id: agentId } }),
+      );
+      assert.equal(stillReady.status, 'Ready', 'approving it put it live by itself');
+      assert.equal(stillReady.currentVersionId, null);
+
+      // And the Head cannot then activate what they just approved. Four eyes, anchored to the
+      // decision record rather than to a parameter somebody passed.
+      await assert.rejects(
+        () =>
+          registry().activateVersion({
+            scope: scope(),
+            actorUserId: objectiveApproverId,
+            agentId,
+            versionId: draft.id,
+            approvalRequestId: request.id,
+          }),
+        /cannot also be the one who approved it/,
+      );
+
+      // ---- 3. The administrator activates, citing the decision. ----
+      const live = await registry().activateVersion({
+        scope: scope(),
+        actorUserId: skillAdminId,
+        agentId,
+        versionId: draft.id,
+        approvalRequestId: request.id,
+      });
+
+      assert.equal(live.status, 'Active');
+      assert.equal(live.currentVersion?.versionNumber, 1);
+
+      const published = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.engineAgentVersion.findFirstOrThrow({
+          where: { tenantId, id: draft.id },
+        }),
+      );
+      assert.equal(published.status, 'Published');
+    });
+
+    it('never lets the employee activate their own submission', async () => {
+      // The whole chain exists because this is the thing it prevents. `agents:Publish` is what
+      // activation asks for, and the Employee template does not hold it — which is also why
+      // finishing the setup submitted rather than published in the first place.
+      const { assignmentId } = await assignedAiWork();
+      await answerEverything(assignmentId);
+      const submitted = await builder().activate({
+        scope: scope(),
+        actorUserId: workerUserId,
+        assignmentId,
+      });
+      const agentId = submitted.engineAgent?.id;
+      assert.ok(agentId);
+
+      const draft = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.engineAgentVersion.findFirstOrThrow({
+          where: { tenantId, engineAgentId: agentId },
+        }),
+      );
+
+      // Over HTTP, because a 403 is what the screen would actually meet.
+      await as(
+        agent()
+          .post(`/tenants/${tenantId}/agents/${agentId}/versions/${draft.id}/activate`)
+          .send({}),
+        workerUboss,
+      ).expect(403);
+
+      const untouched = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.engineAgent.findFirstOrThrow({ where: { tenantId, id: agentId } }),
+      );
+      assert.equal(untouched.status, 'Ready');
     });
   });
 

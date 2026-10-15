@@ -70,6 +70,7 @@ describe('Task & Tracker boards (e2e)', () => {
   let otherTenantId: string;
   let adminId: string;
   let adminUboss: string;
+  let managerUserId: string;
   let managerUboss: string;
   let employeeId: string;
   let employeeUboss: string;
@@ -200,6 +201,7 @@ describe('Task & Tracker boards (e2e)', () => {
 
     adminId = people.admin.id;
     adminUboss = people.admin.ubossUniqueId;
+    managerUserId = people.manager.id;
     managerUboss = people.manager.ubossUniqueId;
     employeeId = people.employee.id;
     employeeUboss = people.employee.ubossUniqueId;
@@ -630,6 +632,131 @@ describe('Task & Tracker boards (e2e)', () => {
         ctx.prisma.client.space.count({ where: { tenantId, isDefault: true, archivedAt: null } }),
       );
       assert.equal(defaults, 1);
+    });
+
+    /**
+     * A space belongs to a department, or to the whole company — CR-04.
+     *
+     * The client's words: *"User ko sirf apne department ka RIS dikhna chahiye"*, and, asked
+     * whether an administrator is narrowed the same way, *"jiske paas full access hoga vo sab
+     * dekhe."* So there are four readings, and two of them are easy to get wrong: somebody with
+     * no employment record must not meet an empty screen, and somebody whose reach is the whole
+     * company must not be filtered down to a department they do not have.
+     *
+     * The narrow personas here are the Manager and the Employee, whose grants resolve to a team
+     * and to their own work. The administrator's resolves to the whole company, which is the
+     * difference being tested rather than a convenience.
+     */
+    describe('whose department a space is', () => {
+      /** A department, and somebody employed in it. */
+      const employ = async (name: string, userId: string, employeeId: string): Promise<string> => {
+        return ctx.prisma.runAsPlatformOperation(async () => {
+          const department = await ctx.prisma.client.department.create({
+            data: { tenantId, name },
+          });
+          await ctx.prisma.client.employmentRecord.create({
+            data: {
+              tenantId,
+              userId,
+              employeeId,
+              designation: 'Fixture',
+              departmentId: department.id,
+            },
+          });
+          return department.id;
+        });
+      };
+
+      const spaceNamesFor = async (uboss: string): Promise<string[]> => {
+        const response = await as(agent().get(`/tenants/${tenantId}/boards/spaces`), uboss).expect(
+          200,
+        );
+        return (response.body.spaces as { name: string }[]).map((space) => space.name);
+      };
+
+      it("shows a department's space to that department, and not to the one next door", async () => {
+        const production = await employ('Production', managerUserId, 'E-0001');
+        await employ('Quality', employeeId, 'E-0002');
+
+        await as(agent().post(`/tenants/${tenantId}/boards/spaces`), adminUboss)
+          .send({ name: 'Production Space', departmentId: production })
+          .expect(201);
+
+        assert.ok((await spaceNamesFor(managerUboss)).includes('Production Space'));
+        assert.ok(!(await spaceNamesFor(employeeUboss)).includes('Production Space'));
+      });
+
+      it('shows a space with no department to everybody', async () => {
+        await employ('Production', managerUserId, 'E-0001');
+        await employ('Quality', employeeId, 'E-0002');
+
+        await as(agent().post(`/tenants/${tenantId}/boards/spaces`), adminUboss)
+          .send({ name: 'Company Space' })
+          .expect(201);
+
+        assert.ok((await spaceNamesFor(managerUboss)).includes('Company Space'));
+        assert.ok((await spaceNamesFor(employeeUboss)).includes('Company Space'));
+      });
+
+      it('shows the company-wide spaces to somebody with no employment record', async () => {
+        /*
+         * The failure this prevents: filtering on "space.departmentId === mine" where `mine` is
+         * null looks right and is, but only because the null case is spelled out. Somebody who
+         * has not been given an employment record yet would otherwise open RIS onto nothing and
+         * report it as broken.
+         */
+        const production = await employ('Production', employeeId, 'E-0002');
+
+        await as(agent().post(`/tenants/${tenantId}/boards/spaces`), adminUboss)
+          .send({ name: 'Company Space' })
+          .expect(201);
+        await as(agent().post(`/tenants/${tenantId}/boards/spaces`), adminUboss)
+          .send({ name: 'Production Space', departmentId: production })
+          .expect(201);
+
+        // The Manager is employed nowhere, and their grant reaches a team rather than the
+        // company — so they are narrowed, and what remains is the space that belongs to nobody.
+        assert.deepEqual(await spaceNamesFor(managerUboss), ['Company Space']);
+      });
+
+      it('shows every space to somebody whose reach is the whole company', async () => {
+        /*
+         * *"Jiske paas full access hoga vo sab dekhe."* The administrator is employed in no
+         * department at all, so the department filter would have left them with the company-wide
+         * spaces and hidden every department's — the opposite of what full access means.
+         *
+         * Decided on the reach their grant resolves to rather than on the word "CompanyAdmin":
+         * a company can give somebody else whole-company reach over RIS, and they should see the
+         * same thing for the same reason.
+         */
+        const production = await employ('Production', employeeId, 'E-0002');
+
+        await as(agent().post(`/tenants/${tenantId}/boards/spaces`), adminUboss)
+          .send({ name: 'Company Space' })
+          .expect(201);
+        await as(agent().post(`/tenants/${tenantId}/boards/spaces`), adminUboss)
+          .send({ name: 'Production Space', departmentId: production })
+          .expect(201);
+
+        assert.deepEqual((await spaceNamesFor(adminUboss)).sort(), [
+          'Company Space',
+          'Production Space',
+        ]);
+      });
+
+      it('refuses a department this company does not have, and says so', async () => {
+        const elsewhere = await ctx.prisma.runAsPlatformOperation(() =>
+          ctx.prisma.client.department.create({
+            data: { tenantId: otherTenantId, name: 'Somebody Else' },
+          }),
+        );
+
+        const refusal = await as(agent().post(`/tenants/${tenantId}/boards/spaces`), adminUboss)
+          .send({ name: 'Borrowed', departmentId: elsewhere.id })
+          .expect(400);
+
+        assert.match(refusal.body.message as string, /no such department/i);
+      });
     });
   });
 

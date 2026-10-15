@@ -67,10 +67,62 @@ export class BoardService {
 
   // ---- Spaces -------------------------------------------------------------
 
-  /** Every space in the company. A space is a container; what is inside it is filtered per board. */
+  /**
+   * The spaces this person may see — CR-04: *"User ko sirf apne department ka RIS dikhna chahiye."*
+   *
+   * A space belonging to a department is that department's; a space belonging to none is the whole
+   * company's and everybody sees it. Nothing is hidden from somebody who has no department on
+   * record — they see the company-wide spaces, which is what they saw before, rather than an
+   * empty screen that looks broken.
+   *
+   * Filtered here rather than in the repository: the repository answers "what spaces exist", and
+   * two callers already need that answer unfiltered — the default-space lookup and anything
+   * administering a company. A filter inside it would quietly narrow both.
+   *
+   * This is presentation *and* reach: what somebody sees once they open a board is still decided
+   * per board by its kind and its members, which the server enforces. Hiding a space does not
+   * unprotect the boards in it.
+   *
+   * ## Somebody whose reach is the whole company sees the whole company
+   *
+   * The client, asked whether the same narrowing applies to an administrator: *"jiske paas full
+   * access hoga vo sab dekhe."* So the test is the reach this person's own grant resolves to,
+   * which the authorization engine already computes — `WholeCompany` sees every space, anything
+   * narrower sees its own department's and the company's.
+   *
+   * Scope rather than a role name on purpose. A company can grant RIS at whole-company reach to
+   * somebody who is not an administrator, and an `if (role === 'CompanyAdmin')` here would be a
+   * second rule about who may see what, kept in a different file from the first.
+   */
   async listSpaces(scope: TenantScope, actorUserId: string) {
-    await this.assertCan(scope, actorUserId, 'View');
-    return this.boards.listSpaces(scope);
+    const context = await this.authorization.contextFor(scope, actorUserId);
+    const decision = await this.authorization.authorize(context, {
+      module: 'todo',
+      action: 'View',
+    });
+    if (!decision.allowed) throw new ForbiddenException(decision.message);
+
+    const [spaces, mine] = await Promise.all([
+      this.boards.listSpaces(scope),
+      decision.effectiveScope === 'WholeCompany'
+        ? Promise.resolve(null)
+        : this.departmentOf(scope, actorUserId),
+    ]);
+
+    if (decision.effectiveScope === 'WholeCompany') return spaces;
+
+    return spaces.filter((space) => space.departmentId === null || space.departmentId === mine);
+  }
+
+  /** The department this person is employed in, or null when they have no record. */
+  private async departmentOf(scope: TenantScope, userId: string): Promise<string | null> {
+    const employment = await this.prisma.runInTenantTransaction(scope, () =>
+      this.prisma.client.employmentRecord.findFirst({
+        where: { tenantId: scope.tenantId, userId },
+        select: { departmentId: true },
+      }),
+    );
+    return employment?.departmentId ?? null;
   }
 
   async createSpace(input: {
@@ -79,11 +131,36 @@ export class BoardService {
     name: string;
     description?: string | undefined;
     tone?: string | undefined;
+    /**
+     * Whose department's space this is, or absent for one the whole company shares.
+     *
+     * Absent and null mean the same thing to a reader; the difference is that null is somebody
+     * saying it. A caller who names a department gets a space only that department sees.
+     */
+    departmentId?: string | null | undefined;
   }) {
     await this.assertCan(input.scope, input.actorUserId, 'Create');
 
     const name = input.name.trim();
     if (name === '') throw new BadRequestException('A space needs a name.');
+
+    /*
+     * A department this company actually has.
+     *
+     * The foreign key would refuse an invented one, but as a 500 somebody has to go and read a
+     * log to understand. Checked here so the answer names what was wrong.
+     */
+    if (input.departmentId !== undefined && input.departmentId !== null) {
+      const department = await this.prisma.runInTenantTransaction(input.scope, () =>
+        this.prisma.client.department.findFirst({
+          where: { tenantId: input.scope.tenantId, id: input.departmentId as string },
+          select: { id: true },
+        }),
+      );
+      if (department === null) {
+        throw new BadRequestException('There is no such department in this company.');
+      }
+    }
 
     const position = await this.boards.nextPosition(input.scope, 'space', {});
     const space = await this.boards.createSpace(input.scope, {
@@ -98,6 +175,7 @@ export class BoardService {
        * second caller gets a unique-violation they did not cause and cannot act on.
        */
       isDefault: false,
+      departmentId: input.departmentId ?? null,
       createdByUserId: input.actorUserId,
       position,
     });
@@ -129,6 +207,9 @@ export class BoardService {
       description: null,
       tone: 'blue',
       isDefault: true,
+      // The company's, not one department's. It is the space a board lands in when nobody chose
+      // one, so narrowing it would hide somebody's first board from everybody else.
+      departmentId: null,
       createdByUserId: actorUserId,
       position,
     });

@@ -64,6 +64,8 @@ export class BoardRepository {
       description: string | null;
       tone: string;
       isDefault: boolean;
+      /// Whose department this space is, or null for one the whole company shares.
+      departmentId: string | null;
       createdByUserId: string;
       position: number;
     },

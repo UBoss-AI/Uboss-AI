@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import {
   ConflictException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -153,9 +154,25 @@ export class RunEngineService implements OnModuleInit {
      * Optional for the same reason the fairness service is: a test may build the engine without
      * it, and an engine that refuses to run work because it cannot *record* something would be
      * the tail wagging the dog.
+     *
+     * ## Why the token is named
+     *
+     * `@Optional()` on a parameter typed `T | undefined` is a silent off switch. TypeScript emits
+     * `design:paramtypes` for a union as `Object`, so Nest has no class to look up, finds
+     * nothing, and — because the parameter is optional — injects `undefined` without a word. The
+     * engine then ran every job with `skillRouter === undefined` and returned from
+     * `recordMatchedSkill` on its first line, in the tests and in production alike: the feature
+     * was wired, shipped and dead, and nothing failed loudly enough to say so.
+     *
+     * `@Inject()` names the token explicitly, so resolution no longer depends on what the
+     * compiler happened to emit. The same applies to `fairness` below, for the same reason.
      */
-    @Optional() private readonly skillRouter?: SkillRouterService | undefined,
-    @Optional() private readonly fairness?: RunFairnessService | undefined,
+    @Optional()
+    @Inject(SkillRouterService)
+    private readonly skillRouter?: SkillRouterService | undefined,
+    @Optional()
+    @Inject(RunFairnessService)
+    private readonly fairness?: RunFairnessService | undefined,
   ) {}
 
   /**
@@ -229,6 +246,15 @@ export class RunEngineService implements OnModuleInit {
         },
       });
 
+      /*
+       * Nothing applied, so nothing is written.
+       *
+       * The client's rule, in their words: *"not every agent run chooses its skill — it only
+       * chooses when required, otherwise not."* This is the "otherwise": the router was asked and
+       * found no approved Skill that fits what this run was actually given. Recording the closest
+       * one anyway would be the silent wrong match the router exists to prevent, and writing
+       * "none" would be a decision nobody made.
+       */
       const best = outcome.matches[0];
       if (best === undefined) return;
 

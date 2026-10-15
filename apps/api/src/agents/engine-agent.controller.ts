@@ -352,11 +352,14 @@ export class EngineAgentController {
   /**
    * Raise the approval a reach-widening version needs.
    *
-   * `Publish` rather than `Approve`: asking for a decision is not making one, and the person who
-   * wants to activate a version is exactly the person who should be able to ask.
+   * `agent-builder:EditDraft` rather than `agents:Publish` — CR-04. Asking for a decision is not
+   * making one, and it is not publishing either: it was `Publish`, so the only people who could
+   * ask were the people who never needed to, and the employee who built the agent could not
+   * submit their own work. Building is what it takes to ask; deciding and activating are
+   * unchanged.
    */
   @Post(':agentId/versions/:versionId/request-approval')
-  @RequirePermission({ module: 'agents', action: 'Publish' })
+  @RequirePermission({ module: 'agent-builder', action: 'EditDraft' })
   async requestActivationApproval(
     @Param('agentId', ParseUUIDPipe) agentId: string,
     @Param('versionId', ParseUUIDPipe) versionId: string,

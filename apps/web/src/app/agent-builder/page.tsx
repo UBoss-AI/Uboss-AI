@@ -96,6 +96,15 @@ function AgentBuilderInner() {
   const assignmentId = params.get('assignmentId');
   const router = useRouter();
 
+  /*
+   * Whether finishing the setup puts the agent live, or sends it to a Head — CR-04.
+   *
+   * `agents:Publish` is the permission the server decides it on, so this reads the same one. It
+   * only changes what the screen *says*; `agent-builder.service.ts` decides what actually
+   * happens, and a browser claiming otherwise changes nothing.
+   */
+  const mayPutAgentsLive = can(myAccess, 'agents', 'Publish');
+
   const [confirmingPublish, setConfirmingPublish] = useState(false);
   const [me, setMe] = useState<MeResponse | null>(null);
   const [meta, setMeta] = useState<AgentBuilderMetaView | null>(null);
@@ -752,7 +761,15 @@ function AgentBuilderInner() {
                   }
                   onClick={() => setConfirmingPublish(true)}
                 >
-                  Publish agent
+                  {/*
+                    The button says which of the two things the click does — CR-04.
+
+                    Somebody who may put agents live publishes; somebody who may not submits it to
+                    their Head, and an administrator activates it afterwards. The server decides
+                    that either way, on `agents:Publish`. This reads the same grant so the label
+                    is not a promise the next screen breaks.
+                  */}
+                  {mayPutAgentsLive ? 'Publish agent' : 'Submit for approval'}
                 </Button>
               </span>
             </>
@@ -774,13 +791,16 @@ function AgentBuilderInner() {
           setConfirmingPublish(false);
           run((tenant, assignment) => agentBuilderApi.activate(tenant, assignment))();
         }}
-        title="Publish this agent?"
+        title={mayPutAgentsLive ? 'Publish this agent?' : 'Send this agent for approval?'}
         description={
-          'It becomes the agent this objective step runs, and the people assigned to that step ' +
-          'can run it against real work. Later objectives needing the same work reuse it rather ' +
-          'than asking for it again.'
+          mayPutAgentsLive
+            ? 'It becomes the agent this objective step runs, and the people assigned to that ' +
+              'step can run it against real work. Later objectives needing the same work reuse ' +
+              'it rather than asking for it again.'
+            : 'Your setup goes to your Head to approve. Nothing runs until an administrator ' +
+              'activates it afterwards, so it is safe to send.'
         }
-        confirmLabel="Publish"
+        confirmLabel={mayPutAgentsLive ? 'Publish' : 'Send'}
         cancelLabel="Not yet"
       />
 

@@ -139,6 +139,7 @@ function matches(node: TreeNode, needle: string): boolean {
 
 export function BoardTree({
   spaces,
+  activeSpaceId = null,
   folders,
   boards,
   activeBoardId,
@@ -154,6 +155,14 @@ export function BoardTree({
   onFromDepartments,
 }: {
   spaces: SpaceSummary[];
+  /**
+   * Which space the screen was asked for, or null for all of RIS.
+   *
+   * Named rather than inferred from the array: the head of the rail used to read whichever space
+   * happened to be the default, so opening a department's space from the sidebar showed that
+   * department's folders under the default space's name.
+   */
+  activeSpaceId?: string | null;
   folders: FolderSummary[];
   boards: BoardSummary[];
   activeBoardId?: string | null;
@@ -199,7 +208,13 @@ export function BoardTree({
       return next;
     });
 
-  const spaceName = spaces.find((space) => space.isDefault)?.name ?? spaces[0]?.name ?? 'Boards';
+  const spaceName =
+    (activeSpaceId === null
+      ? undefined
+      : spaces.find((space) => space.id === activeSpaceId)?.name) ??
+    spaces.find((space) => space.isDefault)?.name ??
+    spaces[0]?.name ??
+    'Boards';
 
   const visibleRoots = roots.filter((node) => matches(node, needle));
   const visibleLoose = looseBoards.filter(

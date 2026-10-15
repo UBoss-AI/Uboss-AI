@@ -697,13 +697,21 @@ describe('approval engine, delegation and four-eyes (e2e)', () => {
     return view;
   };
 
-  /** An activated agent: the state the registry is about. */
+  /**
+   * An activated agent: the state the approvals below are raised against.
+   *
+   * Activated by the administrator rather than by the employee who owns the work — CR-04.
+   * Finishing a setup stopped being the same act as putting it live: somebody without
+   * `agents:Publish` submits it to their Head instead, which leaves the agent `Ready` with a
+   * draft and nothing in force. The approvals this file is about are raised by a *running*
+   * agent, so the fixture needs somebody who may put one there.
+   */
   const liveAgent = async () => {
     const { assignmentId, objectiveId } = await assignedAiWork();
     await answerEverything(assignmentId);
     const activated = await builder().activate({
       scope: scope(),
-      actorUserId: workerUserId,
+      actorUserId: skillAdminId,
       assignmentId,
     });
     const agentId = activated.engineAgent?.id;

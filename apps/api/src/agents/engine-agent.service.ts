@@ -864,12 +864,31 @@ export class EngineAgentService {
     approverUserId?: string | undefined;
     note?: string | undefined;
   }): Promise<{ approvalRequestId: string; approvalRequired: boolean }> {
+    /*
+     * Asking for a decision is building, not publishing — CR-04.
+     *
+     * This required `agents:Publish`, which is the permission to put a version live. So the only
+     * people who could *ask* for an approval were the people who never needed one, and the
+     * employee who had actually built the agent could not submit it: `agent-builder` is what they
+     * were granted, deliberately without `Put agents live`.
+     *
+     * That broke the journey the client described — an employee fills it in and submits it, their
+     * Head approves, and an administrator activates — at the one step where the work leaves the
+     * person who did it.
+     *
+     * So the builder's own grant is what it takes to ask. Nothing about deciding or activating
+     * moves: `activateVersion` still requires `agents:Publish`, the request is still addressed to
+     * a Head, and `NoSelfApproval` still refuses anybody deciding their own.
+     */
     const context = await this.authorization.contextFor(input.scope, input.actorUserId);
-    await this.authorization.assertCan(context, { module: 'agents', action: 'Publish' });
+    await this.authorization.assertCan(context, { module: 'agent-builder', action: 'EditDraft' });
 
     const prepared = await this.prisma.runInTenantTransaction(input.scope, async () => {
       const agent = await this.load(input.scope, input.agentId);
-      await this.assertMayTouch(context, agent, 'Publish');
+      // `View`, because the question is whether this agent is theirs to work on — the permission
+      // to act on it was settled above, and asking for `Publish` here would re-impose the gate
+      // this method just stopped applying.
+      await this.assertMayTouch(context, agent, 'View');
 
       const draft = await this.requireVersion(input.scope, agent.id, input.versionId);
       if (draft.status !== 'Draft') {

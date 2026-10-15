@@ -506,7 +506,19 @@ describe('run engine, queue and scheduler (e2e)', () => {
     }),
   ];
 
-  const publishSkill = async () => {
+  /**
+   * An approved Skill.
+   *
+   * `overrides` exists for one case: the run-time match. A run carries only the handful of
+   * answers `runtimeInputsFor` asks for — `subject`, and a destination or a missing-data rule
+   * when the published agent did not name one — so a Skill whose required input is "DHF
+   * workbook" can never be fed by a run and is rightly refused. Matching at run time is therefore
+   * only ever about Skills a run *can* supply, and that test publishes one.
+   */
+  const publishSkill = async (
+    overrides: Partial<SkillContent> & { key?: string; name?: string } = {},
+  ) => {
+    const { key: overrideKey, name: overrideName, ...contentOverrides } = overrides;
     const content: SkillContent = {
       purpose: 'Draft a GSPR matrix from an evidence index.',
       category: 'Drafting',
@@ -525,13 +537,14 @@ describe('run engine, queue and scheduler (e2e)', () => {
       requiresApproval: false,
       autonomy: 'ProposeForApproval',
       evidenceRequirement: 'Record the index revision and each requirement drafted.',
+      ...contentOverrides,
     };
 
     const created = await skills().createCompanySkill({
       scope: scope(),
       actorUserId: skillAdminId,
-      key: 'gspr-drafter',
-      name: 'GSPR matrix drafter',
+      key: overrideKey ?? 'gspr-drafter',
+      name: overrideName ?? 'GSPR matrix drafter',
       content,
       creationMode: 'Manual',
     });
@@ -668,17 +681,58 @@ describe('run engine, queue and scheduler (e2e)', () => {
     return view;
   };
 
-  /** An activated agent: the state the registry is about. */
+  /**
+   * An activated agent: the state a run needs.
+   *
+   * Activated by the administrator rather than by the employee who owns the work — CR-04.
+   * Finishing a setup stopped being the same act as putting it live: somebody without
+   * `agents:Publish` submits it to their Head instead, which leaves the agent `Ready` with a
+   * draft and nothing in force. Nothing runs from there, which is the point of it — and the
+   * wrong starting state for a file about running.
+   */
   const liveAgent = async () => {
     const { assignmentId, objectiveId } = await assignedAiWork();
     await answerEverything(assignmentId);
-    const activated = await builder().activate({
+
+    /*
+     * The employee still builds it and still submits it, so the agent that comes out of this is
+     * theirs — owner, creator and all — exactly as it was before CR-04. What the chain adds is
+     * the two people between finishing and running, and this helper walks them so that the file
+     * below starts where it always started: at an agent that is live.
+     */
+    const submitted = await builder().activate({
       scope: scope(),
       actorUserId: workerUserId,
       assignmentId,
     });
-    const agentId = activated.engineAgent?.id;
+    const agentId = submitted.engineAgent?.id;
     assert.ok(agentId, 'activation produced no agent');
+
+    const draft = await ctx.prisma.runAsPlatformOperation(() =>
+      ctx.prisma.client.engineAgentVersion.findFirstOrThrow({
+        where: { tenantId, engineAgentId: agentId, status: 'Draft' },
+      }),
+    );
+    const request = await ctx.prisma.runAsPlatformOperation(() =>
+      ctx.prisma.client.approvalRequest.findFirstOrThrow({
+        where: { tenantId, type: 'AgentActivation', subjectId: draft.id },
+      }),
+    );
+    await approvals().decide({
+      scope: scope(),
+      actorUserId: objectiveApproverId,
+      approvalId: request.id,
+      decision: 'Approve',
+      note: 'Fixture: the Head approves.',
+    });
+    await registry().activateVersion({
+      scope: scope(),
+      actorUserId: skillAdminId,
+      agentId,
+      versionId: draft.id,
+      approvalRequestId: request.id,
+    });
+
     return { agentId, assignmentId, objectiveId };
   };
 
@@ -873,10 +927,31 @@ describe('run engine, queue and scheduler (e2e)', () => {
         });
       });
 
+      /*
+       * A Skill a run can actually be the input to.
+       *
+       * This test used to publish only the GSPR drafter, whose one required input is a "DHF
+       * workbook" — and a run carries `subject` and nothing resembling a workbook, so the router
+       * refused it and the test called that refusal a bug. It was not: selecting a Skill that
+       * cannot be given what it asked for is the silent wrong match the router exists to stop.
+       *
+       * So the company also has a Skill whose input *is* the subject of the run, which is the
+       * shape a run-time match can ever apply to. That is a real limit of matching at this
+       * moment rather than at planning time, and it belongs in the test rather than in a comment
+       * nobody reads.
+       */
+      await publishSkill({
+        key: 'subject-summariser',
+        name: 'Run subject summariser',
+        purpose: 'Draft a GSPR matrix for whatever subject a run is given.',
+        whenToUse: 'When a run names the subject and a GSPR matrix has to be drafted for it.',
+        inputs: [{ name: 'subject', description: 'What this run covers.', required: true }],
+      });
+
       await as(
         agent()
           .post(`/tenants/${tenantId}/agents/${agentId}/runs`)
-          .send({ runtimeInputs: { subject: 'March distributor records' } }),
+          .send({ runtimeInputs: { subject: 'Draft the GSPR matrix for March' } }),
         workerUboss,
       ).expect(201);
 
@@ -898,6 +973,63 @@ describe('run engine, queue and scheduler (e2e)', () => {
       );
       assert.ok(events.length > 0, 'the match was made and never recorded');
       assert.match(String(events[0]?.summary), /Nobody chose it from a list/);
+    });
+
+    it('chooses nothing when nothing approved fits what the run was given', async () => {
+      /*
+       * The client's rule, in their words: *"not every agent run chooses its skill — it only
+       * chooses when required, otherwise not."*
+       *
+       * Two things make it "not required". One is an agent that already has a Skill, which the
+       * test below covers. This is the other: the agent has none, so the question is asked, and
+       * the honest answer is that no approved capability fits. The assignment is left exactly as
+       * it was — recording the nearest miss would be the silent wrong match, and the next screen
+       * would show a capability nobody selected and the router did not endorse.
+       */
+      const { agentId, assignmentId } = await liveAgent();
+
+      await ctx.prisma.runAsPlatformOperation(async () => {
+        const row = await ctx.prisma.client.aiWorkAssignment.findFirstOrThrow({
+          where: { tenantId, id: assignmentId },
+          select: { setupPrefill: true },
+        });
+        await ctx.prisma.client.aiWorkAssignment.update({
+          where: { id: assignmentId },
+          data: {
+            setupPrefill: {
+              ...(row.setupPrefill as object),
+              skillVersionIds: [],
+            } as unknown as object,
+          },
+        });
+      });
+
+      // Nothing here is the evidence index the one approved Skill requires.
+      await as(
+        agent()
+          .post(`/tenants/${tenantId}/agents/${agentId}/runs`)
+          .send({ runtimeInputs: { subject: 'March distributor records' } }),
+        workerUboss,
+      ).expect(201);
+
+      const after = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.aiWorkAssignment.findFirstOrThrow({
+          where: { tenantId, id: assignmentId },
+          select: { setupPrefill: true },
+        }),
+      );
+      assert.deepEqual(
+        (after.setupPrefill as { skillVersionIds?: string[] }).skillVersionIds ?? [],
+        [],
+        'a Skill was recorded that nothing in the run could feed',
+      );
+
+      const events = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.auditEvent.findMany({
+          where: { tenantId, action: 'agent.skill_matched_at_run' },
+        }),
+      );
+      assert.equal(events.length, 0, 'a match nobody made was written to the trail');
     });
 
     it('does not replace a Skill the analysis already chose', async () => {
@@ -1921,14 +2053,50 @@ describe('run engine, queue and scheduler (e2e)', () => {
       );
       assert.equal(ready.readiness.readyToActivate, true);
 
-      // ---- 3. activation produces a reusable Engine Agent ----
-      const activated = await builder().activate({
+      /*
+       * ---- 3. the employee submits it, their Head approves, an administrator activates ----
+       *
+       * CR-04 put two people between finishing a setup and the agent running, and this is the
+       * one test that follows the artefact across every seam — so it follows them too. The
+       * employee's call produces the agent and leaves it `Ready`; the chain is what makes it the
+       * agent the next stage consumes.
+       */
+      const submitted = await builder().activate({
         scope: scope(),
         actorUserId: workerUserId,
         assignmentId,
       });
-      const agentId = activated.engineAgent?.id;
+      const agentId = submitted.engineAgent?.id;
       assert.ok(agentId, 'activation produced no agent');
+      assert.equal(submitted.engineAgent?.status, 'Ready', 'the employee put it live themselves');
+
+      const draft = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.engineAgentVersion.findFirstOrThrow({
+          where: { tenantId, engineAgentId: agentId },
+        }),
+      );
+      const request = await ctx.prisma.runAsPlatformOperation(() =>
+        ctx.prisma.client.approvalRequest.findFirstOrThrow({
+          where: { tenantId, type: 'AgentActivation', subjectId: draft.id },
+        }),
+      );
+
+      await approvals().decide({
+        scope: scope(),
+        actorUserId: objectiveApproverId,
+        approvalId: request.id,
+        decision: 'Approve',
+        note: 'The setup matches the step it was built for.',
+      });
+
+      const activated = await registry().activateVersion({
+        scope: scope(),
+        actorUserId: skillAdminId,
+        agentId,
+        versionId: draft.id,
+        approvalRequestId: request.id,
+      });
+      assert.equal(activated.status, 'Active');
 
       // The second seam: the assignment now names its agent, and the constraint
       // `mapped_assignment_names_its_agent` is what makes that not merely a convention.
@@ -2033,9 +2201,11 @@ describe('run engine, queue and scheduler (e2e)', () => {
        */
       const { assignmentId, objectiveId } = await assignedAiWork();
       await answerEverything(assignmentId);
+      // Put live by the administrator, because the arc being traced ends in a run — and since
+      // CR-04 an employee finishing a setup submits it rather than starting it.
       const activated = await builder().activate({
         scope: scope(),
-        actorUserId: workerUserId,
+        actorUserId: skillAdminId,
         assignmentId,
       });
       const agentId = activated.engineAgent?.id;

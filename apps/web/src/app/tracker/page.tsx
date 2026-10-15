@@ -1,7 +1,7 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
   Banner,
@@ -62,10 +62,11 @@ import { useSignedInUser } from '../../lib/use-signed-in-user';
  * hundred where everybody makes boards has four hundred boards and no map. An administrator can
  * grant it deliberately.
  */
-export default function TrackerPage() {
+function TrackerInner() {
   const navGroups = useCompanyNavigation();
   const router = useRouter();
   const access = useMyAccess();
+  const requestedSpaceId = useSearchParams().get('space');
 
   const [me, setMe] = useState<MeResponse | null>(null);
   const [boards, setBoards] = useState<BoardSummary[] | null>(null);
@@ -123,6 +124,40 @@ export default function TrackerPage() {
   const mayCreate = can(access, 'todo', 'Create');
 
   /*
+   * One space, when the sidebar asked for one — CR-04.
+   *
+   * `?space=<id>` is how the RIS dropdown links here, and it narrows this screen to that space:
+   * its folders in the rail, its boards on the right, and a new board or folder made inside it
+   * rather than wherever the server would otherwise put it.
+   *
+   * It is matched against the spaces that actually came back, so an id for somebody else's
+   * department — or for a space that has since been archived — falls through to the whole of RIS
+   * instead of showing an empty screen that looks broken. The access answer is the server's: that
+   * list has already had other departments' spaces removed from it, which is why matching against
+   * it is enough. Nothing here is a permission check.
+   */
+  const activeSpace =
+    requestedSpaceId === null
+      ? null
+      : (spaces.find((space) => space.id === requestedSpaceId) ?? null);
+  const activeSpaceId = activeSpace?.id ?? null;
+
+  const spaceBoards = useMemo(
+    () =>
+      boards === null || activeSpaceId === null
+        ? boards
+        : boards.filter((board) => board.spaceId === activeSpaceId),
+    [boards, activeSpaceId],
+  );
+  const spaceFolders = useMemo(
+    () =>
+      activeSpaceId === null
+        ? folders
+        : folders.filter((folder) => folder.spaceId === activeSpaceId),
+    [folders, activeSpaceId],
+  );
+
+  /*
    * What the right-hand pane shows.
    *
    * A folder selected in the tree shows that folder and everything under it, not only its own
@@ -139,13 +174,13 @@ export default function TrackerPage() {
         const id = queue.pop()!;
         if (within.has(id)) continue;
         within.add(id);
-        for (const folder of folders) {
+        for (const folder of spaceFolders) {
           if (folder.parentFolderId === id) queue.push(folder.id);
         }
       }
     }
 
-    return (boards ?? []).filter((board) => {
+    return (spaceBoards ?? []).filter((board) => {
       if (selectedFolderId !== null && (board.folderId === null || !within.has(board.folderId))) {
         return false;
       }
@@ -155,10 +190,10 @@ export default function TrackerPage() {
         (board.description ?? '').toLowerCase().includes(needle)
       );
     });
-  }, [boards, folders, query, selectedFolderId]);
+  }, [spaceBoards, spaceFolders, query, selectedFolderId]);
 
   const folderName = (id: string | null) =>
-    id === null ? null : (folders.find((folder) => folder.id === id)?.name ?? null);
+    id === null ? null : (spaceFolders.find((folder) => folder.id === id)?.name ?? null);
 
   /** The path to a folder, for the breadcrumb: PRODUCTION / IV Cannula / October. */
   const folderPath = useMemo(() => {
@@ -167,20 +202,34 @@ export default function TrackerPage() {
     const seen = new Set<string>();
     while (cursor !== null && !seen.has(cursor)) {
       seen.add(cursor);
-      const folder = folders.find((row) => row.id === cursor);
+      const folder = spaceFolders.find((row) => row.id === cursor);
       if (!folder) break;
       trail.unshift(folder.name);
       cursor = folder.parentFolderId;
     }
     return trail;
-  }, [folders, selectedFolderId]);
+  }, [spaceFolders, selectedFolderId]);
+
+  /*
+   * A folder chosen in one space is not a folder in the next one.
+   *
+   * Moving between spaces in the sidebar kept the old selection, and the right-hand pane then
+   * filtered this space's boards by a folder belonging to another one — which matches nothing, so
+   * the screen read as an empty space. Clearing on the way in is the honest reset: the rail opens
+   * at the top of whatever was asked for.
+   */
+  useEffect(() => {
+    setSelectedFolderId(null);
+  }, [activeSpaceId]);
 
   return (
     <RoutedAppShell
       variant="company"
       workspaceName={activeWorkspace?.tenantName ?? '—'}
       groups={navGroups}
-      activeKey="tracker"
+      // The sidebar entry that led here, so the highlight sits on the space being read rather
+      // than on the "RIS" above it. No space asked for means it really is the RIS entry.
+      activeKey={activeSpaceId === null ? 'tracker' : `tracker-space-${activeSpaceId}`}
       {...bell.shellProps}
       user={signedInUser}
       accountMenu={accountMenu}
@@ -190,9 +239,19 @@ export default function TrackerPage() {
       }}
     >
       <PageHeader
-        title="RIS"
-        description="Boards: groups down the page, columns across it, and whatever work you put on them."
-        breadcrumbs={[{ label: 'RIS' }, ...folderPath.map((label) => ({ label }))]}
+        title={activeSpace === null ? 'RIS' : activeSpace.name}
+        description={
+          activeSpace === null
+            ? 'Boards: groups down the page, columns across it, and whatever work you put on them.'
+            : activeSpace.departmentId === null
+              ? 'A space the whole company shares.'
+              : "Your department's space. Boards made here stay in it."
+        }
+        breadcrumbs={[
+          { label: 'RIS' },
+          ...(activeSpace === null ? [] : [{ label: activeSpace.name }]),
+          ...folderPath.map((label) => ({ label })),
+        ]}
         {...(mayCreate
           ? {
               actions: (
@@ -211,7 +270,7 @@ export default function TrackerPage() {
 
       {error ? <Banner tone="danger">{error}</Banner> : null}
 
-      {boards === null ? (
+      {spaceBoards === null ? (
         error === null ? (
           <Card>
             <CardBody>
@@ -230,8 +289,9 @@ export default function TrackerPage() {
           <aside className="uboss-tracker__rail">
             <BoardTree
               spaces={spaces}
-              folders={folders}
-              boards={boards}
+              activeSpaceId={activeSpaceId}
+              folders={spaceFolders}
+              boards={spaceBoards}
               selectedFolderId={selectedFolderId}
               query={query}
               mayCreate={mayCreate}
@@ -329,7 +389,8 @@ export default function TrackerPage() {
       {makingBoardIn !== undefined && tenantId ? (
         <NewBoardDialog
           tenantId={tenantId}
-          folders={folders}
+          folders={spaceFolders}
+          spaceId={activeSpaceId}
           folderId={makingBoardIn}
           onClose={() => setMakingBoardIn(undefined)}
           onMade={(boardId) => {
@@ -342,6 +403,7 @@ export default function TrackerPage() {
       {makingFolderIn !== undefined && tenantId ? (
         <NewFolderDialog
           tenantId={tenantId}
+          spaceId={activeSpaceId}
           parentFolderId={makingFolderIn}
           parentName={folderName(makingFolderIn)}
           onClose={() => setMakingFolderIn(undefined)}
@@ -388,12 +450,22 @@ export default function TrackerPage() {
 function NewBoardDialog({
   tenantId,
   folders,
+  spaceId,
   folderId,
   onClose,
   onMade,
 }: {
   tenantId: string;
   folders: FolderSummary[];
+  /**
+   * The space the screen is showing, or null when it is showing all of RIS.
+   *
+   * Sent only in the first case, and only when no folder was chosen — a folder already decides
+   * the space, and the server treats the folder as the authority when the two disagree. Without
+   * this a board made while reading one space landed in the default one and disappeared from the
+   * view that made it.
+   */
+  spaceId: string | null;
   /** Where the click came from. Null is the top of the space, and is a real answer. */
   folderId: string | null;
   onClose: () => void;
@@ -414,6 +486,7 @@ function NewBoardDialog({
         name,
         kind,
         ...(where === '' ? {} : { folderId: where }),
+        ...(where !== '' || spaceId === null ? {} : { spaceId }),
         ...(description.trim() === '' ? {} : { description }),
       });
       onMade(board.id);
@@ -527,12 +600,15 @@ function NewBoardDialog({
  */
 function NewFolderDialog({
   tenantId,
+  spaceId,
   parentFolderId,
   parentName,
   onClose,
   onMade,
 }: {
   tenantId: string;
+  /** The space being read, for the same reason the board dialog takes one. */
+  spaceId: string | null;
   parentFolderId: string | null;
   parentName: string | null;
   onClose: () => void;
@@ -549,6 +625,7 @@ function NewFolderDialog({
       await boardsApi.createFolder(tenantId, {
         name,
         ...(parentFolderId === null ? {} : { parentFolderId }),
+        ...(parentFolderId !== null || spaceId === null ? {} : { spaceId }),
       });
       onMade();
     } catch (caught: unknown) {
@@ -813,5 +890,19 @@ function MoveDialog({
         <p className="uboss-muted">Only the folders in this board&rsquo;s own space are listed.</p>
       )}
     </Modal>
+  );
+}
+
+/**
+ * The Suspense boundary that `useSearchParams()` requires, or the production build fails outright.
+ *
+ * It exists because the sidebar deep-links here: /tracker?space=<id> is how an entry under the RIS
+ * dropdown opens the space it names.
+ */
+export default function TrackerPage() {
+  return (
+    <Suspense fallback={null}>
+      <TrackerInner />
+    </Suspense>
   );
 }

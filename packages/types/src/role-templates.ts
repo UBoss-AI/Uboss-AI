@@ -291,7 +291,23 @@ export const ROLE_TEMPLATES: Record<Exclude<RoleKind, 'Custom'>, RoleTemplate> =
       // that capability explicitly, which is the mechanism the product already has.
       'agent-builder': ['View', 'Comment'],
       todo: ['View', 'Comment', 'Create', 'EditDraft', 'Assign'],
-      agents: ['View', 'Comment', 'Run', 'Schedule', 'Pause', 'Publish'],
+      /*
+       * `Approve` as well as `Publish` — CR-04.
+       *
+       * The client's chain for an agent is the same as for an objective: the employee submits,
+       * their Head approves, the administrator puts it live. The submission is an
+       * `AgentActivation` request, which `APPROVAL_TYPE_MODULE` governs with `agents:Approve` —
+       * and this template did not hold it, so a request addressed to a Head could only ever be
+       * decided by the company's administrator standing in for one. The step the client asked
+       * for was missing from the role whose whole summary is "approves within it".
+       *
+       * It grants strictly less than what is already here: a Head holds `Publish`, so they can
+       * already put an agent live without asking anybody. `Approve` lets them say yes to
+       * somebody else's instead, which is the smaller act. `NoSelfApproval` still refuses a Head
+       * deciding their own request, and `activateVersion` still refuses the approver activating
+       * what they approved.
+       */
+      agents: ['View', 'Comment', 'Run', 'Schedule', 'Pause', 'Approve', 'Publish'],
       executor: ['View', 'Comment', 'Pause'],
       approvals: ['View', 'Comment', 'Approve'],
       performance: ['View', 'Export'],

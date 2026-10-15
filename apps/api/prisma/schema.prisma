@@ -3328,6 +3328,7 @@ model Department {
 
   /// The department Workshop, the one conversation this department itself owns.
   workshops ChatConversation[]
+  spaces    Space[]
 
   /// A department name is unique within a company, so two "Quality Assurance" departments
   /// cannot exist and make every scope decision ambiguous.
@@ -8526,6 +8527,18 @@ model Space {
   /// chose. Exactly one per company, enforced by a partial unique index.
   isDefault Boolean @default(false) @map("is_default")
 
+  /// Whose department's RIS this is, or null for a space the whole company shares.
+  ///
+  /// CR-04: *"User ko sirf apne department ka RIS dikhna chahiye."* The department sits on the
+  /// space rather than on each board, because a space is what a person opens and a board already
+  /// decides its own audience through `kind` and its members — putting it on the board would make
+  /// one space able to hold two departments' work, which is the thing being separated.
+  ///
+  /// Nullable, and the null means something: a space with no department is everybody's. Every
+  /// space that existed before this is one, which is the only honest default — inferring a
+  /// department for them would be guessing at who owns work somebody else organised.
+  departmentId String? @map("department_id") @db.Uuid
+
   createdByUserId String @map("created_by_user_id") @db.Uuid
 
   /// Archived, never deleted: a space holds boards, a board holds a record of
@@ -8544,10 +8557,18 @@ model Space {
   boards  Board[]
   folders BoardFolder[]
 
+  /// Composite (ADR-064): a space can never belong to another company's department.
+  ///
+  /// `Restrict`, as every other department relation here is: a department with spaces in it is
+  /// not an empty department, and deleting it would either destroy work somebody organised or
+  /// leave it pointing at nothing. The spaces move first, which is a decision somebody makes.
+  department Department? @relation(fields: [tenantId, departmentId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction)
+
   /// The composite target every child points at, so a board cannot reference a
   /// space in another company (ADR-064).
   @@unique([tenantId, id])
   @@index([tenantId, archivedAt])
+  @@index([tenantId, departmentId])
   @@map("spaces")
 }
 
