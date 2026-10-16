@@ -3173,12 +3173,45 @@ export const connectionsApi = {
       environment?: 'Test' | 'Production';
       secret: string;
       allowedDepartmentIds?: string[];
+      /** The https address of the server, for `custom-mcp` and for nothing else — CR-06. */
+      endpoint?: string;
     },
   ) =>
     call<ConnectionRow>(`/tenants/${encodeURIComponent(tenantId)}/connections`, {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+
+  /**
+   * What this MCP server offers now, and how that differs from what was approved — CR-06.
+   *
+   * Reads; writes nothing. `drift` is empty when the server is still the shape somebody signed
+   * off, and `suspicious` names the tools whose own description is written like an instruction.
+   */
+  discoverMcpTools: (tenantId: string, connectionId: string) =>
+    call<{
+      tools: { name: string; description: string; inputSchema: unknown }[];
+      drift: { added: string[]; removed: string[]; changed: string[] };
+      suspicious: string[];
+      approved: boolean;
+      /** Whether anybody has ever approved a list here — different news from a list that moved. */
+      everApproved: boolean;
+      note: string;
+    }>(
+      `/tenants/${encodeURIComponent(tenantId)}/connections/${encodeURIComponent(
+        connectionId,
+      )}/mcp/discover`,
+      { method: 'POST' },
+    ),
+
+  /** Approve the tool list, with a category against every tool — CR-06. */
+  approveMcpTools: (tenantId: string, connectionId: string, categories: Record<string, string>) =>
+    call<{ approvedTools: number; note: string }>(
+      `/tenants/${encodeURIComponent(tenantId)}/connections/${encodeURIComponent(
+        connectionId,
+      )}/mcp/approve`,
+      { method: 'POST', body: JSON.stringify({ categories }) },
+    ),
 
   /** *Test Connection*. Uses the credential once; returns no part of it. */
   check: (tenantId: string, id: string) =>

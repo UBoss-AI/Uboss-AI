@@ -152,11 +152,23 @@ test('the expiry warning is a horizon, not a moment', () => {
 });
 
 test('the catalogue only lists connectors with an adapter behind them', () => {
-  // The pack: build a mock adapter, do not integrate every vendor. A catalogue entry with nothing
-  // to talk to would fail in a way that looks like a credential problem.
+  /*
+   * The pack: build a mock adapter, do not integrate every vendor. A catalogue entry with
+   * nothing to talk to would fail in a way that looks like a credential problem.
+   *
+   * This used to assert that every entry was a mock, which was the right rule while the only
+   * alternative was a vendor integration. `custom-mcp` is neither: it is the protocol vendors
+   * are reached *through*, so one adapter serves every server that speaks it and the entry is
+   * not a promise about any particular product.
+   *
+   * The "has an adapter" half of this rule therefore moved to the API, in
+   * `connections.e2e.spec.ts`, which is the only place that can see the adapter registry. What
+   * stays here is everything the vocabulary itself can answer.
+   */
   assert.ok(CONNECTOR_DEFINITIONS.length > 0);
   for (const definition of CONNECTOR_DEFINITIONS) {
-    assert.equal(definition.isMock, true, `${definition.kind} claims a real integration`);
+    assert.ok(definition.label.trim() !== '', `${definition.kind} has no label`);
+    assert.ok(definition.summary.trim() !== '', `${definition.kind} has no summary`);
     assert.ok(definition.scopes.length > 0, definition.kind);
     assert.ok(definition.supportedCategories.length > 0, definition.kind);
     // A connector must not claim a category the vocabulary does not have.

@@ -166,16 +166,58 @@ export interface ConnectorDefinition {
 /**
  * The connectors that exist.
  *
- * **Deliberately just the two mocks.** The pack says "build a mock connector adapter plus tests;
- * do not yet integrate every vendor", and a catalogue listing Salesforce and SAP with no adapter
+ * **Two mocks and one real one.** The pack said "build a mock connector adapter plus tests; do
+ * not yet integrate every vendor", and a catalogue listing Salesforce and SAP with no adapter
  * behind them would be a promise the product cannot keep — somebody would configure one, press
  * *Test Connection*, and get a failure that looks like their credential.
+ *
+ * `custom-mcp` does not break that rule, it dissolves it. It is not a vendor; it is the protocol
+ * vendors are reachable *through*. One adapter speaks MCP, and every server that speaks MCP —
+ * Drive, Gmail, Slack, GitHub, Postgres, or something a company wrote this morning — works
+ * without UBoss learning anything about it. The client's words: *"koi bhi software ka MCP laa ke
+ * connect kare aur agent run kare."*
+ *
+ * What it is not: a way to reach a system that has no MCP server. SAP has none today, so SAP
+ * needs either its own server or its own adapter, and saying so is the same honesty the
+ * paragraph above is about.
  *
  * A real connector adds an entry here and an adapter implementation. Nothing else changes: the
  * lifecycle, the secret handling, the tool grants, the expiry sweep and the notification are all
  * connector-agnostic.
  */
 export const CONNECTOR_DEFINITIONS: readonly ConnectorDefinition[] = [
+  {
+    kind: 'custom-mcp',
+    label: 'Custom MCP server',
+    summary:
+      'Any system reachable over the Model Context Protocol. The company supplies the server ' +
+      'address and its credential; the tools it offers are read from the server, and an ' +
+      'administrator decides which of them this company may use and what each one counts as.',
+    // Company only. An MCP server is a company's system of record reached by a shared endpoint,
+    // not a personal mailbox — and a User Connection would mean the agent's reach followed one
+    // person's account, which is the opposite of how these are operated.
+    scopes: ['Company'],
+    hasEnvironments: true,
+    /*
+     * Every category, because the protocol permits every kind of tool.
+     *
+     * This is the ceiling, not the grant. What a given connection may actually do is the
+     * categories an administrator mapped onto its tools when approving them, and what a given
+     * *agent* may do is narrower still — its own `ConnectionToolGrant`. A ceiling of "Read only"
+     * here would simply make the dangerous servers unusable rather than safe.
+     */
+    supportedCategories: [
+      'Read',
+      'Write',
+      'Delete',
+      'ExternalBulkSend',
+      'SensitiveExport',
+      'FinancialChange',
+      'ProductionChange',
+    ],
+    credentialExpires: true,
+    isMock: false,
+  },
   {
     kind: 'mock-erp',
     label: 'Mock ERP',

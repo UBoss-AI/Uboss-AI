@@ -27,6 +27,8 @@ import { PermissionGuard } from '../src/authorization/permission.guard.js';
 import { BudgetAlertService } from '../src/commercial/budget-alert.service.js';
 import { ConnectionService } from '../src/connections/connection.service.js';
 import { ConnectorAdapter, MockConnectorAdapter } from '../src/connections/connector-adapter.js';
+import { ConnectorAdapters } from '../src/connections/connector-adapters.js';
+import { McpConnectorAdapter } from '../src/connections/mcp-connector.adapter.js';
 import { LocalSealedSecretsVault, SecretsVault } from '../src/connections/secrets-vault.js';
 
 import { EmailAdapter, LoggingEmailAdapter } from '../src/notifications/email-adapter.js';
@@ -156,6 +158,9 @@ describe('notifications and escalation (e2e)', () => {
         BudgetAlertService,
         ConnectionService,
         { provide: SecretsVault, useClass: LocalSealedSecretsVault },
+        MockConnectorAdapter,
+        McpConnectorAdapter,
+        ConnectorAdapters,
         { provide: ConnectorAdapter, useClass: MockConnectorAdapter },
         TenantContextService,
         Reflector,

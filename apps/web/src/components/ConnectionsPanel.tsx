@@ -19,6 +19,8 @@ import {
 
 import { CONNECTION_STATE_LABELS, CONNECTION_STATE_TONES } from '@uboss/types';
 
+import { McpToolApproval } from './McpToolApproval';
+
 import {
   ApiError,
   connectionsApi,
@@ -71,6 +73,8 @@ export function ConnectionsPanel({ tenantId, mayAdminister }: ConnectionsPanelPr
   const [label, setLabel] = useState('');
   const [environment, setEnvironment] = useState<'Test' | 'Production'>('Test');
   const [secret, setSecret] = useState('');
+  // CR-06: only an MCP connection has a server address of its own.
+  const [endpoint, setEndpoint] = useState('');
 
   // Detail-drawer forms.
   const [rotateSecret, setRotateSecret] = useState('');
@@ -315,6 +319,30 @@ export function ConnectionsPanel({ tenantId, mayAdminister }: ConnectionsPanelPr
           )}
         </FormField>
 
+        {/*
+          The address, for a connector whose server the company supplies — CR-06.
+
+          Only MCP has one. Every other connector reaches a vendor its adapter already knows, so
+          asking for an address would be asking a question with no answer.
+        */}
+        {selected?.kind === 'custom-mcp' ? (
+          <FormField
+            label="Server address"
+            required
+            hint="The https address of your MCP server. UBoss calls it from its own servers, so it has to be reachable from the internet."
+          >
+            {(wiring) => (
+              <input
+                {...wiring}
+                className="uboss-input"
+                value={endpoint}
+                placeholder="https://mcp.example.com/mcp"
+                onChange={(event) => setEndpoint(event.target.value)}
+              />
+            )}
+          </FormField>
+        ) : null}
+
         {selected?.hasEnvironments ? (
           <FormField
             label="Environment"
@@ -374,12 +402,14 @@ export function ConnectionsPanel({ tenantId, mayAdminister }: ConnectionsPanelPr
                       connectorKind,
                       label: label.trim(),
                       ...(selected?.hasEnvironments ? { environment } : {}),
+                      ...(selected?.kind === 'custom-mcp' ? { endpoint: endpoint.trim() } : {}),
                       secret,
                     })
                     .then(() => {
                       setAddOpen(false);
                       setLabel('');
                       setSecret('');
+                      setEndpoint('');
                       return { note: 'Connection added. Test it to confirm it works.' };
                     }),
                 'Added.',
@@ -426,6 +456,25 @@ export function ConnectionsPanel({ tenantId, mayAdminister }: ConnectionsPanelPr
             {detail.disabledReason === null ? null : (
               <Banner tone="warn">Disabled: {detail.disabledReason}</Banner>
             )}
+
+            {/*
+              The server's tool list, and the decision that makes it usable — CR-06.
+
+              An MCP connection is not finished when its credential works: the server reports its
+              own tools, and UBoss cannot know whether `delete_row` is a Delete or a Read until
+              somebody says so. Until every tool has a category, no grant below can cover
+              anything — so this sits above the grants, in the order the work is actually done.
+            */}
+            {detail.connectorKind === 'custom-mcp' ? (
+              <McpToolApproval
+                tenantId={tenantId}
+                connectionId={detail.id}
+                onApproved={() => {
+                  setDetail(null);
+                  load();
+                }}
+              />
+            ) : null}
 
             <div className="uboss-section-label">Agent Tool Permissions</div>
             <p className="uboss-muted-3" style={{ fontSize: 12 }}>

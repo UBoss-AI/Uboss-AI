@@ -28,6 +28,8 @@ import { PermissionGuard } from '../src/authorization/permission.guard.js';
 import { ConnectionController } from '../src/connections/connection.controller.js';
 import { ConnectionService } from '../src/connections/connection.service.js';
 import { ConnectorAdapter, MockConnectorAdapter } from '../src/connections/connector-adapter.js';
+import { ConnectorAdapters } from '../src/connections/connector-adapters.js';
+import { McpConnectorAdapter } from '../src/connections/mcp-connector.adapter.js';
 import { LocalSealedSecretsVault, SecretsVault } from '../src/connections/secrets-vault.js';
 import { AuditEventRepository } from '../src/persistence/audit-event.repository.js';
 import { AuditTrailRepository } from '../src/persistence/audit-trail.repository.js';
@@ -95,6 +97,7 @@ describe('connections, secrets and tool permission (e2e)', () => {
   const scope = () => tenantScopeForPlatformOperation(tenantId);
   const otherScope = () => tenantScopeForPlatformOperation(otherTenantId);
   const connections = () => app.get(ConnectionService);
+  const adapters = () => app.get(ConnectorAdapters);
   const vault = () => app.get(SecretsVault);
 
   before(async () => {
@@ -132,6 +135,9 @@ describe('connections, secrets and tool permission (e2e)', () => {
         // The real bindings, not stubs: the local sealed vault and the mock connector are what a
         // deployment without an external provider actually runs.
         { provide: SecretsVault, useClass: LocalSealedSecretsVault },
+        MockConnectorAdapter,
+        McpConnectorAdapter,
+        ConnectorAdapters,
         { provide: ConnectorAdapter, useClass: MockConnectorAdapter },
         TenantContextService,
         Reflector,
@@ -258,13 +264,44 @@ describe('connections, secrets and tool permission (e2e)', () => {
   // =========================================================================
   describe('the catalogue and the vocabulary', () => {
     it('lists only connectors that have an adapter behind them', () => {
-      // The pack: build a mock adapter, do not integrate every vendor. A catalogue naming
-      // Salesforce with nothing behind it would fail like a credential problem.
-      assert.equal(CONNECTOR_DEFINITIONS.length, 2);
-      assert.equal(
-        CONNECTOR_DEFINITIONS.every((definition) => definition.isMock),
-        true,
-      );
+      /*
+       * The pack: build a mock adapter, do not integrate every vendor. A catalogue naming
+       * Salesforce with nothing behind it would fail like a credential problem.
+       *
+       * This used to assert "two entries, both mocks", which said the same thing while a mock
+       * was the only alternative to a vendor. `custom-mcp` is neither — it is the protocol
+       * vendors are reached *through*, so one adapter serves every server that speaks it.
+       *
+       * So the rule is now stated as what it always meant: **every kind in the catalogue
+       * resolves to an adapter.** That is checkable here and nowhere else, because this is the
+       * only place that can see the registry.
+       */
+      assert.ok(CONNECTOR_DEFINITIONS.length > 0);
+      for (const definition of CONNECTOR_DEFINITIONS) {
+        assert.doesNotThrow(
+          () => adapters().for(definition.kind),
+          `${definition.kind} is offered with nothing behind it`,
+        );
+      }
+
+      // And the other direction: an adapter for a kind nobody can choose is dead code that will
+      // be trusted the day somebody adds the catalogue entry and forgets the test.
+      for (const kind of adapters().kinds()) {
+        assert.ok(
+          CONNECTOR_DEFINITIONS.some((definition) => definition.kind === kind),
+          `${kind} has an adapter but is not in the catalogue`,
+        );
+      }
+
+      // A kind that exists in neither is refused loudly rather than falling back to the mock.
+      assert.throws(() => adapters().for('salesforce'), /No adapter implements/);
+    });
+
+    it('sends an MCP connection to the MCP adapter, not to the mock', () => {
+      // The failure this prevents is quiet and awful: a company's live server reported as an
+      // "unrecognised credential" because its check went to the stand-in.
+      assert.equal(adapters().for('custom-mcp').kind, 'custom-mcp');
+      assert.equal(adapters().for('mock-erp').kind, 'mock');
     });
 
     it('keeps the tool vocabulary separate from the human action vocabulary', () => {
@@ -1387,7 +1424,9 @@ describe('connections, secrets and tool permission (e2e)', () => {
         agent().get(`/tenants/${tenantId}/connections/catalogue`),
         adminUboss,
       ).expect(200);
-      assert.equal(catalogue.body.connectors.length, 2);
+      // Against the catalogue rather than a number, so adding a connector does not fail a test
+      // about HTTP. What this is checking is that the route serves the catalogue at all.
+      assert.equal(catalogue.body.connectors.length, CONNECTOR_DEFINITIONS.length);
       assert.equal(catalogue.body.toolCategories.length, TOOL_ACTION_CATEGORIES.length);
       assert.equal(
         catalogue.body.toolCategories.filter((row: { highRisk: boolean }) => row.highRisk).length,

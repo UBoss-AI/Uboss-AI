@@ -12,6 +12,8 @@ import {
   IsArray,
   IsIn,
   IsISO8601,
+  IsNotEmpty,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -60,6 +62,28 @@ export class CreateConnectionDto {
   @IsString() @MinLength(1) @MaxLength(8000) secret!: string;
 
   @IsOptional() @IsArray() @IsUUID('all', { each: true }) allowedDepartmentIds?: string[];
+
+  /**
+   * Where the server is — CR-06, and only for a connector the company supplies the address of.
+   *
+   * Validated as a URL here and then again, much harder, by the service: this endpoint is
+   * fetched by UBoss's own server with a credential, so "is it a URL" is the easy half and "is
+   * it somewhere we are allowed to dial" is the half that matters.
+   */
+  @IsOptional() @IsString() @MaxLength(2000) endpoint?: string;
+}
+
+/**
+ * Approving a server's tool list — CR-06.
+ *
+ * A category against every tool, by name. A map rather than a list so the browser cannot send
+ * them in a different order from the one it displayed and quietly shift which tool counted as
+ * what.
+ */
+export class ApproveToolSnapshotDto {
+  @IsObject()
+  @IsNotEmpty()
+  categories!: Record<string, string>;
 }
 
 export class RotateSecretDto {
@@ -165,6 +189,7 @@ export class ConnectionController {
       label: body.label,
       ...(body.ownerUserId === undefined ? {} : { ownerUserId: body.ownerUserId }),
       ...(body.environment === undefined ? {} : { environment: body.environment }),
+      ...(body.endpoint === undefined ? {} : { endpoint: body.endpoint }),
       secret: body.secret,
       ...(body.allowedDepartmentIds === undefined
         ? {}
@@ -180,6 +205,38 @@ export class ConnectionController {
       scope: this.tenantContext.requireScope(),
       actorUserId: this.currentUserId(),
       connectionId: id,
+    });
+  }
+
+  /**
+   * What this MCP server offers right now, and how it differs from what was approved — CR-06.
+   *
+   * **Creates and changes nothing.** `settings:Administer`, because reading a company's server
+   * with its credential is an administrator's act even though it writes nothing, and because
+   * the only reason to read the list is to approve it.
+   */
+  @Post(':id/mcp/discover')
+  @RequirePermission({ module: 'settings', action: 'Administer' })
+  async discoverMcpTools(@Param('id') id: string): Promise<unknown> {
+    return this.connections.discoverTools({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
+      connectionId: id,
+    });
+  }
+
+  /** Approve the tool list, with a category against every tool — CR-06. */
+  @Post(':id/mcp/approve')
+  @RequirePermission({ module: 'settings', action: 'Administer' })
+  async approveMcpTools(
+    @Param('id') id: string,
+    @Body() body: ApproveToolSnapshotDto,
+  ): Promise<unknown> {
+    return this.connections.approveToolSnapshot({
+      scope: this.tenantContext.requireScope(),
+      actorUserId: this.currentUserId(),
+      connectionId: id,
+      categories: body.categories,
     });
   }
 

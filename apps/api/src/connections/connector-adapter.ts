@@ -24,6 +24,13 @@ export interface ConnectorContext {
   connectorKind: string;
   environment: ConnectionEnvironment | null;
   /**
+   * Where the server is, for the connectors that have an address of their own — CR-06.
+   *
+   * Null for every connector that reaches a vendor its adapter already knows. An MCP connection
+   * is the opposite case by definition: the company brings a server UBoss has never heard of.
+   */
+  endpoint?: string | null | undefined;
+  /**
    * The credential, resolved from the vault at the moment of use.
    *
    * Passed rather than fetched so an adapter has no access to the vault, and therefore cannot

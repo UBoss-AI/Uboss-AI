@@ -7,13 +7,23 @@ import {
 } from '@nestjs/common';
 
 import {
+  categoryOfTool,
   connectorDefinition,
   derivedConnectionState,
+  driftBetween,
   isCredentialExpiringSoon,
   isHighRiskToolCategory,
+  isToolActionCategory,
+  snapshotIsUnchanged,
+  snapshotIsUsable,
+  TOOL_ACTION_CATEGORIES,
   type ConnectionEnvironment,
   type ConnectionScope,
   type ConnectionState,
+  type McpApprovedTool,
+  type McpSnapshotDrift,
+  type McpToolDescriptor,
+  type McpToolSnapshot,
   type ToolActionCategory,
 } from '@uboss/types';
 
@@ -22,7 +32,7 @@ import { AuthorizationService } from '../authorization/authorization.service.js'
 import type { Connection } from '../generated/prisma/client.js';
 import { PrismaService } from '../persistence/prisma.service.js';
 import type { TenantScope } from '../persistence/tenant-context.js';
-import { ConnectorAdapter } from './connector-adapter.js';
+import { ConnectorAdapters } from './connector-adapters.js';
 import { SecretNotFoundError, SecretsVault } from './secrets-vault.js';
 
 export interface ConnectionView {
@@ -110,7 +120,7 @@ export class ConnectionService {
     private readonly authorization: AuthorizationService,
     private readonly auditEvents: AuditEventService,
     private readonly vault: SecretsVault,
-    private readonly connector: ConnectorAdapter,
+    private readonly connectors: ConnectorAdapters,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -136,6 +146,8 @@ export class ConnectionService {
     environment?: ConnectionEnvironment | undefined;
     secret: string;
     allowedDepartmentIds?: string[] | undefined;
+    /** Where the server is, for a connector the company supplies the address of — CR-06. */
+    endpoint?: string | undefined;
   }): Promise<ConnectionView> {
     const context = await this.authorization.contextFor(input.scope, input.actorUserId);
     /*
@@ -178,6 +190,37 @@ export class ConnectionService {
     }
     if (!definition.hasEnvironments && input.environment !== undefined) {
       throw new BadRequestException(`${definition.label} has only one environment.`);
+    }
+
+    /*
+     * An address, for the connectors that have one of their own — CR-06.
+     *
+     * Required for `custom-mcp` and refused for everything else. A mock connection carrying a
+     * URL would be a field nothing reads, and the day somebody wired it up they would find
+     * addresses that had never been validated sitting in production rows.
+     *
+     * `https` only, and no private address. This endpoint is fetched **by the server**, with a
+     * credential, on a schedule — which is the exact shape of a server-side request forgery: a
+     * company that could point a connection at `http://169.254.169.254/` or at `localhost` would
+     * be using UBoss to read UBoss's own cloud metadata and internal services. The rule has to
+     * live here rather than in the adapter, because by the time the adapter has it, it is a
+     * stored connection somebody has already approved.
+     */
+    const endpoint = input.endpoint?.trim() ?? '';
+    if (input.connectorKind === 'custom-mcp') {
+      if (endpoint === '') {
+        throw new BadRequestException(
+          'An MCP connection needs the address of the server it talks to. That is the whole of ' +
+            'what makes it this company’s connection rather than a vendor UBoss already knows.',
+        );
+      }
+      const problem = unreachableEndpointProblem(endpoint);
+      if (problem !== null) throw new BadRequestException(problem);
+    } else if (endpoint !== '') {
+      throw new BadRequestException(
+        `${definition.label} reaches a system UBoss already knows how to find, so it takes no ` +
+          'server address.',
+      );
     }
 
     const ownerUserId =
@@ -224,6 +267,7 @@ export class ConnectionService {
           ownerUserId,
           environment: input.environment ?? null,
           secretRef,
+          endpoint: endpoint === '' ? null : endpoint,
           allowedDepartmentIds: input.allowedDepartmentIds ?? [],
           createdByUserId: input.actorUserId,
         },
@@ -357,9 +401,13 @@ export class ConnectionService {
       throw error;
     }
 
-    const result = await this.connector.check({
+    // The adapter for *this* connection's kind — CR-06. One bound adapter was right while every
+    // entry was a mock; sending an MCP connection to the mock would report a company's live
+    // server as an unrecognised credential.
+    const result = await this.connectors.for(row.connectorKind).check({
       connectorKind: row.connectorKind,
       environment: row.environment,
+      endpoint: row.endpoint,
       secret,
     });
 
@@ -923,8 +971,262 @@ export class ConnectionService {
         };
       }
 
+      /*
+       * An MCP connection must also be the shape somebody approved — CR-06.
+       *
+       * Everything above this is about the connection; this is about what the server is
+       * currently offering. A server that has added a tool since approval is not refused for
+       * having added it — that is its business — it is refused because the approval in hand
+       * describes a different server from the one on the other end, and the grant was given
+       * against the description.
+       */
+      if (row.connectorKind === 'custom-mcp') {
+        const snapshot = this.snapshotOf(row);
+        if (!snapshotIsUsable(snapshot)) {
+          return {
+            allowed: false,
+            reason:
+              snapshot === null
+                ? 'Nobody has approved a tool list for this MCP connection yet, so there is ' +
+                  'nothing an agent is permitted to call.'
+                : 'This MCP connection is waiting on an administrator: some of its tools have ' +
+                  'no category, so no grant can cover them.',
+            state,
+          };
+        }
+      }
+
       return { allowed: true, reason: 'A live tool grant permits it.', state };
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // The MCP tool list: discovering it, approving it, and calling against it
+  // -------------------------------------------------------------------------
+
+  /**
+   * What this server offers right now, and how that differs from what was approved.
+   *
+   * **Writes nothing.** The same decision the objective workbook and the agent-file reader made,
+   * for the same reason: an administrator has to see what is there before any of it becomes the
+   * thing an agent is permitted to do, and an endpoint that *cannot* write is a stronger promise
+   * than one that chooses not to.
+   *
+   * `suspicious` names the tools whose own description is written like an instruction. An
+   * administrator deciding whether to trust a server is the right person to be told that, and
+   * before they approve it is the right moment.
+   */
+  async discoverTools(input: {
+    scope: TenantScope;
+    actorUserId: string;
+    connectionId: string;
+  }): Promise<{
+    tools: readonly McpToolDescriptor[];
+    drift: McpSnapshotDrift;
+    suspicious: readonly string[];
+    approved: boolean;
+    /** Whether anybody has ever approved a list for this connection, which is different news. */
+    everApproved: boolean;
+    note: string;
+  }> {
+    const context = await this.authorization.contextFor(input.scope, input.actorUserId);
+    await this.authorization.assertCan(context, { module: 'settings', action: 'Administer' });
+
+    const row = await this.requireConnection(input.scope, input.connectionId);
+    if (row.connectorKind !== 'custom-mcp') {
+      throw new BadRequestException('Only an MCP connection has a tool list to read.');
+    }
+    if (row.endpoint === null) {
+      throw new BadRequestException('This connection has no server address.');
+    }
+
+    const secret = await this.vault.reveal(input.scope, row.secretRef ?? '');
+    const found = await this.connectors.mcpAdapter().discover(row.endpoint, secret);
+
+    const snapshot = this.snapshotOf(row);
+    const drift = driftBetween(snapshot?.tools ?? [], found.tools);
+
+    return {
+      tools: found.tools,
+      drift,
+      suspicious: found.suspicious,
+      approved: snapshotIsUsable(snapshot) && snapshotIsUnchanged(drift),
+      everApproved: snapshot !== null && snapshot.approvedByUserId !== null,
+      note:
+        'Nothing has been changed. Approving this list is what lets an agent use these tools, ' +
+        'and each one needs a category before it can be granted to anybody.',
+    };
+  }
+
+  /**
+   * Approve the server's tool list, with a category against every tool.
+   *
+   * Re-read from the server rather than taking the browser's word for what the tools are: the
+   * list shown and the list approved must be the same list, and several minutes may have passed
+   * while somebody chose categories. A server that changed in between is refused outright —
+   * approving a list nobody saw is the thing this whole mechanism exists to prevent.
+   *
+   * Every tool must be categorised. A half-mapped snapshot is refused rather than
+   * part-permitted: "works except for the three tools nobody classified" is a sentence somebody
+   * reads as a bug and fixes by granting more.
+   */
+  async approveToolSnapshot(input: {
+    scope: TenantScope;
+    actorUserId: string;
+    connectionId: string;
+    /** Tool name to the category an administrator assigned it. */
+    categories: Record<string, string>;
+  }): Promise<{ approvedTools: number; note: string }> {
+    const context = await this.authorization.contextFor(input.scope, input.actorUserId);
+    await this.authorization.assertCan(context, { module: 'settings', action: 'Administer' });
+
+    const row = await this.requireConnection(input.scope, input.connectionId);
+    if (row.connectorKind !== 'custom-mcp') {
+      throw new BadRequestException('Only an MCP connection has a tool list to approve.');
+    }
+    if (row.endpoint === null) {
+      throw new BadRequestException('This connection has no server address.');
+    }
+
+    const secret = await this.vault.reveal(input.scope, row.secretRef ?? '');
+    const current = await this.connectors.mcpAdapter().discover(row.endpoint, secret);
+
+    const named = new Set(Object.keys(input.categories));
+    const offered = new Set(current.tools.map((tool) => tool.name));
+
+    const unmapped = [...offered].filter((name) => !named.has(name)).sort();
+    if (unmapped.length > 0) {
+      throw new BadRequestException(
+        `These tools have no category: ${unmapped.join(', ')}. Every tool needs one, because a ` +
+          'tool outside the five categories is a tool outside every control built on them.',
+      );
+    }
+
+    const unknown = [...named].filter((name) => !offered.has(name)).sort();
+    if (unknown.length > 0) {
+      throw new BadRequestException(
+        `The server no longer offers: ${unknown.join(', ')}. Its tool list changed while this ` +
+          'was being approved — read it again and approve what is actually there.',
+      );
+    }
+
+    const tools: McpApprovedTool[] = [];
+    for (const tool of current.tools) {
+      const category = input.categories[tool.name];
+      if (!isToolActionCategory(category)) {
+        throw new BadRequestException(
+          `"${String(category)}" is not a tool category. One of: ${TOOL_ACTION_CATEGORIES.join(', ')}.`,
+        );
+      }
+      tools.push({ ...tool, category });
+    }
+
+    const snapshot: McpToolSnapshot = {
+      tools,
+      takenAt: new Date().toISOString(),
+      approvedByUserId: input.actorUserId,
+    };
+
+    await this.prisma.runInTenantTransaction(input.scope, async () => {
+      await this.prisma.client.connection.update({
+        where: { id: row.id },
+        data: { toolSnapshot: snapshot as unknown as object, version: { increment: 1 } },
+      });
+
+      await this.auditEvents.appendWithinCurrentScope(input.scope.tenantId, {
+        action: 'connection.tools_approved',
+        resourceType: 'connection',
+        resourceId: row.id,
+        actorUserId: input.actorUserId,
+        resourceRef: row.label,
+        summary:
+          `Approved ${tools.length} tool${tools.length === 1 ? '' : 's'} on "${row.label}". ` +
+          'An agent may be granted these and nothing else; if the server offers something ' +
+          'different later, it waits for another approval.',
+        metadata: {
+          // The shape that was approved, named tool by tool, so a later argument about what was
+          // permitted is settled by the record rather than by the server's current answer.
+          // One string rather than a list: audit metadata holds flat values, and what somebody
+          // reading the trail wants is the mapping as a sentence — which tool counted as what.
+          tools: tools
+            .map((tool) => `${tool.name}: ${tool.category ?? 'uncategorised'}`)
+            .join(', '),
+          ...(current.suspicious.length === 0
+            ? {}
+            : { descriptionsFlagged: current.suspicious.join(', ') }),
+        },
+      });
+    });
+
+    return {
+      approvedTools: tools.length,
+      note: 'Approved. Each tool can now be granted to an Engine Agent, one category at a time.',
+    };
+  }
+
+  /**
+   * May this agent call this named tool?
+   *
+   * The question a run actually asks, and it resolves the tool to its approved category before
+   * asking everything else — so a grant is always given and checked in the same vocabulary. A
+   * tool that is not in the approved snapshot has no category, and a tool with no category
+   * cannot be covered by any grant, which is the point.
+   */
+  async mayAgentCallTool(input: {
+    scope: TenantScope;
+    agentId: string;
+    connectionId: string;
+    toolName: string;
+    departmentId?: string | undefined;
+  }): Promise<{ allowed: boolean; reason: string; category: ToolActionCategory | null }> {
+    const row = await this.prisma.runInTenantTransaction(input.scope, () =>
+      this.prisma.client.connection.findFirst({
+        where: { tenantId: input.scope.tenantId, id: input.connectionId },
+      }),
+    );
+    if (!row) {
+      return {
+        allowed: false,
+        reason: 'There is no such connection in this company.',
+        category: null,
+      };
+    }
+
+    const category = categoryOfTool(this.snapshotOf(row), input.toolName);
+    if (category === null) {
+      return {
+        allowed: false,
+        reason:
+          `"${input.toolName}" is not in the approved tool list for this connection. A tool ` +
+          'nobody approved has no category, and no grant can cover it.',
+        category: null,
+      };
+    }
+
+    const decision = await this.mayAgentUse({
+      scope: input.scope,
+      agentId: input.agentId,
+      connectionId: input.connectionId,
+      category,
+      ...(input.departmentId === undefined ? {} : { departmentId: input.departmentId }),
+    });
+
+    return { allowed: decision.allowed, reason: decision.reason, category };
+  }
+
+  /** The approved snapshot on a row, or null. Parsed in one place so no caller shapes the JSON. */
+  private snapshotOf(row: { toolSnapshot: unknown }): McpToolSnapshot | null {
+    const held = row.toolSnapshot;
+    if (typeof held !== 'object' || held === null || Array.isArray(held)) return null;
+
+    const shape = held as Partial<McpToolSnapshot>;
+    return Array.isArray(shape.tools) && typeof shape.takenAt === 'string'
+      ? {
+          tools: shape.tools,
+          takenAt: shape.takenAt,
+          approvedByUserId: shape.approvedByUserId ?? null,
+        }
+      : null;
   }
 
   // -------------------------------------------------------------------------
@@ -1173,4 +1475,79 @@ export class ConnectionService {
       return { succeeded: result.succeeded, detail: result.detail, state: this.stateOf(updated) };
     });
   }
+}
+
+/**
+ * Why a company may not point a connection wherever it likes — CR-06.
+ *
+ * This address is fetched **by UBoss's own server**, carrying a credential, on a schedule. That
+ * is the precise shape of a server-side request forgery: whatever a company types here, UBoss
+ * dials. A connection pointed at `http://169.254.169.254/` reads the cloud provider's instance
+ * metadata — short-lived credentials for the whole deployment. One pointed at `localhost` or a
+ * `10.x` address reaches UBoss's own database and internal services from inside the network,
+ * past every boundary that exists.
+ *
+ * None of that requires a hostile company. One person pasting the wrong URL from a tutorial is
+ * enough, and the request would look ordinary in every log.
+ *
+ * Returns the reason it is refused, or null when the address is one UBoss may dial.
+ *
+ * ## Why this is a check and not a resolver
+ *
+ * A thorough defence resolves the hostname and rejects private *resolved* addresses, because
+ * `evil.example.com` can point at `127.0.0.1` and this check would pass it. That belongs in the
+ * fetch path, where the resolution actually happens, and is noted as the next piece of this. What
+ * this does is refuse the forms somebody types, which is the common case and the one that reaches
+ * a stored row.
+ */
+export function unreachableEndpointProblem(endpoint: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    return 'That is not a web address. An MCP endpoint looks like https://example.com/mcp.';
+  }
+
+  if (url.protocol !== 'https:') {
+    return (
+      'An MCP endpoint must be https. The credential for this connection travels on every ' +
+      'call, and over http it travels in the clear.'
+    );
+  }
+
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+
+  if (host === 'localhost' || host.endsWith('.localhost') || host === '::1') {
+    return 'That address is UBoss’s own machine, which is not a system this company runs.';
+  }
+
+  /*
+   * The address ranges that are inside somebody's network rather than on the internet.
+   *
+   * `169.254.*` is first because it is the one that matters most: it is where every major cloud
+   * serves instance metadata, and reaching it from inside UBoss would hand over credentials for
+   * the deployment rather than for one company's connection.
+   */
+  const privateForms: readonly RegExp[] = [
+    /^169\.254\./,
+    /^127\./,
+    /^10\./,
+    /^192\.168\./,
+    /^172\.(1[6-9]|2\d|3[01])\./,
+    /^0\./,
+    /^fc[0-9a-f]{2}:/i,
+    /^fd[0-9a-f]{2}:/i,
+    /^fe80:/i,
+  ];
+  if (privateForms.some((form) => form.test(host))) {
+    return 'That address is inside a private network, which UBoss will not reach out to.';
+  }
+
+  // A bare hostname with no dot is a name only resolvable inside a network — a Kubernetes
+  // service, a container name, a host in an internal DNS zone.
+  if (!host.includes('.') && !host.includes(':')) {
+    return 'That address names a host inside a network rather than a server on the internet.';
+  }
+
+  return null;
 }

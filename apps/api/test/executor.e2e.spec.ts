@@ -48,6 +48,8 @@ import {
 import { PermissionGuard } from '../src/authorization/permission.guard.js';
 import { ConnectionService } from '../src/connections/connection.service.js';
 import { ConnectorAdapter, MockConnectorAdapter } from '../src/connections/connector-adapter.js';
+import { ConnectorAdapters } from '../src/connections/connector-adapters.js';
+import { McpConnectorAdapter } from '../src/connections/mcp-connector.adapter.js';
 import { LocalSealedSecretsVault, SecretsVault } from '../src/connections/secrets-vault.js';
 import { ModelGateway } from '../src/model-gateway/model-gateway.js';
 import { ClassifyingModelGateway } from './support/classifying-model-gateway.js';
@@ -174,6 +176,9 @@ describe('executor agent and exception center (e2e)', () => {
           useFactory: () => new SecretBox(keyProviderFromEnv(process.env['AUTH_ENCRYPTION_KEYS'])),
         },
         { provide: SecretsVault, useClass: LocalSealedSecretsVault },
+        MockConnectorAdapter,
+        McpConnectorAdapter,
+        ConnectorAdapters,
         { provide: ConnectorAdapter, useClass: MockConnectorAdapter },
         UserRepository,
         TenantRepository,

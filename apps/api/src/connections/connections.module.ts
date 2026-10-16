@@ -3,6 +3,8 @@ import { Global, Module } from '@nestjs/common';
 import { ConnectionController } from './connection.controller.js';
 import { ConnectionService } from './connection.service.js';
 import { ConnectorAdapter, MockConnectorAdapter } from './connector-adapter.js';
+import { ConnectorAdapters } from './connector-adapters.js';
+import { McpConnectorAdapter } from './mcp-connector.adapter.js';
 import { LocalSealedSecretsVault, SecretsVault } from './secrets-vault.js';
 
 /**
@@ -29,8 +31,19 @@ import { LocalSealedSecretsVault, SecretsVault } from './secrets-vault.js';
   providers: [
     ConnectionService,
     { provide: SecretsVault, useClass: LocalSealedSecretsVault },
+    MockConnectorAdapter,
+    McpConnectorAdapter,
+    ConnectorAdapters,
+    /*
+     * The single binding stays — CR-06.
+     *
+     * Nothing in the product reaches for `ConnectorAdapter` any more; the service asks the
+     * registry for the one matching the connection's kind. It is kept because several specs
+     * provide this token to stand a module up, and removing it would break them for a reason
+     * that has nothing to do with what they test.
+     */
     { provide: ConnectorAdapter, useClass: MockConnectorAdapter },
   ],
-  exports: [ConnectionService, SecretsVault, ConnectorAdapter],
+  exports: [ConnectionService, SecretsVault, ConnectorAdapter, ConnectorAdapters],
 })
 export class ConnectionsModule {}

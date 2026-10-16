@@ -21,6 +21,8 @@ import {
 import {
   jobMethodApi,
   agentBuilderApi,
+  connectionsApi,
+  type ConnectionRow,
   type AgentBuilderMetaView,
   type AgentBuilderView,
   type AgentExecutionSetupView,
@@ -109,6 +111,8 @@ function AgentBuilderInner() {
   const [confirmingPublish, setConfirmingPublish] = useState(false);
   const [me, setMe] = useState<MeResponse | null>(null);
   const [meta, setMeta] = useState<AgentBuilderMetaView | null>(null);
+  // CR-06: the company's connections, so the setup question is answered by name not by uuid.
+  const [connections, setConnections] = useState<ConnectionRow[]>([]);
   const [assignments, setAssignments] = useState<AgentBuilderView[]>([]);
   const [selected, setSelected] = useState<AgentBuilderView | null>(null);
 
@@ -339,6 +343,18 @@ function AgentBuilderInner() {
       .meta(tenantId)
       .then(setMeta)
       .catch(() => undefined);
+
+    /*
+     * The company's connections, so the setup question can be answered by name — CR-06.
+     *
+     * Failing quietly leaves the picker empty with the sentence that says where connections come
+     * from, which is a usable screen. Somebody who cannot read the list is usually somebody who
+     * may not administer Settings, and refusing the whole builder over that would be wrong.
+     */
+    void connectionsApi
+      .list(tenantId)
+      .then((result) => setConnections(result.connections))
+      .catch(() => setConnections([]));
 
     void agentBuilderApi
       .list(tenantId)
@@ -594,10 +610,49 @@ function AgentBuilderInner() {
       );
     }
 
-    // The remaining questions are free text, including the connection id. A picker over the
-    // company's approved connections belongs to the connections module's own list; until this
-    // screen reads it, an id typed here is still validated by the server against the company's
-    // grants, so a wrong one is refused rather than accepted.
+    /*
+     * The connection, chosen by the name the company gave it — CR-06.
+     *
+     * This was a text box for a uuid, with a note saying a picker belonged to the connections
+     * module. Nobody types `01a0c8b2-55ef-73f0-8a49-fd0923e15752` from memory, so in practice
+     * the field could not be answered at all — and the client asked for exactly this: *"MCP add
+     * karte waqt ek naam poochega, aur wahi naam agent banate waqt choose kar sakein."*
+     *
+     * A connection that is not usable is listed and disabled rather than hidden, with the reason
+     * beside it. Hiding it leaves somebody hunting for a connection they know they created; the
+     * useful answer is "it is there, and here is what it is waiting for".
+     */
+    if (field === 'inputConnectionId') {
+      return (
+        <div className="uboss-field" key={field}>
+          <label htmlFor={field}>{label}</label>
+          <select
+            id={field}
+            defaultValue=""
+            disabled={busy}
+            onChange={(event) => save({ inputConnectionId: event.target.value })}
+          >
+            <option value="" disabled>
+              {connections.length === 0 ? 'No connections yet' : 'Choose…'}
+            </option>
+            {connections.map((row) => (
+              <option key={row.id} value={row.id} disabled={row.state !== 'Connected'}>
+                {row.label}
+                {row.environment === null ? '' : ` (${row.environment})`}
+                {row.state === 'Connected' ? '' : ` — ${row.state}`}
+              </option>
+            ))}
+          </select>
+          <span className="uboss-field-hint">
+            {connections.length === 0
+              ? 'An administrator adds connections in Settings → Integrations & Connections.'
+              : why}
+          </span>
+        </div>
+      );
+    }
+
+    // The remaining questions are free text.
     return (
       <div className="uboss-field" key={field}>
         <label htmlFor={field}>{label}</label>

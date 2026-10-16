@@ -730,11 +730,22 @@ export default function CompanySettingsPage() {
                     <SkillsPanel tenantId={tenantId} mayAdminister={mayAdministerAnything} />
                   ) : null}
 
+                  {/*
+                    Gated on what this person may administer, not on whether this *category* has
+                    an editable settings row.
+
+                    Integrations has no settings rows at all — its content is the panel — so
+                    `anyEditable` was false for everybody and the Add button was unreachable by
+                    anyone in any company. The connection list rendered, the lifecycle worked,
+                    and there was no way to create the first connection through the product.
+                    That surfaced the day CR-06 needed somebody to add an MCP server.
+
+                    `mayAdministerAnything` is the honest test here: it is true exactly for the
+                    people who hold `settings:Administer`, which is the permission the create
+                    route itself checks. A category with no rows cannot answer that question.
+                  */}
                   {active === 'integrations' && tenantId !== null ? (
-                    <ConnectionsPanel
-                      tenantId={tenantId}
-                      mayAdminister={category?.anyEditable ?? mayAdministerAnything}
-                    />
+                    <ConnectionsPanel tenantId={tenantId} mayAdminister={mayAdministerAnything} />
                   ) : null}
 
                   {active === 'notifications' && tenantId !== null ? (

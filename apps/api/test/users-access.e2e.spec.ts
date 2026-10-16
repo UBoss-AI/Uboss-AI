@@ -43,6 +43,8 @@ import { verhoeffCheckDigit } from '../src/organization/aadhaar.js';
 import { AccessRepository } from '../src/persistence/access.repository.js';
 import { ConnectionService } from '../src/connections/connection.service.js';
 import { ConnectorAdapter, MockConnectorAdapter } from '../src/connections/connector-adapter.js';
+import { ConnectorAdapters } from '../src/connections/connector-adapters.js';
+import { McpConnectorAdapter } from '../src/connections/mcp-connector.adapter.js';
 import { LocalSealedSecretsVault, SecretsVault } from '../src/connections/secrets-vault.js';
 import { EmailAdapter, LoggingEmailAdapter } from '../src/notifications/email-adapter.js';
 import { NotificationService } from '../src/notifications/notification.service.js';
@@ -180,6 +182,9 @@ describe('users & access (e2e)', () => {
         NotificationService,
         ConnectionService,
         { provide: SecretsVault, useClass: LocalSealedSecretsVault },
+        MockConnectorAdapter,
+        McpConnectorAdapter,
+        ConnectorAdapters,
         { provide: ConnectorAdapter, useClass: MockConnectorAdapter },
         { provide: EmailAdapter, useClass: LoggingEmailAdapter },
         // The activation link, which is the only part of an invitation a person can act on.

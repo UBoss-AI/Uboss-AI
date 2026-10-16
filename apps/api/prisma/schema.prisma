@@ -4307,6 +4307,21 @@ model Connection {
   /// The handle, never the value. See `ConnectionSecret`.
   secretRef String? @map("secret_ref") @db.VarChar(120)
 
+  /// Where the server is — CR-06, and only for connectors that have an address.
+  ///
+  /// Null for every connector whose endpoint is the vendor's own and therefore known to its
+  /// adapter. An MCP connection is the opposite case: the whole point is that the company
+  /// supplies a server UBoss has never heard of, so the address is the connection's own.
+  endpoint String? @db.VarChar(2000)
+
+  /// The tool list this connection was approved with — CR-06. `McpToolSnapshot`.
+  ///
+  /// An MCP server reports its own tools and may report different ones tomorrow. Stored here as
+  /// the shape somebody actually approved, with the category a person assigned each tool, so a
+  /// server whose list has moved can be held rather than silently obeyed. Null for connectors
+  /// that have no such list.
+  toolSnapshot Json? @map("tool_snapshot") @db.JsonB
+
   /// Which departments may use it. Empty means the whole company — stated rather than implied,
   /// because an empty list read as "nobody" would silently break every existing connection the
   /// day departments were introduced.

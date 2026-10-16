@@ -589,6 +589,29 @@ export {
 } from './agent-sync.js';
 export type { AgentSyncEnvelope, AgentSyncField, AgentSyncStep } from './agent-sync.js';
 
+// ---- Any system reachable over MCP (CR-06) ----
+//
+// One connector for every server that speaks the protocol. The tool snapshot and the description
+// quarantine are the two rules that make that safe; see the note at the top of `mcp.ts`.
+export {
+  categoryOfTool,
+  describeToolForModel,
+  driftBetween,
+  isToolActionCategory,
+  MCP_DESCRIPTION_MAX,
+  quarantineMcpDescription,
+  snapshotIsUnchanged,
+  snapshotIsUsable,
+  toolsAwaitingCategory,
+} from './mcp.js';
+export type {
+  McpApprovedTool,
+  McpSnapshotDrift,
+  McpToolDescriptor,
+  McpToolSnapshot,
+  QuarantinedDescription,
+} from './mcp.js';
+
 // ---- Engine Agent registry, memory mode and versioning (Prompt 25) ----
 //
 // The four memory modes are the Technical Architecture's, with its technical rule for each. Prompt
