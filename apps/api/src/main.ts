@@ -150,6 +150,12 @@ async function bootstrap(): Promise<void> {
     /\/tenants\/[^/]+\/objectives\/([^/]+\/)?workbook\/parse\/?$/,
     /\/tenants\/[^/]+\/access\/bulk\/(validate|hierarchy\/validate)\/?$/,
     /\/tenants\/[^/]+\/job-methods\/[^/]+\/import(-workbook)?\/?$/,
+    /*
+     * The dropped agent file. An export of a real agent — an n8n workflow, a Custom GPT, a crew
+     * — runs to hundreds of kilobytes, and without this line the 1 MB parser answers a 2 MB drop
+     * with a bare 413 instead of the sentence the feature wrote for exactly that case.
+     */
+    /\/tenants\/[^/]+\/agent-builder\/sync\/read\/?$/,
     /\/tenants\/[^/]+\/photos\/[^/]+\/?$/,
     /\/tenants\/[^/]+\/organization\/company-images\/?$/,
   ];

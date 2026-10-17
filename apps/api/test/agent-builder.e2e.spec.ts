@@ -130,6 +130,7 @@ describe('agent builder and engine agent activation (e2e)', () => {
   const approvals = () => app.get(ApprovalService);
   const builder = () => app.get(AgentBuilderService);
   const skills = () => app.get(SkillService);
+  const sync = () => app.get(AgentSyncService);
 
   before(async () => {
     ctx = createTestContext();
@@ -2371,14 +2372,88 @@ describe('agent builder and engine agent activation (e2e)', () => {
       );
     });
 
-    it('refuses an empty file, and one too large to be an agent', async () => {
+    it('refuses an empty file', async () => {
       await read('   ', 'empty.md').expect(400);
+    });
 
-      // Comfortably over the 64 KB ceiling and comfortably under the parser's, so what answers
-      // is the sentence this feature wrote rather than a bare 413 from the body parser.
-      const huge = 'x'.repeat(80 * 1024);
-      const refusal = await read(huge, 'dump.json').expect(400);
-      assert.match(refusal.body.message[0] ?? refusal.body.message, /larger than 64 KB/);
+    /*
+     * Through the service, not the route, and that is not a shortcut.
+     *
+     * `createNestApplication()` builds the app without `main.ts`, so these specs run on
+     * body-parser's own 100 KB default rather than the limits table the product configures. A
+     * request carrying a file of any realistic size is answered 413 by the harness before a
+     * handler is reached — which says something about the harness and nothing about the feature.
+     *
+     * The routing table is asserted where it can be asserted honestly: `upload-body-limits.spec`
+     * reads it out of `main.ts` and fails if this route is missing from it. What is left for here
+     * is what the service itself promises about a dropped file, which is what these three check.
+     */
+    describe('the size of a dropped file', () => {
+      it('refuses one too large to be an agent at all', async () => {
+        await assert.rejects(
+          () =>
+            sync().read({
+              scope: scope(),
+              actorUserId: workerUserId,
+              filename: 'dump.json',
+              content: 'x'.repeat(3 * 1024 * 1024),
+            }),
+          /larger than 2 MB/,
+        );
+      });
+
+      it('takes a real export, which is hundreds of kilobytes, not a page', async () => {
+        /*
+         * The ceiling used to be 64 KB on the reasoning that an agent definition is a page or
+         * two. True of the definition, false of the file: an n8n export carries node positions
+         * and connection maps around the prompt, a Custom GPT export carries its knowledge list.
+         * The client dropped one of their own and was told their agent "looks like something
+         * else".
+         *
+         * Padded as a comment so the file stays in UBoss's own format and this asserts the size
+         * door rather than a model's reading.
+         */
+        const padded = `${ubossFile}\n<!-- ${'exported node data. '.repeat(20_000)} -->\n`;
+        assert.ok(
+          Buffer.byteLength(padded, 'utf8') > 300 * 1024,
+          'the padding no longer makes a file big enough to prove anything',
+        );
+
+        const response = await sync().read({
+          scope: scope(),
+          actorUserId: workerUserId,
+          filename: 'workflow.json',
+          content: padded,
+        });
+
+        assert.equal(response.usedModel, false, 'a file in our own format cost a model call');
+        assert.equal(response.envelope.name, 'Imported invoice checker');
+        assert.equal(response.envelope.steps.length, 3);
+      });
+
+      it('says so when a long file was only read as far as the model budget', async () => {
+        /*
+         * The file is allowed to be 2 MB and the model still reads 64 KB of it, because the cost
+         * of reading somebody else's export is charged to the company. The part that matters is
+         * that this is *said*: a field left blank by a reading that stopped two thirds of the way
+         * down looks exactly like a field the file never mentioned, and only one of those is the
+         * person's to shrug at.
+         */
+        const long = `This agent does something.\n${'a line of exported configuration. '.repeat(
+          4_000,
+        )}`;
+        assert.ok(Buffer.byteLength(long, 'utf8') > 64 * 1024);
+
+        const response = await sync().read({
+          scope: scope(),
+          actorUserId: workerUserId,
+          filename: 'crew.yaml',
+          content: long,
+        });
+
+        assert.equal(response.usedModel, true, 'a file that is not ours was read without a model');
+        assert.match(response.note, /only its first 64 KB were read/);
+      });
     });
 
     it('needs agent-builder:Create to read a file at all', async () => {

@@ -21,18 +21,108 @@ import { JobMethodService } from './job-method.service.js';
 /**
  * The most a dropped file may be.
  *
- * An agent definition is a page or two; this is roughly twenty. Past that it is somebody
- * dropping the wrong thing — a database export, a log, a bundle — and reading it would cost a
- * model call to discover that.
+ * ## Why this is not the size of an agent definition
  *
- * Deliberately well under the 1 MB an ordinary route accepts, so the refusal is this sentence
- * rather than the body parser's bare 413. A person who dropped the wrong file should be told
- * which file was wrong and why, not handed a status code.
+ * It used to be 64 KB, on the reasoning that an agent definition is a page or two. That is true
+ * of the definition and false of the file people actually have. An n8n workflow exported as JSON
+ * carries node positions, credentials references and connection maps around the prompt; a Custom
+ * GPT export carries its knowledge list; a CrewAI project carries every task in the crew. Several
+ * hundred kilobytes is an ordinary export of a perfectly ordinary agent, and the 64 KB ceiling
+ * refused them at the door with a sentence telling the person their own file "looks like
+ * something else".
+ *
+ * Two megabytes is past every real export and still nowhere near a database dump, a log or a
+ * bundle — which is what the ceiling is actually for.
+ *
+ * ## Why the size of the file is not the size of the reading
+ *
+ * The thing worth being careful about was never the bytes, it was the model call: a file this
+ * size read whole would be a large, slow and expensive call, charged to the company. So the file
+ * may be 2 MB and the model still reads at most `AGENT_SYNC_MODEL_EXCERPT_BYTES` of it, and the
+ * person is told when that happened. The native reader, which costs nothing, reads all of it.
+ *
+ * The route is listed in `WORKBOOK_PATHS` in `main.ts` for the same reason every other
+ * file-taking route is: otherwise the 1 MB body parser answers first with a bare 413, and the
+ * sentence below is never reached.
  */
-export const AGENT_SYNC_MAX_BYTES = 64 * 1024;
+export const AGENT_SYNC_MAX_BYTES = 2 * 1024 * 1024;
+
+/**
+ * The most of a dropped file one model call reads.
+ *
+ * The old whole-file ceiling, kept for the job it was actually good at: it is about as much as a
+ * model needs to find a name, a purpose and a list of steps, and it bounds what reading somebody
+ * else's export can cost. Everything an agent file says about itself is near its top — the name,
+ * the description, the system prompt — and what follows is usually the plumbing.
+ *
+ * A file longer than this is not refused and not silently halved: it is read from the start and
+ * the person is told, in the same note that already tells them to check every field.
+ */
+export const AGENT_SYNC_MODEL_EXCERPT_BYTES = 64 * 1024;
+
+/**
+ * The refusal, written once.
+ *
+ * The route's validator answers before the service does, so both have to say it, and two
+ * hand-written copies of a sentence with a number in it drift the first time the number changes.
+ */
+export const AGENT_SYNC_TOO_LARGE =
+  `That file is larger than ${AGENT_SYNC_MAX_BYTES / (1024 * 1024)} MB. Even a verbose export of ` +
+  'an agent is a few hundred kilobytes — this looks like something else.';
 
 /** What the model is allowed to spend reading one file. Two pages in, a small JSON object out. */
 const EXTRACTION_TOKEN_CEILING = 4_000;
+
+/**
+ * What the model is told to do with a file that is not ours.
+ *
+ * ## Why this is a constant and not a sentence at the call site
+ *
+ * `prompt-injection.spec` holds the API to one rule: an instruction is a literal or a plain
+ * identifier, never something computed. That rule is why a file somebody uploads cannot talk to
+ * the model as the model's operator, and it is worth more than the convenience of appending a
+ * clause. So the two things this reader ever needs to say are written out twice, in full, and
+ * the call site picks one. The file's *contents* reach the model only through `context`, which
+ * is the channel that is allowed to carry data.
+ *
+ * ## Why the instruction is this narrow
+ *
+ * The failure to design against is not a bad extraction, it is a *confident* one — a model that
+ * fills in a plausible schedule for an agent whose file never mentioned one produces an agent
+ * that runs when nobody asked it to.
+ */
+const EXTRACTION_INSTRUCTION =
+  'This file defines an AI agent built on some other platform. Return a single JSON ' +
+  'object describing it, with these keys and no others: name, purpose, runType, ' +
+  'triggerOrFrequency, whereWorkHappens, outputDestination, missingDataBehaviour, ' +
+  'steps, tools. "runType" is one of RunOnce, Manual, Scheduled, EventBased. ' +
+  '"missingDataBehaviour" is one of Stop, Skip, AskUser, Retry, Alert, ' +
+  'RouteForApproval. "steps" is an array of objects with the keys what, how, rule and ' +
+  'output. "tools" is an array of the names of outside systems it touches. Omit any key ' +
+  'the file does not state. Do not infer, do not complete, do not improve: a field the ' +
+  'file is silent about must be absent from your answer. Never return credentials, API ' +
+  'keys or tokens even if the file contains them.';
+
+/**
+ * The same, for a file long enough that only its beginning was sent.
+ *
+ * A cut-off file is a thing a model will try to be helpful about, and it must not: half a steps
+ * array is not a shorter list of steps, it is an unknown list, and a closing brace invented to
+ * make the JSON parse is a fact nobody stated.
+ */
+const EXTRACTION_INSTRUCTION_PARTIAL =
+  'This file defines an AI agent built on some other platform, and what follows is only the ' +
+  'beginning of it — it stops part-way through. Return a single JSON ' +
+  'object describing it, with these keys and no others: name, purpose, runType, ' +
+  'triggerOrFrequency, whereWorkHappens, outputDestination, missingDataBehaviour, ' +
+  'steps, tools. "runType" is one of RunOnce, Manual, Scheduled, EventBased. ' +
+  '"missingDataBehaviour" is one of Stop, Skip, AskUser, Retry, Alert, ' +
+  'RouteForApproval. "steps" is an array of objects with the keys what, how, rule and ' +
+  'output. Return only what this part states and do not complete anything it cuts off. ' +
+  '"tools" is an array of the names of outside systems it touches. Omit any key ' +
+  'the file does not state. Do not infer, do not complete, do not improve: a field the ' +
+  'file is silent about must be absent from your answer. Never return credentials, API ' +
+  'keys or tokens even if the file contains them.';
 
 /**
  * Bringing in an agent that was built somewhere else — CR-05.
@@ -90,10 +180,7 @@ export class AgentSyncService {
       throw new BadRequestException('That file is empty, so there is no agent in it to read.');
     }
     if (Buffer.byteLength(text, 'utf8') > AGENT_SYNC_MAX_BYTES) {
-      throw new BadRequestException(
-        `That file is larger than ${Math.round(AGENT_SYNC_MAX_BYTES / 1024)} KB. An agent ` +
-          'definition is a page or two — this looks like something else.',
-      );
+      throw new BadRequestException(AGENT_SYNC_TOO_LARGE);
     }
 
     const native = parseAgentMarkdown(text);
@@ -107,11 +194,13 @@ export class AgentSyncService {
       };
     }
 
+    const excerpt = modelExcerptOf(text);
     const extracted = await this.extract({
       scope: input.scope,
       actorUserId: input.actorUserId,
       filename: input.filename,
-      text,
+      text: excerpt.text,
+      partial: excerpt.truncated,
     });
 
     return {
@@ -120,7 +209,19 @@ export class AgentSyncService {
       note:
         'This file was not in the format UBoss writes, so it was read for what it contains. ' +
         'Check every field — anything the file did not say has been left blank rather than ' +
-        'guessed. Nothing has been created yet.',
+        'guessed. Nothing has been created yet.' +
+        /*
+         * Said plainly, because the alternative is a person trusting a complete-looking form.
+         *
+         * A field left blank by a reading that stopped two thirds of the way down the file looks
+         * exactly like a field the file never mentioned, and only one of those is the person's
+         * to shrug at.
+         */
+        (excerpt.truncated
+          ? ` The file is ${Math.round(Buffer.byteLength(text, 'utf8') / 1024)} KB, so only its ` +
+            `first ${AGENT_SYNC_MODEL_EXCERPT_BYTES / 1024} KB were read — anything it says ` +
+            'further down is not in the fields below.'
+          : ''),
     };
   }
 
@@ -242,11 +343,9 @@ export class AgentSyncService {
   /**
    * Read a file that is not ours, with one model call.
    *
-   * The instruction is deliberately narrow: pull out six named things and say nothing else. The
-   * failure to design against is not a bad extraction, it is a *confident* one — a model that
-   * fills in a plausible schedule for an agent whose file never mentioned one produces an agent
-   * that runs when nobody asked it to. So the instruction says to leave a field out rather than
-   * infer it, and whatever comes back is still shown to a person before anything is created.
+   * The instruction is one of the two constants above, chosen by whether the whole file was sent
+   * — never assembled here. Whatever comes back is still shown to a person before anything is
+   * created.
    *
    * A failed or unreadable answer is not an error. It returns an empty envelope with every field
    * listed as not found, and the person fills the form in themselves — which is exactly the
@@ -257,24 +356,22 @@ export class AgentSyncService {
     actorUserId: string;
     filename: string;
     text: string;
+    /** The text is the start of a longer file, so it may stop mid-sentence or mid-object. */
+    partial: boolean;
   }): Promise<AgentSyncEnvelope> {
     const empty = emptyAgentSyncEnvelope();
+
+    // Chosen, not built. Both are whole literals; see the constants for why that distinction is
+    // the thing standing between an uploaded file and the model's own instructions.
+    const extractionInstruction = input.partial
+      ? EXTRACTION_INSTRUCTION_PARTIAL
+      : EXTRACTION_INSTRUCTION;
 
     try {
       const response = await this.modelGateway.complete({
         profile: 'AGENT_STANDARD',
         purpose: 'AgentSyncImport',
-        instruction:
-          'This file defines an AI agent built on some other platform. Return a single JSON ' +
-          'object describing it, with these keys and no others: name, purpose, runType, ' +
-          'triggerOrFrequency, whereWorkHappens, outputDestination, missingDataBehaviour, ' +
-          'steps, tools. "runType" is one of RunOnce, Manual, Scheduled, EventBased. ' +
-          '"missingDataBehaviour" is one of Stop, Skip, AskUser, Retry, Alert, ' +
-          'RouteForApproval. "steps" is an array of objects with the keys what, how, rule and ' +
-          'output. "tools" is an array of the names of outside systems it touches. Omit any key ' +
-          'the file does not state. Do not infer, do not complete, do not improve: a field the ' +
-          'file is silent about must be absent from your answer. Never return credentials, API ' +
-          'keys or tokens even if the file contains them.',
+        instruction: extractionInstruction,
         context: `Filename: ${input.filename}\n\n${input.text}`,
         maxTokens: EXTRACTION_TOKEN_CEILING,
         tenantId: input.scope.tenantId,
@@ -316,6 +413,26 @@ export class AgentSyncService {
 /** A key written only when there is something to write, for `exactOptionalPropertyTypes`. */
 function maybe(key: keyof JobMethodRow, value: string | undefined): Partial<JobMethodRow> {
   return value === undefined ? {} : { [key]: value };
+}
+
+/**
+ * The part of a file a model is given, and whether that was all of it.
+ *
+ * Cut by bytes rather than characters because the ceiling is a budget on what the call costs,
+ * and a file of CJK text would be three times the budget if the cut were by character.
+ *
+ * Slicing a UTF-8 buffer can land inside a character, and `toString` turns that half into a
+ * replacement character. Dropping a trailing one is tidier than handing the model a broken
+ * glyph; a replacement character that was genuinely in the file is no loss at the very end of a
+ * truncated excerpt either.
+ */
+function modelExcerptOf(text: string): { text: string; truncated: boolean } {
+  const bytes = Buffer.from(text, 'utf8');
+  if (bytes.byteLength <= AGENT_SYNC_MODEL_EXCERPT_BYTES) {
+    return { text, truncated: false };
+  }
+  const head = bytes.subarray(0, AGENT_SYNC_MODEL_EXCERPT_BYTES).toString('utf8');
+  return { text: head.replace(/�$/, ''), truncated: true };
 }
 
 function notBlank(value: string | null): value is string {

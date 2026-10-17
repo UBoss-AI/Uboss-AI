@@ -46,7 +46,11 @@ import { getActor } from '../request-context/request-context.js';
 import { TenantScoped } from '../tenancy/tenancy.decorators.js';
 import { TenantContextService } from '../tenancy/tenant-context.service.js';
 import { AgentBuilderService } from './agent-builder.service.js';
-import { AGENT_SYNC_MAX_BYTES, AgentSyncService } from './agent-sync.service.js';
+import {
+  AGENT_SYNC_MAX_BYTES,
+  AGENT_SYNC_TOO_LARGE,
+  AgentSyncService,
+} from './agent-sync.service.js';
 
 /**
  * The execution setup patch.
@@ -130,10 +134,8 @@ export class ReadAgentFileDto {
   @MinLength(1)
   @MaxLength(AGENT_SYNC_MAX_BYTES, {
     // The validator answers first, so this is the sentence a person actually meets. The service
-    // keeps its own check for callers that are not this route.
-    message:
-      `That file is larger than ${Math.round(AGENT_SYNC_MAX_BYTES / 1024)} KB. An agent ` +
-      'definition is a page or two — this looks like something else.',
+    // keeps its own check for callers that are not this route, and both read it from one place.
+    message: AGENT_SYNC_TOO_LARGE,
   })
   content!: string;
 }

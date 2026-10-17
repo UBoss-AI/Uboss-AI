@@ -68,6 +68,17 @@ describe('upload routes are not capped at the ordinary body limit', () => {
       path: '/tenants/t1/job-methods/a1/import-workbook',
       atLeastMb: 20,
     },
+    {
+      /*
+       * Not base64 — an agent file arrives as text — but the same failure. Its own ceiling is
+       * 2 MB, because an export of a real agent carries node positions and connection maps
+       * around the prompt, and without an entry here the ordinary parser refuses it with a bare
+       * 413 before the sentence explaining the limit can be reached.
+       */
+      what: 'an agent exported from somewhere else',
+      path: '/tenants/t1/agent-builder/sync/read',
+      atLeastMb: 3,
+    },
     { what: 'an employee photo', path: '/tenants/t1/photos/u1', atLeastMb: 3 },
     {
       what: 'a picture for the company Vision or Mission',
