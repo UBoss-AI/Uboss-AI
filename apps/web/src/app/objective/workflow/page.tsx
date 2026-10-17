@@ -217,6 +217,9 @@ function WorkflowEditorInner() {
         skillName: node.skillName,
         ownerUserId: node.ownerUserId,
         ownerDesignation: node.ownerDesignation,
+        // Why nobody is on this step, when nobody is — so the box says the cause rather than
+        // repeating the symptom the reader can already see.
+        unmatchedOwnerName: node.unmatchedOwnerName ?? null,
         /*
           The name behind the id, so the box can say who it is for.
 
@@ -328,6 +331,32 @@ function WorkflowEditorInner() {
    * not in it — both of which the row renders as the id it used to show, rather than pretending
    * there is no owner.
    */
+  /**
+   * The distinct people this plan named who are not employed here.
+   *
+   * De-duplicated, because one person named on six steps is one problem to fix and six
+   * repetitions of their name is a sentence nobody finishes reading.
+   */
+  const unmatchedOwners = useMemo(
+    () => [
+      ...new Set(
+        (draft?.graph.nodes ?? [])
+          .map((node) => node.unmatchedOwnerName?.trim() ?? '')
+          .filter((name) => name !== ''),
+      ),
+    ],
+    [draft],
+  );
+
+  /** AI steps with nothing approved to run them. Counted, because the canvas lists them. */
+  const aiStepsWithoutSkill = useMemo(
+    () =>
+      (draft?.graph.nodes ?? []).filter(
+        (node) => node.kind === 'Ai' && (node.skillVersionId ?? null) === null,
+      ).length,
+    [draft],
+  );
+
   const ownerLabel = useMemo(() => {
     const ownerId = shownVersion?.content.objectiveOwnerUserId ?? null;
     if (ownerId === null) return null;
@@ -454,6 +483,49 @@ function WorkflowEditorInner() {
         Saying it is the whole fix — the choice of what to do about it is theirs, and both answers
         are already on this screen.
       */}
+      {/*
+        The people this plan named who are not employees here.
+
+        The analysis records this per step in `gaps`, and `gaps` are shown on the *analysis*
+        screen — not this one. So a company whose plan named six people and came back with
+        nobody on any step saw twenty nodes reading "Nobody accountable" and no reason anywhere
+        on the screen they were looking at. The nodes now say which person failed to match; this
+        says it once, at the top, with the fix.
+
+        Only for names that were given and did not match. A plan whose form simply left the
+        column blank is a different problem and gets no banner — the nodes say so individually,
+        and a banner about every empty column would be noise on a plan that is merely unfinished.
+      */}
+      {unmatchedOwners.length === 0 ? null : (
+        <Banner tone="warn">
+          {unmatchedOwners.length === 1
+            ? `This plan names ${unmatchedOwners[0]}, who is not an employee on record, so that step has nobody on it.`
+            : `This plan names ${unmatchedOwners.length} people who are not employees on record, so their steps have nobody on them: ${unmatchedOwners.join(', ')}.`}{' '}
+          Add them under Hierarchy, run the analysis again, and take the newer result here.
+        </Banner>
+      )}
+
+      {/*
+        AI steps with no Skill behind them — the same problem of placement as the owners above.
+
+        Each diamond already says "No approved Skill", which is true and unactionable: it does
+        not say that the step cannot run, and it does not say what makes it able to. On a plan
+        where every AI step says it, twenty identical labels read as decoration rather than as
+        twenty blockers.
+
+        Counted rather than listed. The names of the steps are on the canvas; what a reader does
+        not have is the number and the next move.
+      */}
+      {aiStepsWithoutSkill === 0 ? null : (
+        <Banner tone="warn">
+          {aiStepsWithoutSkill === 1
+            ? 'One AI step has no approved Skill behind it, so it cannot run.'
+            : `${aiStepsWithoutSkill} AI steps have no approved Skill behind them, so they cannot run.`}{' '}
+          A Skill is an approved capability — somebody authors one and an approver publishes it,
+          under Settings. Until then these steps can be converted to human work instead.
+        </Banner>
+      )}
+
       {draft !== null && draft.editable && draft.supersededByRunId !== null ? (
         <Banner tone="info">
           <span className="uboss-banner__fill">

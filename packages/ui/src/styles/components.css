@@ -13269,6 +13269,22 @@ tr[data-drop-target='true'] td {
 }
 
 /*
+ * Except when the line is not a name.
+ *
+ * With nobody on the step this line carries the reason — "Nikhil Narwal is not an employee on
+ * record" — and the one-line clamp above cut it to "Nikhil Narwa… not an…". The whole point of
+ * naming the person was that a reader could act on it without opening the node, and a sentence
+ * truncated before its verb says less than the "Nobody accountable" it replaced.
+ *
+ * Two lines rather than three: the longest form of this sentence is a full name and eight words,
+ * which fits in two at the diamond's width, and a third line would come out of the title's
+ * three on exactly the nodes that still need reading.
+ */
+.uboss-wf-ai-label .uboss-wf-ai-owner--reason {
+  -webkit-line-clamp: 2;
+}
+
+/*
  * "After: …" joins whole step titles, so it is the line most likely to run away.
  *
  * `min-width: 0` is what makes the clamp work at all here. The meta row is a flex container, and

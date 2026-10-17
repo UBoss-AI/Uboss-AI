@@ -651,7 +651,59 @@ describe('workflow graph editor and pre-publish readiness (e2e)', () => {
 
       for (const node of humans) {
         assert.equal(node.ownerUserId, workerId, `${node.id} should belong to the named employee`);
+        assert.equal(
+          node.unmatchedOwnerName ?? null,
+          null,
+          'a matched owner should not also carry an unmatched name',
+        );
       }
+    });
+
+    /*
+     * A name the company does not employ, said on the node rather than only in the gaps.
+     *
+     * The live case this is for: a plan named six people, every step came back reading "Nobody
+     * accountable", and the one sentence explaining why sat in a gaps list on a different
+     * screen. A company cannot tell that from a form they left blank — and the two are fixed
+     * differently, one by adding people to the Hierarchy and one by filling in the column.
+     */
+    it('names the person it could not match, on the step itself', async () => {
+      await publishSkill();
+      const objective = await objectives().create({
+        scope: scope(),
+        actorUserId: ownerUserId,
+        content: form2(),
+        steps: mixedSteps().map((step) =>
+          step.whoPersonName === null || step.whoPersonName === ''
+            ? step
+            : { ...step, whoPersonName: 'Nikhil Narwal' },
+        ),
+      });
+
+      const run = await analysis().start({
+        scope: scope(),
+        actorUserId: ownerUserId,
+        objectiveId: objective.id,
+      });
+      assert.equal(run.status, 'Completed', run.failureReason ?? '');
+
+      const draft = await open(objective.id);
+      const named = draft.graph.nodes.filter(
+        (node) => (node.kind === 'Human' || node.kind === 'Ai') && node.fromStepPosition !== null,
+      );
+
+      const carrying = named.filter((node) => node.unmatchedOwnerName === 'Nikhil Narwal');
+      assert.ok(carrying.length > 0, 'no step said whose name failed to match');
+
+      for (const node of carrying) {
+        assert.equal(node.ownerUserId, null, 'a step both matched and reported a failure to');
+      }
+
+      // And the gaps still say it too — the node is the addition, not the replacement.
+      assert.ok(
+        draft.graph.gaps.some((gap) => gap.includes('Nikhil Narwal')),
+        'the gaps stopped recording it',
+      );
     });
 
     /*

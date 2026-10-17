@@ -1021,6 +1021,17 @@ export class ObjectiveAnalysisService {
           );
         }
       } else {
+        /*
+         * Said on the node as well as in the gaps.
+         *
+         * The gaps list is read by somebody who already suspects a problem; the canvas is read
+         * by everybody. A plan that named six people and came back with nobody on it showed
+         * "Nobody accountable" twenty times and the reason once, in a list underneath — so the
+         * company could not tell a form they had left blank from six people who are not in the
+         * Hierarchy, which are different problems with different fixes.
+         */
+        node.unmatchedOwnerName = named;
+
         state.gaps.push(
           `Step ${node.fromStepPosition} names "${named}", who is not employed in this company ` +
             'on record. The owner was left unassigned rather than guessed at.',

@@ -193,6 +193,23 @@ export interface AnalysisNode {
   /** Their designation, for the diagram's second line. */
   ownerDesignation: string | null;
   /**
+   * The name the plan gave for this step, when that name matched nobody employed here.
+   *
+   * Null in both of the other cases — an owner was assigned, or the plan named nobody — and the
+   * two are told apart by whether `ownerUserId` is set.
+   *
+   * ## Why the diagram needs this and a gaps list is not enough
+   *
+   * A step with no owner used to read "Nobody accountable", which is the symptom rather than the
+   * cause, and the cause was one line in a list of twenty gaps under the canvas. A company whose
+   * plan named six people and came back with nobody on it had no way to tell "the form left it
+   * blank" from "those six are not employees on record" — and the fix for each is different: one
+   * is filling in the form, the other is adding people to the Hierarchy.
+   *
+   * Carried on the node so the diagram can say which it is at the place somebody is looking.
+   */
+  unmatchedOwnerName?: string | null;
+  /**
    * The approved, published Skill version an `Ai` node would use.
    *
    * Null when nothing suitable exists — and that is a legitimate outcome, not a failure. The

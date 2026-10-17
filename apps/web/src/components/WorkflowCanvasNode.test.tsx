@@ -97,11 +97,29 @@ describe('WorkflowCanvasNode', () => {
     expect(screen.getByText('gspr-checklist')).toBeTruthy();
   });
 
-  it('says when a human step has nobody accountable for it', () => {
+  it('says a human step has nobody because the plan named nobody', () => {
     render(
       <WorkflowCanvasNode node={node({ kind: 'Human', ownerUserId: null })} onOpen={() => {}} />,
     );
-    expect(screen.getByText('No owner assigned')).toBeTruthy();
+    expect(screen.getByText('Nobody named in the plan')).toBeTruthy();
+  });
+
+  it('names the person who could not be matched, rather than only saying nobody', () => {
+    /*
+     * The two causes a reader has to tell apart, and used to be unable to.
+     *
+     * A plan that named six people and came back with nobody on any step is a Hierarchy
+     * problem — those names are not employees on record — and the fix is adding them. A plan
+     * whose form left the column blank is a form problem. Both read "No owner assigned", and
+     * the distinguishing sentence sat in a gaps list on a different screen.
+     */
+    render(
+      <WorkflowCanvasNode
+        node={node({ kind: 'Human', ownerUserId: null, unmatchedOwnerName: 'Nikhil Narwal' })}
+        onOpen={() => {}}
+      />,
+    );
+    expect(screen.getByText('Nikhil Narwal is not an employee on record')).toBeTruthy();
   });
 
   it('opens the editor when the node is activated', () => {
@@ -169,9 +187,49 @@ describe('WorkflowCanvasNode', () => {
     expect(screen.getByText(/Owner: Treasury Analyst/)).toBeTruthy();
   });
 
-  it('says an AI step has nobody behind it when it has nobody behind it', () => {
+  it('says an AI step has nobody behind it, and why', () => {
+    // An agent with nobody accountable is the same question as an unowned human step, and the
+    // answer has to be as specific: the Engine row names the accountable person too.
     render(<WorkflowCanvasNode node={node({ kind: 'Ai', ownerUserId: null })} onOpen={() => {}} />);
-    expect(screen.getByText('Nobody accountable')).toBeTruthy();
+    expect(screen.getByText('Nobody named in the plan')).toBeTruthy();
+
+    render(
+      <WorkflowCanvasNode
+        node={node({ kind: 'Ai', ownerUserId: null, unmatchedOwnerName: 'Umang Mathur' })}
+        onOpen={() => {}}
+      />,
+    );
+    expect(screen.getByText('Umang Mathur is not an employee on record')).toBeTruthy();
+  });
+
+  it('gives the reason the second line a name does not need', () => {
+    /*
+     * The diamond clamps this line to one line, because a name is one line. The reason is a
+     * sentence, and at one line it rendered as "Nikhil Narwa… not an…" — which says less than
+     * the "Nobody accountable" it was written to replace. Asserted on the class because the
+     * clamp itself is CSS and jsdom does not lay out text.
+     */
+    render(
+      <WorkflowCanvasNode
+        node={node({ kind: 'Ai', ownerUserId: null, unmatchedOwnerName: 'Umang Mathur' })}
+        onOpen={() => {}}
+      />,
+    );
+    expect(
+      screen.getByText('Umang Mathur is not an employee on record').className,
+    ).toContain('uboss-wf-ai-owner--reason');
+
+    // And an owned node keeps the single line, so the title does not lose room to an allowance
+    // a name would never use.
+    render(
+      <WorkflowCanvasNode
+        node={node({ kind: 'Ai', ownerUserId: 'u-9', ownerName: 'Aman Singh' })}
+        onOpen={() => {}}
+      />,
+    );
+    expect(screen.getByText('Accountable: Aman Singh').className).not.toContain(
+      'uboss-wf-ai-owner--reason',
+    );
   });
 
   it('does not offer editing on an assigned plan', () => {

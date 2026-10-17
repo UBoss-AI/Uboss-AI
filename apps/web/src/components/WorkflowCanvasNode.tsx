@@ -26,6 +26,8 @@ export interface DrawableNode {
    * canvas has no such list and a designation is still better than an id.
    */
   ownerName?: string | null;
+  /** The plan's own name for this step's owner, when it matched nobody employed here. */
+  unmatchedOwnerName?: string | null;
 }
 
 export interface WorkflowCanvasNodeProps {
@@ -111,8 +113,19 @@ export function WorkflowCanvasNode({
             problem from an agent with no Skill, and running them together hides whichever is
             missing.
           */}
-          <small className="uboss-wf-ai-owner">
-            {ownerLine === null ? 'Nobody accountable' : `Accountable: ${ownerLine}`}
+          {/*
+            The reason gets a second line; a name does not need one.
+
+            `.uboss-wf-ai-owner` is clamped to one line because "Meera Iyer" is one line. The
+            sentence that replaces it when nobody is on the step is not a name — it is
+            "Nikhil Narwal is not an employee on record" — and at one line the diamond cut it to
+            "Nikhil Narwa… not an…", which says less than the bare "Nobody accountable" it
+            replaced. The modifier is on the reason only, so an owned node keeps the room.
+          */}
+          <small
+            className={`uboss-wf-ai-owner${ownerLine === null ? ' uboss-wf-ai-owner--reason' : ''}`}
+          >
+            {ownerLine === null ? unownedReason(node) : `Accountable: ${ownerLine}`}
           </small>
         </div>
       </div>
@@ -129,7 +142,7 @@ export function WorkflowCanvasNode({
         </div>
         <div className="uboss-wf-node-body">
           {ownerLine === null ? (
-            <span className="uboss-muted-3">No owner assigned</span>
+            <span className="uboss-muted-3">{unownedReason(node)}</span>
           ) : (
             <>{subtitle(`Owner: ${ownerLine}`)}</>
           )}
@@ -147,4 +160,23 @@ export function WorkflowCanvasNode({
       {body}
     </button>
   );
+}
+
+/**
+ * Why nobody is on this step — the cause, not the symptom.
+ *
+ * "Nobody accountable" is what a reader already knows by looking; what they cannot know is
+ * which of two completely different problems they have. A plan that named six people and came
+ * back with nobody on it is a Hierarchy problem — those names are not employees on record — and
+ * the fix is adding them. A plan whose form left the column blank is a form problem, and the fix
+ * is filling it in. Both used to read identically here, with the distinguishing sentence in a
+ * list of gaps under the canvas that nobody scrolls to.
+ *
+ * Deliberately names the person. "A named person is not an employee" sends somebody hunting
+ * through twenty steps; "Nikhil Narwal is not an employee on record" is a thing they can act on
+ * without leaving the diagram.
+ */
+function unownedReason(node: DrawableNode): string {
+  const named = node.unmatchedOwnerName?.trim() ?? '';
+  return named === '' ? 'Nobody named in the plan' : `${named} is not an employee on record`;
 }
