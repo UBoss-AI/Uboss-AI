@@ -215,9 +215,9 @@ describe('WorkflowCanvasNode', () => {
         onOpen={() => {}}
       />,
     );
-    expect(
-      screen.getByText('Umang Mathur is not an employee on record').className,
-    ).toContain('uboss-wf-ai-owner--reason');
+    expect(screen.getByText('Umang Mathur is not an employee on record').className).toContain(
+      'uboss-wf-ai-owner--reason',
+    );
 
     // And an owned node keeps the single line, so the title does not lose room to an allowance
     // a name would never use.
