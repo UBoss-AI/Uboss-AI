@@ -277,14 +277,10 @@ services:
         condition: service_started
       web:
         condition: service_started
-    ports:
-      - '80:80'
-      - '443:443'
-      - '443:443/udp'
     volumes:
       - caddy-data:/data
       - caddy-config:/config
-    networks: [private, public]
+    networks: [private, public, ucxo_edge]
 
 volumes:
   postgres-data:
@@ -306,3 +302,5 @@ networks:
     internal: true
   public: {}
   egress: {}
+  ucxo_edge:
+    external: true
